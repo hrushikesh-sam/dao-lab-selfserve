@@ -461,3 +461,32 @@ def test_27_cleanup_endpoint(env):
                  409, "invalid_state")
     rows = env.client.get("/admin/audit", headers=H(env.admin_token)).json()
     assert rows[0]["action"] == "cleanup" and rows[0]["object_id"] == rid
+
+
+def test_28_redeploy_endpoint(env):
+    """B-28: POST /reservations/{id}/redeploy re-runs deploy, inside the slot only."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    rid = reserve(env, alice).json()["id"]
+    env.models.update(env.conn, "reservations", rid, {"state": "active"})
+    # env.T is a day ahead, so right now is outside the slot
+    assert_error(env.client.post(f"/reservations/{rid}/redeploy", headers=H(alice)),
+                 409, "invalid_state")
+    # open the slot around now, then redeploy
+    now = datetime.now(UTC)
+    env.models.update(env.conn, "reservations", rid, {
+        "start_at": iso(now - timedelta(hours=1)), "end_at": iso(now + timedelta(hours=1))})
+    assert_error(env.client.post(f"/reservations/{rid}/redeploy", headers=H(bob)), 403, "forbidden")
+    first = env.client.post(f"/reservations/{rid}/redeploy", headers=H(alice))
+    assert first.status_code == 202, first.text
+    assert first.json()["state"] == "active"
+    assert first.json()["job"]["kind"] == "deploy" and first.json()["job"]["attempt"] == 1
+    # a second redeploy is a new job with attempt + 1
+    second = env.client.post(f"/reservations/{rid}/redeploy", headers=H(alice)).json()
+    assert second["job"]["attempt"] == 2 and second["job"]["id"] != first.json()["job"]["id"]
+    # a queued booking cannot redeploy even inside its window
+    q = reserve(env, bob).json()["id"]
+    env.models.update(env.conn, "reservations", q, {
+        "start_at": iso(now - timedelta(hours=1)), "end_at": iso(now + timedelta(hours=1))})
+    assert_error(env.client.post(f"/reservations/{q}/redeploy", headers=H(bob)),
+                 409, "invalid_state")

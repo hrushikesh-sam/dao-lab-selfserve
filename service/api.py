@@ -603,6 +603,37 @@ def cleanup_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
             "job": job_object(models.job_by_id(conn, job_id))}
 
 
+@app.post("/reservations/{res_id}/redeploy", status_code=202)
+def redeploy_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
+                         conn: sqlite3.Connection = Depends(db_conn)):
+    """Owner re-runs `deploy.yml` for a live reservation (plan/09 §4) — idempotent replay,
+    allowed only inside its slot. Returns `202` + the new `deploy` job (attempt + 1); a
+    request outside `[start_at, end_at)` or in any non-live state is `409 invalid_state`."""
+    row = _owned_reservation(conn, res_id, user)
+    now = datetime.now(timezone.utc)
+    if not (models.parse_ts(row["start_at"]) <= now < models.parse_ts(row["end_at"])):
+        raise DaolabError("invalid_state", 409, f"reservation {res_id} is outside its slot",
+                          {"state": row["state"], "start_at": row["start_at"],
+                           "end_at": row["end_at"]})
+    if row["state"] not in ("ready", "active"):
+        raise DaolabError("invalid_state", 409,
+                          f"cannot redeploy a reservation in state {row['state']}",
+                          {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        prev = models.jobs_for_reservation(conn, res_id, kind="deploy")
+        attempt = max((j["attempt"] for j in prev), default=0) + 1
+        job_id = models.create_job(conn, res_id, "deploy", attempt=attempt)
+        models.audit(conn, user["username"], "redeploy", "reservation", res_id,
+                     {"attempt": attempt})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"id": res_id, "state": row["state"],
+            "job": job_object(models.job_by_id(conn, job_id))}
+
+
 @app.post("/internal/vm-ip")
 def vm_ip_callback(body: VmIpCallback, _: None = Depends(require_internal),
                    conn: sqlite3.Connection = Depends(db_conn)):
