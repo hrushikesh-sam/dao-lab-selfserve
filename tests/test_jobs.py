@@ -49,7 +49,7 @@ def test_upgrade_from_v4_keeps_rows_and_is_idempotent(tmp_path):
     conn.execute("PRAGMA user_version = 4")
     models.insert(conn, "users", {"username": "keepme", "token_hash": "h", "ssh_pubkey": "k"})
     assert not migrations.has_table(conn, "jobs")
-    assert models.init_db(conn) == [5]
+    assert models.init_db(conn) == [m.version for m in migrations.MIGRATIONS if m.version > 4]
     assert migrations.has_table(conn, "jobs")
     assert conn.execute("SELECT username FROM users").fetchone()[0] == "keepme"
     assert models.init_db(conn) == []

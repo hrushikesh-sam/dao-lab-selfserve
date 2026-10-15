@@ -129,7 +129,7 @@ FCFS by `created_at` is structural: placement happens once, at creation, and eve
 
 ### Step 3 — busy intervals on the setup timeline
 
-A setup is busy for `[start_at − lead, end_at + cleanup_min)` of every reservation not in `released`/`failed` (states `queued`, `provisioning`, `ready`, `active`, `tearing_down`) — the unit of exclusivity of plan/09 §5, **turnaround buffer included** (B-11). Intervals are **half-open**: a window may begin exactly at a busy interval's end. Each existing reservation's `lead` is re-derived deterministically by threading hw_class through the timeline (leads are not stored — scheduler and engine re-derive with the same function). The cleanup length is `DAOLAB_CLEANUP_MIN`, taken from `SchedConfig`, not from the `reservations.turnaround_min` column (migration 1 added it; the scheduler does not read it yet — it stays `0`).
+A setup is busy for `[start_at − lead, end_at + cleanup_min)` of every reservation not in `released`/`failed` (states `queued`, `provisioning`, `ready`, `active`, `cleaning`, `quarantined`) — the unit of exclusivity of plan/09 §5, **turnaround buffer included** (B-11). Intervals are **half-open**: a window may begin exactly at a busy interval's end. Each existing reservation's `lead` is re-derived deterministically by threading hw_class through the timeline (leads are not stored — scheduler and engine re-derive with the same function). The cleanup length is `DAOLAB_CLEANUP_MIN`, taken from `SchedConfig`, not from the `reservations.turnaround_min` column (migration 1 added it; the scheduler does not read it yet — it stays `0`).
 
 **Gap between two bookings = cleanup + lead.** Cleanup (after the earlier booking) and provisioning/reflash (before the later one) are sequential activities on the same setup, so they add up: **15 min** for the same `hw_class` (10 + 5), **25 min** when a reflash is needed (10 + 15). The same rule applies in both directions: a new booking also blocks its *own* `end_at + cleanup_min`, so it must leave that room before the next booking.
 
@@ -295,7 +295,7 @@ If instead r2 had been an `at` request for 12:15, it is refused (`NoFit("off_gri
 ## Edge cases
 
 - **No satisfying setup** → `NoSetup`; `api.py` returns `409 unmet_capability` whose message **names the missing capability list** (Phase 2 checkpoint), e.g. `requires [octeon-cn106, e810, wire, gpu]` against setup-01 → `missing: ["gpu"]`, `closest_setup: "setup-01"`.
-- **Cancellation frees a slot.** `DELETE` of a `queued` reservation → `released` immediately; `released` is excluded from busy, so the slot is free for the *next* request at once. Cancelling `ready`/`active` goes through `tearing_down` (still busy) until `released`. Freed slots are never back-filled retroactively: earlier shifted grants stay where they were placed (FCFS grants are final).
+- **Cancellation frees a slot.** `DELETE` of a `queued` reservation → `released` immediately; `released` is excluded from busy, so the slot is free for the *next* request at once. Cancelling `ready`/`active` goes through `cleaning` (still busy) until `released`. Freed slots are never back-filled retroactively: earlier shifted grants stay where they were placed (FCFS grants are final).
 - **Back-to-back same `hw_class`** → no reflash: the gap is `DAOLAB_CLEANUP_MIN + DAOLAB_PROVISION_LEAD_MIN` = 15 min (example 2). Likewise a use case with `hw_class` null/omitted runs on whatever class the DPU has — never triggers `ebf_set`, never takes the long lead, and never changes the projection.
 - **N setups with partial capability overlap.** `requires [octeon-cn106, e810, wire]` with setup-01 `[e810, octeon-cn106, sdp, wire]` and a fixture `setup-02` `[gpu, octeon-cn106, sdp]`: only setup-01 is a candidate — partial overlap is not a match. If *both* satisfy `requires`, each is swept independently and the tie-break table decides; a request that would shift on setup-01 is granted unshifted on a free setup-02.
 - **Setup without a DPU member** (pure `nic`/`compute`/`gpu`): `has_dpu` is false, hw_class logic is inert, lead is always `DAOLAB_PROVISION_LEAD_MIN`; the cleanup buffer still applies.
@@ -332,7 +332,7 @@ Let S = candidate setups, R = timeline rows per setup (reservations not in `rele
 | 8 | `test_projection_threads_through_queue` | r1 class A, r2 class B queued; r3 class B after r2 | r3 gets short lead (predecessor projects B, not the DB's A) |
 | 9 | `test_released_frees_slot` | r1 10:00–12:00 `released`; request 10:00 | Granted 10:00 unshifted — cancellation freed the slot |
 | 10 | `test_failed_excluded_from_timeline` | r1 in `failed` | Timeline ignores it; grant lands at the requested start |
-| 11 | `test_all_busy_states_block` | r1 in each of `queued/provisioning/ready/active/tearing_down` | Every one conflicts and shifts the new request |
+| 11 | `test_all_busy_states_block` | r1 in each of `queued/provisioning/ready/active/cleaning/quarantined` | Every one conflicts and shifts the new request |
 | 12 | `test_partial_overlap_not_candidate` | setup-02 `[gpu, octeon-cn106, sdp]`; `requires [octeon-cn106, e810, wire]` | Only setup-01 candidate; setup-02 never selected |
 | 13 | `test_two_setups_earliest_start_wins` | setup-01 busy, satisfying setup-02 free | Granted on setup-02 at the requested start, `shifted=False` |
 | 14 | `test_tie_prefers_no_reflash_then_name` | Two free setups, equal starts, one needs reflash | No-reflash setup wins; with equal leads the alphabetically first name wins |
@@ -374,7 +374,7 @@ B-11 adds the turnaround-buffer cases (same file; `CFG` now carries `cleanup_min
 | B-11.1 | `test_gap_constants_match_the_documented_numbers` | — | same-class gap 15, reflash gap 25 |
 | B-11.2 | `test_cleanup_min_is_configurable` / `test_cleanup_zero_restores_the_pre_b11_gap` | r1 ends 12:00; `cleanup_min` 0 / 10 / 30 | first start 12:05 / 12:15 / 12:35; with 0, `at` 12:04 `NoFit`, 12:05 `Placed` |
 | B-11.3 | `test_setup_without_dpu_still_gets_cleanup` | No DPU member; r1 ends 12:00 | next start 12:15, `lead_min == 5` |
-| B-11.4 | `test_cleanup_blocks_every_live_state_until_released` | r1 `tearing_down`, then `released` | 12:15 while live; 12:00 once released |
+| B-11.4 | `test_cleanup_blocks_every_live_state_until_released` | r1 `cleaning`, then `released` | 12:15 while live; 12:00 once released |
 | B-11.5 | `test_new_booking_leaves_room_for_its_own_cleanup` | r1 12:00–14:00 (lead 5); `at` 2 h from 09:50 | `NoFit`; `asap` → 14:15; a 1 h booking from 09:50 fits |
 | B-11.6 | `test_later_reflash_booking_needs_the_longer_gap_before_it` | r1 (other class) at 12:00 → lead 15 | window ending 11:35 `Placed`; 11:36 `NoFit` |
 | B-11.7 | `test_turnaround_only_adds_time_after_never_before_the_start` | Empty timeline | granted at exactly the requested start |

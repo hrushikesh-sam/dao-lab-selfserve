@@ -8,8 +8,12 @@ from . import migrations
 
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
-BUSY_STATES = ("queued", "provisioning", "ready", "active", "tearing_down")
-HELD_STATES = ("provisioning", "ready", "active", "tearing_down")
+# Reservation states (plan/09 §10). `cleaning` replaced `tearing_down` and `quarantined`
+# (cleanup left residue) is new in B-21; the DB CHECK is kept in step by migration 6.
+RESERVATION_STATES = ("queued", "provisioning", "ready", "active", "cleaning", "quarantined",
+                      "released", "failed")
+BUSY_STATES = ("queued", "provisioning", "ready", "active", "cleaning", "quarantined")
+HELD_STATES = ("provisioning", "ready", "active", "cleaning", "quarantined")
 TERMINAL_STATES = ("released", "failed")
 # Per-user quota buckets (B-15): a reservation is "live" while it owns a setup (deploying or
 # deployed) and "future" while it is only booked. plan/09 §4 caps these at 1 and 2.
@@ -365,3 +369,58 @@ def append_job_step(conn, job_id: int, name: str, state: str = "ok",
         if cur.rowcount == 1:
             return step
     raise JobError(f"job {job_id}: could not append step {name!r} (too much contention)")
+
+
+# ---- reservation state machine (B-21) ----------------------------------------
+
+# plan/09 §10, edge for edge. `failed -> released` happens once the cleanup of a failed
+# deploy is verified; `quarantined -> released` after reconcile / force-clean.
+RESERVATION_TRANSITIONS = {
+    "queued": ("provisioning", "released"),
+    "provisioning": ("ready", "failed"),
+    "ready": ("active", "cleaning"),
+    "active": ("cleaning",),
+    "cleaning": ("released", "quarantined"),
+    "quarantined": ("released",),
+    "failed": ("released",),
+    "released": (),
+}
+
+
+class ReservationStateError(Exception):
+    """An illegal reservation state change, or the row changed under us."""
+
+
+def transition_reservation(conn, res_id: int, new_state: str, from_state: str | None = None,
+                           failure_reason: str | None = None) -> None:
+    """Move a reservation along the plan/09 §10 state machine (compare-and-set).
+
+    Reads the current state, checks the move against RESERVATION_TRANSITIONS and writes with
+    `UPDATE ... WHERE id = ? AND state = <the state we validated>`, so a concurrent change
+    makes this raise instead of silently overwriting it. Pass `from_state` when the caller
+    decided based on an earlier read: if the row is no longer in that state this raises.
+    `failure_reason` may be given only when moving to `failed`."""
+    row = reservation_by_id(conn, res_id)
+    if row is None:
+        raise ReservationStateError(f"no reservation {res_id}")
+    if new_state not in RESERVATION_STATES:
+        raise ReservationStateError(
+            f"unknown reservation state {new_state!r}; expected one of {RESERVATION_STATES}")
+    current = row["state"]
+    if from_state is not None and current != from_state:
+        raise ReservationStateError(
+            f"reservation {res_id}: expected state {from_state}, found {current}")
+    if new_state not in RESERVATION_TRANSITIONS[current]:
+        raise ReservationStateError(f"reservation {res_id}: cannot go {current} -> {new_state}")
+    if failure_reason is not None and new_state != "failed":
+        raise ReservationStateError(
+            f"reservation {res_id}: failure_reason is only recorded when moving to failed")
+    changes = {"state": new_state, "updated_at": utcnow()}
+    if new_state == "failed":
+        changes["failure_reason"] = failure_reason
+    assign = ", ".join(f"{k} = ?" for k in changes)
+    cur = conn.execute(f"UPDATE reservations SET {assign} WHERE id = ? AND state = ?",
+                       [*changes.values(), res_id, current])
+    if cur.rowcount != 1:
+        raise ReservationStateError(
+            f"reservation {res_id}: state changed concurrently (expected {current})")

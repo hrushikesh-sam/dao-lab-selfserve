@@ -164,12 +164,44 @@ def _m5_jobs(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state, id)")
 
 
+def _m6_reservation_states(conn: sqlite3.Connection) -> None:
+    """plan/09 §10 (B-21): `tearing_down` becomes `cleaning` and a new `quarantined` state
+    appears (cleanup left residue). The baseline `reservations.state` CHECK lists the old
+    names and SQLite cannot ALTER a CHECK, so this rewrites the table definition in place
+    (the procedure SQLite documents for *relaxing* a constraint: no data is copied, so the
+    foreign keys from vms / ip_leases / jobs are never touched), then renames existing
+    `tearing_down` rows. Idempotent: an already-rewritten table is left alone. If the
+    expected text is not found the migration fails loudly and rolls back instead of
+    guessing."""
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'reservations'"
+    ).fetchone()[0]
+    if "'quarantined'" not in sql:
+        if _OLD_STATES not in sql:
+            raise RuntimeError(
+                "migration 6: cannot find the reservations.state CHECK to rewrite "
+                f"(expected {_OLD_STATES!r} in the table definition)")
+        version = conn.execute("PRAGMA schema_version").fetchone()[0]
+        conn.execute("PRAGMA writable_schema = ON")
+        conn.execute(
+            "UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = 'reservations'",
+            (sql.replace(_OLD_STATES, _NEW_STATES, 1),))
+        conn.execute(f"PRAGMA schema_version = {int(version) + 1}")
+        conn.execute("PRAGMA writable_schema = OFF")
+    conn.execute("UPDATE reservations SET state = 'cleaning' WHERE state = 'tearing_down'")
+
+
+_OLD_STATES = "'tearing_down', 'released', 'failed'"
+_NEW_STATES = "'cleaning', 'quarantined', 'released', 'failed'"
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
     Migration(3, "setup_availability", _m3_setup_availability),
     Migration(4, "audit_events", _m4_audit_events),
     Migration(5, "jobs", _m5_jobs),
+    Migration(6, "reservation_states", _m6_reservation_states),
 ]
 
 

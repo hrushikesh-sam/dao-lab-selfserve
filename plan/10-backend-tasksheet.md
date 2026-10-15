@@ -84,7 +84,7 @@ Status values: `todo` · `doing` · `review` · `done` · `blocked`.
 | ID | Task | Files | Depends | Done when | Owner | Status |
 |---|---|---|---|---|---|---|
 | B-20 | Jobs entity: kind (`deploy`/`cleanup`/`health_probe`/`reconcile`), state, attempt, trace_id, steps, log path | `migrations.py` (v5; `schema.sql` is the frozen baseline), `models.py`, `tests/test_jobs.py` | B-03 | model helpers + unit tests | Akshay | review |
-| B-21 | Reservation states: rename `tearing_down` → `cleaning`; add `quarantined`; CAS-style transition helper | `models.py`, `api.py` | B-20 | invalid transitions raise; existing tests updated | Akshay | todo |
+| B-21 | Reservation states: rename `tearing_down` → `cleaning`; add `quarantined`; CAS-style transition helper | `migrations.py` (v6 rewrites the state CHECK), `models.py`, `api.py`, `dashboard/*.html`, `tests/test_reservation_states.py` | B-20 | invalid transitions raise; existing tests updated | Akshay | review |
 | B-22 | `runner.py` interface: `deploy(res)`, `cleanup(res)`, `probe(res)`, `verify_clean(res)`; `ansible` and `mock` backends chosen by `DAOLAB_RUNNER` | `runner.py` | B-20 | mock runs step by step with sleeps, records steps on the job; `DAOLAB_MOCK_FAIL=deploy\|cleanup` injects failures | Akshay | todo |
 | B-23 | `engine.py` tick: queued→provisioning (start − lead, setup free & available), ready→active, active→cleaning at end_at, run pending jobs | `engine.py` | B-21, B-22 | `python -m service.engine` runs one tick; `--loop` ticks every interval | Akshay | todo |
 | B-24 | Single-flight per setup: at most one running deploy/cleanup/reconcile job per setup (probes exempt) | `engine.py`, `models.py` | B-23 | test: two pending mutating jobs → only one runs | Akshay | todo |

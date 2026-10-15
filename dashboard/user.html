@@ -208,7 +208,7 @@ async function saveToken() {
 }
 
 const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
-                     tearing_down:"b-amber", released:"b-muted", failed:"b-red"};
+                     cleaning:"b-amber", quarantined:"b-red", released:"b-muted", failed:"b-red"};
 const CANCELABLE = ["queued", "ready", "active"];
 
 if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});

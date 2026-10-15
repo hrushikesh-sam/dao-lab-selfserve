@@ -195,7 +195,7 @@ def test_11_cancel_matrix(env):
     assert r.json() == {"id": rid, "state": "released"}
     rid2 = reserve(env, env.user_token).json()["id"]
     env.models.update(env.conn, "reservations", rid2, {"state": "ready"})
-    assert env.client.delete(f"/reservations/{rid2}", headers=H(env.user_token)).json()["state"] == "tearing_down"
+    assert env.client.delete(f"/reservations/{rid2}", headers=H(env.user_token)).json()["state"] == "cleaning"
     rid3 = reserve(env, env.user_token).json()["id"]
     env.models.update(env.conn, "reservations", rid3, {"state": "provisioning"})
     assert_error(env.client.delete(f"/reservations/{rid3}", headers=H(env.user_token)),

@@ -525,14 +525,20 @@ def cancel_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
                        conn: sqlite3.Connection = Depends(db_conn)):
     row = _owned_reservation(conn, res_id, user)
     if row["state"] == "queued":
-        new_state = "released"        # nothing ran, nothing to tear down
+        new_state = "released"        # nothing ran, nothing to clean
     elif row["state"] in ("ready", "active"):
-        new_state = "tearing_down"    # the engine runs the teardown
+        new_state = "cleaning"        # the engine runs the cleanup
     else:
         raise DaolabError("invalid_state", 409,
                           f"cannot cancel a reservation in state {row['state']}",
                           {"state": row["state"]})
-    models.update(conn, "reservations", res_id, {"state": new_state})
+    try:
+        models.transition_reservation(conn, res_id, new_state, from_state=row["state"])
+    except models.ReservationStateError:   # the engine moved it between our read and write
+        current = models.reservation_by_id(conn, res_id)["state"]
+        raise DaolabError("invalid_state", 409,
+                          f"cannot cancel a reservation in state {current}",
+                          {"state": current})
     models.audit(conn, user["username"], "cancel", "reservation", res_id,
                  {"previous_state": row["state"], "state": new_state})
     return {"id": res_id, "state": new_state}

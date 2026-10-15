@@ -117,7 +117,8 @@ def test_failed_excluded_from_timeline(db):
     assert p.start_at == T(10) and p.shifted is False
 
 
-@pytest.mark.parametrize("state", ["queued", "provisioning", "ready", "active", "tearing_down"])
+@pytest.mark.parametrize("state", ["queued", "provisioning", "ready", "active", "cleaning",
+                                   "quarantined"])
 def test_all_busy_states_block(db, state):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12), state=state)
@@ -329,7 +330,8 @@ def test_at_window_ending_into_a_later_booking(db, end_minute, free):
     assert isinstance(p, Placed) is free
 
 
-@pytest.mark.parametrize("state", ["queued", "provisioning", "ready", "active", "tearing_down"])
+@pytest.mark.parametrize("state", ["queued", "provisioning", "ready", "active", "cleaning",
+                                   "quarantined"])
 def test_at_all_busy_states_block(db, state):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12), state=state)
@@ -428,7 +430,8 @@ def test_at_and_asap_agree_on_random_timelines(db, cfg):
            mk_usecase(db, "uc-n", REQ, hw_class=None)]
     names = ["uc-a", "uc-b", "uc-n"]
     setups = [r["id"] for r in db.execute("SELECT id FROM setups ORDER BY name")]
-    states = ["queued", "provisioning", "ready", "active", "tearing_down", "released", "failed"]
+    states = ["queued", "provisioning", "ready", "active", "cleaning", "quarantined",
+              "released", "failed"]
     granted = conflicts = 0
     for _ in range(400):
         db.execute("DELETE FROM reservations")
@@ -486,7 +489,7 @@ def test_setup_without_dpu_still_gets_cleanup(db):
 
 def test_cleanup_blocks_every_live_state_until_released(db):
     sid, uid = std(db)
-    rid = mk_res(db, sid, uid, T(10), T(12), state="tearing_down")
+    rid = mk_res(db, sid, uid, T(10), T(12), state="cleaning")
     assert scheduler.place(db, req(start=T(12)), NOW, CFG).start_at == T(12, 15)
     db.execute("UPDATE reservations SET state = 'released' WHERE id = ?", (rid,))
     assert scheduler.place(db, req(start=T(12)), NOW, CFG).start_at == T(12)   # buffer freed too

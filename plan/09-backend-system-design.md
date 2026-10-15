@@ -525,8 +525,9 @@ P1–P3 land:
   `/health`, `/health/probe`, `/events`, `/jobs/{id}`, `/internal/leases`,
   `/internal/authz/keys`, `/admin/setups/{name}/force-clean`.
 - **[04-lifecycle-engine.md](04-lifecycle-engine.md):** `tearing_down` becomes `cleaning`
-  (teardown + verify + reconcile), and the `quarantined` state is added. Procedures run as job
-  rows.
+  (teardown + verify + reconcile), and the `quarantined` state is added (both done in B-21:
+  `models.RESERVATION_TRANSITIONS` is this section's diagram edge for edge). Procedures run as
+  job rows.
 - **[05-provisioning.md](05-provisioning.md):** the four playbooks become roles under a single
   `deploy.yml` plus `cleanup.yml`. VM IPs are leased and set statically through cloud-init
   instead of being discovered through guest tools. The inventory collapses to one XCP-ng host
