@@ -278,3 +278,29 @@ def test_18_reservation_diagram_and_credentials(env):
     assert "e810-vf" in d                            # client -> proxy edge
     queued = reserve(env, env.user_token).json()
     assert queued["diagram"] is None                 # no vms yet -> no diagram
+
+
+def test_19_owner_only_credentials(env):
+    """B-54: ssh lines + VM/DPU IPs are returned only to the owner or an admin."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    rid = reserve(env, alice).json()["id"]
+    for role, host, tpl, name, ip in [
+            ("proxy", "dpu-01", None, None, "10.20.0.10"),
+            ("backend", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21")]:
+        env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": role, "host": host,
+                                            "template": tpl, "name": name, "ip": ip})
+    # the owner sees the credentials
+    obj = env.client.get(f"/reservations/{rid}", headers=H(alice)).json()
+    vms = {v["role"]: v for v in obj["vms"]}
+    assert vms["backend"]["ssh"] == "ssh alice@10.20.0.21"
+    assert "10.20.0.10" in obj["diagram"]
+    # a non-owner is refused the object outright, with no IPs in the error body
+    err = assert_error(env.client.get(f"/reservations/{rid}", headers=H(bob)), 403, "forbidden")
+    assert "10.20.0." not in str(err)
+    # a non-owner's own listing never contains someone else's rows (or IPs)
+    assert env.client.get("/reservations", headers=H(bob)).json() == []
+    # an admin sees them in the ?all=1 view
+    admin_rows = env.client.get("/reservations?all=1", headers=H(env.admin_token)).json()
+    assert [r["id"] for r in admin_rows] == [rid]
+    assert "ssh alice@10.20.0.21" in str(admin_rows)
