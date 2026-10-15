@@ -1,0 +1,76 @@
+# deploy/otel/otel-collector.yaml — otelcol-contrib config (B-60).
+# Receivers: otlp (apps/agents/Ansible callback), httpcheck + tcpcheck (per-reservation
+# probes), prometheus (VPP / NGINX exporters on the DPU). Metrics -> Prometheus via
+# remote-write; traces -> Jaeger via OTLP.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Pull-based probes (whole-testbed by default; per-reservation targets come later
+  # from B-68's mock exporter and the use-case YAML).
+  httpcheck:
+    collection_interval: 15s
+    targets:
+      - endpoint: http://127.0.0.1:8888/metrics   # placeholder target, keeps the pipeline valid
+        method: GET
+
+  tcpcheck:
+    collection_interval: 15s
+    targets:
+      - endpoint: 127.0.0.1:8888
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: vpp
+          static_configs:
+            - targets: ["dpu-01:9273"]
+        - job_name: nginx
+          static_configs:
+            - targets: ["dpu-01:9113"]
+
+processors:
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: daolab
+        action: upsert
+  batch: {}
+
+exporters:
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    resource_to_telemetry_conversion:
+      enabled: true            # promote resource attrs to labels (daolab_reservation, ...)
+  otlp:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp, httpcheck, tcpcheck, prometheus]
+      processors: [resource, batch]
+      exporters: [prometheusremotewrite]
