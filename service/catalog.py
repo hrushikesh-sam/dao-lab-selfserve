@@ -3,6 +3,7 @@
 Validation is all-or-nothing: any error -> SyncError listing one
 'file: field: problem' line per issue, nothing written.
 """
+import ipaddress
 import json
 import os
 import re
@@ -19,6 +20,7 @@ EXPECT = re.compile(r"^(==|!=|>=|<=|>|<)\s*-?\d+(\.\d+)?$")
 KINDS = ("dpu", "gpu", "nic", "compute")
 ON_VALUES = ("dpu", "dpu_host", "tg_host")
 SEVERITIES = ("critical", "degraded")
+DEFAULT_IP_POOL = "default"     # the single DAOLAB_IP_POOL-backed pool (B-43)
 
 # Seeded by `daolab init` from the root README use-case table; doc_url/doc_summary
 # carry the verbatim intro text and page link from the DAO application docs.
@@ -388,6 +390,34 @@ def load_setups(dir_path: str, known_hosts: set[str]) -> tuple[list[dict], list[
     return out, errors
 
 
+def _parse_ip_range(span: str) -> tuple[str, str]:
+    """Parse DAOLAB_IP_POOL (``START-END``) into two IPv4 strings."""
+    start, _, end = span.partition("-")
+    start, end = start.strip(), end.strip()
+    try:
+        a, b = ipaddress.ip_address(start), ipaddress.ip_address(end)
+    except ValueError:
+        raise SyncError([f"DAOLAB_IP_POOL={span!r}: expected START-END of IPv4 "
+                         "addresses, e.g. 10.30.0.100-10.30.0.199"])
+    if int(a) > int(b):
+        raise SyncError([f"DAOLAB_IP_POOL={span!r}: start {start} is after end {end}"])
+    return start, end
+
+
+def _sync_ip_pool(conn: sqlite3.Connection) -> None:
+    """Load the IP pool from DAOLAB_IP_POOL (B-43). Idempotent: it updates the single
+    pool row in place and never touches ip_leases, so shrinking the range cannot drop a
+    live (leased or quarantined) lease."""
+    from . import config
+    start, end = _parse_ip_range(config.settings.ip_pool)
+    fields = {"range_start": start, "range_end": end}
+    row = models.ip_pool_by_name(conn, DEFAULT_IP_POOL)
+    if row is None:
+        models.insert(conn, "ip_pools", {"name": DEFAULT_IP_POOL, **fields})
+    else:
+        models.update(conn, "ip_pools", row["id"], fields)
+
+
 def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
          setups_dir: str | None = None, inventory_path: str | None = None) -> dict:
     from . import config
@@ -407,6 +437,8 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
         for s in sts:
             if conn.execute("SELECT id FROM pools WHERE name = ?", (s["pool"],)).fetchone() is None:
                 models.insert(conn, "pools", {"name": s["pool"]})
+        # ip pool (DAOLAB_IP_POOL)
+        _sync_ip_pool(conn)
         # setups + resources
         for s in sts:
             pool_id = conn.execute("SELECT id FROM pools WHERE name = ?", (s["pool"],)).fetchone()["id"]
