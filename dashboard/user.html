@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>daolab</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  :root { --bg:#f6f8fa; --card:#fff; --line:#d0d7de; --text:#1f2328; --muted:#656d76;
+          --accent:#0969da; --green:#1a7f37; --amber:#9a6700; --red:#cf222e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 20px; background:#24292f; color:#fff; }
+  header h1 { font-size:16px; margin:0; }
+  header .spacer { flex:1; }
+  header button { background:#57606a; color:#fff; border:0; border-radius:6px; padding:5px 10px; cursor:pointer; }
+  header a { color:#9cc3f5; font-size:13px; }
+  main { max-width:1100px; margin:20px auto; padding:0 16px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px;
+            margin-bottom:20px; overflow:hidden; }
+  section > h2 { font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+                 margin:0; padding:10px 16px; border-bottom:1px solid var(--line); background:#f6f8fa; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px 16px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); font-weight:600; }
+  tr:last-child td { border-bottom:0; }
+  code { background:#f0f2f4; padding:1px 5px; border-radius:4px; font-size:13px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; font-weight:600; }
+  .b-green { background:#dafbe1; color:var(--green); }  .b-grey { background:#eaeef2; color:var(--muted); }
+  .b-amber { background:#fff8c5; color:var(--amber); }  .b-red { background:#ffebe9; color:var(--red); }
+  .b-muted { background:#f0f2f4; color:#8c959f; }
+  .variant { color:var(--muted); font-size:12px; margin-left:6px; }
+  button.act { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:4px 12px; cursor:pointer; }
+  button.act:hover { filter:brightness(1.1); }
+  button.cancel { background:#fff; color:var(--red); border:1px solid var(--line); border-radius:6px;
+                  padding:3px 10px; cursor:pointer; }
+  .muted { color:var(--muted); }
+  .empty { padding:14px 16px; color:var(--muted); }
+  #banner { display:none; margin:0 0 16px; padding:10px 14px; border-radius:8px; border:1px solid #ffb1b1;
+            background:#ffebe9; color:var(--red); }
+  #banner.ok { border-color:#a6e9b6; background:#dafbe1; color:var(--green); }
+  #banner .close { float:right; cursor:pointer; font-weight:700; }
+  #apidown { display:none; margin:0 0 16px; padding:10px 14px; border-radius:8px;
+             border:1px solid #f0d060; background:#fff8c5; color:var(--amber); }
+  #banner details { margin-top:6px; } #banner pre { margin:4px 0 0; white-space:pre-wrap; }
+  .overlay { display:none; position:fixed; inset:0; background:rgba(31,35,40,.5); z-index:10; }
+  .modal { background:#fff; border-radius:10px; max-width:460px; margin:10vh auto; padding:20px 24px; }
+  .modal h3 { margin:0 0 14px; font-size:16px; }
+  .modal label { display:block; font-size:12px; color:var(--muted); margin:10px 0 3px; }
+  .modal input, .modal select { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-size:14px; }
+  .modal .row { display:flex; gap:8px; align-items:center; margin-top:6px; }
+  .modal .row input { flex:1; }
+  .modal .row button { border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer; padding:4px 9px; }
+  .modal .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+  .modal .actions .secondary { background:#fff; color:var(--text); border:1px solid var(--line); }
+  .shift { background:#fff8c5; color:var(--amber); border-radius:6px; padding:2px 8px; font-size:12px; }
+  .vms td { border-bottom:0; padding:3px 16px; font-size:13px; }
+  button.info { width:22px; height:22px; border-radius:50%; border:1px solid var(--line); background:#fff;
+                color:var(--accent); font-weight:700; font-style:italic; font-family:Georgia,serif;
+                cursor:pointer; margin-right:6px; }
+  button.info:hover { background:#ddf4ff; }
+  .modal.wide { max-width:760px; max-height:82vh; overflow-y:auto; }
+  .modal blockquote { margin:10px 0; padding:10px 14px; border-left:3px solid var(--accent);
+                      background:#f6f8fa; border-radius:0 6px 6px 0; color:var(--text); }
+  .cap { display:inline-block; background:#ddf4ff; color:#0550ae; border-radius:6px;
+         padding:1px 8px; font-size:12px; margin:0 4px 4px 0; }
+  .topo { border:1px solid var(--line); border-radius:8px; padding:10px; margin:8px 0;
+          overflow-x:auto; background:#fff; }
+  .topo pre { margin:0; font-size:12px; }
+  table.creds { margin:6px 0; }
+  table.creds th, table.creds td { padding:4px 10px; font-size:13px; }
+  .modal h4 { margin:16px 0 4px; font-size:13px; letter-spacing:.05em; text-transform:uppercase;
+              color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>daolab</h1>
+  <span class="spacer"></span>
+  <span id="identity" class="muted" style="color:#c8d1da"></span>
+  <button onclick="changeToken()">change token</button>
+  <button onclick="refresh()">refresh</button>
+</header>
+<main>
+  <div id="banner"><span class="close" onclick="hideBanner()">&times;</span><span id="banner-msg"></span><details id="banner-detail" hidden><summary>detail</summary><pre id="banner-pre"></pre></details></div>
+  <div id="apidown">API unreachable — retrying</div>
+
+  <section>
+    <h2>Use-case catalog</h2>
+    <table id="catalog">
+      <thead><tr><th>use case</th><th>what it is</th><th>status</th><th>availability</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="catalog-empty" hidden>catalog empty — run <code>daolab init &amp;&amp; daolab sync</code></div>
+  </section>
+
+  <section>
+    <h2>My reservations</h2>
+    <table id="reservations">
+      <thead><tr><th>id</th><th>usecase</th><th>setup</th><th>state</th><th>slot</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="res-empty" hidden>no reservations yet — pick a use case above</div>
+  </section>
+</main>
+
+<div class="overlay" id="gate">
+  <div class="modal">
+    <h3>daolab token</h3>
+    <p class="muted">Paste the bearer token printed by <code>daolab add-user</code>.</p>
+    <input type="password" id="gate-token" placeholder="token">
+    <div class="actions"><button class="act" onclick="saveToken()">Save</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="info-modal">
+  <div class="modal wide">
+    <h3 id="im-title"></h3>
+    <div id="im-body"></div>
+    <div class="actions"><button class="act" onclick="closeInfo()">Close</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="reserve-modal">
+  <div class="modal">
+    <h3 id="rm-title">Reserve</h3>
+    <label>start (blank = now)</label>
+    <input type="datetime-local" id="rm-start">
+    <label>hours</label>
+    <input type="number" id="rm-hours" min="1" value="1">
+    <div id="rm-diy" hidden>
+      <label>setup</label>
+      <input type="text" id="rm-setup" placeholder="setup-01" list="rm-setup-list">
+      <datalist id="rm-setup-list"></datalist>
+      <label>templates (one per VM host of the setup)</label>
+      <div id="rm-templates"></div>
+      <div class="row"><button type="button" onclick="addTemplateRow('','')">+ add host</button></div>
+    </div>
+    <div class="actions">
+      <button class="act secondary" onclick="closeReserve()">Cancel</button>
+      <button class="act" onclick="submitReserve()">Reserve</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOKEN_KEY = "daolab_token";
+const getToken  = () => localStorage.getItem(TOKEN_KEY);
+let ME = null, SETUPS = null, POLL_MS = 15000;
+
+class ApiError extends Error {
+  constructor(status, err) {            // err = {code, message, detail} per the API error model
+    super(err.message);
+    this.status = status; this.code = err.code; this.detail = err.detail;
+  }
+}
+
+async function api(path, {method = "GET", body = null} = {}) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: {"Authorization": "Bearer " + getToken(),
+                ...(body ? {"Content-Type": "application/json"} : {})},
+      body: body ? JSON.stringify(body) : null,
+    });
+  } catch (e) {
+    document.getElementById("apidown").style.display = "block";
+    throw e;
+  }
+  document.getElementById("apidown").style.display = "none";
+  const data = await res.json();
+  if (!res.ok) {
+    if (res.status === 401) { localStorage.removeItem(TOKEN_KEY); showTokenGate(); }
+    throw new ApiError(res.status, data.error);
+  }
+  return data;
+}
+
+const toUtc = v =>                       // datetime-local (local tz) -> UTC ISO-8601 Z
+  v ? new Date(v).toISOString().replace(/\.\d{3}Z$/, "Z") : "now";
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function showBanner(msg, detail, ok=false) {
+  const b = document.getElementById("banner");
+  b.style.display = "block"; b.className = ok ? "ok" : "";
+  document.getElementById("banner-msg").textContent = msg;
+  const d = document.getElementById("banner-detail");
+  if (detail && Object.keys(detail).length) {
+    d.hidden = false; document.getElementById("banner-pre").textContent = JSON.stringify(detail, null, 2);
+  } else d.hidden = true;
+}
+function hideBanner() { document.getElementById("banner").style.display = "none"; }
+function reportError(e) {
+  if (e instanceof ApiError) showBanner(`${e.code} — ${e.message}`, e.detail);
+}
+
+function showTokenGate() { document.getElementById("gate").style.display = "block"; }
+function changeToken()  { localStorage.removeItem(TOKEN_KEY); ME = null; showTokenGate(); }
+async function saveToken() {
+  localStorage.setItem(TOKEN_KEY, document.getElementById("gate-token").value.trim());
+  document.getElementById("gate").style.display = "none";
+  document.getElementById("gate-token").value = "";
+  await boot();
+}
+
+const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
+                     tearing_down:"b-amber", released:"b-muted", failed:"b-red"};
+const CANCELABLE = ["queued", "ready", "active"];
+
+if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
+let MERMAID_N = 0;
+async function renderMermaidInto(elId, source) {       // falls back to the raw source if mermaid is unavailable
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!window.mermaid) { el.innerHTML = `<pre>${esc(source)}</pre>`; return; }
+  try {
+    const {svg} = await mermaid.render("mm" + (++MERMAID_N), source);
+    el.innerHTML = svg;
+  } catch (e) { el.innerHTML = `<pre>${esc(source)}</pre>`; }
+}
+
+function availabilityCell(r) {
+  if (r.available) {
+    let txt = "available";
+    if (r.next_free_at && new Date(r.next_free_at) > new Date()) txt += ` · next free ${r.next_free_at}`;
+    return `<span class="badge b-green">available</span>${r.next_free_at && new Date(r.next_free_at) > new Date() ? ` <span class="muted">next free ${esc(r.next_free_at)}</span>` : ""}`;
+  }
+  if (r.reason === "no_yaml") return `<span class="muted">planned — no YAML yet</span>`;
+  if (r.reason === "unmet_capability") return `<span class="badge b-red">missing: ${esc(r.missing.join(", "))}</span>`;
+  if (r.reason === "no_free_slot") return `<span class="badge b-amber">no free slot within horizon</span>`;
+  return "";
+}
+
+let CATALOG = [];
+async function loadCatalog() {
+  const rows = await api("/usecases");
+  CATALOG = rows;
+  const tbody = document.querySelector("#catalog tbody");
+  document.getElementById("catalog-empty").hidden = rows.length > 0;
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td><code>${esc(r.name)}</code>${r.variant ? `<span class="variant">${esc(r.variant)}</span>` : ""}</td>
+      <td>${esc(r.description)}</td>
+      <td><span class="badge ${r.status === "active" ? "b-green" : "b-grey"}">${esc(r.status)}</span></td>
+      <td>${availabilityCell(r)}</td>
+      <td style="white-space:nowrap"><button class="info" title="about this use case" onclick="openInfo('${esc(r.name)}')">i</button>${r.available ? `<button class="act" onclick="openReserve('${esc(r.name)}')">Reserve</button>` : ""}</td>
+    </tr>`).join("");
+}
+
+async function loadReservations() {
+  const rows = await api("/reservations");
+  const tbody = document.querySelector("#reservations tbody");
+  document.getElementById("res-empty").hidden = rows.length > 0;
+  tbody.innerHTML = rows.map(r => {
+    const cancel = CANCELABLE.includes(r.state)
+      ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>` : "";
+    const shifted = r.shifted ? ` <span class="shift">shifted from ${esc(r.requested_start_at)}</span>` : "";
+    const fail = r.state === "failed" && r.failure_reason
+      ? `<tr class="vms"><td></td><td colspan="5"><span class="badge b-red">${esc(r.failure_reason)}</span></td></tr>` : "";
+    const vms = r.vms.length ? `
+      <tr class="vms"><td></td><td colspan="5">
+        <table class="creds">
+          <thead><tr><th>role</th><th>where</th><th>vm</th><th>ip</th><th>login</th><th>credentials</th></tr></thead>
+          <tbody>${r.vms.map(vm => `
+            <tr><td><code>${esc(vm.role)}</code></td><td>${esc(vm.host)}</td>
+                <td>${vm.name ? `<code>${esc(vm.name)}</code>` : '<span class="muted">on the DPU (no VM)</span>'}</td>
+                <td>${vm.ip ? `<code>${esc(vm.ip)}</code>` : '<span class="muted">waiting for IP</span>'}</td>
+                <td>${vm.ssh ? `<code>${esc(vm.ssh)}</code>` : (vm.ip ? '<span class="muted">service endpoint</span>' : '<span class="muted">—</span>')}</td>
+                <td>${vm.username ? `user <b>${esc(vm.username)}</b> · your registered SSH key` : '<span class="muted">—</span>'}</td></tr>`).join("")}
+          </tbody>
+        </table>
+        ${r.diagram ? `<div class="topo" id="res-diagram-${r.id}"></div>` : ""}
+      </td></tr>` : "";
+    return `
+      <tr>
+        <td>${r.id}</td><td><code>${esc(r.usecase)}</code>${r.diy ? ' <span class="badge b-grey">diy</span>' : ""}</td>
+        <td>${esc(r.setup)}</td>
+        <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span></td>
+        <td>${esc(r.start_at)} → ${esc(r.end_at)}${shifted}</td>
+        <td>${cancel}</td>
+      </tr>${fail}${vms}`;
+  }).join("");
+  rows.filter(r => r.diagram).forEach(r => renderMermaidInto("res-diagram-" + r.id, r.diagram));
+}
+
+async function cancelReservation(id) {
+  if (!confirm(`Cancel reservation #${id}?`)) return;
+  try {
+    const r = await api(`/reservations/${id}`, {method: "DELETE"});
+    showBanner(`reservation #${r.id} → ${r.state}`, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
+}
+
+// ---- use-case info modal ---------------------------------------------------
+const ON_LABEL = {dpu: "the OCTEON DPU", dpu_host: "VM on the DPU-node host",
+                  tg_host: "VM on the TG-node host"};
+
+function openInfo(name) {
+  const r = CATALOG.find(x => x.name === name);
+  if (!r) return;
+  document.getElementById("im-title").innerHTML =
+    `<code>${esc(r.name)}</code>${r.variant ? `<span class="variant">${esc(r.variant)}</span>` : ""}
+     <span class="badge ${r.status === "active" ? "b-green" : "b-grey"}" style="margin-left:8px">${esc(r.status)}</span>`;
+  let html = "";
+  if (r.doc_summary) html += `<blockquote>${esc(r.doc_summary)}</blockquote>`;
+  if (r.doc_url) html += `<p><a href="${esc(r.doc_url)}" target="_blank" rel="noopener">DAO documentation for ${esc(r.name)} ↗</a></p>`;
+  if (r.status === "planned") {
+    html += `<p class="muted">Not onboarded yet — this row becomes reservable once
+             <code>usecases/${esc(r.name)}.yml</code> exists and <code>daolab sync</code> runs.</p>`;
+  } else {
+    if (r.requires && r.requires.length)
+      html += `<h4>requires</h4><p>${r.requires.map(c => `<span class="cap">${esc(c)}</span>`).join("")}
+               ${r.hw_class ? `&nbsp; DPU personality: <code>${esc(r.hw_class)}</code>` : ""}</p>`;
+    const roles = Object.entries(r.roles || {});
+    if (roles.length) {
+      html += `<h4>roles</h4><table class="creds">
+        <thead><tr><th>role</th><th>runs on</th><th>software</th><th>wiring</th></tr></thead><tbody>` +
+        roles.map(([rn, s]) => `
+          <tr><td><code>${esc(rn)}</code></td><td>${esc(ON_LABEL[s.on] || s.on)}</td>
+              <td>${esc(s.app || s.vm || "")}${s.install ? ` + ${esc(Array.isArray(s.install) ? s.install.join(", ") : s.install)}` : ""}</td>
+              <td>${s.connect ? `<code>${esc(s.connect)}</code>` : ""}${s.upstream ? `${s.connect ? " · " : ""}upstream → <code>${esc(s.upstream)}</code>` : ""}${!s.connect && !s.upstream ? '<span class="muted">—</span>' : ""}</td></tr>`).join("") +
+        `</tbody></table>`;
+    }
+    if ((r.setups || []).length) {
+      r.setups.forEach((s, i) => {
+        const memberBits = s.members.map(m => `<code>${esc(m.name)}</code> (${esc(m.kind)} on ${esc(m.host)})`).join(" + ");
+        const linkBits = (s.links || []).map(l => `<code>${esc(l.a)}</code> ↔ <code>${esc(l.b)}</code> (${esc(l.capability)})`).join(", ");
+        html += `<h4>testbed · ${esc(s.name)}</h4>
+          <p class="muted">This use case runs on ${esc(s.name)}: ${memberBits}${linkBits ? `, wired ${linkBits}` : ""}.</p>
+          <div class="topo" id="im-diagram-${i}"></div>`;
+      });
+    } else {
+      html += `<p class="muted">No setup currently satisfies this use case's capabilities.</p>`;
+    }
+  }
+  document.getElementById("im-body").innerHTML = html;
+  document.getElementById("info-modal").style.display = "block";
+  (r.setups || []).forEach((s, i) => renderMermaidInto("im-diagram-" + i, s.diagram));
+}
+function closeInfo() { document.getElementById("info-modal").style.display = "none"; }
+
+// ---- reserve modal ---------------------------------------------------------
+let RM_USECASE = null;
+
+function addTemplateRow(host, template) {
+  const div = document.createElement("div");
+  div.className = "row";
+  div.innerHTML = `<input placeholder="host" value="${esc(host)}">
+                   <input placeholder="template" value="${esc(template || "tpl-ubuntu2204-dao")}">
+                   <button type="button" onclick="this.parentElement.remove()">&minus;</button>`;
+  document.getElementById("rm-templates").appendChild(div);
+}
+
+async function openReserve(name) {
+  RM_USECASE = name;
+  document.getElementById("rm-title").textContent = `Reserve ${name}`;
+  document.getElementById("rm-start").value = "";
+  document.getElementById("rm-hours").value = "1";
+  const diy = name === "diy";
+  document.getElementById("rm-diy").hidden = !diy;
+  if (diy) {
+    document.getElementById("rm-setup").value = "";
+    document.getElementById("rm-templates").innerHTML = "";
+    addTemplateRow("", "");
+    if (ME && ME.role === "admin") {                       // dropdown assist: /setups is admin-only
+      try {
+        SETUPS = await api("/setups");
+        document.getElementById("rm-setup-list").innerHTML =
+          SETUPS.map(s => `<option value="${esc(s.name)}">`).join("");
+        document.getElementById("rm-setup").onchange = () => {
+          const s = SETUPS.find(x => x.name === document.getElementById("rm-setup").value);
+          if (!s) return;
+          document.getElementById("rm-templates").innerHTML = "";
+          [...new Set(s.members.map(m => m.host))].forEach(h => addTemplateRow(h, ""));
+        };
+      } catch (e) { /* plain users type the name */ }
+    }
+  }
+  document.getElementById("reserve-modal").style.display = "block";
+}
+function closeReserve() { document.getElementById("reserve-modal").style.display = "none"; }
+
+async function submitReserve() {
+  const body = {usecase: RM_USECASE,
+                start_at: toUtc(document.getElementById("rm-start").value),
+                hours: parseInt(document.getElementById("rm-hours").value, 10) || 1};
+  if (RM_USECASE === "diy") {
+    body.setup = document.getElementById("rm-setup").value.trim();
+    body.templates = {};
+    for (const row of document.querySelectorAll("#rm-templates .row")) {
+      const [h, t] = row.querySelectorAll("input");
+      if (h.value.trim()) body.templates[h.value.trim()] = t.value.trim();
+    }
+  }
+  try {
+    const r = await api("/reservations", {method: "POST", body});
+    closeReserve();
+    let msg = `reserved #${r.id} on ${r.setup} · ${r.start_at} → ${r.end_at} · ${r.state}`;
+    if (r.shifted) msg += ` · slot shifted from ${r.requested_start_at}`;
+    showBanner(msg, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
+}
+
+// ---- boot + polling --------------------------------------------------------
+async function refresh() {
+  try { await Promise.all([loadCatalog(), loadReservations()]); }
+  catch (e) { reportError(e); }
+}
+
+async function boot() {
+  if (!getToken()) { showTokenGate(); return; }
+  try {
+    ME = await api("/whoami");
+    document.getElementById("identity").textContent = `${ME.username} (${ME.role})`;
+  } catch (e) { reportError(e); return; }
+  await refresh();
+}
+
+function poll(fn, ms) {
+  setInterval(() => { if (!document.hidden && getToken()) fn(); }, ms);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && getToken()) fn();
+  });
+}
+
+boot();
+poll(refresh, POLL_MS);
+</script>
+</body>
+</html>

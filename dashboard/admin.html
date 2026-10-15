@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>daolab admin</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<style>
+  :root { --bg:#f6f8fa; --card:#fff; --line:#d0d7de; --text:#1f2328; --muted:#656d76;
+          --accent:#0969da; --green:#1a7f37; --amber:#9a6700; --red:#cf222e; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:10px 20px; background:#1a1f24; color:#fff; }
+  header h1 { font-size:16px; margin:0; }
+  header .spacer { flex:1; }
+  header button { background:#57606a; color:#fff; border:0; border-radius:6px; padding:5px 10px; cursor:pointer; }
+  main { max-width:1200px; margin:20px auto; padding:0 16px; }
+  .cols { display:flex; gap:16px; align-items:flex-start; margin-bottom:20px; }
+  .pools { width:220px; flex-shrink:0; }
+  .detail { flex:1; min-width:0; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px;
+            margin-bottom:20px; overflow:hidden; }
+  section > h2 { font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);
+                 margin:0; padding:10px 16px; border-bottom:1px solid var(--line); background:#f6f8fa; }
+  .body { padding:12px 16px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:7px 16px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); font-weight:600; }
+  tr:last-child td { border-bottom:0; }
+  code { background:#f0f2f4; padding:1px 5px; border-radius:4px; font-size:13px; }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; font-weight:600; }
+  .b-green { background:#dafbe1; color:var(--green); }  .b-grey { background:#eaeef2; color:var(--muted); }
+  .b-amber { background:#fff8c5; color:var(--amber); }  .b-red { background:#ffebe9; color:var(--red); }
+  .b-muted { background:#f0f2f4; color:#8c959f; }
+  .muted { color:var(--muted); }
+  .empty { padding:14px 16px; color:var(--muted); }
+  .pool-name { padding:8px 16px; font-weight:600; border-bottom:1px solid var(--line); }
+  .setup-item { padding:6px 16px 6px 28px; cursor:pointer; border-bottom:1px solid #eaeef2; }
+  .setup-item:hover { background:#f0f6ff; }
+  .setup-item.sel { background:#ddf4ff; font-weight:600; }
+  .cap { display:inline-block; background:#ddf4ff; color:#0550ae; border-radius:6px;
+         padding:1px 8px; font-size:12px; margin:0 4px 4px 0; }
+  #topology { border:1px solid var(--line); border-radius:8px; padding:10px; margin-top:10px;
+              overflow-x:auto; background:#fff; }
+  #topology pre { margin:0; font-size:12px; }
+  button.cancel { background:#fff; color:var(--red); border:1px solid var(--line); border-radius:6px;
+                  padding:3px 10px; cursor:pointer; }
+  button.toggle { border:1px solid var(--line); border-radius:6px; padding:3px 12px; cursor:pointer; background:#fff; }
+  button.toggle.disable { color:var(--red); }
+  button.toggle.enable { color:var(--green); }
+  button.toggle[disabled] { opacity:.45; cursor:not-allowed; }
+  #banner { display:none; margin:0 0 16px; padding:10px 14px; border-radius:8px; border:1px solid #ffb1b1;
+            background:#ffebe9; color:var(--red); }
+  #banner.ok { border-color:#a6e9b6; background:#dafbe1; color:var(--green); }
+  #banner .close { float:right; cursor:pointer; font-weight:700; }
+  #banner details { margin-top:6px; } #banner pre { margin:4px 0 0; white-space:pre-wrap; }
+  #apidown { display:none; margin:0 0 16px; padding:10px 14px; border-radius:8px;
+             border:1px solid #f0d060; background:#fff8c5; color:var(--amber); }
+  #nogate { display:none; max-width:520px; margin:14vh auto; background:#fff; border:1px solid var(--line);
+            border-radius:10px; padding:26px 30px; text-align:center; }
+  .overlay { display:none; position:fixed; inset:0; background:rgba(31,35,40,.5); z-index:10; }
+  .modal { background:#fff; border-radius:10px; max-width:420px; margin:12vh auto; padding:20px 24px; }
+  .modal input { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; }
+  .modal .actions { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; }
+  .modal button.act { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:5px 14px; cursor:pointer; }
+  .kv { margin:2px 0; } .kv b { font-weight:600; }
+  .held-star { color:var(--red); font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>daolab admin</h1>
+  <span class="spacer"></span>
+  <span id="identity" style="color:#c8d1da"></span>
+  <button onclick="changeToken()">change token</button>
+  <button onclick="refresh()">refresh</button>
+</header>
+
+<div id="nogate">
+  <h2>admin token required</h2>
+  <p class="muted" id="nogate-msg"></p>
+  <p><a href="/user.html">go to the user dashboard</a> or <a href="#" onclick="changeToken();return false">paste another token</a></p>
+</div>
+
+<main id="content" style="display:none">
+  <div id="banner"><span class="close" onclick="hideBanner()">&times;</span><span id="banner-msg"></span><details id="banner-detail" hidden><summary>detail</summary><pre id="banner-pre"></pre></details></div>
+  <div id="apidown">API unreachable — retrying</div>
+
+  <div class="cols">
+    <section class="pools">
+      <h2>Pools</h2>
+      <div id="pools"></div>
+      <div class="empty" id="pools-empty" hidden>no pools — run <code>daolab sync</code> to load <code>setups/*.yml</code></div>
+      <div class="empty muted" style="font-size:12px">* = held</div>
+    </section>
+
+    <section class="detail">
+      <h2 id="detail-title">Setup</h2>
+      <div class="body" id="detail-body"><span class="muted">select a setup on the left</span></div>
+    </section>
+  </div>
+
+  <section>
+    <h2>All reservations</h2>
+    <table id="all-res">
+      <thead><tr><th>id</th><th>user</th><th>usecase</th><th>setup</th><th>state</th><th>slot</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="all-res-empty" hidden>no reservations yet</div>
+  </section>
+
+  <section>
+    <h2>Users</h2>
+    <table id="users">
+      <thead><tr><th>id</th><th>username</th><th>role</th><th>enabled</th><th>active reservations</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</main>
+
+<div class="overlay" id="gate">
+  <div class="modal">
+    <h3>daolab token</h3>
+    <p class="muted">Paste an <b>admin</b> bearer token from <code>daolab add-user --role admin</code>.</p>
+    <input type="password" id="gate-token" placeholder="token">
+    <div class="actions"><button class="act" onclick="saveToken()">Save</button></div>
+  </div>
+</div>
+
+<script>
+const TOKEN_KEY = "daolab_token";
+const getToken  = () => localStorage.getItem(TOKEN_KEY);
+let ME = null, SETUPS = [], SELECTED = null, POLL_MS = 15000;
+
+class ApiError extends Error {
+  constructor(status, err) {
+    super(err.message);
+    this.status = status; this.code = err.code; this.detail = err.detail;
+  }
+}
+
+async function api(path, {method = "GET", body = null} = {}) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      headers: {"Authorization": "Bearer " + getToken(),
+                ...(body ? {"Content-Type": "application/json"} : {})},
+      body: body ? JSON.stringify(body) : null,
+    });
+  } catch (e) {
+    document.getElementById("apidown").style.display = "block";
+    throw e;
+  }
+  document.getElementById("apidown").style.display = "none";
+  const data = await res.json();
+  if (!res.ok) {
+    if (res.status === 401) { localStorage.removeItem(TOKEN_KEY); showTokenGate(); }
+    throw new ApiError(res.status, data.error);
+  }
+  return data;
+}
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function showBanner(msg, detail, ok=false) {
+  const b = document.getElementById("banner");
+  b.style.display = "block"; b.className = ok ? "ok" : "";
+  document.getElementById("banner-msg").textContent = msg;
+  const d = document.getElementById("banner-detail");
+  if (detail && Object.keys(detail).length) {
+    d.hidden = false; document.getElementById("banner-pre").textContent = JSON.stringify(detail, null, 2);
+  } else d.hidden = true;
+}
+function hideBanner() { document.getElementById("banner").style.display = "none"; }
+function reportError(e) { if (e instanceof ApiError) showBanner(`${e.code} — ${e.message}`, e.detail); }
+
+function showTokenGate() { document.getElementById("gate").style.display = "block"; }
+function changeToken()  { localStorage.removeItem(TOKEN_KEY); showTokenGate(); }
+async function saveToken() {
+  localStorage.setItem(TOKEN_KEY, document.getElementById("gate-token").value.trim());
+  document.getElementById("gate").style.display = "none";
+  document.getElementById("gate-token").value = "";
+  await boot();
+}
+
+const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
+                     tearing_down:"b-amber", released:"b-muted", failed:"b-red"};
+const CANCELABLE = ["queued", "ready", "active"];
+
+if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
+
+async function renderDiagram(setup) {                  // setup = one GET /setups element
+  const el = document.getElementById("topology");
+  if (!el) return;
+  if (!window.mermaid) { el.innerHTML = `<pre>${esc(setup.diagram)}</pre>`; return; }
+  try {
+    const {svg} = await mermaid.render("diagram-" + setup.id + "-" + Date.now(), setup.diagram);
+    el.innerHTML = svg;
+  } catch (e) {
+    el.innerHTML = `<pre>${esc(setup.diagram)}</pre>`;
+  }
+}
+
+function resSummaryLine(r) {
+  if (!r) return `<span class="badge b-green">free</span>`;
+  return `#${r.id} <b>${esc(r.user)}</b> <code>${esc(r.usecase)}</code>
+          <span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span>
+          ${esc(r.start_at)} → ${esc(r.end_at)}`;
+}
+
+function renderPools(pools) {
+  const held = new Set(SETUPS.filter(s => s.held_by).map(s => s.name));
+  const div = document.getElementById("pools");
+  document.getElementById("pools-empty").hidden = pools.length > 0;
+  div.innerHTML = pools.map(p => `
+    <div class="pool-name">${esc(p.name)}</div>
+    ${p.setups.map(name => `
+      <div class="setup-item ${SELECTED === name ? "sel" : ""}" onclick="selectSetup('${esc(name)}')">
+        ${esc(name)} ${held.has(name) ? '<span class="held-star">*</span>' : ""}
+      </div>`).join("")}`).join("");
+}
+
+function renderDetail() {
+  const s = SETUPS.find(x => x.name === SELECTED);
+  const body = document.getElementById("detail-body");
+  if (!s) {
+    document.getElementById("detail-title").textContent = "Setup";
+    body.innerHTML = `<span class="muted">select a setup on the left</span>`;
+    return;
+  }
+  document.getElementById("detail-title").textContent = `Setup ${s.name} — pool ${s.pool}`;
+  body.innerHTML = `
+    <div class="kv"><b>capabilities:</b> ${s.capabilities.map(c => `<span class="cap">${esc(c)}</span>`).join("")}</div>
+    <table style="margin:8px 0">
+      <thead><tr><th>member</th><th>kind</th><th>host</th><th>hw_class</th><th>capabilities</th></tr></thead>
+      <tbody>${s.members.map(m => `
+        <tr><td><code>${esc(m.name)}</code></td><td>${esc(m.kind)}</td><td>${esc(m.host)}</td>
+            <td>${m.hw_class ? `<code>${esc(m.hw_class)}</code>` : '<span class="muted">—</span>'}</td>
+            <td>${m.capabilities.map(c => `<span class="cap">${esc(c)}</span>`).join("")}</td></tr>`).join("")}
+      </tbody>
+    </table>
+    <div class="kv">${s.links.map(l => `<code>${esc(l.a)}</code> ←­ ${esc(l.capability)} → <code>${esc(l.b)}</code>`).join("<br>")}</div>
+    <div id="topology"></div>
+    <div class="kv" style="margin-top:10px"><b>held_by:</b> ${resSummaryLine(s.held_by)}</div>
+    <div class="kv"><b>queue:</b> ${s.queue.length
+      ? s.queue.map(q => `<div style="margin-left:12px">${resSummaryLine(q)}</div>`).join("")
+      : '<span class="muted">queue empty</span>'}</div>`;
+  renderDiagram(s);
+}
+
+function selectSetup(name) {
+  SELECTED = name;
+  renderDetail();
+  loadPoolsAndSetups();          // re-render selection highlight
+}
+
+async function loadPoolsAndSetups() {
+  const [pools, setups] = await Promise.all([api("/pools"), api("/setups")]);
+  SETUPS = setups;
+  if (!SELECTED && setups.length) SELECTED = setups[0].name;
+  renderPools(pools);
+  renderDetail();
+}
+
+async function loadAllReservations() {
+  const rows = await api("/reservations?all=1");
+  const tbody = document.querySelector("#all-res tbody");
+  document.getElementById("all-res-empty").hidden = rows.length > 0;
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.id}</td><td>${esc(r.user)}</td>
+      <td><code>${esc(r.usecase)}</code>${r.diy ? ' <span class="badge b-grey">diy</span>' : ""}</td>
+      <td>${esc(r.setup)}</td>
+      <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span></td>
+      <td>${esc(r.start_at)} → ${esc(r.end_at)}${r.shifted ? ' <span class="badge b-amber">shifted</span>' : ""}</td>
+      <td>${CANCELABLE.includes(r.state)
+        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>` : ""}</td>
+    </tr>`).join("");
+}
+
+async function cancelReservation(id) {
+  if (!confirm(`Cancel reservation #${id}?`)) return;
+  try {
+    const r = await api(`/reservations/${id}`, {method: "DELETE"});
+    showBanner(`reservation #${r.id} → ${r.state}`, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
+}
+
+async function loadUsers() {
+  const rows = await api("/users");
+  const tbody = document.querySelector("#users tbody");
+  tbody.innerHTML = rows.map(u => {
+    const self = ME && u.id === ME.id;
+    const btn = u.enabled
+      ? `<button class="toggle disable" ${self ? 'disabled title="you cannot disable your own account"' : ""}
+           onclick="setEnabled(${u.id}, '${esc(u.username)}', false)">Disable</button>`
+      : `<button class="toggle enable" onclick="setEnabled(${u.id}, '${esc(u.username)}', true)">Enable</button>`;
+    return `
+      <tr>
+        <td>${u.id}</td><td><b>${esc(u.username)}</b>${self ? ' <span class="muted">(you)</span>' : ""}</td>
+        <td><span class="badge ${u.role === "admin" ? "b-amber" : "b-grey"}">${esc(u.role)}</span></td>
+        <td><span class="badge ${u.enabled ? "b-green" : "b-red"}">${u.enabled ? "enabled" : "disabled"}</span></td>
+        <td>${u.active_reservations}</td>
+        <td>${btn}</td>
+      </tr>`;
+  }).join("");
+}
+
+async function setEnabled(id, username, enabled) {
+  if (!enabled && !confirm(`Disable user ${username}? Their token stops working immediately; existing reservations are untouched (cancel them below if needed).`)) return;
+  try {
+    const u = await api(`/users/${id}`, {method: "PATCH", body: {enabled}});
+    showBanner(`user ${u.username} ${u.enabled ? "enabled" : "disabled"}`, null, true);
+    await loadUsers();
+  } catch (e) { reportError(e); }
+}
+
+// ---- boot + polling --------------------------------------------------------
+async function refresh() {
+  try { await Promise.all([loadPoolsAndSetups(), loadAllReservations(), loadUsers()]); }
+  catch (e) { reportError(e); }
+}
+
+async function boot() {
+  document.getElementById("nogate").style.display = "none";
+  document.getElementById("content").style.display = "none";
+  if (!getToken()) { showTokenGate(); return; }
+  try { ME = await api("/whoami"); }
+  catch (e) { reportError(e); return; }
+  document.getElementById("identity").textContent = `${ME.username} (${ME.role})`;
+  if (ME.role !== "admin") {                     // refuse to render; no further API calls
+    document.getElementById("nogate").style.display = "block";
+    document.getElementById("nogate-msg").textContent =
+      `admin token required (this token has role “${ME.role}”)`;
+    return;
+  }
+  document.getElementById("content").style.display = "block";
+  await refresh();
+}
+
+function poll(fn, ms) {
+  setInterval(() => {
+    if (!document.hidden && getToken() && ME && ME.role === "admin") fn();
+  }, ms);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && getToken() && ME && ME.role === "admin") fn();
+  });
+}
+
+boot();
+poll(refresh, POLL_MS);
+</script>
+</body>
+</html>

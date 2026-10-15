@@ -1,0 +1,10 @@
+# usecases/tls-proxy-nginx.yml
+name: tls-proxy-nginx                 # must equal the file stem
+variant: separate-backend             # docs also describe: inbuilt-server (deferred)
+requires: [octeon-cn106, e810, wire]  # capability match only — no hostnames
+hw_class: sdp-pf1-vf8                 # SDP, 1 PF, 8 VFs — the proxy->backend path
+roles:
+  proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
+  backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
+  client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf}
+verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}
