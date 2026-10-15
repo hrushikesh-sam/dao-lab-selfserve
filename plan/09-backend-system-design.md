@@ -185,7 +185,9 @@ admins pass every owner check.
   always succeeds unless the horizon is full.
 - **at:** the scheduler checks exactly that window. If it overlaps anything, it returns
   `409 slot_conflict` with `detail.alternatives` (the next three free starts of the same
-  length), which the dashboard shows as one-click chips.
+  length), which the dashboard shows as one-click chips. As implemented (B-13): the scheduler
+  returns them on every `NoFit` as `NoFit.alternatives`, searched forward from the requested
+  start (or `now`), on the slot grid, any capable setup ([03-scheduler.md](03-scheduler.md) Step 5c).
 - Per-user caps give `409 quota_exceeded`. The prototype allows one live reservation and two
   future reservations per user, which stops one person hoarding the only testbed.
 

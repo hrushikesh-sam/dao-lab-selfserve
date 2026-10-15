@@ -3,7 +3,8 @@
 Two booking modes (plan/09 §4-5):
   * ``asap`` (default) — earliest free slot at or after the requested start (slot-shift).
   * ``at``             — exactly the requested window: one overlap test, never shifted.
-                         If the window is not free the result is ``NoFit``.
+                         If the window is not free the result is ``NoFit``, which carries the
+                         next ``NUM_ALTERNATIVES`` free starts for the same duration (B-13).
 
 Every reservation blocks ``[start_at - lead, end_at + cleanup_min)``: the lead before it
 (provision, or EBF reflash when the hw_class changes) and the cleanup budget after it, run
@@ -24,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 Mode = Literal["asap", "at"]
+NUM_ALTERNATIVES = 3              # plan/09 s4: "the next three free starts of the same length"
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,7 @@ class NoFit:                        # mode "at" only -> 409 slot_conflict (alter
     start_at: datetime              # the exact window that was asked for ...
     end_at: datetime                # ... and could not be granted
     reason: Literal["overlap", "in_the_past", "off_grid"]
+    alternatives: tuple[datetime, ...] = ()   # next free starts, same duration, ascending (B-13)
 
 
 @dataclass(frozen=True)
@@ -229,10 +232,15 @@ def _place_at(db, req: PlacementRequest, candidates, uc_hw_class,
     would shift it. The search horizon bounds `asap` only; `at` has no sweep to bound."""
     start = req.requested_start_at
     end = start + timedelta(hours=req.hours)
+
+    def no_fit(reason):
+        return NoFit(start_at=start, end_at=end, reason=reason,
+                     alternatives=_alternatives(db, req, candidates, uc_hw_class, now, cfg))
+
     if start < now:
-        return NoFit(start_at=start, end_at=end, reason="in_the_past")
+        return no_fit("in_the_past")
     if snap_up(start, cfg.slot_min) != start:
-        return NoFit(start_at=start, end_at=end, reason="off_grid")    # snapping would be shifting
+        return no_fit("off_grid")                                      # snapping would be shifting
     free = []
     for s in candidates:
         has_dpu, dpu_class = _setup_dpu(db, s["id"])
@@ -241,10 +249,42 @@ def _place_at(db, req: PlacementRequest, candidates, uc_hw_class,
         if _conflict(tl, start, req.hours, lead, uc_hw_class, cfg, has_dpu) is None:
             free.append((lead, s["name"], s["id"]))
     if not free:
-        return NoFit(start_at=start, end_at=end, reason="overlap")
+        return no_fit("overlap")
     lead, name, sid = min(free)
     return Placed(setup_id=sid, setup_name=name, start_at=start, end_at=end,
                   shifted=False, lead_min=lead)
+
+
+def _earliest(db, candidates, uc_hw_class, base: datetime, hours: int,
+              now: datetime, cfg: SchedConfig):
+    """Earliest grid start at or after `base` over all candidate setups, as the tuple
+    (start, lead_min, setup_name, setup_id) with the tie-break order, or None if the horizon
+    is full. The one search behind `asap` placement and behind NoFit.alternatives."""
+    horizon_end = now + timedelta(hours=cfg.horizon_hours)
+    found = []
+    for s in candidates:
+        has_dpu, dpu_class = _setup_dpu(db, s["id"])
+        tl = _timeline(db, s["id"], dpu_class, has_dpu, cfg)
+        slot = _sweep(tl, uc_hw_class, base, hours, horizon_end, cfg, has_dpu)
+        if slot is not None:
+            found.append((slot.start, slot.lead_min, s["name"], s["id"]))
+    return min(found) if found else None
+
+
+def _alternatives(db, req: PlacementRequest, candidates, uc_hw_class,
+                  now: datetime, cfg: SchedConfig) -> tuple[datetime, ...]:
+    """The next NUM_ALTERNATIVES free starts for req.hours, ascending, searching forward from
+    max(requested start, now). Each one is free on its own (they may overlap each other: they
+    are choices, not a plan), on any capable setup, on the grid, inside the horizon. The first
+    is exactly what `asap` would have granted. Fewer than NUM_ALTERNATIVES if the horizon runs out."""
+    out, base = [], max(req.requested_start_at, now)
+    for _ in range(NUM_ALTERNATIVES):
+        best = _earliest(db, candidates, uc_hw_class, base, req.hours, now, cfg)
+        if best is None:
+            break
+        out.append(best[0])
+        base = best[0] + timedelta(minutes=cfg.slot_min)       # the next grid point after it
+    return tuple(out)
 
 
 def place(db: sqlite3.Connection, req: PlacementRequest, now: datetime,
@@ -274,19 +314,12 @@ def place(db: sqlite3.Connection, req: PlacementRequest, now: datetime,
     if req.mode == "at":
         return _place_at(db, req, candidates, uc_hw_class, now, cfg)
 
-    base = max(req.requested_start_at, now)
-    horizon_end = now + timedelta(hours=cfg.horizon_hours)
-    found = []
-    for s in candidates:
-        has_dpu, dpu_class = _setup_dpu(db, s["id"])
-        tl = _timeline(db, s["id"], dpu_class, has_dpu, cfg)
-        slot = _sweep(tl, uc_hw_class, base, req.hours, horizon_end, cfg, has_dpu)
-        if slot is not None:
-            found.append((slot.start, slot.lead_min, s["name"], s["id"]))
-    if not found:
+    best = _earliest(db, candidates, uc_hw_class, max(req.requested_start_at, now),
+                     req.hours, now, cfg)
+    if best is None:
         return NoFreeSlot(horizon_hours=cfg.horizon_hours)
 
-    start, lead, name, sid = min(found)
+    start, lead, name, sid = best
     return Placed(setup_id=sid, setup_name=name, start_at=start,
                   end_at=start + timedelta(hours=req.hours),
                   shifted=start != req.requested_start_at, lead_min=lead)

@@ -27,6 +27,11 @@ def std(db, dpu_hw="sdp-pf1-vf8"):
     return sid, uid
 
 
+def bare(p):
+    """A NoFit without its alternatives, for tests that only care about the window and reason."""
+    return dataclasses.replace(p, alternatives=()) if isinstance(p, NoFit) else p
+
+
 def req(usecase="tls-proxy-nginx", start=T(10), hours=2, setup=None, mode="asap"):
     return PlacementRequest(usecase=usecase, requested_start_at=start, hours=hours,
                             setup=setup, mode=mode)
@@ -277,7 +282,7 @@ def test_at_busy_window_is_conflict_but_asap_shifts(db):      # B-10 done-when
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12))
     at = scheduler.place(db, req(start=T(11), mode="at"), NOW, CFG)
-    assert at == NoFit(start_at=T(11), end_at=T(13), reason="overlap")   # never shifted
+    assert bare(at) == NoFit(start_at=T(11), end_at=T(13), reason="overlap")   # never shifted
     asap = scheduler.place(db, req(start=T(11), mode="asap"), NOW, CFG)
     assert isinstance(asap, Placed) and asap.start_at == T(12, 15) and asap.shifted is True
 
@@ -341,7 +346,7 @@ def test_at_released_and_failed_free_the_window(db, state):
 def test_at_start_in_the_past_is_rejected_not_clamped(db):
     std(db)
     p = scheduler.place(db, req(start=T(8), hours=1, mode="at"), NOW, CFG)   # NOW is 09:00
-    assert p == NoFit(start_at=T(8), end_at=T(9), reason="in_the_past")
+    assert bare(p) == NoFit(start_at=T(8), end_at=T(9), reason="in_the_past")
     ok = scheduler.place(db, req(start=NOW, hours=1, mode="at"), NOW, CFG)   # start == now is fine
     assert isinstance(ok, Placed) and ok.start_at == NOW and ok.shifted is False
 
@@ -438,7 +443,7 @@ def test_at_and_asap_agree_on_random_timelines(db, cfg):
         at = scheduler.place(db, req(mode="at", **r), NOW, cfg)
         assert isinstance(asap, Placed)                         # horizon is a week; never full
         if asap.shifted:
-            assert at == NoFit(start_at=r_start, end_at=r_start + timedelta(hours=r["hours"]),
+            assert bare(at) == NoFit(start_at=r_start, end_at=r_start + timedelta(hours=r["hours"]),
                                reason="overlap")
             conflicts += 1
         else:
@@ -493,7 +498,7 @@ def test_new_booking_leaves_room_for_its_own_cleanup(db):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(12), T(14))
     at = scheduler.place(db, req(start=T(9, 50), mode="at"), NOW, CFG)
-    assert at == NoFit(start_at=T(9, 50), end_at=T(11, 50), reason="overlap")
+    assert bare(at) == NoFit(start_at=T(9, 50), end_at=T(11, 50), reason="overlap")
     asap = scheduler.place(db, req(start=T(9, 50), mode="asap"), NOW, CFG)
     assert asap.start_at == T(14, 15)                            # ... and 2h can't fit before it
     short = scheduler.place(db, req(start=T(9, 50), hours=1, mode="at"), NOW, CFG)
@@ -593,7 +598,7 @@ def test_inserting_before_a_booking_can_lengthen_its_lead(db):
     sid, ids = _two_class_setup(db)
     mk_res(db, sid, ids["uc-b"], T(12), T(13))
     late = scheduler.place(db, req(usecase="uc-a", start=T(9, 45), mode="at"), NOW, CFG)  # ends 11:45
-    assert late == NoFit(start_at=T(9, 45), end_at=T(11, 45), reason="overlap")
+    assert bare(late) == NoFit(start_at=T(9, 45), end_at=T(11, 45), reason="overlap")
     ok = scheduler.place(db, req(usecase="uc-a", start=T(9, 35), mode="at"), NOW, CFG)    # ends 11:35
     assert isinstance(ok, Placed)
     same_class = scheduler.place(db, req(usecase="uc-b", start=T(9, 45), mode="at"), NOW, CFG)
@@ -610,7 +615,7 @@ def test_lead_change_propagates_through_bookings_without_hw_class(db):
     mk_res(db, sid, ids["uc-n"], T(12), T(13))
     mk_res(db, sid, ids["uc-b"], T(13, 20), T(14, 20))
     p = scheduler.place(db, req(usecase="uc-a", start=T(9, 45), mode="at"), NOW, CFG)
-    assert p == NoFit(start_at=T(9, 45), end_at=T(11, 45), reason="overlap")
+    assert bare(p) == NoFit(start_at=T(9, 45), end_at=T(11, 45), reason="overlap")
     no_change = scheduler.place(db, req(usecase="uc-n", start=T(9, 45), mode="at"), NOW, CFG)
     assert isinstance(no_change, Placed)                     # a null class never changes the projection
 
@@ -675,7 +680,7 @@ def test_next_free_at_is_on_the_grid(db):
 def test_at_off_grid_start_is_refused_even_when_free(db):
     std(db)
     p = scheduler.place(db, req(start=T(10, 10), mode="at"), NOW, GRID)
-    assert p == NoFit(start_at=T(10, 10), end_at=T(12, 10), reason="off_grid")
+    assert bare(p) == NoFit(start_at=T(10, 10), end_at=T(12, 10), reason="off_grid")
     ok = scheduler.place(db, req(start=T(10, 30), mode="at"), NOW, GRID)
     assert isinstance(ok, Placed) and ok.start_at == T(10, 30) and ok.shifted is False
 
@@ -762,3 +767,149 @@ def test_tie_preference_never_beats_an_earlier_start(db):                  # FCF
     mk_res(db, s2, uc_a, T(10, 40), T(12, 40))                             # raw 12:55 -> grid 13:00
     p = scheduler.place(db, req(usecase="uc-a", start=T(10)), NOW, GRID)
     assert (p.setup_name, p.start_at, p.lead_min) == ("setup-01", T(12, 30), 15)
+
+
+# ---- B-13: NoFit alternatives ---------------------------------------------------
+# A NoFit carries the next NUM_ALTERNATIVES (3) free starts for the same duration, ascending,
+# searched forward from max(requested start, now). Each is free on its own (they may overlap
+# each other); the first is what `asap` would have granted.
+
+def test_nofit_alternatives_default_to_empty():
+    assert NoFit(start_at=T(10), end_at=T(12), reason="overlap").alternatives == ()
+    assert scheduler.NUM_ALTERNATIVES == 3
+
+
+def test_alternatives_match_the_design_doc_example(db):          # plan/09 s4 sequence diagram
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(9), T(11))                           # alice 09:00, 2 h
+    p = scheduler.place(db, req(start=T(10), mode="at"), NOW, GRID)    # bob asks for 10:00
+    assert isinstance(p, NoFit) and p.reason == "overlap"
+    assert p.alternatives == (T(11, 30), T(12, 0), T(12, 30))   # 11:00 + 10 cleanup + 5 lead -> 11:30 grid
+
+
+def test_alternatives_skip_gaps_that_are_too_small(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(10), T(12))
+    mk_res(db, sid, uid, T(14), T(15))
+    # 1 h: 12:30 fits before the 14:00 booking (its lead starts 13:55); 13:00 would not
+    one = scheduler.place(db, req(start=T(11), hours=1, mode="at"), NOW, GRID)
+    assert one.alternatives == (T(12, 30), T(15, 30), T(16, 0))
+    # 2 h: nothing fits before 14:00, so all three come after the second booking
+    two = scheduler.place(db, req(start=T(11), hours=2, mode="at"), NOW, GRID)
+    assert two.alternatives == (T(15, 30), T(16, 0), T(16, 30))
+
+
+@pytest.mark.parametrize("cfg", [dataclasses.replace(CFG, slot_min=5), GRID], ids=["grid-5", "grid-30"])
+def test_alternatives_on_random_timelines(db, cfg):             # B-13 done-when
+    """For every NoFit: exactly 3 alternatives, strictly ascending, on the grid, at or after
+    max(requested, now), each one really bookable (`at` there is Placed, window of the same
+    length), the first equal to the asap grant, and no free grid start skipped in between."""
+    import random
+    rng = random.Random(20261018)
+    mk_setup(db, "setup-01", CAPS, dpu_hw_class="class-a")
+    mk_setup(db, "setup-02", CAPS, dpu_hw_class="class-b")
+    ucs = [mk_usecase(db, n, REQ, hw_class=c)
+           for n, c in [("uc-a", "class-a"), ("uc-b", "class-b"), ("uc-n", None)]]
+    names = ["uc-a", "uc-b", "uc-n"]
+    setups = [r["id"] for r in db.execute("SELECT id FROM setups ORDER BY name")]
+    step = cfg.slot_min
+    nofits = 0
+    for _ in range(200):
+        db.execute("DELETE FROM reservations")
+        for _ in range(rng.randint(5, 14)):
+            start = NOW + timedelta(minutes=5 * rng.randint(0, 12 * 12))
+            mk_res(db, rng.choice(setups), rng.choice(ucs), start,
+                   start + timedelta(hours=rng.randint(1, 3)),
+                   state=rng.choice(["queued", "active", "released"]))
+        name, hours = rng.choice(names), rng.randint(1, 3)
+        asked = NOW + timedelta(minutes=step * rng.randint(0, 12 * 12 * 5 // step))
+        at = scheduler.place(db, req(usecase=name, start=asked, hours=hours, mode="at"), NOW, cfg)
+        if isinstance(at, Placed):
+            continue
+        nofits += 1
+        alts = at.alternatives
+        assert len(alts) == 3 and list(alts) == sorted(set(alts)), alts
+        assert alts[0] == scheduler.place(db, req(usecase=name, start=asked, hours=hours), NOW, cfg).start_at
+        for a in alts:
+            assert a >= max(asked, NOW) and scheduler.snap_up(a, cfg.slot_min) == a
+            ok = scheduler.place(db, req(usecase=name, start=a, hours=hours, mode="at"), NOW, cfg)
+            assert isinstance(ok, Placed) and ok.end_at == a + timedelta(hours=hours)
+        t, free_between = max(asked, NOW), []                    # brute force: every free grid start
+        t = scheduler.snap_up(t, cfg.slot_min)
+        while t <= alts[-1]:
+            if isinstance(scheduler.place(db, req(usecase=name, start=t, hours=hours, mode="at"),
+                                          NOW, cfg), Placed):
+                free_between.append(t)
+            t += timedelta(minutes=cfg.slot_min)
+        assert tuple(free_between) == alts, (asked, name, hours)
+    assert nofits > 60                                           # the test exercises real conflicts
+
+
+def test_alternatives_for_a_past_start_begin_at_now(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(9), T(10))
+    p = scheduler.place(db, req(start=T(8), hours=1, mode="at"), NOW, GRID)
+    assert p.reason == "in_the_past" and p.alternatives == (T(10, 30), T(11, 0), T(11, 30))
+
+
+def test_alternatives_for_a_past_start_are_never_in_the_past(db):
+    std(db)                                                      # empty timeline: 08:00 would be "free"
+    p = scheduler.place(db, req(start=T(8), hours=1, mode="at"), NOW, GRID)
+    assert p.reason == "in_the_past"
+    assert p.alternatives == (T(9, 0), T(9, 30), T(10, 0)) and all(a >= NOW for a in p.alternatives)
+
+
+def test_alternatives_for_an_off_grid_start_begin_at_the_next_grid_point(db):
+    std(db)
+    p = scheduler.place(db, req(start=T(10, 10), hours=1, mode="at"), NOW, GRID)
+    assert p.reason == "off_grid" and p.alternatives == (T(10, 30), T(11, 0), T(11, 30))
+
+
+def test_alternatives_never_go_before_the_requested_start(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(14), T(16))                           # free all morning
+    p = scheduler.place(db, req(start=T(14, 30), hours=1, mode="at"), NOW, GRID)
+    assert p.alternatives[0] > T(14, 30) and all(a >= T(14, 30) for a in p.alternatives)
+    assert T(10) not in p.alternatives
+
+
+def test_alternatives_are_cut_short_by_the_horizon(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(9), T(10))
+    short = dataclasses.replace(GRID, horizon_hours=3)           # now .. 12:00
+    p = scheduler.place(db, req(start=T(9, 30), hours=1, mode="at"), NOW, short)
+    assert p.reason == "overlap"
+    assert p.alternatives == (T(10, 30), T(11, 0))               # 11:30 + 1 h would end after 12:00
+    mk_res(db, sid, uid, T(10), T(12))                           # now nothing is free inside the horizon
+    assert scheduler.place(db, req(start=T(10), hours=1, mode="at"), NOW, short).alternatives == ()
+
+
+def test_alternatives_use_every_capable_setup_without_duplicates(db):
+    s1 = mk_setup(db, "setup-01", CAPS, dpu_hw_class="sdp-pf1-vf8")
+    s2 = mk_setup(db, "setup-02", CAPS, dpu_hw_class="sdp-pf1-vf8")
+    uid = mk_usecase(db, "tls-proxy-nginx", REQ, hw_class="sdp-pf1-vf8")
+    mk_res(db, s1, uid, T(10), T(14))
+    mk_res(db, s2, uid, T(10), T(12))
+    p = scheduler.place(db, req(start=T(11), hours=1, mode="at"), NOW, GRID)
+    assert p.reason == "overlap"
+    assert p.alternatives == (T(12, 30), T(13, 0), T(13, 30))    # setup-02 frees first; one entry per start
+
+
+def test_diy_alternatives_come_from_the_named_setup_only(db):
+    s1 = mk_setup(db, "setup-01", CAPS, dpu_hw_class="sdp-pf1-vf8")
+    mk_setup(db, "setup-02", CAPS, dpu_hw_class="sdp-pf1-vf8")      # free, but not the named one
+    mk_usecase(db, "diy", [], hw_class=None)
+    uid = db.execute("SELECT id FROM usecases WHERE name = 'diy'").fetchone()["id"]
+    mk_res(db, s1, uid, T(10), T(12))
+    p = scheduler.place(db, req(usecase="diy", setup="setup-01", start=T(11), hours=1, mode="at"),
+                        NOW, GRID)
+    assert p.reason == "overlap" and p.alternatives == (T(12, 30), T(13, 0), T(13, 30))
+
+
+def test_alternatives_are_deterministic_and_read_only(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(10), T(12))
+    before = db.total_changes
+    a = scheduler.place(db, req(start=T(11), mode="at"), NOW, GRID)
+    b = scheduler.place(db, req(start=T(11), mode="at"), NOW, GRID)
+    assert a == b and a.alternatives and db.total_changes == before

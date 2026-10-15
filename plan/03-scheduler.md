@@ -72,10 +72,11 @@ class NoFreeSlot:                   # -> catalog reason "no_free_slot"; POST map
     horizon_hours: int
 
 @dataclass(frozen=True)
-class NoFit:                        # mode "at" only -> 409 slot_conflict (B-14); alternatives added by B-13
+class NoFit:                        # mode "at" only -> 409 slot_conflict (B-14)
     start_at: datetime              # the exact window that was asked for ...
     end_at: datetime                # ... and could not be granted
-    reason: Literal["overlap", "in_the_past"]
+    reason: Literal["overlap", "in_the_past", "off_grid"]
+    alternatives: tuple[datetime, ...] = ()   # B-13: next NUM_ALTERNATIVES (3) free starts, same duration, ascending
 ```
 
 Rows read (all times are UTC ISO-8601 `YYYY-MM-DDTHH:MM:SSZ` TEXT, parsed to aware datetimes by `models.py` helpers):
@@ -110,6 +111,7 @@ flowchart TD
     TL --> MD{"mode?"}
     MD -- at --> AT["one conflict test of exactly [start - lead, end + cleanup) per candidate;<br/>start < now -> NoFit in_the_past; off the grid -> NoFit off_grid; none free -> NoFit overlap"]
     AT --> PICKAT["Placed (shifted=False): min by (lead_min, setup name)"]
+    AT -. "NoFit" .-> ALT["alternatives: next 3 free grid starts from max(requested, now), over all candidates"]
     MD -- asap --> SW["sweep for earliest grid-aligned s with [s - lead, s + hours + cleanup) free"]
     SW --> OK{"feasible within DAOLAB_SCHED_HORIZON_HOURS?"}
     OK -- "no, all candidates" --> NF["NoFreeSlot"]
@@ -185,6 +187,23 @@ Each iteration returns or advances `s` past at least one busy interval → guara
 A granted start is always a multiple of `DAOLAB_SLOT_MIN` minutes after **UTC midnight** (30 → `:00` and `:30`), via `snap_up(t, slot_min)` = the earliest grid point at or after `t`; seconds round up, and `slot_min` must be ≥ 1 (`ValueError` otherwise). `asap` snaps its base and every candidate start the sweep produces, so it returns the earliest *grid* start whose window is free. Consequences with the defaults (cleanup 10, leads 5 / 15, grid 30): the raw earliest start after a booking is 12:15 (same class) or 12:25 (reflash), and both snap to 12:30, so the gap after a booking is a flat 30 minutes; and a "Deploy now" asked for at 09:07 starts at 09:30. A grid that does not divide 24 h evenly (say 50) simply restarts at each UTC midnight.
 
 The grid is also what creates ties between setups (two setups whose raw earliest starts 12:20 and 12:25 both become 12:30). Ties are broken by the existing rule `(start_at, lead_min, setup_name)`, i.e. a setup whose previous booking has the **same `hw_class`** (lead 5, no reflash) beats one that needs a reflash (lead 15). Only equal starts are tie-broken: an earlier start always wins, so FCFS is never broken. The preference looks at the previous booking only; counting the reflash a new booking would force on the *next* booking is not done (decision for B-12).
+
+### Step 5c — alternatives (B-13)
+
+Every `NoFit` — whatever its `reason` — carries `alternatives`: the next `NUM_ALTERNATIVES` (3) free starts for the **same duration**, which B-14 returns as `detail.alternatives` and the dashboard shows as one-click chips (plan/09 §4).
+
+```python
+def alternatives(db, req, candidates, uc_hw_class, now, cfg) -> tuple[datetime, ...]:
+    out, base = [], max(req.requested_start_at, now)     # forward only; never before now
+    for _ in range(NUM_ALTERNATIVES):
+        best = earliest(db, candidates, uc_hw_class, base, req.hours, now, cfg)   # the asap search
+        if best is None: break                           # horizon exhausted: fewer than 3 (maybe none)
+        out.append(best.start)
+        base = best.start + timedelta(minutes=cfg.slot_min)    # the next grid point
+    return tuple(out)
+```
+
+It reuses the `asap` search (`earliest`), so an alternative is free by exactly the same test `at` uses: `place(mode="at")` at any alternative is a `Placed` of that duration. Properties pinned by tests: strictly ascending, grid-aligned, at or after `max(requested, now)`, on any capable setup (one entry per start even if two setups are free then), none of the free starts in between skipped, and the first one equals the `asap` grant. The alternatives are *choices*, not a plan: they may overlap each other (12:30, 13:00, 13:30 for a 2-hour booking), exactly as in the plan/09 sequence diagram. A past start searches from `now`; an off-grid start from the next grid point; `diy` searches its named setup only. The horizon bounds them, so near its end there can be fewer than three, or none (`()`).
 
 ### Step 5b — exact window (mode `at`, B-10)
 
@@ -379,5 +398,21 @@ B-12 adds the slot-grid cases. `CFG` in the test module runs with the grid off (
 | B-12.10 | `test_same_class_neighbour_wins_a_tie_the_grid_creates` **(B-12 done-when)** | setup-01 previous booking other class (raw 12:20), setup-02 same class (raw 12:25) | grid off: setup-01 at 12:20; grid 30: both 12:30 → setup-02 (lead 5) wins |
 | B-12.11 | `test_tie_preference_never_beats_an_earlier_start` | setup-02 same class but its snapped start is 13:00 | setup-01 (reflash) at 12:30 still wins — FCFS not broken |
 | B-12.12 | `test_placements_keep_the_gap_and_the_grid` / `test_at_and_asap_agree_on_random_timelines[grid-30]` | the B-11 property test and the B-10 differential test re-run with the 30-minute grid | all grants on the grid; gap rule holds; `at` ≡ `asap` |
+
+B-13 adds the `NoFit.alternatives` cases:
+
+| # | Test | Fixture / action | Expected |
+|---|---|---|---|
+| B-13.1 | `test_nofit_alternatives_default_to_empty` | a constructed `NoFit` | `alternatives == ()`; `NUM_ALTERNATIVES == 3` |
+| B-13.2 | `test_alternatives_match_the_design_doc_example` | alice 09:00–11:00; bob `at` 10:00 for 2 h (grid 30) | `(11:30, 12:00, 12:30)` — plan/09 §4 |
+| B-13.3 | `test_alternatives_skip_gaps_that_are_too_small` | r1 10–12, r2 14–15; `at` 11:00 for 1 h / 2 h | `(12:30, 15:30, 16:00)` / `(15:30, 16:00, 16:30)` |
+| B-13.4 | `test_alternatives_on_random_timelines` **(B-13 done-when)** | 200 seeded random timelines × grid 5 and 30, 2 setups, 3 use cases | per `NoFit`: 3 alternatives, ascending, on the grid, ≥ `max(asked, now)`, each `Placed` via `at` with the same duration, first == `asap` start, equal to a brute-force walk of every free grid start (no skips) |
+| B-13.5 | `test_alternatives_for_a_past_start_begin_at_now` / `…_are_never_in_the_past` | `at` 08:00 with `now` 09:00 | `in_the_past`; alternatives from 09:00, never earlier |
+| B-13.6 | `test_alternatives_for_an_off_grid_start_begin_at_the_next_grid_point` | `at` 10:10 | `off_grid`; alternatives from 10:30 |
+| B-13.7 | `test_alternatives_never_go_before_the_requested_start` | free morning, r1 14–16, `at` 14:30 | all alternatives after 14:30; none in the morning |
+| B-13.8 | `test_alternatives_are_cut_short_by_the_horizon` | horizon 3 h; then saturated | 2 alternatives; then `()` |
+| B-13.9 | `test_alternatives_use_every_capable_setup_without_duplicates` | two setups free at different times | ascending, one entry per start, from the setup that frees first |
+| B-13.10 | `test_diy_alternatives_come_from_the_named_setup_only` | diy on a busy named setup, another setup free | alternatives from the named setup only |
+| B-13.11 | `test_alternatives_are_deterministic_and_read_only` | same `at` request twice | equal results; `db.total_changes` unchanged |
 
 Tests 2 and 3 are the two Phase 2 checkpoint scenarios from the root README, verbatim: two overlapping reserve calls → the second is shifted to the next slot; reserving a use case whose `requires` no setup meets → rejected naming the missing capability.
