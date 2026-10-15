@@ -259,23 +259,58 @@ def test_deploy_is_audited(world):
     assert detail["ok"] is True and detail["job"] == jobs(db)[0]["id"] and detail["attempt"] == 1
 
 
-def test_failed_deploy_fails_the_reservation_and_frees_the_setup(world):
+def test_a_failed_deploy_is_retried_as_a_fresh_job_before_giving_up(world, monkeypatch):
+    """B-25: an observed deploy failure queues a fresh deploy job (attempt + 1) and keeps the
+    reservation `provisioning`; the replay waits for the next tick (the pending list is a
+    snapshot taken before the retry is created)."""
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=3))
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    out = tick(db, rn=mock(fail={"deploy"}))
+    assert state(db, rid) == "provisioning" and out.failed == 0 and out.retried == 1
+    assert [(j["kind"], j["attempt"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", 1, "failed"), ("deploy", 2, "pending")]
+    out = tick(db, rn=mock(fail={"deploy"}))            # only the queued retry runs now
+    assert out.jobs_run == 1 and out.retried == 1 and state(db, rid) == "provisioning"
+    assert [j["attempt"] for j in jobs(db, rid) if j["kind"] == "deploy"] == [1, 2, 3]
+
+
+def test_retries_are_exhausted_by_counting_attempts(world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=2))
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    rn = mock(fail={"deploy"})
+    assert tick(db, rn=rn).failed == 0 and state(db, rid) == "provisioning"   # attempt 1 fails
+    out = tick(db, rn=rn)                                                     # attempt 2 fails
+    assert out.failed == 1 and out.retried == 0 and state(db, rid) == "failed"
+    deploy_jobs = [j for j in jobs(db, rid) if j["kind"] == "deploy"]
+    assert [j["attempt"] for j in deploy_jobs] == [1, 2]
+    assert all(j["state"] == "failed" for j in deploy_jobs)
+
+
+def test_when_retries_are_exhausted_a_cleanup_job_is_queued_and_releases_the_reservation(
+        world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
     db, sid, _ = world
     rid = res(world, uc="b", start=T(9, 10), end=T(10))
     out = tick(db, rn=mock(fail={"deploy"}), cfg=SchedConfig(hw_class_lead_min=15))
     row = models.reservation_by_id(db, rid)
     assert row["state"] == "failed" and out.failed == 1 and out.ready == 0
     assert "create_vms" in row["failure_reason"]
-    [job] = jobs(db)
-    assert job["state"] == "failed" and "create_vms" in job["error"]
-    assert [s["name"] for s in models.job_steps(job)] == ["lease_ips", "dpu_prepare", "create_vms"]
     assert dpu_class(db, sid) == "cls-a"                                # nothing was flashed
     assert models.held_by(db, sid) is None                              # next booking can start
+    assert [(j["kind"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", "failed"), ("cleanup", "pending")]
+    [deploy_job] = [j for j in jobs(db, rid) if j["kind"] == "deploy"]
+    assert [s["name"] for s in models.job_steps(deploy_job)] == ["lease_ips", "dpu_prepare", "create_vms"]
     [event] = [e for e in models.list_audit_events(db) if e["action"] == "deploy"]
     assert models.from_json(event["detail"])["ok"] is False
+    out = tick(db, rn=mock())                    # the automatic cleanup now tears it down
+    assert state(db, rid) == "released" and out.released == 1
 
 
-def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog):
+def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
     db = world[0]
     rid = res(world, uc="a", start=T(9, 5), end=T(10))
     with caplog.at_level(logging.ERROR, logger="daolab.engine"):
@@ -285,7 +320,8 @@ def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog):
     assert "reservation %s" % rid in caplog.text or "boom" in caplog.text
 
 
-def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world):
+def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
     db = world[0]
     rid = res(world, uc="a", start=T(9, 5), end=T(10))
     tick(db, rn=runner.AnsibleRunner())
@@ -386,6 +422,85 @@ def test_end_to_end_redeploy_endpoint_then_engine(api_env):
     assert body["state"] == "succeeded" and body["attempt"] == 1
     assert [s["name"] for s in body["steps"]] == list(DEPLOY_STEPS)
     assert state(conn, rid) == "active"
+
+
+@pytest.mark.parametrize("attempt", [2, 3, 7])
+def test_a_failed_redeploy_is_never_retried_and_never_queues_a_cleanup(world, attempt):
+    """B-25's retries and automatic cleanup are for a first deploy. A redeploy happens inside a
+    live slot: whatever its attempt number, a failure leaves the reservation and the job queue
+    alone (the user decides what to do)."""
+    db, sid, _ = world
+    rid = res(world, uc="a", state="active", start=T(8), end=T(12))
+    models.create_job(db, rid, "deploy", attempt=attempt)
+    out = tick(db, rn=mock(fail={"deploy"}))
+    assert config.settings.max_retries == 3
+    assert (out.retried, out.failed, out.redeployed) == (0, 0, 0)
+    assert state(db, rid) == "active"
+    assert [(j["kind"], j["state"]) for j in jobs(db, rid)] == [("deploy", "failed")]
+    assert models.held_by(db, sid)["id"] == rid
+
+
+def test_a_first_deploy_with_the_default_settings_is_tried_three_times_then_cleaned_up(world):
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    bad = mock(fail={"deploy"})
+    assert config.settings.max_retries == 3
+    for _ in range(3):                      # each tick runs one attempt and queues the next
+        tick(db, rn=bad)
+    assert state(db, rid) == "failed"
+    assert [(j["kind"], j["attempt"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", 1, "failed"), ("deploy", 2, "failed"), ("deploy", 3, "failed"), ("cleanup", 1, "pending")]
+    out = tick(db)
+    assert state(db, rid) == "released" and out.released == 1
+
+
+def test_retries_and_the_automatic_cleanup_stay_on_the_same_trace(world, monkeypatch):
+    """B-62 will open one trace per job chain: the follow-up jobs inherit the trace id."""
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=2))
+    db = world[0]
+    rid = res(world, uc="a", state="provisioning", start=T(9, 30), end=T(11))
+    models.create_job(db, rid, "deploy", trace_id="trace-abc")
+    bad = mock(fail={"deploy"})
+    tick(db, rn=bad)
+    tick(db, rn=bad)
+    assert [(j["kind"], j["trace_id"]) for j in jobs(db, rid)] == \
+        [("deploy", "trace-abc"), ("deploy", "trace-abc"), ("cleanup", "trace-abc")]
+
+
+def test_a_retry_succeeding_makes_the_reservation_ready_and_queues_no_cleanup(world):
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    tick(db, rn=mock(fail={"deploy"}))                                   # attempt 1 fails
+    out = tick(db)                                                       # attempt 2 succeeds
+    assert state(db, rid) == "ready" and out.ready == 1 and out.retried == 0
+    assert [(j["kind"], j["attempt"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", 1, "failed"), ("deploy", 2, "succeeded")]
+
+
+def test_residue_after_the_cleanup_of_a_failed_deploy_leaves_the_reservation_failed(world, monkeypatch):
+    """There is no failed -> quarantined edge (plan/09 s10): the cleanup job fails and says why,
+    the audit row lists the residue, and the reservation stays `failed`. Flagging the setup is B-71."""
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    tick(db, rn=mock(fail={"deploy"}))                                   # fails for good, cleanup queued
+    out = tick(db, rn=mock(fail={"cleanup"}))
+    assert state(db, rid) == "failed" and (out.released, out.quarantined) == (0, 0)
+    cleanup = [j for j in jobs(db, rid) if j["kind"] == "cleanup"][0]
+    assert cleanup["state"] == "failed" and cleanup["error"].startswith("residue after cleanup:")
+    [event] = [e for e in models.list_audit_events(db) if e["action"] == "cleanup"]
+    assert len(models.from_json(event["detail"])["residue"]) == 2
+
+
+def test_the_automatic_cleanup_is_held_back_by_a_running_job_like_any_other(world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    tick(db, rn=mock(fail={"deploy"}))                                   # failed + cleanup pending
+    other_engine_is_running_job = models.create_job(db, rid, "reconcile")
+    models.transition_job(db, other_engine_is_running_job, "running")
+    out = tick(db)
+    assert out.deferred == 1 and state(db, rid) == "failed"
 
 
 # ---- 4. running jobs: cleanup --------------------------------------------------------------

@@ -98,13 +98,18 @@ def main(argv: list[str] | None = None) -> int:
 > DPU's *actual* class at tick time (`scheduler.start_lead_min`), so a late projection never
 > makes the engine start early. A job's result, the reservation move and the audit row commit in
 > one transaction. A deploy that succeeds sets `ready` and records `resources.hw_class`; a
-> deploy that fails sets `failed` immediately (retries arrive with B-25). A `deploy` job on a
+> deploy that fails is retried as a fresh `deploy` job (attempt + 1, same trace) until
+> `DAOLAB_MAX_RETRIES` attempts have been observed (B-25); when they run out the reservation is
+> set `failed` and a `cleanup` job is queued automatically, and the cleanup of a `failed`
+> reservation ends in `released` (residue leaves it `failed`: there is no `failed → quarantined`
+> edge, and flagging the setup is B-71). A `deploy` job on a
 > reservation that is already `ready`/`active` is a **redeploy** (`POST .../redeploy`, B-28): the
 > runner replays it, the job records the outcome, and the reservation keeps its state whether the
-> replay succeeds or fails, so a failed replay never tears down a lab the user is working in.
+> replay succeeds or fails (no retries, no automatic cleanup), so a failed replay never tears
+> down a lab the user is working in.
 > A cleanup always runs
 > `verify_clean` afterwards, whatever the cleanup reported: clean → `released`, residue (or
-> verify unable to run) → `quarantined`. **Because the setup is freed in step (4), the next
+> verify unable to run) → `quarantined` (when the reservation was `cleaning`). **Because the setup is freed in step (4), the next
 > booking on it starts on the next tick**, not the same one; the lead time absorbs that.
 > **B-24 (single-flight):** a `deploy`, `cleanup` or `reconcile` job is only started when no
 > other such job is `running` on the same setup (a job belongs to a setup through its
@@ -128,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
 > so it also frees a setup that B-24 was holding. If the reservation has moved on by then, the
 > replayed job is failed by the usual state check. The timeout must exceed the longest silent
 > stretch of a healthy job; a job that is slow *and* silent for longer could be replayed while
-> still running. Not done yet: retries (B-25), IP release and the
+> still running. Not done yet: IP release and the
 > setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67). `vms` rows
 > are not created by the engine yet.
 
