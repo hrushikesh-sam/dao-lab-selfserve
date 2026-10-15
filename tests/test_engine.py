@@ -259,23 +259,58 @@ def test_deploy_is_audited(world):
     assert detail["ok"] is True and detail["job"] == jobs(db)[0]["id"] and detail["attempt"] == 1
 
 
-def test_failed_deploy_fails_the_reservation_and_frees_the_setup(world):
+def test_a_failed_deploy_is_retried_as_a_fresh_job_before_giving_up(world, monkeypatch):
+    """B-25: an observed deploy failure queues a fresh deploy job (attempt + 1) and keeps the
+    reservation `provisioning`; the replay waits for the next tick (the pending list is a
+    snapshot taken before the retry is created)."""
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=3))
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    out = tick(db, rn=mock(fail={"deploy"}))
+    assert state(db, rid) == "provisioning" and out.failed == 0 and out.retried == 1
+    assert [(j["kind"], j["attempt"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", 1, "failed"), ("deploy", 2, "pending")]
+    out = tick(db, rn=mock(fail={"deploy"}))            # only the queued retry runs now
+    assert out.jobs_run == 1 and out.retried == 1 and state(db, rid) == "provisioning"
+    assert [j["attempt"] for j in jobs(db, rid) if j["kind"] == "deploy"] == [1, 2, 3]
+
+
+def test_retries_are_exhausted_by_counting_attempts(world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=2))
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    rn = mock(fail={"deploy"})
+    assert tick(db, rn=rn).failed == 0 and state(db, rid) == "provisioning"   # attempt 1 fails
+    out = tick(db, rn=rn)                                                     # attempt 2 fails
+    assert out.failed == 1 and out.retried == 0 and state(db, rid) == "failed"
+    deploy_jobs = [j for j in jobs(db, rid) if j["kind"] == "deploy"]
+    assert [j["attempt"] for j in deploy_jobs] == [1, 2]
+    assert all(j["state"] == "failed" for j in deploy_jobs)
+
+
+def test_when_retries_are_exhausted_a_cleanup_job_is_queued_and_releases_the_reservation(
+        world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
     db, sid, _ = world
     rid = res(world, uc="b", start=T(9, 10), end=T(10))
     out = tick(db, rn=mock(fail={"deploy"}), cfg=SchedConfig(hw_class_lead_min=15))
     row = models.reservation_by_id(db, rid)
     assert row["state"] == "failed" and out.failed == 1 and out.ready == 0
     assert "create_vms" in row["failure_reason"]
-    [job] = jobs(db)
-    assert job["state"] == "failed" and "create_vms" in job["error"]
-    assert [s["name"] for s in models.job_steps(job)] == ["lease_ips", "dpu_prepare", "create_vms"]
     assert dpu_class(db, sid) == "cls-a"                                # nothing was flashed
     assert models.held_by(db, sid) is None                              # next booking can start
+    assert [(j["kind"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", "failed"), ("cleanup", "pending")]
+    [deploy_job] = [j for j in jobs(db, rid) if j["kind"] == "deploy"]
+    assert [s["name"] for s in models.job_steps(deploy_job)] == ["lease_ips", "dpu_prepare", "create_vms"]
     [event] = [e for e in models.list_audit_events(db) if e["action"] == "deploy"]
     assert models.from_json(event["detail"])["ok"] is False
+    out = tick(db, rn=mock())                    # the automatic cleanup now tears it down
+    assert state(db, rid) == "released" and out.released == 1
 
 
-def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog):
+def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
     db = world[0]
     rid = res(world, uc="a", start=T(9, 5), end=T(10))
     with caplog.at_level(logging.ERROR, logger="daolab.engine"):
@@ -285,7 +320,8 @@ def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog):
     assert "reservation %s" % rid in caplog.text or "boom" in caplog.text
 
 
-def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world):
+def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
     db = world[0]
     rid = res(world, uc="a", start=T(9, 5), end=T(10))
     tick(db, rn=runner.AnsibleRunner())

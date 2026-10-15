@@ -23,10 +23,14 @@ Runner calls block; ticks are serialised, so a long deploy simply delays the nex
 
 What a finished job does to its reservation:
   * deploy ok      -> ready, and the DPU's hw_class is recorded (plan/01 invariant 6)
-  * deploy failed  -> failed, with the job error as failure_reason (no retries yet: B-25)
+  * deploy failed  -> retried as a fresh deploy job (attempt + 1) until DAOLAB_MAX_RETRIES
+                      observed failures (B-25); once exhausted -> failed, with the job error as
+                      failure_reason, plus an automatic `cleanup` job to tear down whatever the
+                      partial deploy left behind (plan/09 §10)
   * cleanup        -> cleanup, then verify_clean regardless of the cleanup result (plan/09 §9);
-                      clean -> released, residue (or verify_clean could not run) -> quarantined.
-                      Releasing IP leases and flagging the setup come with B-71.
+                      from `cleaning`: clean -> released, residue -> quarantined;
+                      from `failed`: clean -> released, residue stays `failed` (no edge to
+                      quarantined). Releasing IP leases and flagging the setup come with B-71.
   * health_probe   -> only the job is recorded
 """
 import argparse
@@ -47,7 +51,7 @@ log = logging.getLogger("daolab.engine")
 # (cancelled, admin override...) the job fails without calling the runner.
 EXPECTED_STATES = {
     "deploy": ("provisioning",),
-    "cleanup": ("cleaning",),
+    "cleanup": ("cleaning", "failed"),
     "health_probe": ("ready", "active"),
     "reconcile": ("quarantined",),
 }
@@ -59,8 +63,9 @@ class TickResult:
     expired: int = 0         # active -> cleaning (cleanup job queued)
     started: int = 0         # queued -> provisioning (deploy job queued)
     jobs_run: int = 0
+    retried: int = 0         # deploy failure -> fresh deploy job queued (B-25)
     ready: int = 0           # deploy ok
-    failed: int = 0          # deploy failed
+    failed: int = 0          # deploy failed for the last time
     released: int = 0        # cleanup verified clean
     quarantined: int = 0     # residue after cleanup
 
@@ -187,9 +192,17 @@ def _run_deploy(db, rn, job, res, sink, out: TickResult) -> RunResult:
                 models.set_dpu_hw_class(db, res["setup_id"], uc["hw_class"])
             if _move(db, res["id"], "ready", from_state="provisioning"):
                 out.ready += 1
-        elif _move(db, res["id"], "failed", from_state="provisioning",
-                   failure_reason=result.error or "deploy failed"):
-            out.failed += 1
+        elif job["attempt"] < config.settings.max_retries:
+            # B-25: replay the deploy as a brand-new job; the reservation stays provisioning.
+            # A later tick picks it up (pending_jobs was snapshotted before this row existed).
+            models.create_job(db, res["id"], "deploy", attempt=job["attempt"] + 1,
+                              trace_id=job["trace_id"])
+            out.retried += 1
+        else:
+            if _move(db, res["id"], "failed", from_state="provisioning",
+                     failure_reason=result.error or "deploy failed"):
+                out.failed += 1
+            models.create_job(db, res["id"], "cleanup", trace_id=job["trace_id"])
         _audit(db, job, "deploy", {"ok": result.ok, "error": result.error})
     return result
 
@@ -206,10 +219,15 @@ def _run_cleanup(db, rn, job, res, sink, out: TickResult) -> RunResult:
     with _txn(db):          # job result + reservation move + audit commit together or not at all
         _finish(db, job["id"], result)
         if clean:
-            if _move(db, res["id"], "released", from_state="cleaning"):
+            # from `cleaning` or from `failed` (the cleanup queued when retries ran out):
+            # both have exactly one legal exit, this one.
+            if _move(db, res["id"], "released", from_state=res["state"]):
                 out.released += 1
-        elif _move(db, res["id"], "quarantined", from_state="cleaning"):
-            out.quarantined += 1
+        elif res["state"] == "cleaning":
+            if _move(db, res["id"], "quarantined", from_state="cleaning"):
+                out.quarantined += 1
+        # residue after an already-failed deploy has nowhere to go (no failed -> quarantined);
+        # the reservation stays `failed`, noted in the audit detail below.
         _audit(db, job, "cleanup", {"ok": result.ok, "cleanup_ok": cleaned.ok,
                                     "residue": list(verified.residue), "error": result.error})
     return result
