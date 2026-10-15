@@ -1,0 +1,10 @@
+# usecases/smartnic.yml
+name: smartnic                          # must equal the file stem
+variant: offload-app
+requires: [octeon-cn106, e810, wire]    # capability match only — no hostnames
+hw_class: sdp-pf1-vf8                   # SDP, 1 PF, 8 VFs — virtio offload on the OCTEON
+roles:
+  snapp:  {on: dpu,     app: dao-smartnic, upstream: hostvm}
+  tgen:   {on: tg_host, vm: tpl-ubuntu2204-dao, install: [trex, pktgen],      connect: e810-vf}
+  hostvm: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: [offload-client],   connect: virtio}
+verify: {from: tgen, cmd: "pktgen -t {hostvm_ip} --rate 10mpps", expect: "offload rx > 0"}

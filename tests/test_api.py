@@ -83,7 +83,7 @@ def test_2_role_gates(env):
 
 def test_3_catalog(env):
     rows = env.client.get("/usecases", headers=H(env.user_token)).json()
-    assert len(rows) == 16                     # 15 README rows + diy
+    assert len(rows) == 17                     # 15 README rows + diy + smartnic
     by_name = {r["name"]: r for r in rows}
     assert by_name["tls-proxy-nginx"]["available"] is True
     assert by_name["tls-proxy-nginx"]["status"] == "active"
@@ -97,6 +97,8 @@ def test_3_catalog(env):
     assert [s["name"] for s in tls["setups"]] == ["tb-01"]
     assert tls["setups"][0]["diagram"].startswith("graph") and tls["setups"][0]["members"]
     assert tls["roles"]["proxy"]["on"] == "dpu" and tls["requires"] == ["octeon-cn106", "e810", "wire"]
+    for uc in ("vpp", "smartnic"):
+        assert by_name[uc]["status"] == "active" and by_name[uc]["available"] is True
 
 
 def test_4_catalog_unmet_capability(env):

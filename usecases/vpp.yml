@@ -1,0 +1,10 @@
+# usecases/vpp.yml
+name: vpp                              # must equal the file stem
+variant: dpdk-forward
+requires: [octeon-cn106, e810, wire]   # capability match only — no hostnames
+hw_class: sdp-pf1-vf8                  # SDP, 1 PF, 8 VFs — VPP DPDK on the OCTEON
+roles:
+  vpp:  {on: dpu,     app: dao-vpp, upstream: sink}
+  tgen: {on: tg_host, vm: tpl-ubuntu2204-dao, install: [trex, pktgen], connect: e810-vf}
+  sink: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: [sink],       connect: e810-vf}
+verify: {from: tgen, cmd: "pktgen -t {sink_ip} --rate 10mpps", expect: "rx == tx"}
