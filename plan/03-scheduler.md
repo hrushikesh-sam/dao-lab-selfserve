@@ -12,8 +12,10 @@ Sources: root `README.md` (Phase 2, design invariants) and contract §8 (schedul
 # service/scheduler.py — stdlib only: sqlite3, json, dataclasses, datetime, typing.
 
 def place(db: sqlite3.Connection, req: PlacementRequest, now: datetime,
-          cfg: SchedConfig = SchedConfig()) -> Placed | NoSetup | NoFreeSlot:
-    """Pure placement: FCFS, capability match, slot-shift, hw_class lead time. Read-only."""
+          cfg: SchedConfig = SchedConfig()) -> Placed | NoSetup | NoFreeSlot | NoFit:
+    """Pure placement: FCFS, capability match, hw_class lead time. Read-only.
+    mode "asap" (default): slot-shift to the earliest fit.
+    mode "at": exactly the requested window, never shifted -> NoFit if it is not free."""
 
 def next_free_at(db: sqlite3.Connection, usecase: str, now: datetime,
                  cfg: SchedConfig = SchedConfig()) -> datetime | None:
@@ -22,7 +24,7 @@ def next_free_at(db: sqlite3.Connection, usecase: str, now: datetime,
 
 Callers:
 
-- `POST /reservations` (and therefore `daolab reserve`) — `place()` then INSERT. Slot conflicts are **never** errors: the scheduler slot-shifts and the API returns the granted slot.
+- `POST /reservations` (and therefore `daolab reserve`) — `place()` then INSERT. In mode `asap` (the default) slot conflicts are **never** errors: the scheduler slot-shifts and the API returns the granted slot. In mode `at` a conflict is a `NoFit` result, which the API maps to `409 slot_conflict` (B-14; alternatives in B-13).
 - `GET /usecases` — `next_free_at()` per catalog row fills `next_free_at` and distinguishes `reason: "no_free_slot"`.
 
 Configuration is passed in, never read: `api.py` builds `SchedConfig` from `service/config.py`. Defaults below mirror `.env.example` exactly.
@@ -35,7 +37,7 @@ class SchedConfig:
     horizon_hours: int = 168      # DAOLAB_SCHED_HORIZON_HOURS — search horizon
 ```
 
-Precondition (enforced by `api.py`, see [02-backend-api.md](02-backend-api.md)): the use case exists and is active (`yaml_path` set, or `'builtin'` for `diy`), `hours >= 1`, and for `diy` the named setup exists. The scheduler may `assert` these, never re-validate them.
+Precondition (enforced by `api.py`, see [02-backend-api.md](02-backend-api.md)): the use case exists and is active (`yaml_path` set, or `'builtin'` for `diy`), `hours >= 1`, and for `diy` the named setup exists. The scheduler may `assert` these, never re-validate them. The one exception is `mode`: an unknown value raises `ValueError` rather than silently behaving like `asap`.
 
 ## Input and output data shapes
 
@@ -46,6 +48,7 @@ class PlacementRequest:
     requested_start_at: datetime    # UTC-aware; the literal "now" already resolved by api.py
     hours: int                      # >= 1
     setup: str | None = None        # diy only: the explicitly named setup, e.g. "setup-01"
+    mode: Literal["asap", "at"] = "asap"   # asap: shift to the earliest fit; at: exact window only
 
 @dataclass(frozen=True)
 class Placed:
@@ -64,6 +67,12 @@ class NoSetup:                      # -> 409 unmet_capability (message MUST name
 @dataclass(frozen=True)
 class NoFreeSlot:                   # -> catalog reason "no_free_slot"; POST mapping in 02-backend-api.md
     horizon_hours: int
+
+@dataclass(frozen=True)
+class NoFit:                        # mode "at" only -> 409 slot_conflict (B-14); alternatives added by B-13
+    start_at: datetime              # the exact window that was asked for ...
+    end_at: datetime                # ... and could not be granted
+    reason: Literal["overlap", "in_the_past"]
 ```
 
 Rows read (all times are UTC ISO-8601 `YYYY-MM-DDTHH:MM:SSZ` TEXT, parsed to aware datetimes by `models.py` helpers):
@@ -95,7 +104,10 @@ flowchart TD
     ANY -- no --> NS["NoSetup: smallest missing set, closest_setup"]
     ANY -- yes --> TL["per candidate: busy intervals + projected hw_class timeline"]
     ONE --> TL
-    TL --> SW["sweep for earliest s with (s - lead, s + hours) free"]
+    TL --> MD{"mode?"}
+    MD -- at --> AT["one overlap test of exactly (start - lead, start + hours) per candidate;<br/>start < now -> NoFit in_the_past; none free -> NoFit overlap"]
+    AT --> PICKAT["Placed (shifted=False): min by (lead_min, setup name)"]
+    MD -- asap --> SW["sweep for earliest s with (s - lead, s + hours) free"]
     SW --> OK{"feasible within DAOLAB_SCHED_HORIZON_HOURS?"}
     OK -- "no, all candidates" --> NF["NoFreeSlot"]
     OK -- yes --> PICK["min by (start_at, lead_min, setup name)"]
@@ -158,6 +170,27 @@ def sweep(tl, uc_hw_class, base, hours, horizon_end, cfg, has_dpu) -> Slot | Non
 
 Each iteration returns or advances `s` past at least one busy interval → guaranteed termination. `place()` runs the sweep per candidate, collects `(start, lead_min, name, id)` tuples, and returns `Placed` from the minimum (tie-break table below) or `NoFreeSlot` if every candidate fails within `now + DAOLAB_SCHED_HORIZON_HOURS`.
 
+### Step 5b — exact window (mode `at`, B-10)
+
+```python
+def place_at(db, req, candidates, uc_hw_class, now, cfg) -> Placed | NoFit:
+    start, end = req.requested_start_at, req.requested_start_at + timedelta(hours=req.hours)
+    if start < now:
+        return NoFit(start, end, "in_the_past")          # rejected, never clamped (clamping = shifting)
+    free = []
+    for s in candidates:
+        tl = timeline(db, s.id, ...)
+        lead = lead_min(uc_hw_class, tl.class_at(start), cfg, has_dpu)
+        if first_overlap(tl, start - timedelta(minutes=lead), end) is None:   # the SAME test the sweep uses
+            free.append((lead, s.name, s.id))
+    if not free:
+        return NoFit(start, end, "overlap")
+    lead, name, sid = min(free)
+    return Placed(sid, name, start, end, shifted=False, lead_min=lead)
+```
+
+`first_overlap` is the single half-open test (`b.start < w1 and b.end > w0`) shared with the sweep, so the two modes cannot disagree about what a conflict is. Consequence, pinned by a differential test: for any start at or after `now`, `at` is granted exactly when `asap` would grant that same start unshifted (identical `Placed`), and is a `NoFit` exactly when `asap` would have shifted. The lead window before the start counts, and so does a later booking's lead before *its* start, so `at` 12:00–14:00 right after a booking that ends 12:00 conflicts (first free start is 12:05, as in `asap`). `DAOLAB_SCHED_HORIZON_HOURS` bounds the `asap` search only; `at` has no sweep to bound, so it does not enforce the horizon (open policy question for B-14/quotas).
+
 Build order for the implementer: 1. dataclasses + `SchedConfig`; 2. loader SQL (`usecases`, `setups` + `resources`, timeline query); 3. `lead_min`; 4. `timeline` / `class_at`; 5. `sweep`; 6. `place` + `next_free_at`; 7. `tests/test_scheduler.py`.
 
 ## Tie-breaking and determinism rules
@@ -168,7 +201,8 @@ Build order for the implementer: 1. dataclasses + `SchedConfig`; 2. loader SQL (
 | `closest_setup` tie-break | Smallest per-setup missing set; tie → alphabetically first setup (contract error model, verbatim). |
 | Iteration order | Setups `ORDER BY name`; reservations `ORDER BY start_at, id`. |
 | Interval convention | Half-open `[start − lead, end)`: a slot may begin exactly at a predecessor's `end_at` (plus its own lead). |
-| Past starts | `requested_start_at < now` (including the literal `now`) clamps the sweep base to `now`; `shifted` still compares against the stored `requested_start_at`. |
+| Candidate tie-break, mode `at` | All free candidates share the requested start, so pick min `(lead_min, setup_name)` — the `asap` order for equal starts. |
+| Past starts | Mode `asap`: `requested_start_at < now` (including the literal `now`) clamps the sweep base to `now`; `shifted` still compares against the stored `requested_start_at`. Mode `at`: a start before `now` is rejected as `NoFit(reason="in_the_past")`, never clamped; `start == now` is allowed. |
 | Time handling | UTC-aware datetimes only; ISO-8601 UTC strings sort lexicographically = chronologically, so SQL `ORDER BY start_at` is correct. |
 | Purity | `now` and `cfg` are parameters; no randomness; no re-placement of existing rows. Same DB state + same request + same `now` → byte-identical result, replayable in tests. |
 
@@ -217,6 +251,8 @@ result: start_at=12:15:00Z end_at=14:15:00Z shifted=true
 - **N setups with partial capability overlap.** `requires [octeon-cn106, e810, wire]` with setup-01 `[e810, octeon-cn106, sdp, wire]` and a fixture `setup-02` `[gpu, octeon-cn106, sdp]`: only setup-01 is a candidate — partial overlap is not a match. If *both* satisfy `requires`, each is swept independently and the tie-break table decides; a request that would shift on setup-01 is granted unshifted on a free setup-02.
 - **Setup without a DPU member** (pure `nic`/`compute`/`gpu`): `has_dpu` is false, hw_class logic is inert, lead is always `DAOLAB_PROVISION_LEAD_MIN`.
 - **`failed` reservations** are excluded from the timeline (contract busy rule, verbatim). A failed *teardown* leaving the setup physically held is an operational condition surfaced via `held_by` and resolved by an admin — engine/ops concern ([04-lifecycle-engine.md](04-lifecycle-engine.md)), not a scheduler input.
+- **Mode `at` on a busy window** → `NoFit(reason="overlap")` carrying the requested `start_at`/`end_at`; nothing is shifted and nothing is written. With several capable setups the window is tested on each, and the request is granted on a free one (tie-break above); `NoFit` only when every candidate conflicts. `diy` tests only its named setup.
+- **Mode `at` with a start in the past** → `NoFit(reason="in_the_past")`; the API may reject such input earlier with a validation error.
 - **Horizon exhaustion** → `NoFreeSlot(horizon_hours=168)`; surfaces as `reason: "no_free_slot"` / `next_free_at: null` in the catalog.
 - **`reservation_id=0`** (manual Phase-1 runs) never exists as a DB row, so it never appears on any timeline.
 
@@ -256,5 +292,27 @@ Let S = candidate setups, R = timeline rows per setup (reservations not in `rele
 | 20 | `test_next_free_at_probe` | Busy until 12:00 (same class) | `next_free_at == 12:05`; `None` once the horizon is saturated |
 | 21 | `test_determinism_replay` | Run #2 and #5 twice on cloned DBs | Byte-identical `Placed` results both times |
 | 22 | `test_read_only` | Any `place()` call | `db.total_changes == 0` — the scheduler never writes |
+
+B-10 adds the mode-`at` cases below (same file, same fixtures; `req(..., mode="at")`):
+
+| # | Test | Fixture / action | Expected |
+|---|---|---|---|
+| B-10.1 | `test_mode_defaults_to_asap` | `PlacementRequest` without `mode` | `mode == "asap"` |
+| B-10.2 | `test_at_free_window_granted_exactly` | Empty timeline; `at` 10:00 +2h | `Placed` 10:00–12:00, `shifted=False` |
+| B-10.3 | `test_at_busy_window_is_conflict_but_asap_shifts` **(B-10 done-when)** | r1 10:00–12:00; `at` 11:00 +2h, then the same as `asap` | `NoFit(11:00, 13:00, "overlap")`; `asap` → 12:05, `shifted=True` |
+| B-10.4 | `test_at_conflict_names_the_requested_window` | r1 10:00–12:00; `at` 10:30 +3h | `NoFit` with `start_at=10:30`, `end_at=13:30` |
+| B-10.5 | `test_at_boundary_after_a_booking_uses_lead` | r1 ends 12:00; `at` 12:04 / 12:05 / 12:06 | 12:04 `NoFit`; 12:05 and 12:06 `Placed` |
+| B-10.6 | `test_at_hw_class_change_needs_reflash_lead` | r1 ends 12:00; other `hw_class`; `at` 12:14 / 12:15 | 12:14 `NoFit`; 12:15 `Placed`, `lead_min=15` |
+| B-10.7 | `test_at_window_ending_into_a_later_booking` | r1 12:00–14:00; `at` window ending 11:55 / 11:56 | ending 11:55 `Placed`; 11:56 `NoFit` (r1's 5 min lead) |
+| B-10.8 | `test_at_all_busy_states_block` | r1 in each busy state | `NoFit` every time |
+| B-10.9 | `test_at_released_and_failed_free_the_window` | r1 `released` / `failed` | `Placed` |
+| B-10.10 | `test_at_start_in_the_past_is_rejected_not_clamped` | `at` 08:00 with `now` 09:00; then `at` == `now` | `NoFit("in_the_past")`; `start == now` → `Placed` |
+| B-10.11 | `test_at_picks_the_free_setup` / `test_at_all_capable_setups_busy_is_conflict` | setup-01 busy, setup-02 free; then both busy | granted on setup-02 unshifted; then `NoFit` |
+| B-10.12 | `test_at_tie_prefers_no_reflash_then_name` / `test_at_tie_equal_leads_alpha_name_wins` | Two free setups | no-reflash setup wins; equal leads → alphabetical |
+| B-10.13 | `test_at_unmet_capability_is_still_nosetup` | `requires` includes `gpu` | `NoSetup`, `missing == ["gpu"]` |
+| B-10.14 | `test_at_diy_uses_named_setup_only` | diy, named setup busy, other free | `NoFit` (no fallback); named free → `Placed` |
+| B-10.15 | `test_at_is_pure_and_read_only` | Same `at` request twice | equal results; `db.total_changes` unchanged |
+| B-10.16 | `test_unknown_mode_is_an_error` | `mode="whenever"` | `ValueError` |
+| B-10.17 | `test_at_and_asap_agree_on_random_timelines` | 400 seeded random timelines, 2 setups, 3 use cases | `at == asap` whenever `asap` is unshifted; `NoFit("overlap")` whenever `asap` shifted |
 
 Tests 2 and 3 are the two Phase 2 checkpoint scenarios from the root README, verbatim: two overlapping reserve calls → the second is shifted to the next slot; reserving a use case whose `requires` no setup meets → rejected naming the missing capability.

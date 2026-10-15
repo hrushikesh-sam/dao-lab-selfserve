@@ -1,5 +1,10 @@
 """Pure placement: FCFS, capability match, slot-shift, hw_class lead time.
 
+Two booking modes (plan/09 §4-5):
+  * ``asap`` (default) — earliest free slot at or after the requested start (slot-shift).
+  * ``at``             — exactly the requested window: one overlap test, never shifted.
+                         If the window is not free the result is ``NoFit``.
+
 No I/O other than the sqlite handle passed in (SELECTs only) — no clock reads,
 no env reads, no writes. Same DB state + same request + same now -> identical result.
 """
@@ -7,6 +12,9 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
+
+Mode = Literal["asap", "at"]
 
 
 @dataclass(frozen=True)
@@ -22,6 +30,7 @@ class PlacementRequest:
     requested_start_at: datetime    # UTC-aware; the literal "now" already resolved by api.py
     hours: int                      # >= 1
     setup: str | None = None        # diy only: the explicitly named setup
+    mode: Mode = "asap"             # "asap": shift to the earliest fit; "at": exact window only
 
 
 @dataclass(frozen=True)
@@ -43,6 +52,13 @@ class NoSetup:                      # -> 409 unmet_capability (message MUST name
 @dataclass(frozen=True)
 class NoFreeSlot:                   # -> catalog reason "no_free_slot"
     horizon_hours: int
+
+
+@dataclass(frozen=True)
+class NoFit:                        # mode "at" only -> 409 slot_conflict (alternatives: B-13)
+    start_at: datetime              # the exact window that was asked for ...
+    end_at: datetime                # ... and could not be granted
+    reason: Literal["overlap", "in_the_past"]
 
 
 @dataclass(frozen=True)
@@ -110,13 +126,20 @@ def _timeline(db, setup_id: int, dpu_hw_class, has_dpu: bool, cfg: SchedConfig) 
     return _Timeline(busy, steps, dpu_hw_class)
 
 
+def _first_overlap(tl: _Timeline, w0: datetime, w1: datetime):
+    """First busy interval sharing any instant with the half-open window [w0, w1), else None.
+    The single overlap test used by both modes, so `at` and `asap` can never disagree
+    about what counts as a conflict (back-to-back, end == next start, is not one)."""
+    return next((b for b in tl.busy if b[0] < w1 and b[1] > w0), None)
+
+
 def _sweep(tl: _Timeline, uc_hw_class, base: datetime, hours: int,
            horizon_end: datetime, cfg: SchedConfig, has_dpu: bool) -> _Slot | None:
     s = base
     while s + timedelta(hours=hours) <= horizon_end:
         lead = lead_min(uc_hw_class, tl.class_at(s), cfg, has_dpu)
         w0, w1 = s - timedelta(minutes=lead), s + timedelta(hours=hours)
-        hit = next((b for b in tl.busy if b[0] < w1 and b[1] > w0), None)
+        hit = _first_overlap(tl, w0, w1)
         if hit is None:
             return _Slot(start=s, lead_min=lead)
         just_after = hit[1] + timedelta(seconds=1)      # class_at is a step function
@@ -132,8 +155,36 @@ def _candidates(db, requires: list[str], setup_name: str | None):
     return [r for r in rows if need <= set(json.loads(r["capabilities"]))], rows
 
 
+def _place_at(db, req: PlacementRequest, candidates, uc_hw_class,
+              now: datetime, cfg: SchedConfig) -> Placed | NoFit:
+    """mode "at": test exactly [requested_start_at, +hours) on every candidate setup — one
+    overlap test per setup, no sweep, never shifted. The lead window before the start is
+    tested too (same rule as `asap`), so `at` is granted exactly when `asap` would grant
+    the same start unshifted. Among free candidates the tie-break is (lead, name, id), the
+    `asap` order for equal starts. A start before `now` is rejected, not clamped: clamping
+    would shift it. The search horizon bounds `asap` only; `at` has no sweep to bound."""
+    start = req.requested_start_at
+    end = start + timedelta(hours=req.hours)
+    if start < now:
+        return NoFit(start_at=start, end_at=end, reason="in_the_past")
+    free = []
+    for s in candidates:
+        has_dpu, dpu_class = _setup_dpu(db, s["id"])
+        tl = _timeline(db, s["id"], dpu_class, has_dpu, cfg)
+        lead = lead_min(uc_hw_class, tl.class_at(start), cfg, has_dpu)
+        if _first_overlap(tl, start - timedelta(minutes=lead), end) is None:
+            free.append((lead, s["name"], s["id"]))
+    if not free:
+        return NoFit(start_at=start, end_at=end, reason="overlap")
+    lead, name, sid = min(free)
+    return Placed(setup_id=sid, setup_name=name, start_at=start, end_at=end,
+                  shifted=False, lead_min=lead)
+
+
 def place(db: sqlite3.Connection, req: PlacementRequest, now: datetime,
-          cfg: SchedConfig = SchedConfig()) -> Placed | NoSetup | NoFreeSlot:
+          cfg: SchedConfig = SchedConfig()) -> Placed | NoSetup | NoFreeSlot | NoFit:
+    if req.mode not in ("asap", "at"):
+        raise ValueError(f"unknown placement mode: {req.mode!r} (expected 'asap' or 'at')")
     uc = db.execute(
         "SELECT id, name, requires, hw_class FROM usecases WHERE name = ?", (req.usecase,)
     ).fetchone()
@@ -151,6 +202,9 @@ def place(db: sqlite3.Connection, req: PlacementRequest, now: datetime,
         if best is None:
             return NoSetup(missing=sorted(set(requires)), closest_setup=None)
         return NoSetup(missing=best[0], closest_setup=best[1])
+
+    if req.mode == "at":
+        return _place_at(db, req, candidates, uc_hw_class, now, cfg)
 
     base = max(req.requested_start_at, now)
     horizon_end = now + timedelta(hours=cfg.horizon_hours)
