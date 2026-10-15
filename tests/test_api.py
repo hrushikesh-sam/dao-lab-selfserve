@@ -433,3 +433,89 @@ def test_26_availability_validation(env):
                                 headers=H(env.admin_token)), 422, "validation_error")
     assert_error(env.client.get(f"{base}&from=not-a-time", headers=H(env.admin_token)),
                  422, "validation_error")
+
+
+def test_27_cleanup_endpoint(env):
+    """B-27: POST /reservations/{id}/cleanup ends a ready/active slot early (202 + job)."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    rid = reserve(env, alice).json()["id"]
+    queued = reserve(env, alice).json()["id"]      # book before rid goes live (B-15 quota)
+    env.models.update(env.conn, "reservations", rid, {"state": "ready"})
+    # a non-owner cannot end someone else's slot
+    assert_error(env.client.post(f"/reservations/{rid}/cleanup", headers=H(bob)), 403, "forbidden")
+    # a queued reservation has nothing to tear down
+    assert_error(env.client.post(f"/reservations/{queued}/cleanup", headers=H(alice)),
+                 409, "invalid_state")
+    resp = env.client.post(f"/reservations/{rid}/cleanup", headers=H(alice))
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["id"] == rid and body["state"] == "cleaning"
+    assert body["job"]["kind"] == "cleanup" and body["job"]["state"] == "pending"
+    assert body["job"]["reservation_id"] == rid and body["job"]["steps"] == []
+    # the state change and the job are persisted
+    assert env.models.reservation_by_id(env.conn, rid)["state"] == "cleaning"
+    assert [j["kind"] for j in env.models.jobs_for_reservation(env.conn, rid)] == ["cleanup"]
+    # a second cleanup is refused and the action is audit-logged
+    assert_error(env.client.post(f"/reservations/{rid}/cleanup", headers=H(alice)),
+                 409, "invalid_state")
+    rows = env.client.get("/admin/audit", headers=H(env.admin_token)).json()
+    assert rows[0]["action"] == "cleanup" and rows[0]["object_id"] == rid
+
+
+def test_28_redeploy_endpoint(env):
+    """B-28: POST /reservations/{id}/redeploy re-runs deploy, inside the slot only."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    rid = reserve(env, alice).json()["id"]
+    env.models.update(env.conn, "reservations", rid, {"state": "active"})
+    # env.T is a day ahead, so right now is outside the slot
+    assert_error(env.client.post(f"/reservations/{rid}/redeploy", headers=H(alice)),
+                 409, "invalid_state")
+    # open the slot around now, then redeploy
+    now = datetime.now(UTC)
+    env.models.update(env.conn, "reservations", rid, {
+        "start_at": iso(now - timedelta(hours=1)), "end_at": iso(now + timedelta(hours=1))})
+    assert_error(env.client.post(f"/reservations/{rid}/redeploy", headers=H(bob)), 403, "forbidden")
+    first = env.client.post(f"/reservations/{rid}/redeploy", headers=H(alice))
+    assert first.status_code == 202, first.text
+    assert first.json()["state"] == "active"
+    assert first.json()["job"]["kind"] == "deploy" and first.json()["job"]["attempt"] == 1
+    # a second redeploy is a new job with attempt + 1
+    second = env.client.post(f"/reservations/{rid}/redeploy", headers=H(alice)).json()
+    assert second["job"]["attempt"] == 2 and second["job"]["id"] != first.json()["job"]["id"]
+    # a queued booking cannot redeploy even inside its window
+    q = reserve(env, bob).json()["id"]
+    env.models.update(env.conn, "reservations", q, {
+        "start_at": iso(now - timedelta(hours=1)), "end_at": iso(now + timedelta(hours=1))})
+    assert_error(env.client.post(f"/reservations/{q}/redeploy", headers=H(bob)),
+                 409, "invalid_state")
+
+
+def test_29_jobs_and_events(env):
+    """B-29: GET /jobs/{id} (owner) and the SSE stream of steps + state changes."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    rid = reserve(env, alice).json()["id"]
+    jid = env.models.create_job(env.conn, rid, "deploy")
+    env.models.transition_job(env.conn, jid, "running")
+    env.models.append_job_step(env.conn, jid, "lease IP", detail="10.20.0.21")
+    env.models.append_job_step(env.conn, jid, "DPU app: tls-proxy-nginx")
+    env.models.transition_job(env.conn, jid, "succeeded")
+    # GET /jobs/{id}: the canonical job shape, owner-gated
+    job = env.client.get(f"/jobs/{jid}", headers=H(alice)).json()
+    assert job["id"] == jid and job["kind"] == "deploy" and job["state"] == "succeeded"
+    assert [s["name"] for s in job["steps"]] == ["lease IP", "DPU app: tls-proxy-nginx"]
+    assert job["steps"][0]["detail"] == "10.20.0.21"
+    assert_error(env.client.get(f"/jobs/{jid}", headers=H(bob)), 403, "forbidden")
+    assert_error(env.client.get("/jobs/9999", headers=H(alice)), 404, "not_found")
+    # SSE: a terminal reservation streams its snapshot then closes
+    env.models.update(env.conn, "reservations", rid, {"state": "released"})
+    resp = env.client.get(f"/reservations/{rid}/events", headers=H(alice))
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    body = resp.text
+    assert "event: state" in body and '"state": "released"' in body
+    assert "event: step" in body
+    assert "lease IP" in body and "DPU app: tls-proxy-nginx" in body
+    assert_error(env.client.get(f"/reservations/{rid}/events", headers=H(bob)), 403, "forbidden")

@@ -3,16 +3,18 @@ VM-IP callback; serves dashboard/. Views over the DB only — YAML is read by
 `daolab sync` (catalog.py), never by request handlers."""
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from . import config, models, otel, scheduler
@@ -215,6 +217,73 @@ def reservation_summary(conn, row) -> dict:
 def user_object(row) -> dict:
     return {"id": row["id"], "username": row["username"], "role": row["role"],
             "enabled": bool(row["enabled"]), "created_at": row["created_at"]}
+
+
+_LOG_TAIL_BYTES = 8192
+
+
+def _log_tail(path: str | None) -> str | None:
+    """The last few KB of a job's playbook log (plan/09 §4); None when there is no log yet."""
+    if not path:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - _LOG_TAIL_BYTES))
+            return fh.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+
+
+def job_object(job) -> dict:
+    """The canonical job shape (plan/09 §4), returned by the cleanup/redeploy responses and
+    GET /jobs/{id}: state, parsed steps, trace_id and the playbook log tail."""
+    return {
+        "id": job["id"], "reservation_id": job["reservation_id"], "kind": job["kind"],
+        "state": job["state"], "attempt": job["attempt"], "trace_id": job["trace_id"],
+        "log_path": job["log_path"], "log_tail": _log_tail(job["log_path"]),
+        "error": job["error"], "steps": models.job_steps(job),
+        "started_at": job["started_at"], "finished_at": job["finished_at"],
+        "created_at": job["created_at"], "updated_at": job["updated_at"],
+    }
+
+
+_TERMINAL_RESERVATION_STATES = ("released", "failed")
+_EVENTS_POLL_SEC = 1.0
+_EVENTS_MAX_SEC = 900.0
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _reservation_events(conn: sqlite3.Connection, res_id: int):
+    """Yield SSE frames for a reservation: its state, then every job step as it lands
+    (plan/09 §4). Ends when the reservation reaches a terminal state, or after
+    `_EVENTS_MAX_SEC` so an abandoned stream does not pin a connection forever."""
+    seen_steps: set[tuple[int, int]] = set()
+    last_state = None
+    deadline = time.monotonic() + _EVENTS_MAX_SEC
+    while True:
+        row = models.reservation_by_id(conn, res_id)
+        if row is None:                                   # deleted under us
+            return
+        if row["state"] != last_state:
+            last_state = row["state"]
+            yield _sse("state", {"id": res_id, "state": row["state"],
+                                 "start_at": row["start_at"], "end_at": row["end_at"]})
+        for job in models.jobs_for_reservation(conn, res_id):
+            for idx, step in enumerate(models.job_steps(job)):
+                key = (job["id"], idx)
+                if key in seen_steps:
+                    continue
+                seen_steps.add(key)
+                yield _sse("step", {"job_id": job["id"], "kind": job["kind"], **step})
+        if last_state in _TERMINAL_RESERVATION_STATES:
+            return
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(_EVENTS_POLL_SEC)
 
 
 # ---- routes ----------------------------------------------------------------
@@ -537,6 +606,89 @@ def cancel_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
     models.audit(conn, user["username"], "cancel", "reservation", res_id,
                  {"previous_state": row["state"], "state": new_state})
     return {"id": res_id, "state": new_state}
+
+
+@app.post("/reservations/{res_id}/cleanup", status_code=202)
+def cleanup_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
+                        conn: sqlite3.Connection = Depends(db_conn)):
+    """Owner ends a running slot early (plan/09 §4): `ready`/`active` -> `cleaning` plus a
+    pending `cleanup` job the engine will run, `202`. Any other state -> `409 invalid_state`."""
+    row = _owned_reservation(conn, res_id, user)
+    if row["state"] not in ("ready", "active"):
+        raise DaolabError("invalid_state", 409,
+                          f"cannot clean up a reservation in state {row['state']}",
+                          {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        try:
+            models.transition_reservation(conn, res_id, "cleaning", from_state=row["state"])
+        except models.ReservationStateError:   # the engine moved it under us
+            current = models.reservation_by_id(conn, res_id)["state"]
+            raise DaolabError("invalid_state", 409,
+                              f"cannot clean up a reservation in state {current}",
+                              {"state": current})
+        job_id = models.create_job(conn, res_id, "cleanup")
+        models.audit(conn, user["username"], "cleanup", "reservation", res_id,
+                     {"previous_state": row["state"], "state": "cleaning"})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"id": res_id, "state": "cleaning",
+            "job": job_object(models.job_by_id(conn, job_id))}
+
+
+@app.post("/reservations/{res_id}/redeploy", status_code=202)
+def redeploy_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
+                         conn: sqlite3.Connection = Depends(db_conn)):
+    """Owner re-runs `deploy.yml` for a live reservation (plan/09 §4) — idempotent replay,
+    allowed only inside its slot. Returns `202` + the new `deploy` job (attempt + 1); a
+    request outside `[start_at, end_at)` or in any non-live state is `409 invalid_state`."""
+    row = _owned_reservation(conn, res_id, user)
+    now = datetime.now(timezone.utc)
+    if not (models.parse_ts(row["start_at"]) <= now < models.parse_ts(row["end_at"])):
+        raise DaolabError("invalid_state", 409, f"reservation {res_id} is outside its slot",
+                          {"state": row["state"], "start_at": row["start_at"],
+                           "end_at": row["end_at"]})
+    if row["state"] not in ("ready", "active"):
+        raise DaolabError("invalid_state", 409,
+                          f"cannot redeploy a reservation in state {row['state']}",
+                          {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        prev = models.jobs_for_reservation(conn, res_id, kind="deploy")
+        attempt = max((j["attempt"] for j in prev), default=0) + 1
+        job_id = models.create_job(conn, res_id, "deploy", attempt=attempt)
+        models.audit(conn, user["username"], "redeploy", "reservation", res_id,
+                     {"attempt": attempt})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"id": res_id, "state": row["state"],
+            "job": job_object(models.job_by_id(conn, job_id))}
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: int, user: sqlite3.Row = Depends(current_user),
+            conn: sqlite3.Connection = Depends(db_conn)):
+    """A job's state, steps, `trace_id` and log tail (plan/09 §4); owner-gated."""
+    job = models.job_by_id(conn, job_id)
+    if job is None:
+        raise DaolabError("not_found", 404, f"unknown job: {job_id}", {"id": job_id})
+    _owned_reservation(conn, job["reservation_id"], user)
+    return job_object(job)
+
+
+@app.get("/reservations/{res_id}/events")
+def reservation_events(res_id: int, user: sqlite3.Row = Depends(current_user),
+                       conn: sqlite3.Connection = Depends(db_conn)):
+    """SSE of a reservation's state changes and job steps (owner only); the dashboard
+    progress bar uses this and falls back to polling (plan/09 §4)."""
+    _owned_reservation(conn, res_id, user)
+    return StreamingResponse(_reservation_events(conn, res_id),
+                             media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/internal/vm-ip")
