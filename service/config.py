@@ -38,6 +38,8 @@ class Settings:
     otel_endpoint: str
     max_live_reservations: int
     max_future_reservations: int
+    mock_step_sec: float
+    mock_fail: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -75,6 +77,8 @@ class Settings:
             otel_endpoint=env("DAOLAB_OTEL_ENDPOINT", ""),
             max_live_reservations=int(env("DAOLAB_MAX_LIVE_RESERVATIONS", "1")),
             max_future_reservations=int(env("DAOLAB_MAX_FUTURE_RESERVATIONS", "2")),
+            mock_step_sec=float(env("DAOLAB_MOCK_STEP_SEC", "5")),
+            mock_fail=env("DAOLAB_MOCK_FAIL", ""),
         )
 
 
