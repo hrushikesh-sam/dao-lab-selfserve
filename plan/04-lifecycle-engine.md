@@ -112,7 +112,11 @@ def main(argv: list[str] | None = None) -> int:
 > `BEGIN IMMEDIATE` transaction, so two engine processes cannot both win. A job that has to wait
 > stays `pending` (it is not failed) and is retried next tick; jobs on one setup in the same tick
 > run one after the other. A job left `running` by a crashed engine therefore blocks its setup
-> until B-26 puts it back. This replaces the older "one reservation in `provisioning` or
+> until B-26 puts it back. When the engine process exits (end of a one-tick run, Ctrl-C in
+> `--loop`, or a crash) it calls the runner's `close()` if it has one, so the mock runner's fake
+> telemetry exporters (B-68) are stopped and their Prometheus target files removed. Note that
+> exporters live in the engine process: a one-tick run starts and stops them within that run, so
+> the health demo needs `--loop`. This replaces the older "one reservation in `provisioning` or
 > `cleaning`" wording below. Not done yet: retries (B-25), crash recovery (B-26), IP release and the
 > setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67). `vms` rows
 > are not created by the engine yet.

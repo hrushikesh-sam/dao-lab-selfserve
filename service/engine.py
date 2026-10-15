@@ -345,15 +345,30 @@ def main(argv: list[str] | None = None) -> int:
     except runner_mod.RunnerError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    if not opts.loop:
-        result = tick(db, datetime.now(timezone.utc), rn)
-        print(f"tick done: {result}")
-        return 0
     try:
-        run_loop(db, config.settings.engine_interval_sec, rn)
-    except KeyboardInterrupt:
-        print("engine stopped")
-    return 0
+        if not opts.loop:
+            result = tick(db, datetime.now(timezone.utc), rn)
+            print(f"tick done: {result}")
+            return 0
+        try:
+            run_loop(db, config.settings.engine_interval_sec, rn)
+        except KeyboardInterrupt:
+            print("engine stopped")
+        return 0
+    finally:
+        _close_runner(rn)
+
+
+def _close_runner(rn) -> None:
+    """Give the runner a chance to tidy up when the engine process ends. The mock runner (B-68)
+    keeps a fake telemetry exporter per reservation and removes its Prometheus target file on
+    `close()`; without this a stopped engine would leave targets pointing at dead ports."""
+    close = getattr(rn, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:                            # noqa: BLE001 — never hide the real exit
+            log.exception("runner close failed")
 
 
 if __name__ == "__main__":

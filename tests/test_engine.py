@@ -930,3 +930,88 @@ def test_main_loop_passes_the_configured_interval(cli_env, monkeypatch):
     monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, engine_interval_sec=17))
     monkeypatch.setattr(engine, "run_loop", lambda db, interval, rn: seen.update(interval=interval))
     assert engine.main(["--loop"]) == 0 and seen["interval"] == 17
+
+
+# ---- the runner is closed when the engine exits (B-68 exporters) ---------------------------
+
+class Closable(Fake):
+    def __init__(self, boom=False):
+        super().__init__()
+        self.closed, self.boom = 0, boom
+
+    def close(self):
+        self.closed += 1
+        if self.boom:
+            raise RuntimeError("close blew up")
+
+
+def test_a_one_tick_run_closes_the_runner(cli_env, monkeypatch):
+    rn = Closable()
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    assert engine.main([]) == 0 and rn.closed == 1
+
+
+def test_stopping_the_loop_with_ctrl_c_closes_the_runner(cli_env, monkeypatch, capsys):
+    rn = Closable()
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    monkeypatch.setattr(engine, "run_loop", lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()))
+    assert engine.main(["--loop"]) == 0 and rn.closed == 1
+
+
+def test_a_crash_still_closes_the_runner_and_the_crash_is_not_hidden(cli_env, monkeypatch):
+    rn = Closable()
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    monkeypatch.setattr(engine, "tick", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("tick boom")))
+    with pytest.raises(RuntimeError, match="tick boom"):
+        engine.main([])
+    assert rn.closed == 1
+
+
+def test_a_failing_close_is_logged_not_raised(cli_env, monkeypatch, caplog):
+    rn = Closable(boom=True)
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    with caplog.at_level(logging.ERROR, logger="daolab.engine"):
+        assert engine.main([]) == 0
+    assert "runner close failed" in caplog.text
+
+
+def test_a_runner_without_close_is_fine(cli_env, monkeypatch):
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: Fake())
+    assert engine.main([]) == 0
+
+
+def test_a_failing_close_does_not_replace_the_real_error(cli_env, monkeypatch):
+    rn = Closable(boom=True)
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    monkeypatch.setattr(engine, "tick", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("tick boom")))
+    with pytest.raises(RuntimeError, match="tick boom"):
+        engine.main([])
+
+
+def test_exporters_started_by_a_deploy_are_stopped_when_the_engine_exits(cli_env, monkeypatch):
+    """The real MockRunner: a deploy starts a (fake) exporter for the reservation; leaving the
+    engine stops it, so no Prometheus target file is left behind for a dead port."""
+    from datetime import datetime, timezone
+    events = []
+
+    class Exporter:
+        def __init__(self, rid):
+            self.rid = rid
+
+        def start(self):
+            events.append(("start", self.rid))
+
+        def stop(self):
+            events.append(("stop", self.rid))
+
+    conn = cli_env
+    uid = mk_user(conn, "u")[0]
+    sid = mk_setup(conn, "tb", ["wire"], dpu_hw_class="cls-a")
+    cid = mk_usecase(conn, "ucA", ["wire"], hw_class="cls-a")
+    now = datetime.now(timezone.utc)
+    rid = mk_res(conn, sid, cid, now + timedelta(minutes=1), now + timedelta(hours=1), user_id=uid)
+    monkeypatch.setattr(runner, "get_runner",
+                        lambda *a, **k: MockRunner(step_sec=0.0, exporter_factory=Exporter))
+    assert engine.main([]) == 0
+    assert state(conn, rid) == "ready"
+    assert events == [("start", rid), ("stop", rid)]
