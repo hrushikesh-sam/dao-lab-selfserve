@@ -24,6 +24,10 @@ Runner calls block; ticks are serialised, so a long deploy simply delays the nex
 What a finished job does to its reservation:
   * deploy ok      -> ready, and the DPU's hw_class is recorded (plan/01 invariant 6)
   * deploy failed  -> failed, with the job error as failure_reason (no retries yet: B-25)
+  * deploy job on a `ready`/`active` reservation is a REDEPLOY (POST .../redeploy, B-28): the
+                      runner replays the deploy, the job records the outcome, and the
+                      reservation keeps its state either way — a failed replay must not tear
+                      down a lab the user is still working in; they can retry or clean up.
   * cleanup        -> cleanup, then verify_clean regardless of the cleanup result (plan/09 §9);
                       clean -> released, residue (or verify_clean could not run) -> quarantined.
                       Releasing IP leases and flagging the setup come with B-71.
@@ -46,7 +50,7 @@ log = logging.getLogger("daolab.engine")
 # The reservation state a job of each kind needs when it starts. If the reservation moved on
 # (cancelled, admin override...) the job fails without calling the runner.
 EXPECTED_STATES = {
-    "deploy": ("provisioning",),
+    "deploy": ("provisioning", "ready", "active"),     # ready/active = redeploy
     "cleanup": ("cleaning",),
     "health_probe": ("ready", "active"),
     "reconcile": ("quarantined",),
@@ -60,6 +64,7 @@ class TickResult:
     started: int = 0         # queued -> provisioning (deploy job queued)
     jobs_run: int = 0
     ready: int = 0           # deploy ok
+    redeployed: int = 0      # redeploy ok (reservation unchanged)
     failed: int = 0          # deploy failed
     released: int = 0        # cleanup verified clean
     quarantined: int = 0     # residue after cleanup
@@ -178,10 +183,16 @@ def _finish(db, job_id: int, result: RunResult) -> None:
 
 
 def _run_deploy(db, rn, job, res, sink, out: TickResult) -> RunResult:
+    redeploy = res["state"] != "provisioning"          # ready/active: replay inside a live slot
     result = _call(rn.deploy, res, sink, "deploy")
     with _txn(db):          # job result + reservation move + audit commit together or not at all
         _finish(db, job["id"], result)
-        if result.ok:
+        if redeploy:
+            if result.ok:
+                out.redeployed += 1
+            else:
+                log.warning("redeploy of reservation %s failed: %s", res["id"], result.error)
+        elif result.ok:
             uc = models.usecase_by_id(db, res["usecase_id"])
             if uc["hw_class"] is not None:
                 models.set_dpu_hw_class(db, res["setup_id"], uc["hw_class"])
@@ -190,7 +201,7 @@ def _run_deploy(db, rn, job, res, sink, out: TickResult) -> RunResult:
         elif _move(db, res["id"], "failed", from_state="provisioning",
                    failure_reason=result.error or "deploy failed"):
             out.failed += 1
-        _audit(db, job, "deploy", {"ok": result.ok, "error": result.error})
+        _audit(db, job, "deploy", {"ok": result.ok, "error": result.error, "redeploy": redeploy})
     return result
 
 

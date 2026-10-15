@@ -98,7 +98,11 @@ def main(argv: list[str] | None = None) -> int:
 > DPU's *actual* class at tick time (`scheduler.start_lead_min`), so a late projection never
 > makes the engine start early. A job's result, the reservation move and the audit row commit in
 > one transaction. A deploy that succeeds sets `ready` and records `resources.hw_class`; a
-> deploy that fails sets `failed` immediately (retries arrive with B-25). A cleanup always runs
+> deploy that fails sets `failed` immediately (retries arrive with B-25). A `deploy` job on a
+> reservation that is already `ready`/`active` is a **redeploy** (`POST .../redeploy`, B-28): the
+> runner replays it, the job records the outcome, and the reservation keeps its state whether the
+> replay succeeds or fails, so a failed replay never tears down a lab the user is working in.
+> A cleanup always runs
 > `verify_clean` afterwards, whatever the cleanup reported: clean → `released`, residue (or
 > verify unable to run) → `quarantined`. **Because the setup is freed in step (4), the next
 > booking on it starts on the next tick**, not the same one; the lead time absorbs that. Not

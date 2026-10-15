@@ -293,6 +293,101 @@ def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world):
     assert "B-84" in jobs(db)[0]["error"]
 
 
+# ---- 4. running jobs: redeploy (B-28 creates a deploy job on a live reservation) ------------
+
+@pytest.mark.parametrize("live", ["ready", "active"])
+def test_redeploy_replays_the_deploy_and_leaves_the_reservation_alone(world, live):
+    db, sid, _ = world
+    start = T(8) if live == "active" else T(9, 30)                     # a ready one has not started yet
+    rid = res(world, uc="a", state=live, start=start, end=T(12))
+    models.create_job(db, rid, "deploy", attempt=2)                    # what POST .../redeploy does
+    out = tick(db)
+    assert state(db, rid) == live and out.redeployed == 1
+    assert (out.ready, out.failed) == (0, 0)
+    [job] = jobs(db)
+    assert job["state"] == "succeeded" and job["attempt"] == 2
+    assert [s["name"] for s in models.job_steps(job)] == list(DEPLOY_STEPS)
+    [event] = [e for e in models.list_audit_events(db) if e["action"] == "deploy"]
+    assert models.from_json(event["detail"])["redeploy"] is True
+    assert models.held_by(db, sid)["id"] == rid
+
+
+def test_first_deploy_is_not_marked_as_a_redeploy(world):
+    db = world[0]
+    res(world, uc="a", start=T(9, 5), end=T(10))
+    out = tick(db)
+    assert out.redeployed == 0 and out.ready == 1
+    [event] = [e for e in models.list_audit_events(db) if e["action"] == "deploy"]
+    assert models.from_json(event["detail"])["redeploy"] is False
+
+
+def test_a_failed_redeploy_does_not_take_the_lab_away_from_the_user(world):
+    db, sid, _ = world
+    rid = res(world, uc="a", state="active", start=T(8), end=T(12))
+    models.create_job(db, rid, "deploy", attempt=2)
+    out = tick(db, rn=mock(fail={"deploy"}))
+    row = models.reservation_by_id(db, rid)
+    assert row["state"] == "active" and row["failure_reason"] is None
+    assert (out.failed, out.redeployed) == (0, 0)
+    [job] = jobs(db)
+    assert job["state"] == "failed" and "create_vms" in job["error"]
+    assert models.held_by(db, sid)["id"] == rid
+    [event] = [e for e in models.list_audit_events(db) if e["action"] == "deploy"]
+    detail = models.from_json(event["detail"])
+    assert detail["ok"] is False and detail["redeploy"] is True
+
+
+def test_a_crashing_runner_during_redeploy_fails_only_the_job(world):
+    db = world[0]
+    rid = res(world, uc="a", state="ready", start=T(9, 30), end=T(12))
+    models.create_job(db, rid, "deploy", attempt=2)
+    tick(db, rn=Fake(deploy=RuntimeError("boom")))
+    assert state(db, rid) == "ready" and jobs(db)[0]["error"] == "RuntimeError: boom"
+
+
+def test_redeploy_never_changes_the_dpu_class(world):
+    db, sid, _ = world
+    rid = res(world, uc="b", state="active", start=T(8), end=T(12))     # booked as cls-b
+    models.create_job(db, rid, "deploy", attempt=2)
+    tick(db)
+    assert dpu_class(db, sid) == "cls-a"                                # only a first deploy records it
+
+
+@pytest.mark.parametrize("gone", ["cleaning", "quarantined", "released", "failed", "queued"])
+def test_a_redeploy_that_arrives_after_the_slot_ended_is_refused_without_the_runner(world, gone):
+    db = world[0]
+    rid = res(world, state=gone)
+    models.create_job(db, rid, "deploy", attempt=2)
+    rn = Fake()
+    tick(db, rn=rn)
+    assert rn.calls == [] and state(db, rid) == gone
+    job = jobs(db)[0]
+    assert job["state"] == "failed" and f"reservation is {gone}, expected" in job["error"]
+
+
+def test_end_to_end_redeploy_endpoint_then_engine(api_env):
+    """POST /reservations/{id}/redeploy (B-28) creates the job; the engine (B-23) runs it."""
+    from datetime import datetime, timezone
+    conn = api_env.conn
+    alice = conn.execute("SELECT id FROM users WHERE username = 'alice'").fetchone()["id"]
+    sid = mk_setup(conn, "tb-e2e", ["wire"], dpu_hw_class="cls-a")
+    cid = mk_usecase(conn, "uc-e2e", ["wire"], hw_class="cls-a")
+    now = datetime.now(timezone.utc)
+    rid = mk_res(conn, sid, cid, now - timedelta(minutes=30), now + timedelta(minutes=30),
+                 state="active", user_id=alice)
+    r = api_env.client.post(f"/reservations/{rid}/redeploy",
+                            headers={"Authorization": f"Bearer {api_env.user_token}"})
+    assert r.status_code == 202 and r.json()["job"]["state"] == "pending"
+    job_id = r.json()["job"]["id"]
+    out = engine.tick(conn, now, mock(), CFG)
+    assert out.redeployed == 1
+    body = api_env.client.get(f"/jobs/{job_id}",
+                              headers={"Authorization": f"Bearer {api_env.user_token}"}).json()
+    assert body["state"] == "succeeded" and body["attempt"] == 1
+    assert [s["name"] for s in body["steps"]] == list(DEPLOY_STEPS)
+    assert state(conn, rid) == "active"
+
+
 # ---- 4. running jobs: cleanup --------------------------------------------------------------
 
 def test_cleanup_that_verifies_clean_releases_the_reservation(world):
