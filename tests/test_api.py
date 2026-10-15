@@ -490,3 +490,32 @@ def test_28_redeploy_endpoint(env):
         "start_at": iso(now - timedelta(hours=1)), "end_at": iso(now + timedelta(hours=1))})
     assert_error(env.client.post(f"/reservations/{q}/redeploy", headers=H(bob)),
                  409, "invalid_state")
+
+
+def test_29_jobs_and_events(env):
+    """B-29: GET /jobs/{id} (owner) and the SSE stream of steps + state changes."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    rid = reserve(env, alice).json()["id"]
+    jid = env.models.create_job(env.conn, rid, "deploy")
+    env.models.transition_job(env.conn, jid, "running")
+    env.models.append_job_step(env.conn, jid, "lease IP", detail="10.20.0.21")
+    env.models.append_job_step(env.conn, jid, "DPU app: tls-proxy-nginx")
+    env.models.transition_job(env.conn, jid, "succeeded")
+    # GET /jobs/{id}: the canonical job shape, owner-gated
+    job = env.client.get(f"/jobs/{jid}", headers=H(alice)).json()
+    assert job["id"] == jid and job["kind"] == "deploy" and job["state"] == "succeeded"
+    assert [s["name"] for s in job["steps"]] == ["lease IP", "DPU app: tls-proxy-nginx"]
+    assert job["steps"][0]["detail"] == "10.20.0.21"
+    assert_error(env.client.get(f"/jobs/{jid}", headers=H(bob)), 403, "forbidden")
+    assert_error(env.client.get("/jobs/9999", headers=H(alice)), 404, "not_found")
+    # SSE: a terminal reservation streams its snapshot then closes
+    env.models.update(env.conn, "reservations", rid, {"state": "released"})
+    resp = env.client.get(f"/reservations/{rid}/events", headers=H(alice))
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["content-type"].startswith("text/event-stream")
+    body = resp.text
+    assert "event: state" in body and '"state": "released"' in body
+    assert "event: step" in body
+    assert "lease IP" in body and "DPU app: tls-proxy-nginx" in body
+    assert_error(env.client.get(f"/reservations/{rid}/events", headers=H(bob)), 403, "forbidden")
