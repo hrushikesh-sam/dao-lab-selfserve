@@ -167,3 +167,15 @@ def test_cli_init_refuses_newer_db(monkeypatch, tmp_path, capsys):
         cli.cmd_init(None)
     assert exc.value.code == 1
     assert "v99" in capsys.readouterr().err
+
+
+def test_audit_events_append_only(db):
+    """B-55: migration v4 creates the append-only audit log; every write is a new row."""
+    assert migrations.has_table(db, "audit_events")
+    assert migrations.current_version(db) == migrations.latest_version()
+    eid = models.audit(db, "alice", "deploy", "reservation", 7, {"job": 3})
+    models.audit(db, "hrushi-admin", "admin_override", "user", 2, {"enabled": False})
+    rows = models.list_audit_events(db)
+    assert [r["actor"] for r in rows] == ["hrushi-admin", "alice"]      # newest first
+    assert rows[1]["id"] == eid and models.from_json(rows[1]["detail"]) == {"job": 3}
+    assert rows[1]["created_at"] and rows[1]["object_id"] == 7

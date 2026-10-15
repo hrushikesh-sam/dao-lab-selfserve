@@ -203,3 +203,31 @@ def set_setup_availability(conn, setup_id: int, availability: str) -> None:
     """Move a setup between available/quarantined/maintenance (CHECK-enforced).
     Booking and placement ignore this; only provisioning starts are gated (B-18)."""
     update(conn, "setups", setup_id, {"availability": availability})
+
+
+# ---- audit log (B-55) ------------------------------------------------------
+
+AUDIT_ACTIONS = (
+    "cancel", "admin_override",                        # written by the API today
+    "deploy", "cleanup", "redeploy", "force_clean",    # written by the engine (B-20/B-23)
+)
+
+
+def audit(conn, actor: str, action: str, object_type: str | None = None,
+          object_id: int | None = None, detail=None, trace_id: str | None = None) -> int:
+    """Append one audit event. This is the *only* writer for audit_events and there is no
+    update or delete helper, so the table is append-only by construction (plan/09 §11).
+    `detail` is JSON-serialised; `actor` is a username or a system name like 'engine'."""
+    cur = conn.execute(
+        """INSERT INTO audit_events (actor, action, object_type, object_id, detail,
+                                     trace_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (actor, action, object_type, object_id,
+         to_json(detail) if detail is not None else None, trace_id, utcnow()))
+    return cur.lastrowid
+
+
+def list_audit_events(conn, limit: int = 100) -> list:
+    """Newest-first slice of the audit log (raw rows; `detail` is JSON text)."""
+    return conn.execute(
+        "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()

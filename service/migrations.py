@@ -110,10 +110,33 @@ def _m3_setup_availability(conn: sqlite3.Connection) -> None:
                "CHECK (availability IN ('available', 'quarantined', 'maintenance'))")
 
 
+def _m4_audit_events(conn: sqlite3.Connection) -> None:
+    """plan/09 §11 / §audit_events: an append-only log of who did what (deploy, cleanup,
+    redeploy, force-clean, admin overrides). There is deliberately no UPDATE or DELETE
+    path anywhere in the service, so the history stays a faithful record. The engine
+    (B-20/B-23) writes deploy/cleanup/redeploy; the API writes admin overrides."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS audit_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor       TEXT    NOT NULL,   -- username, or 'system'/'engine'
+            action      TEXT    NOT NULL,
+            object_type TEXT,              -- reservation | setup | user
+            object_id   INTEGER,
+            detail      TEXT,              -- JSON, free-form
+            trace_id    TEXT,
+            created_at  TEXT    NOT NULL
+        )""")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_audit_events_created "
+        "ON audit_events(created_at DESC, id DESC)")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
     Migration(3, "setup_availability", _m3_setup_availability),
+    Migration(4, "audit_events", _m4_audit_events),
 ]
 
 

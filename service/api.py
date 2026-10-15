@@ -323,7 +323,20 @@ def patch_user(user_id: int, body: UserPatch,
         raise DaolabError("invalid_state", 409, "cannot disable your own account",
                           {"user_id": user_id})
     models.update(conn, "users", user_id, {"enabled": int(body.enabled)})
+    models.audit(conn, admin["username"], "admin_override", "user", user_id,
+                 {"username": target["username"], "enabled": bool(body.enabled)})
     return user_object(models.user_by_id(conn, user_id))
+
+
+@app.get("/admin/audit")
+def admin_audit(limit: int = 100, admin: sqlite3.Row = Depends(require_admin),
+                conn: sqlite3.Connection = Depends(db_conn)):
+    """Append-only log of who did what (B-55). Admin-only; newest first."""
+    rows = models.list_audit_events(conn, max(1, min(limit, 1000)))
+    return [{"id": r["id"], "actor": r["actor"], "action": r["action"],
+             "object_type": r["object_type"], "object_id": r["object_id"],
+             "detail": models.from_json(r["detail"]) if r["detail"] else None,
+             "trace_id": r["trace_id"], "created_at": r["created_at"]} for r in rows]
 
 
 def _parse_start(value: str | None, now: datetime) -> datetime:
@@ -451,6 +464,8 @@ def cancel_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
                           f"cannot cancel a reservation in state {row['state']}",
                           {"state": row["state"]})
     models.update(conn, "reservations", res_id, {"state": new_state})
+    models.audit(conn, user["username"], "cancel", "reservation", res_id,
+                 {"previous_state": row["state"], "state": new_state})
     return {"id": res_id, "state": new_state}
 
 

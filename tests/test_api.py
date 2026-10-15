@@ -304,3 +304,24 @@ def test_19_owner_only_credentials(env):
     admin_rows = env.client.get("/reservations?all=1", headers=H(env.admin_token)).json()
     assert [r["id"] for r in admin_rows] == [rid]
     assert "ssh alice@10.20.0.21" in str(admin_rows)
+
+
+def test_20_admin_audit(env):
+    """B-55: mutating actions append audit rows; GET /admin/audit is admin-only."""
+    assert_error(env.client.get("/admin/audit", headers=H(env.user_token)), 403, "forbidden")
+    uid = env.conn.execute("SELECT id FROM users WHERE username='hrushi'").fetchone()["id"]
+    env.client.patch(f"/users/{uid}", json={"enabled": False}, headers=H(env.admin_token))
+    env.client.patch(f"/users/{uid}", json={"enabled": True}, headers=H(env.admin_token))
+    rid = reserve(env, env.user_token).json()["id"]
+    env.client.delete(f"/reservations/{rid}", headers=H(env.user_token))
+    rows = env.client.get("/admin/audit", headers=H(env.admin_token)).json()
+    assert [r["action"] for r in rows] == ["cancel", "admin_override", "admin_override"]
+    newest, oldest = rows[1], rows[2]
+    assert newest["actor"] == "hrushi-admin" and newest["object_type"] == "user"
+    assert newest["object_id"] == uid
+    assert [newest["detail"]["enabled"], oldest["detail"]["enabled"]] == [True, False]
+    cancel = rows[0]
+    assert cancel["actor"] == "hrushi" and cancel["object_type"] == "reservation"
+    assert cancel["object_id"] == rid
+    assert cancel["detail"] == {"previous_state": "queued", "state": "released"}
+    assert all(r["created_at"] for r in rows)
