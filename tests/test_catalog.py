@@ -84,3 +84,33 @@ def test_removal_blocked_by_active_reservation(conn, tmp_path):
         catalog.sync(conn, str(empty), str(empty), INV)
     assert "removal blocked" in "\n".join(e.value.errors)
     assert models.setup_by_name(conn, "tb-01") is not None   # rolled back
+
+
+def test_health_rules_loaded():
+    ucs, errors = catalog.load_usecases(UC_DIR)
+    assert errors == []
+    vpp = next(u for u in ucs if u["name"] == "vpp")
+    names = [r["name"] for r in vpp["health"]]
+    assert names == ["vms_up", "ssh_reachable", "dpu_app", "datapath"]
+    assert all("$RID" in r["promql"] for r in vpp["health"])
+    assert [r.get("severity") for r in vpp["health"]] == [None, None, None, "degraded"]
+
+
+def test_malformed_health_rule_rejected(conn, tmp_path):
+    bad = tmp_path / "usecases"
+    bad.mkdir()
+    (bad / "hbroken.yml").write_text(
+        "name: hbroken\nvariant: v1\nrequires: [wire]\n"
+        "roles: {r1: {on: dpu, app: a}}\n"
+        "verify: {from: r1, cmd: c, expect: e}\n"
+        "health:\n"
+        "  - {name: nolid, promql: 'up', expect: '== 1'}\n"
+        "  - {name: badop, promql: 'up{$RID}', expect: 'maybe'}\n"
+        "  - {name: badsev, promql: 'up{$RID}', expect: '> 0', severity: warn}\n")
+    with pytest.raises(catalog.SyncError) as e:
+        catalog.sync(conn, str(bad), ST_DIR, INV)
+    text = "\n".join(e.value.errors)
+    assert "hbroken.yml" in text                    # file
+    assert "health.nolid.promql" in text and "$RID" in text   # rule name + problem
+    assert "health.badop.expect" in text
+    assert "health.badsev.severity" in text

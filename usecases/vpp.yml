@@ -8,3 +8,8 @@ roles:
   tgen: {on: tg_host, vm: tpl-ubuntu2204-dao, install: [trex, pktgen], connect: e810-vf}
   sink: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: [sink],       connect: e810-vf}
 verify: {from: tgen, cmd: "pktgen -t {sink_ip} --rate 10mpps", expect: "rx == tx"}
+health:
+  - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                         expect: "== 1"}
+  - {name: ssh_reachable, promql: 'min(tcpcheck_status{daolab_reservation="$RID",port="22"})',   expect: "== 1"}
+  - {name: dpu_app,       promql: 'vpp_up{daolab_reservation="$RID",host="dpu-01"}',                                 expect: "== 1"}
+  - {name: datapath,      promql: 'rate(vpp_interface_rx_packets{daolab_reservation="$RID",host="dpu-01"}[1m])',     expect: "> 0", severity: degraded}

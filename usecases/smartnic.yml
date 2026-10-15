@@ -8,3 +8,8 @@ roles:
   tgen:   {on: tg_host, vm: tpl-ubuntu2204-dao, install: [trex, pktgen],      connect: e810-vf}
   hostvm: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: [offload-client],   connect: virtio}
 verify: {from: tgen, cmd: "pktgen -t {hostvm_ip} --rate 10mpps", expect: "offload rx > 0"}
+health:
+  - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                         expect: "== 1"}
+  - {name: ssh_reachable, promql: 'min(tcpcheck_status{daolab_reservation="$RID",port="22"})',   expect: "== 1"}
+  - {name: snapp_up,      promql: 'smartnic_up{daolab_reservation="$RID",host="dpu-01"}',                           expect: "== 1"}
+  - {name: offload_rate,  promql: 'rate(smartnic_offload_pps{daolab_reservation="$RID",host="dpu-01"}[1m])',         expect: "> 0", severity: degraded}

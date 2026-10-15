@@ -15,8 +15,10 @@ from . import models
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ROLE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)_ip\}")
+EXPECT = re.compile(r"^(==|!=|>=|<=|>|<)\s*-?\d+(\.\d+)?$")
 KINDS = ("dpu", "gpu", "nic", "compute")
 ON_VALUES = ("dpu", "dpu_host", "tg_host")
+SEVERITIES = ("critical", "degraded")
 
 # Seeded by `daolab init` from the root README use-case table; doc_url/doc_summary
 # carry the verbatim intro text and page link from the DAO application docs.
@@ -210,7 +212,7 @@ def load_usecases(dir_path: str) -> tuple[list[dict], list[str]]:
         if not isinstance(doc, dict):
             errors.append(f"{fname}: document: must be a mapping")
             continue
-        _check_keys(doc, {"name", "variant", "requires", "hw_class", "roles", "verify"},
+        _check_keys(doc, {"name", "variant", "requires", "hw_class", "roles", "verify", "health"},
                     fname, "", errors)
         name = doc.get("name")
         if name != stem or not (isinstance(name, str) and KEBAB.match(name)):
@@ -267,10 +269,45 @@ def load_usecases(dir_path: str) -> tuple[list[dict], list[str]]:
             for ref in PLACEHOLDER.findall(str(verify.get("cmd", ""))):
                 if ref not in roles:
                     errors.append(f"{fname}: verify.cmd: placeholder {{{ref}_ip}} names no role")
+        health = doc.get("health")
+        if health is None:
+            health = []
+        elif not (isinstance(health, list) and health):
+            errors.append(f"{fname}: health: must be a non-empty list of rules")
+            health = []
+        else:
+            seen_rules: set[str] = set()
+            for i, rule in enumerate(health):
+                if not isinstance(rule, dict):
+                    errors.append(f"{fname}: health[{i}]: must be a map")
+                    continue
+                rname = rule.get("name")
+                if not (isinstance(rname, str) and ROLE_NAME.match(rname)):
+                    errors.append(f"{fname}: health[{i}].name: required snake_case string")
+                    rname = f"[{i}]"
+                elif rname in seen_rules:
+                    errors.append(f"{fname}: health.{rname}.name: duplicate rule name")
+                else:
+                    seen_rules.add(rname)
+                _check_keys(rule, {"name", "promql", "expect", "severity"},
+                            fname, f"health.{rname}.", errors)
+                promql = rule.get("promql")
+                if not (isinstance(promql, str) and promql.strip()):
+                    errors.append(f"{fname}: health.{rname}.promql: required non-empty string")
+                elif "$RID" not in promql:
+                    errors.append(f"{fname}: health.{rname}.promql: must reference $RID")
+                expect = rule.get("expect")
+                if not (isinstance(expect, str) and EXPECT.match(expect.strip())):
+                    errors.append(f"{fname}: health.{rname}.expect: must be "
+                                  "'<op> <number>' (==, !=, <, <=, >, >=)")
+                sev = rule.get("severity")
+                if sev is not None and sev not in SEVERITIES:
+                    errors.append(f"{fname}: health.{rname}.severity: must be one of "
+                                  f"{'|'.join(SEVERITIES)}")
         out.append({
             "name": stem, "variant": doc.get("variant"), "requires": requires or [],
             "hw_class": hw_class, "roles": roles, "verify": verify if isinstance(verify, dict) else {},
-            "yaml_path": fname,
+            "health": health, "yaml_path": fname,
         })
     return out, errors
 
