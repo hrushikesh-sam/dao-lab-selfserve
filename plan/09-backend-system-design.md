@@ -454,7 +454,10 @@ deploy, cleanup or reconcile jobs against the same setup at once. Health-probe j
 read-only and exempt. *Built (B-24):* the engine checks for a running mutating job on the setup
 and marks its own job `running` in one write transaction; a job that must wait stays `pending`
 and is retried on the next tick, and a job stranded as `running` by a crashed engine blocks its
-setup until B-26.
+setup until B-26 requeues it. *Built (B-26):* each tick first requeues `running` jobs with no
+recorded step for `DAOLAB_JOB_TIMEOUT_SEC` (default 1800 s) through `models.requeue_job`, the
+only path from `running` back to `pending`; the attempt is unchanged and a `requeued` marker
+step is added.
 
 ---
 

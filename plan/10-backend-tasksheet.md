@@ -89,7 +89,7 @@ Status values: `todo` · `doing` · `review` · `done` · `blocked`.
 | B-23 | `engine.py` tick: queued→provisioning (start − lead, setup free & available), ready→active, active→cleaning at end_at, run pending jobs | `engine.py` | B-21, B-22 | `python -m service.engine` runs one tick; `--loop` ticks every interval | Akshay | review |
 | B-24 | Single-flight per setup: at most one running deploy/cleanup/reconcile job per setup (probes exempt) | `engine.py`, `models.py` | B-23 | test: two pending mutating jobs → only one runs | Akshay | review |
 | B-25 | Retry policy: deploy retried to `MAX_RETRIES` → `failed` + automatic cleanup job | `engine.py` | B-23 | test with `MOCK_FAIL=deploy` | Rama | todo |
-| B-26 | Crash recovery: on start, `running` jobs older than a timeout go back to `pending` (playbooks are idempotent) | `engine.py` | B-23 | test: kill mid-job → next tick resumes | Akshay | todo |
+| B-26 | Crash recovery: on start, `running` jobs older than a timeout go back to `pending` (playbooks are idempotent) | `engine.py` | B-23 | test: kill mid-job → next tick resumes | Akshay | review |
 | B-27 | `POST /reservations/{id}/cleanup` (owner; `ready`/`active` → `cleaning` + job, `202`) | `api.py` | B-21 | api test incl. 403 for another user | Rama | todo |
 | B-28 | `POST /reservations/{id}/redeploy` (owner, inside the slot only) | `api.py` | B-20 | 409 outside the slot; new deploy job inside it | Rama | todo |
 | B-29 | `GET /jobs/{id}` and `GET /reservations/{id}/events` (SSE of job steps + state changes) | `api.py` | B-20 | curl `-N` shows step events during a mock deploy | Rama | todo |

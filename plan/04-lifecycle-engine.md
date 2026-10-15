@@ -117,7 +117,18 @@ def main(argv: list[str] | None = None) -> int:
 > telemetry exporters (B-68) are stopped and their Prometheus target files removed. Note that
 > exporters live in the engine process: a one-tick run starts and stops them within that run, so
 > the health demo needs `--loop`. This replaces the older "one reservation in `provisioning` or
-> `cleaning`" wording below. Not done yet: retries (B-25), crash recovery (B-26), IP release and the
+> `cleaning`" wording below.
+> **B-26 (crash recovery):** every tick starts by putting `running` jobs that have shown no
+> activity for `DAOLAB_JOB_TIMEOUT_SEC` (default 1800 s) back to `pending`; doing it per tick
+> rather than only at process start also covers the systemd one-tick mode. "Activity" is the
+> job's `updated_at`, which every recorded step bumps, so a slow but healthy deploy is not
+> touched. The attempt number is unchanged, the steps recorded so far are kept, and a `requeued`
+> marker step is added. The update is guarded (still `running`, nothing recorded since it was
+> read), so a job that came back to life is left alone. Recovery runs before jobs are started,
+> so it also frees a setup that B-24 was holding. If the reservation has moved on by then, the
+> replayed job is failed by the usual state check. The timeout must exceed the longest silent
+> stretch of a healthy job; a job that is slow *and* silent for longer could be replayed while
+> still running. Not done yet: retries (B-25), IP release and the
 > setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67). `vms` rows
 > are not created by the engine yet.
 

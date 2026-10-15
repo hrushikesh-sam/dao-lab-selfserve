@@ -21,6 +21,12 @@ the clock. Every state change is a compare-and-set (`models.transition_reservati
 `models.transition_job`), so a second engine process can never double-fire a transition.
 Runner calls block; ticks are serialised, so a long deploy simply delays the next tick.
 
+Crash recovery (B-26): every tick starts by putting `running` jobs that have shown no activity
+for DAOLAB_JOB_TIMEOUT_SEC (default 30 min) back to `pending`. Each step a runner records counts
+as activity, so a slow but healthy job is not touched; a job whose engine died stops reporting
+and is replayed (playbooks are idempotent). The timeout must be longer than the longest silent
+stretch of a healthy job.
+
 Single-flight per setup (B-24): a deploy, cleanup or reconcile job is only started if no other
 such job is `running` on the same setup. The check and the pending -> running move happen in one
 BEGIN IMMEDIATE transaction, so two engine processes cannot both win. A job that has to wait is
@@ -47,7 +53,7 @@ import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import config, migrations, models, runner as runner_mod, scheduler
 from .runner import RunResult
@@ -69,6 +75,7 @@ class TickResult:
     activated: int = 0       # ready -> active
     expired: int = 0         # active -> cleaning (cleanup job queued)
     started: int = 0         # queued -> provisioning (deploy job queued)
+    recovered: int = 0       # stale running jobs put back to pending (B-26)
     jobs_run: int = 0
     deferred: int = 0        # pending jobs left waiting because their setup is busy (B-24)
     ready: int = 0           # deploy ok
@@ -79,7 +86,7 @@ class TickResult:
 
     @property
     def total(self) -> int:
-        return self.activated + self.expired + self.started + self.jobs_run
+        return self.recovered + self.activated + self.expired + self.started + self.jobs_run
 
 
 def _ts(now: datetime) -> str:
@@ -100,6 +107,19 @@ def _txn(db: sqlite3.Connection):
         db.execute("ROLLBACK")
         raise
     db.execute("COMMIT")
+
+
+# ---- 0. crash recovery -------------------------------------------------------------
+
+def _recover_stale_jobs(db: sqlite3.Connection, now: datetime, timeout_sec: float) -> int:
+    """Requeue `running` jobs with no activity for `timeout_sec` (B-26)."""
+    if timeout_sec <= 0:
+        raise ValueError(f"DAOLAB_JOB_TIMEOUT_SEC must be > 0, got {timeout_sec}")
+    idle_before = models.format_ts(now - timedelta(seconds=timeout_sec))
+    ids = models.requeue_stale_jobs(db, idle_before)   # each requeue is one atomic UPDATE
+    for jid in ids:
+        log.warning("job %s had no activity for %ss; back to pending", jid, timeout_sec)
+    return len(ids)
 
 
 # ---- 1. ready -> active -----------------------------------------------------------
@@ -296,11 +316,15 @@ def _run_pending(db, rn, out: TickResult) -> None:
 # ---- the tick + entry point ----------------------------------------------------------
 
 def tick(db: sqlite3.Connection, now: datetime, rn=None,
-         cfg: scheduler.SchedConfig | None = None) -> TickResult:
+         cfg: scheduler.SchedConfig | None = None,
+         job_timeout_sec: float | None = None) -> TickResult:
     """One pass. `now` is injected (tests freeze it); `rn` defaults to the configured runner."""
     rn = rn if rn is not None else runner_mod.get_runner()
     cfg = cfg if cfg is not None else scheduler.SchedConfig.from_settings(config.settings)
+    if job_timeout_sec is None:
+        job_timeout_sec = config.settings.job_timeout_sec
     out = TickResult()
+    out.recovered = _recover_stale_jobs(db, now, job_timeout_sec)
     out.activated = _promote_ready_to_active(db, now)
     out.expired = _expire_active(db, now)
     out.started = _start_due(db, now, cfg)
@@ -339,6 +363,10 @@ def main(argv: list[str] | None = None) -> int:
     if have != want:
         print(f"error: database schema is v{have} but this checkout expects v{want}; "
               "run `daolab init` first", file=sys.stderr)
+        return 1
+    if config.settings.job_timeout_sec <= 0:
+        print(f"error: DAOLAB_JOB_TIMEOUT_SEC must be > 0, got {config.settings.job_timeout_sec}",
+              file=sys.stderr)
         return 1
     try:
         rn = runner_mod.get_runner()
