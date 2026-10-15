@@ -14,12 +14,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict
 
-from . import config, models, scheduler
+from . import config, models, otel, scheduler
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
 log = logging.getLogger("daolab.api")
 
 app = FastAPI(title="daolab", docs_url=None, redoc_url=None)
+
+otel.setup_tracing(app, "daolab-api")
 
 
 # ---- error layer -----------------------------------------------------------
