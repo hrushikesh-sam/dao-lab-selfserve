@@ -122,7 +122,8 @@ def _sched_config() -> scheduler.SchedConfig:
     s = config.settings
     return scheduler.SchedConfig(hw_class_lead_min=s.hw_class_lead_min,
                                  provision_lead_min=s.provision_lead_min,
-                                 horizon_hours=s.sched_horizon_hours)
+                                 horizon_hours=s.sched_horizon_hours,
+                                 cleanup_min=s.cleanup_min)
 
 
 def _node_id(name: str) -> str:

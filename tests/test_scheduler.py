@@ -8,7 +8,10 @@ from service import models, scheduler
 from service.scheduler import NoFit, NoFreeSlot, NoSetup, Placed, PlacementRequest, SchedConfig
 from tests.conftest import NOW, T, mk_res, mk_setup, mk_usecase
 
-CFG = SchedConfig(hw_class_lead_min=15, provision_lead_min=5, horizon_hours=168)
+CFG = SchedConfig(hw_class_lead_min=15, provision_lead_min=5, horizon_hours=168, cleanup_min=10)
+# B-11: two bookings are `cleanup + lead` apart. Same hw_class: 10 + 5 = 15 min; reflash: 10 + 15 = 25.
+GAP_SAME = CFG.cleanup_min + CFG.provision_lead_min
+GAP_DIFF = CFG.cleanup_min + CFG.hw_class_lead_min
 CAPS = ["e810", "octeon-cn106", "sdp", "wire"]
 REQ = ["octeon-cn106", "e810", "wire"]
 
@@ -36,7 +39,7 @@ def test_overlap_shifts_second(db):          # Phase 2 checkpoint
     mk_res(db, sid, uid, T(10), T(12))
     p = scheduler.place(db, req(), NOW, CFG)
     assert isinstance(p, Placed)
-    assert p.start_at == T(12, 5) and p.shifted is True
+    assert p.start_at == T(12, 15) and p.shifted is True      # 12:00 end + 10 cleanup + 5 lead
 
 
 def test_unmet_capability_names_missing(db):  # Phase 2 checkpoint
@@ -51,7 +54,7 @@ def test_shift_lands_after_end_plus_lead(db):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12))
     p = scheduler.place(db, req(), NOW, CFG)
-    assert p.start_at == T(12) + timedelta(minutes=CFG.provision_lead_min)
+    assert p.start_at == T(12) + timedelta(minutes=CFG.cleanup_min + CFG.provision_lead_min)
 
 
 def test_hw_class_change_pads_lead(db):
@@ -59,14 +62,14 @@ def test_hw_class_change_pads_lead(db):
     mk_res(db, sid, uid, T(10), T(12))
     mk_usecase(db, "uc-b", ["octeon-cn106"], hw_class="sdp-pf2-vf16")
     p = scheduler.place(db, req(usecase="uc-b", start=T(12)), NOW, CFG)
-    assert p.start_at == T(12, 15) and p.lead_min == 15 and p.shifted is True
+    assert p.start_at == T(12, 25) and p.lead_min == 15 and p.shifted is True   # 10 cleanup + 15 reflash
 
 
 def test_back_to_back_same_hw_class_short_lead(db):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12))
     p = scheduler.place(db, req(start=T(12)), NOW, CFG)
-    assert p.start_at == T(12, 5) and p.lead_min == 5
+    assert p.start_at == T(12, 15) and p.lead_min == 5
 
 
 def test_null_hw_class_never_reflashes(db):
@@ -87,7 +90,7 @@ def test_projection_threads_through_queue(db):
     mk_res(db, sid, ub, T(12, 15), T(14, 15))                 # r2 class B
     p = scheduler.place(db, req(usecase="uc-b", start=T(14, 15), hours=1), NOW, CFG)
     assert p.lead_min == 5                                    # predecessor projects B, not the DB's A
-    assert p.start_at == T(14, 20)
+    assert p.start_at == T(14, 30)             # r2 ends 14:15 + 10 cleanup + 5 lead
 
 
 def test_released_frees_slot(db):
@@ -109,7 +112,7 @@ def test_all_busy_states_block(db, state):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12), state=state)
     p = scheduler.place(db, req(), NOW, CFG)
-    assert p.shifted is True and p.start_at == T(12, 5)
+    assert p.shifted is True and p.start_at == T(12, 15)
 
 
 def test_partial_overlap_not_candidate(db):
@@ -188,7 +191,7 @@ def test_next_free_at_probe(db):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12))
     nfa = scheduler.next_free_at(db, "tls-proxy-nginx", NOW, CFG)
-    assert nfa == T(12, 5)
+    assert nfa == T(12, 15)
     mk_res(db, sid, uid, NOW, NOW + timedelta(hours=180))
     assert scheduler.next_free_at(db, "tls-proxy-nginx", NOW, CFG) is None
 
@@ -271,7 +274,7 @@ def test_at_busy_window_is_conflict_but_asap_shifts(db):      # B-10 done-when
     at = scheduler.place(db, req(start=T(11), mode="at"), NOW, CFG)
     assert at == NoFit(start_at=T(11), end_at=T(13), reason="overlap")   # never shifted
     asap = scheduler.place(db, req(start=T(11), mode="asap"), NOW, CFG)
-    assert isinstance(asap, Placed) and asap.start_at == T(12, 5) and asap.shifted is True
+    assert isinstance(asap, Placed) and asap.start_at == T(12, 15) and asap.shifted is True
 
 
 def test_at_conflict_names_the_requested_window(db):
@@ -281,9 +284,9 @@ def test_at_conflict_names_the_requested_window(db):
     assert isinstance(p, NoFit) and (p.start_at, p.end_at) == (T(10, 30), T(13, 30))
 
 
-@pytest.mark.parametrize("minute,free", [(4, False), (5, True), (6, True)])
+@pytest.mark.parametrize("minute,free", [(14, False), (15, True), (16, True)])
 def test_at_boundary_after_a_booking_uses_lead(db, minute, free):
-    # prior booking ends 12:00, same hw_class -> 5 min lead: 12:05 is the first free start
+    # prior booking ends 12:00, same hw_class -> 10 cleanup + 5 lead: 12:15 is the first free start
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12))
     p = scheduler.place(db, req(start=T(12, minute), hours=1, mode="at"), NOW, CFG)
@@ -292,7 +295,7 @@ def test_at_boundary_after_a_booking_uses_lead(db, minute, free):
         assert p.reason == "overlap"
 
 
-@pytest.mark.parametrize("minute,free", [(14, False), (15, True)])
+@pytest.mark.parametrize("minute,free", [(24, False), (25, True)])
 def test_at_hw_class_change_needs_reflash_lead(db, minute, free):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12))
@@ -304,13 +307,14 @@ def test_at_hw_class_change_needs_reflash_lead(db, minute, free):
         assert p.lead_min == 15
 
 
-@pytest.mark.parametrize("end_minute,free", [(55, True), (56, False)])
+@pytest.mark.parametrize("end_minute,free", [(45, True), (46, False)])
 def test_at_window_ending_into_a_later_booking(db, end_minute, free):
-    # a later booking at 12:00 holds its 5 min lead (11:55-12:00) too
+    # a later booking at 12:00 holds its 5 min lead (11:55-12:00), and the new window needs its
+    # own 10 min cleanup before that: it must END by 11:45 (B-11, the mirror of the gap after)
     sid, uid = std(db)
     mk_res(db, sid, uid, T(12), T(14))
-    start, hours = T(9, 55), 2
-    p = scheduler.place(db, req(start=start + timedelta(minutes=end_minute - 55), hours=hours,
+    start, hours = T(9, 45), 2
+    p = scheduler.place(db, req(start=start + timedelta(minutes=end_minute - 45), hours=hours,
                                 mode="at"), NOW, CFG)
     assert isinstance(p, Placed) is free
 
@@ -434,3 +438,159 @@ def test_at_and_asap_agree_on_random_timelines(db):
             assert at == asap
             granted += 1
     assert granted > 50 and conflicts > 50                      # the test exercises both outcomes
+
+
+# ---- B-11: turnaround buffer ------------------------------------------------
+# Every reservation blocks [start - lead, end + cleanup_min). Back-to-back bookings are
+# `cleanup + lead` apart (plan/09 §5): cleanup first, then provision / reflash.
+
+def test_gap_constants_match_the_documented_numbers():
+    assert (GAP_SAME, GAP_DIFF) == (15, 25)
+
+
+def test_cleanup_min_is_configurable(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(10), T(12))
+    for cleanup, first_start in [(0, T(12, 5)), (10, T(12, 15)), (30, T(12, 35))]:
+        cfg = SchedConfig(15, 5, 168, cleanup_min=cleanup)
+        assert scheduler.place(db, req(), NOW, cfg).start_at == first_start
+
+
+def test_cleanup_zero_restores_the_pre_b11_gap(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(10), T(12))
+    cfg = SchedConfig(15, 5, 168, cleanup_min=0)
+    assert scheduler.place(db, req(start=T(12, 4), hours=1, mode="at"), NOW, cfg).reason == "overlap"
+    assert isinstance(scheduler.place(db, req(start=T(12, 5), hours=1, mode="at"), NOW, cfg), Placed)
+
+
+def test_setup_without_dpu_still_gets_cleanup(db):
+    sid = mk_setup(db, "plain", ["nic"], has_dpu=False)
+    uid = mk_usecase(db, "uc-plain", ["nic"], hw_class="whatever")
+    mk_res(db, sid, uid, T(10), T(12))
+    p = scheduler.place(db, req(usecase="uc-plain", start=T(12)), NOW, CFG)
+    assert p.start_at == T(12, 15) and p.lead_min == 5          # no reflash lead, cleanup still applies
+
+
+def test_cleanup_blocks_every_live_state_until_released(db):
+    sid, uid = std(db)
+    rid = mk_res(db, sid, uid, T(10), T(12), state="tearing_down")
+    assert scheduler.place(db, req(start=T(12)), NOW, CFG).start_at == T(12, 15)
+    db.execute("UPDATE reservations SET state = 'released' WHERE id = ?", (rid,))
+    assert scheduler.place(db, req(start=T(12)), NOW, CFG).start_at == T(12)   # buffer freed too
+
+
+def test_new_booking_leaves_room_for_its_own_cleanup(db):
+    # the mirror case: a later booking at 12:00 (lead 5 -> busy from 11:55). A 2h booking
+    # asked for 09:50 would end 11:50, but its own cleanup runs to 12:00 -> not free.
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(12), T(14))
+    at = scheduler.place(db, req(start=T(9, 50), mode="at"), NOW, CFG)
+    assert at == NoFit(start_at=T(9, 50), end_at=T(11, 50), reason="overlap")
+    asap = scheduler.place(db, req(start=T(9, 50), mode="asap"), NOW, CFG)
+    assert asap.start_at == T(14, 15)                            # ... and 2h can't fit before it
+    short = scheduler.place(db, req(start=T(9, 50), hours=1, mode="at"), NOW, CFG)
+    assert isinstance(short, Placed) and short.end_at == T(10, 50)
+
+
+def test_later_reflash_booking_needs_the_longer_gap_before_it(db):
+    # a later booking of another hw_class at 12:00 holds a 15 min reflash lead (busy from 11:45);
+    # our window must end + 10 cleanup by then -> end <= 11:35
+    sid, uid = std(db)
+    ub = mk_usecase(db, "uc-b", ["octeon-cn106"], hw_class="sdp-pf2-vf16")
+    mk_res(db, sid, ub, T(12), T(14))
+    ok = scheduler.place(db, req(start=T(9, 35), mode="at"), NOW, CFG)      # ends 11:35
+    assert isinstance(ok, Placed)
+    no = scheduler.place(db, req(start=T(9, 36), mode="at"), NOW, CFG)      # ends 11:36
+    assert isinstance(no, NoFit)
+
+
+def test_turnaround_only_adds_time_after_never_before_the_start(db):
+    # a free setup is still granted at exactly the requested start (the cleanup buffer is not a lead)
+    sid, uid = std(db)
+    p = scheduler.place(db, req(start=T(10)), NOW, CFG)
+    assert p.start_at == T(10) and p.shifted is False
+
+
+def test_placements_always_keep_the_turnaround_gap(db):
+    """Property test, independent of scheduler.py's own arithmetic: place many random
+    requests (both modes), insert each grant, and after every insert re-check the documented
+    rule on the whole timeline: no overlap, and consecutive bookings on a setup are at least
+    `cleanup + lead` apart, with the lead derived from hw_class by the rule in plan/03."""
+    import random
+    rng = random.Random(20261016)
+    classes = {"uc-a": "class-a", "uc-b": "class-b", "uc-n": None}
+    ids = {name: mk_usecase(db, name, REQ, hw_class=cls) for name, cls in classes.items()}
+    dpu_class = {"setup-01": "class-a", "setup-02": "class-b"}
+    sids = {n: mk_setup(db, n, CAPS, dpu_hw_class=c) for n, c in dpu_class.items()}
+    shifted = conflicts = placed = 0
+    for _ in range(40):
+        db.execute("DELETE FROM reservations")
+        for _ in range(25):
+            name = rng.choice(list(classes))
+            start = NOW + timedelta(minutes=5 * rng.randint(0, 12 * 8))
+            r = req(usecase=name, start=start, hours=rng.randint(1, 3),
+                    mode=rng.choice(["asap", "at"]))
+            p = scheduler.place(db, r, NOW, CFG)
+            if isinstance(p, NoFit):
+                conflicts += 1
+                continue
+            if isinstance(p, NoFreeSlot):
+                continue
+            placed += 1
+            shifted += p.shifted
+            mk_res(db, p.setup_id, ids[name], p.start_at, p.end_at)
+            for sname, sid in sids.items():
+                rows = db.execute(
+                    """SELECT r.start_at, r.end_at, u.hw_class FROM reservations r
+                       JOIN usecases u ON u.id = r.usecase_id
+                       WHERE r.setup_id = ? ORDER BY r.start_at""", (sid,)).fetchall()
+                cur, prev_end = dpu_class[sname], None
+                for row in rows:
+                    s0, e0 = scheduler._parse(row["start_at"]), scheduler._parse(row["end_at"])
+                    reflash = row["hw_class"] is not None and row["hw_class"] != cur
+                    lead = CFG.hw_class_lead_min if reflash else CFG.provision_lead_min
+                    if prev_end is not None:
+                        assert s0 - prev_end >= timedelta(minutes=CFG.cleanup_min + lead), \
+                            (sname, row["start_at"], prev_end, lead)
+                    prev_end = e0
+                    if row["hw_class"] is not None:
+                        cur = row["hw_class"]
+    assert placed > 300 and shifted > 50 and conflicts > 20     # all three outcomes are exercised
+
+
+def _two_class_setup(db):
+    """DPU currently flashed class-b; use cases uc-a (class-a), uc-b (class-b), uc-n (null)."""
+    sid = mk_setup(db, "setup-01", CAPS, dpu_hw_class="class-b")
+    ids = {n: mk_usecase(db, n, REQ, hw_class=c)
+           for n, c in [("uc-a", "class-a"), ("uc-b", "class-b"), ("uc-n", None)]}
+    return sid, ids
+
+
+def test_inserting_before_a_booking_can_lengthen_its_lead(db):
+    # X (class-b, 12:00-13:00) follows an idle class-b DPU -> 5 min lead, busy from 11:55.
+    # A class-a booking placed before it makes X a reflash: its lead becomes 15 (busy from
+    # 11:45), so our window + 10 cleanup must end by 11:45, not 11:55.
+    sid, ids = _two_class_setup(db)
+    mk_res(db, sid, ids["uc-b"], T(12), T(13))
+    late = scheduler.place(db, req(usecase="uc-a", start=T(9, 45), mode="at"), NOW, CFG)  # ends 11:45
+    assert late == NoFit(start_at=T(9, 45), end_at=T(11, 45), reason="overlap")
+    ok = scheduler.place(db, req(usecase="uc-a", start=T(9, 35), mode="at"), NOW, CFG)    # ends 11:35
+    assert isinstance(ok, Placed)
+    same_class = scheduler.place(db, req(usecase="uc-b", start=T(9, 45), mode="at"), NOW, CFG)
+    assert isinstance(same_class, Placed)                    # class-b before class-b: no reflash
+    asap = scheduler.place(db, req(usecase="uc-a", start=T(9, 45)), NOW, CFG)
+    assert asap.start_at == T(13, 25) and asap.lead_min == 15   # after X: 13:00 + 10 + 15 reflash
+
+
+def test_lead_change_propagates_through_bookings_without_hw_class(db):
+    # X (null class, 12:00-13:00) passes the projection through, so a class-a booking before
+    # it also changes the lead of Z (class-b, 13:20): 5 -> 15. Z needs busy-from 13:05, but
+    # X's cleanup runs to 13:10 -> conflict, even though our window clears X itself.
+    sid, ids = _two_class_setup(db)
+    mk_res(db, sid, ids["uc-n"], T(12), T(13))
+    mk_res(db, sid, ids["uc-b"], T(13, 20), T(14, 20))
+    p = scheduler.place(db, req(usecase="uc-a", start=T(9, 45), mode="at"), NOW, CFG)
+    assert p == NoFit(start_at=T(9, 45), end_at=T(11, 45), reason="overlap")
+    no_change = scheduler.place(db, req(usecase="uc-n", start=T(9, 45), mode="at"), NOW, CFG)
+    assert isinstance(no_change, Placed)                     # a null class never changes the projection

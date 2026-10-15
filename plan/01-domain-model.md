@@ -155,7 +155,7 @@ transaction with the version bump, so an existing DB is upgraded in place withou
 and a second `init` changes nothing. A DB whose `user_version` is newer than the checkout is
 refused (`SchemaTooNew`, exit 1). Migration 1 (`reservation_mode`, plan/09 §4–5) adds
 `reservations.mode` (`'asap'|'at'`, default `'asap'`) and `reservations.turnaround_min`
-(default `0`) — these columns are **not** in the baseline DDL below. To change the schema:
+(default `0`; the scheduler does not read it yet — the buffer comes from `DAOLAB_CLEANUP_MIN`, see [03-scheduler.md](03-scheduler.md)) — these columns are **not** in the baseline DDL below. To change the schema:
 append `Migration(N, name, fn)` with `fn` idempotent (`add_column` / `IF NOT EXISTS`); never
 edit or reorder a released migration; add a test in `tests/test_migrations.py`.
 

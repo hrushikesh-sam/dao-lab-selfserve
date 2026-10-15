@@ -5,6 +5,11 @@ Two booking modes (plan/09 §4-5):
   * ``at``             — exactly the requested window: one overlap test, never shifted.
                          If the window is not free the result is ``NoFit``.
 
+Every reservation blocks ``[start_at - lead, end_at + cleanup_min)``: the lead before it
+(provision, or EBF reflash when the hw_class changes) and the cleanup budget after it, run
+one after the other. Back-to-back bookings are therefore ``cleanup + lead`` apart: 15 min for
+the same hw_class, 25 min when a reflash is needed (plan/09 §5).
+
 No I/O other than the sqlite handle passed in (SELECTs only) — no clock reads,
 no env reads, no writes. Same DB state + same request + same now -> identical result.
 """
@@ -22,6 +27,7 @@ class SchedConfig:
     hw_class_lead_min: int = 15   # DAOLAB_HW_CLASS_LEAD_MIN — EBF reflash lead
     provision_lead_min: int = 5   # DAOLAB_PROVISION_LEAD_MIN — normal lead
     horizon_hours: int = 168      # DAOLAB_SCHED_HORIZON_HOURS — search horizon
+    cleanup_min: int = 10         # DAOLAB_CLEANUP_MIN — turnaround buffer after every reservation
 
 
 @dataclass(frozen=True)
@@ -67,9 +73,17 @@ class _Slot:
     lead_min: int
 
 
+@dataclass(frozen=True)
+class _Row:
+    start: datetime
+    end: datetime
+    cls: str | None                  # the use case's hw_class (None: never reflashes)
+    busy: tuple[datetime, datetime]  # [start - lead, end + cleanup), half-open
+
+
 class _Timeline:
-    def __init__(self, busy, steps, initial):
-        self.busy = sorted(busy)               # [(w0, end)] half-open
+    def __init__(self, rows, steps, initial):
+        self.rows = rows                       # live reservations, ordered by (start_at, id)
         self.steps = steps                     # [(start_at, class after this reservation)]
         self.initial = initial
 
@@ -115,22 +129,58 @@ def _setup_dpu(db, setup_id: int):
 def _timeline(db, setup_id: int, dpu_hw_class, has_dpu: bool, cfg: SchedConfig) -> _Timeline:
     rows = db.execute(TIMELINE_SQL, (setup_id,)).fetchall()
     cur = dpu_hw_class
-    busy, steps = [], []
+    out, steps = [], []
     for r in rows:
         start, end = _parse(r["start_at"]), _parse(r["end_at"])
         lead = lead_min(r["hw_class"], cur, cfg, has_dpu)
-        busy.append((start - timedelta(minutes=lead), end))
+        out.append(_Row(start, end, r["hw_class"],
+                        (start - timedelta(minutes=lead), end + timedelta(minutes=cfg.cleanup_min))))
         if has_dpu and r["hw_class"] is not None:
             cur = r["hw_class"]          # null hw_class never changes the projection
         steps.append((start, cur))
-    return _Timeline(busy, steps, dpu_hw_class)
+    return _Timeline(out, steps, dpu_hw_class)
 
 
-def _first_overlap(tl: _Timeline, w0: datetime, w1: datetime):
-    """First busy interval sharing any instant with the half-open window [w0, w1), else None.
-    The single overlap test used by both modes, so `at` and `asap` can never disagree
-    about what counts as a conflict (back-to-back, end == next start, is not one)."""
-    return next((b for b in tl.busy if b[0] < w1 and b[1] > w0), None)
+def _conflict(tl: _Timeline, s: datetime, hours: int, lead: int, uc_hw_class,
+              cfg: SchedConfig, has_dpu: bool):
+    """The existing busy interval that stops a booking at `s` from being granted, else None.
+
+    The booking would block ``[s - lead, s + hours + cleanup)`` (half-open). It is the single
+    conflict test shared by `asap` and `at`, so the two modes cannot disagree.
+      1. Bookings that start before `s` must be done (their busy end, cleanup included) by
+         `s - lead`. Of several, the one ending last is returned so the sweep jumps past all.
+      2. The first booking at or after `s` must not need its lead *earlier* than our cleanup
+         ends. Its lead is re-derived as if we were already its predecessor: a hw_class change
+         the other way round turns its 5 min lead into a 15 min reflash lead. Bookings with no
+         hw_class pass the projection through, so the first classed booking after them is
+         re-checked too (only when its lead got longer: pairs we did not touch are not our
+         business)."""
+    w0 = s - timedelta(minutes=lead)
+    w1 = s + timedelta(hours=hours, minutes=cfg.cleanup_min)
+    before = [r.busy for r in tl.rows if r.start < s and r.busy[1] > w0]
+    if before:
+        return max(before, key=lambda b: b[1])
+    after = [r for r in tl.rows if r.start >= s]
+    if not after:
+        return None
+    cur_old = tl.class_at(s)
+    cur_new = uc_hw_class if (has_dpu and uc_hw_class is not None) else cur_old
+    first = after[0]
+    if first.start - timedelta(minutes=lead_min(first.cls, cur_new, cfg, has_dpu)) < w1:
+        return first.busy
+    if first.cls is not None:
+        return None                      # a classed booking resets the projection: the rest is untouched
+    prev = first
+    for r in after[1:]:
+        if r.cls is None:
+            prev = r
+            continue
+        need_new = lead_min(r.cls, cur_new, cfg, has_dpu)
+        if need_new > lead_min(r.cls, cur_old, cfg, has_dpu) and \
+                r.start - timedelta(minutes=need_new) < prev.busy[1]:
+            return r.busy
+        break                            # first classed booking behind the null ones: done
+    return None
 
 
 def _sweep(tl: _Timeline, uc_hw_class, base: datetime, hours: int,
@@ -138,13 +188,13 @@ def _sweep(tl: _Timeline, uc_hw_class, base: datetime, hours: int,
     s = base
     while s + timedelta(hours=hours) <= horizon_end:
         lead = lead_min(uc_hw_class, tl.class_at(s), cfg, has_dpu)
-        w0, w1 = s - timedelta(minutes=lead), s + timedelta(hours=hours)
-        hit = _first_overlap(tl, w0, w1)
+        hit = _conflict(tl, s, hours, lead, uc_hw_class, cfg, has_dpu)
         if hit is None:
             return _Slot(start=s, lead_min=lead)
         just_after = hit[1] + timedelta(seconds=1)      # class_at is a step function
-        s = hit[1] + timedelta(minutes=lead_min(uc_hw_class, tl.class_at(just_after), cfg, has_dpu))
-    return None
+        nxt = hit[1] + timedelta(minutes=lead_min(uc_hw_class, tl.class_at(just_after), cfg, has_dpu))
+        s = max(nxt, s + timedelta(minutes=1))          # nxt > s always; max() makes a hang impossible
+    return None                                         # this candidate has no slot in horizon
 
 
 def _candidates(db, requires: list[str], setup_name: str | None):
@@ -172,7 +222,7 @@ def _place_at(db, req: PlacementRequest, candidates, uc_hw_class,
         has_dpu, dpu_class = _setup_dpu(db, s["id"])
         tl = _timeline(db, s["id"], dpu_class, has_dpu, cfg)
         lead = lead_min(uc_hw_class, tl.class_at(start), cfg, has_dpu)
-        if _first_overlap(tl, start - timedelta(minutes=lead), end) is None:
+        if _conflict(tl, start, req.hours, lead, uc_hw_class, cfg, has_dpu) is None:
             free.append((lead, s["name"], s["id"]))
     if not free:
         return NoFit(start_at=start, end_at=end, reason="overlap")

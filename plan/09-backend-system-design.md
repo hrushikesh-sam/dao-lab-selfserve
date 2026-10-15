@@ -202,6 +202,8 @@ turnaround = cleanup_budget (DAOLAB_CLEANUP_MIN, e.g. 10)
            + reflash_lead   (DAOLAB_HW_CLASS_LEAD_MIN, only if the next booking needs another hw_class)
 ```
 
+As implemented (B-11, [03-scheduler.md](03-scheduler.md) Step 3): the next booking always carries its own lead before its start (`DAOLAB_PROVISION_LEAD_MIN`, or the reflash lead when its `hw_class` differs), and that lead comes **after** the previous booking's cleanup, so the gap between two bookings is `cleanup + lead`: **15 min** for the same `hw_class` (10 + 5) and **25 min** when a reflash is needed (10 + 15). The scheduler takes the cleanup length from `DAOLAB_CLEANUP_MIN`, not from the `reservations.turnaround_min` column.
+
 **Slot grid:** starts snap to `DAOLAB_SLOT_MIN` (e.g. 30 minutes). This keeps the date picker
 simple and packs bookings back-to-back with no unusable gaps.
 
