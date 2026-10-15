@@ -1,9 +1,10 @@
 """The 22 scheduler cases from plan/03-scheduler.md — pure placement, no hardware."""
+import sqlite3
 from datetime import timedelta
 
 import pytest
 
-from service import scheduler
+from service import models, scheduler
 from service.scheduler import NoFreeSlot, NoSetup, Placed, PlacementRequest, SchedConfig
 from tests.conftest import NOW, T, mk_res, mk_setup, mk_usecase
 
@@ -212,3 +213,38 @@ def test_read_only(db):
     before = db.total_changes
     scheduler.place(db, req(), NOW, CFG)
     assert db.total_changes == before      # the scheduler never writes
+
+
+# ---- B-18: setup availability gates provisioning, not placement ------------
+
+def test_placement_still_books_a_quarantined_setup(db):
+    sid, _ = std(db)
+    models.set_setup_availability(db, sid, "quarantined")
+    p = scheduler.place(db, req(), NOW, CFG)
+    assert isinstance(p, Placed) and p.setup_id == sid and p.shifted is False
+
+
+def test_setup_available_predicate(db):
+    sid, _ = std(db)
+    assert scheduler.setup_available(db, sid) is True
+    for state in ("quarantined", "maintenance"):
+        models.set_setup_availability(db, sid, state)
+        assert scheduler.setup_available(db, sid) is False
+    models.set_setup_availability(db, sid, "available")
+    assert scheduler.setup_available(db, sid) is True
+
+
+def test_queued_stays_queued_while_quarantined(db):
+    sid, uid = std(db)
+    rid = mk_res(db, sid, uid, T(10), T(12), state="queued")
+    assert [r["id"] for r in scheduler.startable_queued(db)] == [rid]
+    models.set_setup_availability(db, sid, "quarantined")
+    assert scheduler.startable_queued(db) == []          # engine finds nothing to start
+    models.set_setup_availability(db, sid, "available")
+    assert [r["id"] for r in scheduler.startable_queued(db)] == [rid]
+
+
+def test_availability_rejects_unknown_value(db):
+    sid, _ = std(db)
+    with pytest.raises(sqlite3.IntegrityError):
+        models.set_setup_availability(db, sid, "bogus")

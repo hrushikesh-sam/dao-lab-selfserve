@@ -100,9 +100,20 @@ def _m2_ip_leases(conn: sqlite3.Connection) -> None:
         "ON ip_leases(reservation_id, role) WHERE state != 'released'")
 
 
+def _m3_setup_availability(conn: sqlite3.Connection) -> None:
+    """plan/09 §6: a setup is `available`, `quarantined` (residue survived cleanup) or
+    under `maintenance`. Placement is unaffected — the scheduler keeps booking slots —
+    but the engine refuses to start provisioning while a setup is not `available`
+    (B-18). Existing setups default to available."""
+    add_column(conn, "setups", "availability",
+               "TEXT NOT NULL DEFAULT 'available' "
+               "CHECK (availability IN ('available', 'quarantined', 'maintenance'))")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
+    Migration(3, "setup_availability", _m3_setup_availability),
 ]
 
 

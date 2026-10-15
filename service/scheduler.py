@@ -174,3 +174,27 @@ def next_free_at(db: sqlite3.Connection, usecase: str, now: datetime,
                  cfg: SchedConfig = SchedConfig()) -> datetime | None:
     result = place(db, PlacementRequest(usecase=usecase, requested_start_at=now, hours=1), now, cfg)
     return result.start_at if isinstance(result, Placed) else None
+
+
+# ---- setup availability gating (B-18) --------------------------------------
+# plan/09 §6: booking/placement ignores availability (the scheduler keeps granting
+# slots), but the engine must not start provisioning while a setup is not `available`.
+# These read-only helpers expose that gate; the engine (B-23) calls them in its
+# queued -> provisioning step. They never write, like the rest of this module.
+
+def setup_available(db: sqlite3.Connection, setup_id: int) -> bool:
+    """True when the setup may start new provisioning (availability == 'available')."""
+    row = db.execute("SELECT availability FROM setups WHERE id = ?", (setup_id,)).fetchone()
+    return row is not None and row["availability"] == "available"
+
+
+def startable_queued(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Queued reservations whose setup is available, in FCFS order — the candidates the
+    engine weighs for queued -> provisioning. It still applies the lead time (`place`
+    reports it) and single-flight; this only drops quarantined/maintenance setups, so a
+    queued reservation stays queued while its setup is quarantined."""
+    return db.execute(
+        """SELECT r.*
+           FROM reservations r JOIN setups s ON s.id = r.setup_id
+           WHERE r.state = 'queued' AND s.availability = 'available'
+           ORDER BY r.start_at, r.id""").fetchall()

@@ -192,3 +192,14 @@ def ip_lease_by_role(conn, res_id: int, role: str):
 def ip_leases_for_reservation(conn, res_id: int):
     return conn.execute(
         "SELECT * FROM ip_leases WHERE reservation_id = ? ORDER BY id", (res_id,)).fetchall()
+
+
+# ---- setup availability (B-18) ---------------------------------------------
+
+SETUP_AVAILABILITY = ("available", "quarantined", "maintenance")
+
+
+def set_setup_availability(conn, setup_id: int, availability: str) -> None:
+    """Move a setup between available/quarantined/maintenance (CHECK-enforced).
+    Booking and placement ignore this; only provisioning starts are gated (B-18)."""
+    update(conn, "setups", setup_id, {"availability": availability})
