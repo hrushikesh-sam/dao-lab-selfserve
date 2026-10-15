@@ -353,3 +353,30 @@ def startable_queued(db: sqlite3.Connection) -> list[sqlite3.Row]:
            FROM reservations r JOIN setups s ON s.id = r.setup_id
            WHERE r.state = 'queued' AND s.availability = 'available'
            ORDER BY r.start_at, r.id""").fetchall()
+
+
+# ---- availability windows (B-16) -------------------------------------------
+# plan/09 §4: GET /availability feeds the date picker with the busy windows a new booking
+# would collide with. The blocked interval is the same one `place` tests — [start - lead,
+# end + cleanup) — so the picker greys exactly the slots the scheduler would refuse.
+
+def busy_windows(db: sqlite3.Connection, setup_id: int, from_dt: datetime, to_dt: datetime,
+                 cfg: SchedConfig = SchedConfig()) -> list[tuple[datetime, datetime, int]]:
+    """The busy intervals a new booking on `setup_id` would collide with, as
+    ``(blocked_start, blocked_end, reservation_id)`` for every live reservation whose
+    ``[start - lead, end + cleanup)`` overlaps ``[from_dt, to_dt)``. Read-only and pure,
+    like the rest of this module: same DB state + same args -> identical result. The lead
+    is projected over the full ordered timeline (as in `_timeline`), so reflashes are
+    accounted for even when the preceding booking falls outside the window."""
+    has_dpu, dpu_class = _setup_dpu(db, setup_id)
+    cur, out = dpu_class, []
+    for r in db.execute(TIMELINE_SQL, (setup_id,)).fetchall():
+        start, end = _parse(r["start_at"]), _parse(r["end_at"])
+        lead = lead_min(r["hw_class"], cur, cfg, has_dpu)
+        if has_dpu and r["hw_class"] is not None:
+            cur = r["hw_class"]
+        b0 = start - timedelta(minutes=lead)
+        b1 = end + timedelta(minutes=cfg.cleanup_min)
+        if b1 > from_dt and b0 < to_dt:
+            out.append((b0, b1, r["id"]))
+    return out

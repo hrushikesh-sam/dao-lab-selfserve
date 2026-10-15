@@ -2,6 +2,7 @@
 plus the admin user-management endpoints. No hardware, no engine, no ansible."""
 import dataclasses
 import hashlib
+import json
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -396,3 +397,39 @@ def test_24_quota_admin_exempt(env):
     """B-15: admins are not subject to the per-user caps."""
     for _ in range(4):
         assert reserve(env, env.admin_token).status_code == 201
+
+
+def test_25_availability_busy_windows(env):
+    """B-16: /availability lists busy windows; the owner is shown only to admins."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    reserve(env, bob, mode="at", start_at=iso(env.T), hours=2)
+    reserve(env, alice, mode="at", start_at=iso(env.T + timedelta(hours=3)), hours=1)
+    q = ("/availability?usecase=tls-proxy-nginx"
+         f"&from={iso(env.T - timedelta(hours=1))}&to={iso(env.T + timedelta(hours=6))}")
+    view = env.client.get(q, headers=H(alice)).json()
+    assert view["usecase"] == "tls-proxy-nginx" and view["slot_min"] == 30
+    mine = {w["mine"]: w for w in view["windows"]}
+    assert set(mine) == {True, False}                       # one is alice's, one is bob's
+    assert mine[False]["state"] == "queued" and mine[False]["setup"] == "tb-01"
+    assert mine[True]["start_at"] == iso(env.T + timedelta(hours=3))
+    # a non-admin response never leaks a username
+    assert all("owner" not in w for w in view["windows"])
+    assert "alice" not in json.dumps(view) and "bob" not in json.dumps(view)
+    # an admin sees who holds each window
+    admin_view = env.client.get(q, headers=H(env.admin_token)).json()
+    assert sorted(w["owner"] for w in admin_view["windows"]) == ["alice", "bob"]
+    assert all(w["mine"] is False for w in admin_view["windows"])
+
+
+def test_26_availability_validation(env):
+    """B-16: unknown use case -> 404; bad range / bad timestamp -> 422; token required."""
+    assert_error(env.client.get("/availability?usecase=nope"), 401, "unauthorized")
+    assert_error(env.client.get("/availability", headers=H(env.admin_token)), 422, "validation_error")
+    assert_error(env.client.get("/availability?usecase=nope", headers=H(env.admin_token)),
+                 404, "not_found")
+    base = "/availability?usecase=tls-proxy-nginx"
+    assert_error(env.client.get(f"{base}&from={iso(env.T)}&to={iso(env.T)}",
+                                headers=H(env.admin_token)), 422, "validation_error")
+    assert_error(env.client.get(f"{base}&from=not-a-time", headers=H(env.admin_token)),
+                 422, "validation_error")
