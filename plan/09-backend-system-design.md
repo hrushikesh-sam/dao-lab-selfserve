@@ -185,7 +185,9 @@ admins pass every owner check.
   always succeeds unless the horizon is full.
 - **at:** the scheduler checks exactly that window. If it overlaps anything, it returns
   `409 slot_conflict` with `detail.alternatives` (the next three free starts of the same
-  length), which the dashboard shows as one-click chips.
+  length), which the dashboard shows as one-click chips. As implemented (B-13): the scheduler
+  returns them on every `NoFit` as `NoFit.alternatives`, searched forward from the requested
+  start (or `now`), on the slot grid, any capable setup ([03-scheduler.md](03-scheduler.md) Step 5c).
 - Per-user caps give `409 quota_exceeded`. The prototype allows one live reservation and two
   future reservations per user, which stops one person hoarding the only testbed.
 
@@ -202,8 +204,12 @@ turnaround = cleanup_budget (DAOLAB_CLEANUP_MIN, e.g. 10)
            + reflash_lead   (DAOLAB_HW_CLASS_LEAD_MIN, only if the next booking needs another hw_class)
 ```
 
+As implemented (B-11, [03-scheduler.md](03-scheduler.md) Step 3): the next booking always carries its own lead before its start (`DAOLAB_PROVISION_LEAD_MIN`, or the reflash lead when its `hw_class` differs), and that lead comes **after** the previous booking's cleanup, so the gap between two bookings is `cleanup + lead`: **15 min** for the same `hw_class` (10 + 5) and **25 min** when a reflash is needed (10 + 15). The scheduler takes the cleanup length from `DAOLAB_CLEANUP_MIN`, not from the `reservations.turnaround_min` column.
+
 **Slot grid:** starts snap to `DAOLAB_SLOT_MIN` (e.g. 30 minutes). This keeps the date picker
 simple and packs bookings back-to-back with no unusable gaps.
+
+As implemented (B-12, [03-scheduler.md](03-scheduler.md) Step 5a): the grid is multiples of `DAOLAB_SLOT_MIN` minutes after UTC midnight; `asap` rounds each candidate start up to it, and an `at` start that is off the grid is refused (`NoFit("off_grid")`) because snapping it would be shifting. The scheduler starts `asap` from `max(requested, now)` rounded up to the grid and does **not** add `provision_lead` to `now` as the sentence below says; which of the two is intended is an open question.
 
 **Placement:**
 

@@ -122,9 +122,28 @@ def test_6_overlap_shifts(env):               # Phase 2 checkpoint
     first = reserve(env, env.user_token).json()
     second = reserve(env, env.user_token).json()
     assert second["shifted"] is True
-    expected = iso(env.T + timedelta(hours=2, minutes=5))    # end + provision lead (same hw_class)
+    expected = iso(env.T + timedelta(hours=2, minutes=30))   # end + 10 cleanup + 5 lead = :15, on the 30 min grid
     assert second["start_at"] == expected
     assert first["end_at"] == iso(env.T + timedelta(hours=2))
+
+
+def test_6b_cleanup_min_setting_reaches_the_scheduler(env, monkeypatch):   # B-11
+    from service import config
+    monkeypatch.setattr(config, "settings",
+                        dataclasses.replace(config.settings, cleanup_min=30))
+    reserve(env, env.user_token)
+    second = reserve(env, env.user_token).json()
+    assert second["start_at"] == iso(env.T + timedelta(hours=3))   # 30 cleanup + 5 lead = :35 -> grid 3:00
+
+
+def test_6c_slot_min_setting_reaches_the_scheduler(env, monkeypatch):   # B-12
+    from service import config
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, slot_min=60))
+    reserve(env, env.user_token)
+    second = reserve(env, env.user_token).json()
+    assert second["start_at"] == iso(env.T + timedelta(hours=3))   # 2:15 rounded up to the hour
+    off_grid = reserve(env, env.user_token, start_at=iso(env.T + timedelta(minutes=10))).json()
+    assert off_grid["start_at"].endswith(":00:00Z")                # asap snaps to the hour, never :10
 
 
 def test_7_unmet_capability_names_missing(env):   # Phase 2 checkpoint

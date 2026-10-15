@@ -209,7 +209,7 @@ def catalog_row(db, uc, setups, now) -> dict:
   slot exists within `DAOLAB_SCHED_HORIZON_HOURS`. Capability match only — never hostnames.
 - `next_free_at` = earliest grantable start for a 1-hour slot on any candidate setup, else
   `null`. Free-slot logic is delegated entirely to `scheduler.next_free_at` so catalog and
-  `POST /reservations` can never disagree: a setup is busy for `[start_at − lead, end_at]` of
+  `POST /reservations` can never disagree: a setup is busy for `[start_at − lead, end_at + DAOLAB_CLEANUP_MIN)` of
   every reservation not in `released`/`failed`, with `lead` = `DAOLAB_HW_CLASS_LEAD_MIN` when
   the use case's `hw_class` differs from the candidate DPU's current `resources.hw_class`,
   else `DAOLAB_PROVISION_LEAD_MIN` ([03-scheduler.md](03-scheduler.md)).
@@ -263,7 +263,7 @@ rid = models.insert_reservation(db, user_id=user["id"], usecase_id=uc["id"],
 `scheduler.place` applies FCFS by `created_at`, capability matching (diy: the explicitly
 named setup only), the hw_class lead window, and **slot-shift**: a conflict is never an error
 — the granted `start_at` is the earliest slot on any candidate setup where the full
-`[start − lead, start + hours]` window is free, searched up to `DAOLAB_SCHED_HORIZON_HOURS`.
+`[start − lead, start + hours + cleanup)` window is free and the start is on the `DAOLAB_SLOT_MIN` grid, searched up to `DAOLAB_SCHED_HORIZON_HOURS`.
 The one exhaustion case — no free window inside the horizon — maps to `409
 usecase_unavailable` with `detail: {"reason": "no_free_slot", "horizon_hours": 168}`
 (reusing the catalog `reason` vocabulary). Response: `201` + the canonical reservation object
@@ -382,7 +382,7 @@ Cases (each asserts the error envelope shape on every non-2xx):
 | 3 | `GET /usecases` | `tls-proxy-nginx` `available: true`; a planned row `reason: "no_yaml"`; `diy` row present, `status: "active"` |
 | 4 | Delete `setup-01` rows, `GET /usecases` | tls row `reason: "unmet_capability"`, `missing` non-empty |
 | 5 | Reserve `tls-proxy-nginx` at T | `201`, `state: "queued"`, `shifted: false`, `vms: []` |
-| 6 | Second overlapping reserve (README Phase 2 checkpoint) | `201`, `shifted: true`, `start_at` = first `end_at` (same `hw_class` → `DAOLAB_PROVISION_LEAD_MIN` gap honored) |
+| 6 | Second overlapping reserve (README Phase 2 checkpoint) | `201`, `shifted: true`, `start_at` = first `end_at` + `DAOLAB_CLEANUP_MIN` + `DAOLAB_PROVISION_LEAD_MIN` (same `hw_class`), rounded up to the `DAOLAB_SLOT_MIN` grid |
 | 7 | Reserve a use case whose `requires` no setup meets | `409 unmet_capability`, message names the missing capability |
 | 8 | Reserve unknown name / planned row / `hours: 0` / `setup` on non-diy / diy without `templates` / diy templates missing a host | `404` / `409 usecase_unavailable` / `422` / `422` / `422` / `422` |
 | 9 | Reserve `diy` with `setup: setup-01` + full template map | `201`, `diy: true` |

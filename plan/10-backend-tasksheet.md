@@ -69,10 +69,10 @@ Status values: `todo` · `doing` · `review` · `done` · `blocked`.
 
 | ID | Task | Files | Depends | Done when | Owner | Status |
 |---|---|---|---|---|---|---|
-| B-10 | Add `mode` (`asap` default \| `at`) to `PlacementRequest`; `at` = single overlap test, never shifted | `scheduler.py` | — | unit tests: `at` on a busy window → conflict result; `asap` → earliest fit | Akshay | todo |
-| B-11 | Turnaround buffer: block `end_at + cleanup_min (+ reflash lead if the next hw_class differs)` | `scheduler.py` | B-10 | test: back-to-back bookings start no earlier than the buffer allows | Akshay | todo |
-| B-12 | Slot grid: snap starts to `DAOLAB_SLOT_MIN`; when starts tie, prefer the one next to the same hw_class | `scheduler.py` | B-10 | test: starts are grid-aligned; the same-class neighbour is chosen without breaking FCFS | Akshay | todo |
-| B-13 | `NoFit` result carrying the next 3 free alternative starts for the same duration | `scheduler.py` | B-10 | test: alternatives are free, sorted, the right length | Akshay | todo |
+| B-10 | Add `mode` (`asap` default \| `at`) to `PlacementRequest`; `at` = single overlap test, never shifted | `scheduler.py` | — | unit tests: `at` on a busy window → conflict result; `asap` → earliest fit | Akshay | review |
+| B-11 | Turnaround buffer: block `end_at + cleanup_min (+ reflash lead if the next hw_class differs)` | `scheduler.py` | B-10 | test: back-to-back bookings start no earlier than the buffer allows | Akshay | review |
+| B-12 | Slot grid: snap starts to `DAOLAB_SLOT_MIN`; when starts tie, prefer the one next to the same hw_class | `scheduler.py` | B-10 | test: starts are grid-aligned; the same-class neighbour is chosen without breaking FCFS | Akshay | review |
+| B-13 | `NoFit` result carrying the next 3 free alternative starts for the same duration | `scheduler.py` | B-10 | test: alternatives are free, sorted, the right length | Akshay | review |
 | B-14 | `POST /reservations` accepts `mode`/`start_at`/`hours`; `409 slot_conflict` with `detail.alternatives` | `api.py` | B-13 | api test: alice books 09:00, bob's 10:00 `at` → 409 with alternatives | Rama | todo |
 | B-15 | Per-user quota: 1 live + 2 future reservations → `409 quota_exceeded` | `api.py`, `models.py` | B-14 | api test covering both caps; admins exempt | Rama | todo |
 | B-16 | `GET /availability?usecase=&from=&to=`: free/busy windows; owners visible to admins only | `api.py`, `scheduler.py` | B-11 | non-admin responses contain no usernames | Rama | todo |

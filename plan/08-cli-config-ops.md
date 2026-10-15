@@ -153,6 +153,8 @@ setting with its default; `cp .env.example .env` is part of Phase 0. Keep lines 
 | `DAOLAB_DASHBOARD_DIR` | `./dashboard` | api | Static directory served by `api.py` (`user.html`, `admin.html`). |
 | `DAOLAB_HW_CLASS_LEAD_MIN` | `15` | api (scheduler), engine | Lead minutes before `start_at` when the use case's `hw_class` differs from the DPU's current one (EBF reflash time). |
 | `DAOLAB_PROVISION_LEAD_MIN` | `5` | api (scheduler), engine | Lead minutes before `start_at` when no `hw_class` change is needed. |
+| `DAOLAB_CLEANUP_MIN` | `10` | api (scheduler) | Turnaround buffer blocked after every reservation's `end_at` (B-11); the gap between two bookings is this plus the next booking's lead. |
+| `DAOLAB_SLOT_MIN` | `30` | api (scheduler) | Start-time grid in minutes after UTC midnight (B-12); `asap` rounds up to it, `at` must be on it. Must be ≥ 1. |
 | `DAOLAB_ENGINE_INTERVAL_SEC` | `60` | engine | Sleep between ticks in `python -m service.engine --loop`. |
 | `DAOLAB_MAX_RETRIES` | `3` | engine | Playbook retries per phase before `failed`. |
 | `DAOLAB_SCHED_HORIZON_HOURS` | `168` | api (scheduler) | Slot-shift / availability search horizon (7 days). |
