@@ -132,11 +132,44 @@ def _m4_audit_events(conn: sqlite3.Connection) -> None:
         "ON audit_events(created_at DESC, id DESC)")
 
 
+def _m5_jobs(conn: sqlite3.Connection) -> None:
+    """plan/09 §6 / §11: the unit of work the engine runs (B-20). A job belongs to one
+    reservation and has its own small lifecycle (pending -> running -> succeeded | failed).
+    `attempt` is fixed when the row is created (a retry is a *new* job with attempt + 1),
+    `steps` is a JSON list the runner appends to while the job runs, and `log_path` /
+    `trace_id` link to the playbook log and the OpenTelemetry trace. The setup a job runs
+    on is derived through `reservations.setup_id`, so it is not duplicated here."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS jobs (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            reservation_id INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+            kind           TEXT    NOT NULL
+                           CHECK (kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile')),
+            state          TEXT    NOT NULL DEFAULT 'pending'
+                           CHECK (state IN ('pending', 'running', 'succeeded', 'failed')),
+            attempt        INTEGER NOT NULL DEFAULT 1 CHECK (attempt >= 1),
+            trace_id       TEXT,
+            log_path       TEXT,
+            steps          TEXT    NOT NULL DEFAULT '[]',   -- JSON list of step records
+            error          TEXT,                            -- set only in state 'failed'
+            started_at     TEXT,                            -- set when the job starts running
+            finished_at    TEXT,                            -- set when it succeeds or fails
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL
+        )""")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_reservation ON jobs(reservation_id, id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_state ON jobs(state, id)")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
     Migration(3, "setup_availability", _m3_setup_availability),
     Migration(4, "audit_events", _m4_audit_events),
+    Migration(5, "jobs", _m5_jobs),
 ]
 
 

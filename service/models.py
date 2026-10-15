@@ -231,3 +231,124 @@ def list_audit_events(conn, limit: int = 100) -> list:
     """Newest-first slice of the audit log (raw rows; `detail` is JSON text)."""
     return conn.execute(
         "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+
+# ---- jobs (B-20) -------------------------------------------------------------
+
+JOB_KINDS = ("deploy", "cleanup", "health_probe", "reconcile")
+MUTATING_JOB_KINDS = ("deploy", "cleanup", "reconcile")   # health probes are read-only (B-24)
+JOB_STATES = ("pending", "running", "succeeded", "failed")
+JOB_TERMINAL_STATES = ("succeeded", "failed")
+STEP_STATES = ("ok", "failed", "skipped")
+
+# plan/09 §6: pending -> running -> succeeded | failed, nothing else. A failed job is final;
+# a retry is a *new* job row with attempt + 1 (create_job).
+JOB_TRANSITIONS = {
+    "pending": ("running",),
+    "running": ("succeeded", "failed"),
+    "succeeded": (),
+    "failed": (),
+}
+
+
+class JobError(Exception):
+    """An illegal job operation: bad kind, bad transition, or the row changed under us."""
+
+
+def create_job(conn, reservation_id: int, kind: str, attempt: int = 1,
+               trace_id: str | None = None, log_path: str | None = None) -> int:
+    """Insert a `pending` job. `attempt` is 1 for the first try; a retry creates a new job
+    for the same reservation and kind with attempt + 1 (a failed job is never revived)."""
+    if kind not in JOB_KINDS:
+        raise JobError(f"unknown job kind {kind!r}; expected one of {JOB_KINDS}")
+    if attempt < 1:
+        raise JobError(f"attempt must be >= 1, got {attempt}")
+    return insert(conn, "jobs", {
+        "reservation_id": reservation_id, "kind": kind, "attempt": attempt,
+        "trace_id": trace_id, "log_path": log_path})
+
+
+def job_by_id(conn, job_id: int):
+    return conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+
+
+def jobs_for_reservation(conn, res_id: int, kind: str | None = None):
+    """A reservation's jobs, oldest first, optionally only one kind."""
+    if kind is None:
+        return conn.execute(
+            "SELECT * FROM jobs WHERE reservation_id = ? ORDER BY id", (res_id,)).fetchall()
+    return conn.execute(
+        "SELECT * FROM jobs WHERE reservation_id = ? AND kind = ? ORDER BY id",
+        (res_id, kind)).fetchall()
+
+
+def pending_jobs(conn, limit: int | None = None):
+    """Jobs waiting to run, oldest first (FIFO) — what an engine tick picks from."""
+    sql = "SELECT * FROM jobs WHERE state = 'pending' ORDER BY id"
+    if limit is None:
+        return conn.execute(sql).fetchall()
+    return conn.execute(sql + " LIMIT ?", (limit,)).fetchall()
+
+
+def job_steps(job) -> list[dict]:
+    """The parsed `steps` list of a job row."""
+    return from_json(job["steps"])
+
+
+def transition_job(conn, job_id: int, new_state: str, error: str | None = None) -> None:
+    """Move a job along pending -> running -> succeeded | failed (compare-and-set).
+
+    Raises JobError for an unknown job, an illegal move, or if another writer changed the
+    state between our read and our write (the UPDATE only matches the state we validated).
+    `started_at` is stamped on running, `finished_at` on succeeded/failed; `error` is
+    recorded only for a failed job."""
+    job = job_by_id(conn, job_id)
+    if job is None:
+        raise JobError(f"no job {job_id}")
+    if new_state not in JOB_STATES:
+        raise JobError(f"unknown job state {new_state!r}; expected one of {JOB_STATES}")
+    if new_state not in JOB_TRANSITIONS[job["state"]]:
+        raise JobError(f"job {job_id}: cannot go {job['state']} -> {new_state}")
+    if error is not None and new_state != "failed":
+        raise JobError(f"job {job_id}: error is only recorded for a failed job")
+    now = utcnow()
+    changes = {"state": new_state, "updated_at": now}
+    if new_state == "running":
+        changes["started_at"] = now
+    else:
+        changes["finished_at"] = now
+    if new_state == "failed":
+        changes["error"] = error
+    assign = ", ".join(f"{k} = ?" for k in changes)
+    cur = conn.execute(f"UPDATE jobs SET {assign} WHERE id = ? AND state = ?",
+                       [*changes.values(), job_id, job["state"]])
+    if cur.rowcount != 1:
+        raise JobError(f"job {job_id}: state changed concurrently (expected {job['state']})")
+
+
+def append_job_step(conn, job_id: int, name: str, state: str = "ok",
+                    detail: str | None = None) -> dict:
+    """Record one finished step on a *running* job; returns the stored step record.
+
+    Steps are appended with a compare-and-set on the current JSON text, so two writers
+    never overwrite each other's step, and a job that is no longer running (finished or
+    never started) refuses new steps with JobError."""
+    if state not in STEP_STATES:
+        raise JobError(f"unknown step state {state!r}; expected one of {STEP_STATES}")
+    step = {"name": name, "state": state, "at": utcnow()}
+    if detail is not None:
+        step["detail"] = detail
+    for _ in range(50):
+        job = job_by_id(conn, job_id)
+        if job is None:
+            raise JobError(f"no job {job_id}")
+        if job["state"] != "running":
+            raise JobError(f"job {job_id}: cannot add a step while {job['state']}")
+        new_steps = to_json([*from_json(job["steps"]), step])
+        cur = conn.execute(
+            "UPDATE jobs SET steps = ?, updated_at = ? "
+            "WHERE id = ? AND state = 'running' AND steps = ?",
+            (new_steps, utcnow(), job_id, job["steps"]))
+        if cur.rowcount == 1:
+            return step
+    raise JobError(f"job {job_id}: could not append step {name!r} (too much contention)")

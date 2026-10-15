@@ -120,6 +120,18 @@ the DAO app runs on the OCTEON itself, not in a VM; host roles get the XCP-ng VM
 `daolab-r<reservation_id>-<role>` (e.g. `daolab-r12-backend`). `ip` stays NULL until the
 playbook posts it via `POST /internal/vm-ip`.
 
+**jobs** — one unit of engine work for a reservation (migration 5, B-20; not in the baseline
+DDL below). `kind` ∈ `deploy` | `cleanup` | `health_probe` | `reconcile`. `state` follows
+`pending → running → succeeded | failed` and nothing else (`models.transition_job` is a
+compare-and-set that raises `JobError` on any other move); `succeeded`/`failed` are final.
+`attempt` is fixed at creation (1 for the first try) — a retry is a **new** job row with
+`attempt + 1`, never a revived one. `steps` is canonical JSON, a list of
+`{name, state: ok|failed|skipped, at, detail?}` appended with `models.append_job_step` while
+the job is `running`; `trace_id` and `log_path` link to the OpenTelemetry trace and the
+playbook log; `error` is set only in `failed`; `started_at` / `finished_at` are stamped by the
+state change. The setup a job runs on is `reservations.setup_id` (not duplicated). Deleting a
+reservation deletes its jobs (`ON DELETE CASCADE`).
+
 ## Capability matching — how use cases find setups
 
 The single coupling between use cases and setups is a set-inclusion test on kebab-case
@@ -155,7 +167,7 @@ transaction with the version bump, so an existing DB is upgraded in place withou
 and a second `init` changes nothing. A DB whose `user_version` is newer than the checkout is
 refused (`SchemaTooNew`, exit 1). Migration 1 (`reservation_mode`, plan/09 §4–5) adds
 `reservations.mode` (`'asap'|'at'`, default `'asap'`) and `reservations.turnaround_min`
-(default `0`; the scheduler does not read it yet — the buffer comes from `DAOLAB_CLEANUP_MIN`, see [03-scheduler.md](03-scheduler.md)) — these columns are **not** in the baseline DDL below. To change the schema:
+(default `0`; the scheduler does not read it yet — the buffer comes from `DAOLAB_CLEANUP_MIN`, see [03-scheduler.md](03-scheduler.md)) — these columns are **not** in the baseline DDL below. Migration 5 (`jobs`, B-20) adds the `jobs` table (see Entity reference). To change the schema:
 append `Migration(N, name, fn)` with `fn` idempotent (`add_column` / `IF NOT EXISTS`); never
 edit or reorder a released migration; add a test in `tests/test_migrations.py`.
 

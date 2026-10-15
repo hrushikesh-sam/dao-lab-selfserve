@@ -446,7 +446,10 @@ stateDiagram-v2
 ```
 
 Jobs have their own small lifecycle (`pending → running → succeeded | failed`), with an
-`attempt` counter and `trace_id`. **Single-flight per setup:** the engine never runs two
+`attempt` counter and `trace_id`. A `failed` job is final and is never revived: a retry is a
+**new** job row for the same reservation and kind with `attempt + 1` (B-20; the crash-recovery
+rule of B-26, which puts a stale `running` job back to `pending`, is a separate, explicit
+exception added with that task). **Single-flight per setup:** the engine never runs two
 deploy or cleanup jobs against the same setup at once. Health-probe jobs are read-only and
 exempt.
 
@@ -459,7 +462,7 @@ exempt.
 | users | username, role (user/admin), token hash, SSH public key, enabled | token stored hashed |
 | setups / members | testbed, its hosts (XCP host, DPU), capabilities, availability flag (available / quarantined / maintenance) | quarantine blocks placement |
 | reservations | user, use case, setup, window, state, mode (asap/at), turnaround | **no two live reservations on one setup overlap** (txn today, exclusion constraint on Postgres) |
-| jobs | reservation, kind (deploy/cleanup/health_probe/reconcile), state, attempt, trace_id, log path, steps | one running mutating job per setup |
+| jobs | reservation, kind (deploy/cleanup/health_probe/reconcile), state (pending/running/succeeded/failed), attempt, trace_id, log path, steps (JSON list, appended while running), error, started/finished times | one running mutating job per setup (enforced by the engine, B-24); the setup is reached through the reservation |
 | vms | reservation, role, VM name/uuid, host, VF, IP | name `daolab-r<id>-<role>` |
 | ip_pools / ip_leases | range; lease (ip, reservation, role, state leased/released/quarantined) | **(pool, ip) unique among live leases**; `(reservation, role)` unique → idempotent |
 | health_snapshots | reservation, verdict, per-check results, evaluated_at | latest row only is needed |
