@@ -24,6 +24,7 @@ services:
       - "--enable-feature=exemplar-storage"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./targets:/etc/prometheus/targets:ro     # B-68 file_sd targets written by the mock runner
       - prometheus-data:/prometheus
     ports:
       - "9090:9090"

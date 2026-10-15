@@ -13,3 +13,11 @@ scrape_configs:
   - job_name: otel-collector
     static_configs:
       - targets: ["otel-collector:8888"]
+
+  # Per-reservation fake exporters from the mock runner (B-68). Each file carries the
+  # daolab_reservation label, so Prometheus's generated `up` metric is queryable as
+  # up{daolab_reservation="<id>"} (the vms_up rule, plan/09 §8). Files are written by
+  # service/runner.py::MockExporter and removed when the exporter stops.
+  - job_name: daolab-mock
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/*.json"]

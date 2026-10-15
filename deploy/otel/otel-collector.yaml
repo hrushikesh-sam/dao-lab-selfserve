@@ -10,8 +10,9 @@ receivers:
       http:
         endpoint: 0.0.0.0:4318
 
-  # Pull-based probes (whole-testbed by default; per-reservation targets come later
-  # from B-68's mock exporter and the use-case YAML).
+  # Pull-based probes for real testbeds. The mock runner (B-68) registers per-reservation
+  # fake exporters through Prometheus file_sd instead (see prometheus.yml); real
+  # per-reservation probe targets are added here later from the use-case YAML.
   httpcheck:
     collection_interval: 15s
     targets:

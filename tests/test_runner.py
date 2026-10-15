@@ -1,6 +1,8 @@
 """B-22: the runner interface, the mock backend, and the DAOLAB_RUNNER switch (plan/09 §6, §9, §13)."""
 import dataclasses
+import json
 import time
+import urllib.request
 
 import pytest
 
@@ -277,3 +279,81 @@ def test_every_job_kind_in_the_model_is_handled_or_explicitly_deferred():
         except RunnerError as e:
             assert kind == "reconcile" and "B-72" in str(e)
     assert handled == 3
+
+
+# ---- B-68: mock telemetry (a fake exporter per reservation) ------------------------
+
+def test_parse_mock_fail_accepts_health():
+    assert runner.parse_mock_fail("health") == frozenset({"health"})
+    assert runner.parse_mock_fail("deploy,health") == frozenset({"deploy", "health"})
+    assert "health" in runner.MOCK_FAIL_TARGETS
+
+
+def test_mock_exporter_serves_metrics_and_registers_a_file_sd_target(tmp_path):
+    exp = runner.MockExporter(7, labels={"daolab_user": "alice"}, targets_dir=str(tmp_path))
+    exp.start()
+    try:
+        body = urllib.request.urlopen(f"http://{exp.target}/metrics", timeout=5).read().decode()
+        assert 'daolab_reservation="7"' in body and 'daolab_user="alice"' in body
+        target_file = tmp_path / "res-7.json"
+        data = json.loads(target_file.read_text())
+        assert data["targets"] == [exp.target]
+        assert data["labels"] == {"daolab_reservation": "7", "daolab_user": "alice"}
+    finally:
+        exp.stop()
+    assert not (tmp_path / "res-7.json").exists()          # stopping drops the target
+
+
+def test_deploy_starts_the_exporter_and_cleanup_stops_it(tmp_path):
+    started = []
+
+    def factory(rid):
+        started.append(rid)
+        return runner.MockExporter(rid, targets_dir=str(tmp_path))
+
+    m = MockRunner(step_sec=0.0, exporter_factory=factory)
+    assert m.deploy({"id": 9}, Sink()).ok
+    assert started == [9] and (tmp_path / "res-9.json").exists()
+    assert m.cleanup({"id": 9}, Sink()).ok
+    assert not (tmp_path / "res-9.json").exists()
+
+
+def test_mock_fail_health_never_starts_the_exporter(tmp_path):
+    started = []
+
+    def factory(rid):
+        started.append(rid)
+        return runner.MockExporter(rid, targets_dir=str(tmp_path))
+
+    m = MockRunner(step_sec=0.0, fail=frozenset({"health"}), exporter_factory=factory)
+    assert m.deploy({"id": 9}, Sink()).ok                  # the deploy itself still "works"
+    assert started == [] and not (tmp_path / "res-9.json").exists()
+
+
+def test_a_failed_deploy_does_not_leave_a_live_exporter(tmp_path):
+    started = []
+
+    def factory(rid):
+        started.append(rid)
+        return runner.MockExporter(rid, targets_dir=str(tmp_path))
+
+    m = MockRunner(step_sec=0.0, fail=frozenset({"deploy"}), exporter_factory=factory)
+    assert not m.deploy({"id": 9}, Sink()).ok
+    assert started == [] and not (tmp_path / "res-9.json").exists()
+
+
+def test_get_runner_only_wires_exporters_when_otel_is_enabled(monkeypatch, tmp_path):
+    monkeypatch.setattr(runner, "OTEL_TARGETS_DIR", str(tmp_path))
+    off = runner.get_runner(_settings(runner="mock", otel_endpoint=""))
+    assert off._exporter_factory is None
+    off.deploy({"id": 1}, Sink())
+    assert not (tmp_path / "res-1.json").exists()
+    on = runner.get_runner(_settings(runner="mock", otel_endpoint="localhost:4317"))
+    assert on._exporter_factory is not None
+    exp = on._exporter_factory(2)                           # a real exporter, when enabled
+    exp.start()
+    try:
+        assert (tmp_path / "res-2.json").exists()
+    finally:
+        exp.stop()
+
