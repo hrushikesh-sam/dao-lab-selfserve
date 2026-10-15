@@ -4,6 +4,8 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 
+from . import migrations
+
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 BUSY_STATES = ("queued", "provisioning", "ready", "active", "tearing_down")
@@ -22,9 +24,13 @@ def connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
-def init_db(conn: sqlite3.Connection) -> None:
+def init_db(conn: sqlite3.Connection) -> list[int]:
+    """Bring the DB to the latest schema without touching existing data: apply the
+    baseline (schema.sql, all IF NOT EXISTS), then pending migrations. Returns the
+    migration versions applied this call — empty means nothing changed (idempotent)."""
     with open(SCHEMA_PATH) as f:
         conn.executescript(f.read())
+    return migrations.apply(conn)
 
 
 def utcnow() -> str:

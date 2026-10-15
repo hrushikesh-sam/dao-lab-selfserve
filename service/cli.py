@@ -9,7 +9,7 @@ import sys
 import urllib.error
 import urllib.request
 
-from . import catalog, config, models
+from . import catalog, config, migrations, models
 
 
 def _die(msg: str) -> "NoReturn":
@@ -39,11 +39,16 @@ def _api(method: str, path: str, body: dict | None = None) -> dict | list:
 
 def cmd_init(args) -> int:
     conn = models.connect(config.settings.db_path)
-    models.init_db(conn)
+    try:
+        applied = models.init_db(conn)
+    except migrations.SchemaTooNew as e:
+        _die(str(e))
     catalog.seed_usecases(conn)
     planned = conn.execute("SELECT COUNT(*) FROM usecases WHERE yaml_path IS NULL").fetchone()[0]
     mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     print(f"db: {config.settings.db_path} (journal_mode={mode})")
+    print(f"schema: v{migrations.current_version(conn)}"
+          + (f" (applied: {', '.join(f'v{v}' for v in applied)})" if applied else " (up to date)"))
     print(f"usecases seeded: {planned} planned + diy")
     return 0
 
