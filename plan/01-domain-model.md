@@ -61,7 +61,7 @@ surface:
 ```python
 # service/models.py — sqlite helpers; the only code touching JSON columns and timestamps
 def connect(db_path: str | None = None) -> sqlite3.Connection  # WAL + foreign_keys=ON + Row factory; default DAOLAB_DB_PATH
-def init_db(conn: sqlite3.Connection) -> None                  # executescript(service/schema.sql)
+def init_db(conn: sqlite3.Connection) -> list[int]             # schema.sql baseline, then pending migrations; returns versions applied ([] = no-op)
 def utcnow() -> str                                            # 'YYYY-MM-DDTHH:MM:SSZ'
 def insert(conn, table: str, row: dict) -> int                 # fills created_at/updated_at, returns id
 def update(conn, table: str, row_id: int, changes: dict) -> None  # refreshes updated_at
@@ -148,8 +148,21 @@ name the missing capability list ([02-backend-api.md](02-backend-api.md)).
 Applied by `daolab init` (idempotent — `IF NOT EXISTS` throughout; WAL is set at connect time
 by `models.py`, not in the schema).
 
+**This DDL is the frozen v0 baseline.** Schema changes after it are numbered, append-only
+migrations in `service/migrations.py`, tracked by SQLite's `PRAGMA user_version`; `daolab init`
+runs the baseline and then every pending migration, each in its own `BEGIN IMMEDIATE`
+transaction with the version bump, so an existing DB is upgraded in place without losing rows
+and a second `init` changes nothing. A DB whose `user_version` is newer than the checkout is
+refused (`SchemaTooNew`, exit 1). Migration 1 (`reservation_mode`, plan/09 §4–5) adds
+`reservations.mode` (`'asap'|'at'`, default `'asap'`) and `reservations.turnaround_min`
+(default `0`) — these columns are **not** in the baseline DDL below. To change the schema:
+append `Migration(N, name, fn)` with `fn` idempotent (`add_column` / `IF NOT EXISTS`); never
+edit or reorder a released migration; add a test in `tests/test_migrations.py`.
+
 ```sql
--- service/schema.sql — daolab canonical schema (sqlite, WAL set at connect time)
+-- service/schema.sql — daolab BASELINE schema (v0; sqlite, WAL set at connect time)
+-- Frozen: do not edit existing tables here. Schema changes after this baseline are
+-- numbered migrations in service/migrations.py, applied by `daolab init` (idempotent).
 
 CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
