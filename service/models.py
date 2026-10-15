@@ -11,6 +11,10 @@ SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 BUSY_STATES = ("queued", "provisioning", "ready", "active", "tearing_down")
 HELD_STATES = ("provisioning", "ready", "active", "tearing_down")
 TERMINAL_STATES = ("released", "failed")
+# Per-user quota buckets (B-15): a reservation is "live" while it owns a setup (deploying or
+# deployed) and "future" while it is only booked. plan/09 §4 caps these at 1 and 2.
+LIVE_RESERVATION_STATES = ("provisioning", "ready", "active")
+FUTURE_RESERVATION_STATES = ("queued",)
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:
@@ -121,6 +125,15 @@ def setup_vm_hosts(conn, setup_id: int) -> set[str]:
 
 def reservation_by_id(conn, res_id: int):
     return conn.execute("SELECT * FROM reservations WHERE id = ?", (res_id,)).fetchone()
+
+
+def count_user_reservations(conn, user_id: int, states: tuple[str, ...]) -> int:
+    if not states:
+        return 0
+    marks = ", ".join("?" for _ in states)
+    return conn.execute(
+        f"SELECT COUNT(*) AS n FROM reservations WHERE user_id = ? AND state IN ({marks})",
+        (user_id, *states)).fetchone()["n"]
 
 
 def list_reservations(conn, user_id: int | None = None):

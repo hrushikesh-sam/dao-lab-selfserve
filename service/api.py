@@ -394,6 +394,19 @@ def create_reservation(body: ReservationCreate,
 
     conn.execute("BEGIN IMMEDIATE")
     try:
+        if user["role"] != "admin":
+            for reason, states, limit in (
+                    ("live", models.LIVE_RESERVATION_STATES,
+                     config.settings.max_live_reservations),
+                    ("future", models.FUTURE_RESERVATION_STATES,
+                     config.settings.max_future_reservations)):
+                current = models.count_user_reservations(conn, user["id"], states)
+                if current >= limit:
+                    raise DaolabError(
+                        "quota_exceeded", 409,
+                        f"at most {limit} {reason} reservation(s) per user; "
+                        f"you already have {current}",
+                        {"reason": reason, "limit": limit, "current": current})
         placement = scheduler.place(
             conn,
             scheduler.PlacementRequest(usecase=body.usecase, requested_start_at=start,
