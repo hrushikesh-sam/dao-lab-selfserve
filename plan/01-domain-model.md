@@ -409,8 +409,9 @@ Consequences (both consumers detailed in [03-scheduler.md](03-scheduler.md) and
 - Lead time: `lead = DAOLAB_HW_CLASS_LEAD_MIN` (default 15) minutes when the declared
   `hw_class` differs from the DPU's current one at placement time, else
   `lead = DAOLAB_PROVISION_LEAD_MIN` (default 5). Scheduler and engine use the identical rule:
-  the setup must be free for `[start_at − lead, end_at]`, and provisioning begins at
-  `start_at − lead`.
+  the setup must be free for `[start_at − lead, end_at + DAOLAB_CLEANUP_MIN)`, and
+  provisioning begins at `start_at − lead`. Starts are on the `DAOLAB_SLOT_MIN` grid
+  ([03-scheduler.md](03-scheduler.md)).
 
 ## Data invariants
 

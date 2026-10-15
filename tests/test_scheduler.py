@@ -1,4 +1,5 @@
 """The 22 scheduler cases from plan/03-scheduler.md — pure placement, no hardware."""
+import dataclasses
 import sqlite3
 from datetime import timedelta
 
@@ -8,7 +9,11 @@ from service import models, scheduler
 from service.scheduler import NoFit, NoFreeSlot, NoSetup, Placed, PlacementRequest, SchedConfig
 from tests.conftest import NOW, T, mk_res, mk_setup, mk_usecase
 
-CFG = SchedConfig(hw_class_lead_min=15, provision_lead_min=5, horizon_hours=168, cleanup_min=10)
+# slot_min=1: the grid is off (whole minutes), so these tests pin exact lead/cleanup arithmetic.
+# The 30-minute grid has its own tests at the end (B-12).
+CFG = SchedConfig(hw_class_lead_min=15, provision_lead_min=5, horizon_hours=168, cleanup_min=10,
+                  slot_min=1)
+GRID = dataclasses.replace(CFG, slot_min=30)
 # B-11: two bookings are `cleanup + lead` apart. Same hw_class: 10 + 5 = 15 min; reflash: 10 + 15 = 25.
 GAP_SAME = CFG.cleanup_min + CFG.provision_lead_min
 GAP_DIFF = CFG.cleanup_min + CFG.hw_class_lead_min
@@ -405,7 +410,8 @@ def test_unknown_mode_is_an_error(db):
         scheduler.place(db, req(mode="whenever"), NOW, CFG)
 
 
-def test_at_and_asap_agree_on_random_timelines(db):
+@pytest.mark.parametrize("cfg", [CFG, GRID], ids=["grid-off", "grid-30"])
+def test_at_and_asap_agree_on_random_timelines(db, cfg):
     """Differential test: `at` is granted exactly when `asap` would grant the same start
     unshifted (identical Placed), and is a conflict exactly when `asap` had to shift."""
     import random
@@ -425,10 +431,11 @@ def test_at_and_asap_agree_on_random_timelines(db):
             start = NOW + timedelta(minutes=5 * rng.randint(0, 12 * 12))
             end = start + timedelta(hours=rng.randint(1, 3))
             mk_res(db, rng.choice(setups), rng.choice(ucs), start, end, state=rng.choice(states))
-        r_start = NOW + timedelta(minutes=5 * rng.randint(0, 12 * 12))
+        step = 5 if cfg.slot_min == 1 else cfg.slot_min          # `at` asks for on-grid starts
+        r_start = NOW + timedelta(minutes=step * rng.randint(0, 12 * 12 * 5 // step))
         r = dict(usecase=rng.choice(names), start=r_start, hours=rng.randint(1, 3))
-        asap = scheduler.place(db, req(mode="asap", **r), NOW, CFG)
-        at = scheduler.place(db, req(mode="at", **r), NOW, CFG)
+        asap = scheduler.place(db, req(mode="asap", **r), NOW, cfg)
+        at = scheduler.place(db, req(mode="at", **r), NOW, cfg)
         assert isinstance(asap, Placed)                         # horizon is a week; never full
         if asap.shifted:
             assert at == NoFit(start_at=r_start, end_at=r_start + timedelta(hours=r["hours"]),
@@ -452,14 +459,14 @@ def test_cleanup_min_is_configurable(db):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12))
     for cleanup, first_start in [(0, T(12, 5)), (10, T(12, 15)), (30, T(12, 35))]:
-        cfg = SchedConfig(15, 5, 168, cleanup_min=cleanup)
+        cfg = dataclasses.replace(CFG, cleanup_min=cleanup)
         assert scheduler.place(db, req(), NOW, cfg).start_at == first_start
 
 
 def test_cleanup_zero_restores_the_pre_b11_gap(db):
     sid, uid = std(db)
     mk_res(db, sid, uid, T(10), T(12))
-    cfg = SchedConfig(15, 5, 168, cleanup_min=0)
+    cfg = dataclasses.replace(CFG, cleanup_min=0)
     assert scheduler.place(db, req(start=T(12, 4), hours=1, mode="at"), NOW, cfg).reason == "overlap"
     assert isinstance(scheduler.place(db, req(start=T(12, 5), hours=1, mode="at"), NOW, cfg), Placed)
 
@@ -512,11 +519,12 @@ def test_turnaround_only_adds_time_after_never_before_the_start(db):
     assert p.start_at == T(10) and p.shifted is False
 
 
-def test_placements_always_keep_the_turnaround_gap(db):
+def _gap_property(db, cfg):
     """Property test, independent of scheduler.py's own arithmetic: place many random
     requests (both modes), insert each grant, and after every insert re-check the documented
     rule on the whole timeline: no overlap, and consecutive bookings on a setup are at least
-    `cleanup + lead` apart, with the lead derived from hw_class by the rule in plan/03."""
+    `cleanup + lead` apart, with the lead derived from hw_class by the rule in plan/03. With
+    a grid, every grant must also start on a multiple of `slot_min` after UTC midnight."""
     import random
     rng = random.Random(20261016)
     classes = {"uc-a": "class-a", "uc-b": "class-b", "uc-n": None}
@@ -528,17 +536,20 @@ def test_placements_always_keep_the_turnaround_gap(db):
         db.execute("DELETE FROM reservations")
         for _ in range(25):
             name = rng.choice(list(classes))
-            start = NOW + timedelta(minutes=5 * rng.randint(0, 12 * 8))
-            r = req(usecase=name, start=start, hours=rng.randint(1, 3),
-                    mode=rng.choice(["asap", "at"]))
-            p = scheduler.place(db, r, NOW, CFG)
+            mode = rng.choice(["asap", "at"])
+            step = 5 if mode == "asap" else cfg.slot_min           # `at` asks for on-grid starts
+            start = NOW + timedelta(minutes=step * rng.randint(0, 12 * 8 * 5 // step))
+            r = req(usecase=name, start=start, hours=rng.randint(1, 3), mode=mode)
+            p = scheduler.place(db, r, NOW, cfg)
             if isinstance(p, NoFit):
+                assert p.reason == "overlap"                       # starts were on-grid and in the future
                 conflicts += 1
                 continue
             if isinstance(p, NoFreeSlot):
                 continue
             placed += 1
             shifted += p.shifted
+            assert ((p.start_at - T(0)).total_seconds() / 60) % cfg.slot_min == 0   # grid-aligned
             mk_res(db, p.setup_id, ids[name], p.start_at, p.end_at)
             for sname, sid in sids.items():
                 rows = db.execute(
@@ -549,14 +560,22 @@ def test_placements_always_keep_the_turnaround_gap(db):
                 for row in rows:
                     s0, e0 = scheduler._parse(row["start_at"]), scheduler._parse(row["end_at"])
                     reflash = row["hw_class"] is not None and row["hw_class"] != cur
-                    lead = CFG.hw_class_lead_min if reflash else CFG.provision_lead_min
+                    lead = cfg.hw_class_lead_min if reflash else cfg.provision_lead_min
                     if prev_end is not None:
-                        assert s0 - prev_end >= timedelta(minutes=CFG.cleanup_min + lead), \
+                        assert s0 - prev_end >= timedelta(minutes=cfg.cleanup_min + lead), \
                             (sname, row["start_at"], prev_end, lead)
                     prev_end = e0
                     if row["hw_class"] is not None:
                         cur = row["hw_class"]
     assert placed > 300 and shifted > 50 and conflicts > 20     # all three outcomes are exercised
+
+
+def test_placements_always_keep_the_turnaround_gap(db):
+    _gap_property(db, CFG)
+
+
+def test_placements_keep_the_gap_and_the_grid(db):               # B-12: same property, 30 min grid
+    _gap_property(db, GRID)
 
 
 def _two_class_setup(db):
@@ -594,3 +613,152 @@ def test_lead_change_propagates_through_bookings_without_hw_class(db):
     assert p == NoFit(start_at=T(9, 45), end_at=T(11, 45), reason="overlap")
     no_change = scheduler.place(db, req(usecase="uc-n", start=T(9, 45), mode="at"), NOW, CFG)
     assert isinstance(no_change, Placed)                     # a null class never changes the projection
+
+
+# ---- B-12: slot grid ----------------------------------------------------------
+# A granted start is a multiple of `slot_min` minutes after UTC midnight (30 -> :00 / :30).
+# `asap` rounds candidate starts up; `at` never shifts, so an off-grid `at` start is refused.
+
+def test_slot_min_defaults_to_30():
+    assert SchedConfig().slot_min == 30
+
+
+@pytest.mark.parametrize("slot,t,expected", [
+    (30, T(10, 0), T(10, 0)), (30, T(10, 1), T(10, 30)), (30, T(10, 30), T(10, 30)),
+    (30, T(10, 31), T(11, 0)), (30, T(23, 45), T(0, 0, day=2)),
+    (45, T(9, 0), T(9, 0)), (45, T(9, 10), T(9, 45)), (45, T(23, 20), T(0, 0, day=2)),
+    (60, T(10, 1), T(11, 0)), (1, T(10, 7), T(10, 7)),
+])
+def test_snap_up_rounds_to_the_next_grid_point(slot, t, expected):
+    assert scheduler.snap_up(t, slot) == expected
+
+
+def test_snap_up_rounds_seconds_up_and_converts_to_utc():
+    from datetime import datetime, timezone
+    assert scheduler.snap_up(datetime(2026, 9, 1, 10, 30, 1, tzinfo=timezone.utc), 30) == T(11, 0)
+    ist = timezone(timedelta(hours=5, minutes=30))
+    assert scheduler.snap_up(datetime(2026, 9, 1, 15, 31, tzinfo=ist), 30) == T(10, 30)   # 10:01 UTC
+
+
+def test_asap_start_snaps_up_to_the_grid(db):
+    std(db)
+    for asked, granted, shifted in [(T(10, 0), T(10, 0), False), (T(10, 10), T(10, 30), True),
+                                    (T(10, 30), T(10, 30), False), (T(10, 31), T(11, 0), True)]:
+        p = scheduler.place(db, req(start=asked), NOW, GRID)
+        assert (p.start_at, p.shifted) == (granted, shifted), asked
+
+
+def test_deploy_now_waits_for_the_next_grid_point(db):
+    std(db)
+    now = NOW + timedelta(minutes=7)                                   # 09:07
+    p = scheduler.place(db, req(start=now), now, GRID)
+    assert p.start_at == T(9, 30) and p.shifted is True
+    assert scheduler.place(db, req(start=now), now, CFG).start_at == now      # grid off: immediate
+
+
+def test_shift_after_a_booking_lands_on_the_grid(db):
+    sid, uid = std(db)
+    mk_usecase(db, "uc-b", ["octeon-cn106"], hw_class="sdp-pf2-vf16")
+    mk_res(db, sid, uid, T(10), T(12))
+    assert scheduler.place(db, req(start=T(12)), NOW, GRID).start_at == T(12, 30)   # raw 12:15
+    assert scheduler.place(db, req(usecase="uc-b", start=T(12)), NOW, GRID).start_at == T(12, 30)  # raw 12:25
+    bigger = dataclasses.replace(GRID, cleanup_min=30)
+    assert scheduler.place(db, req(start=T(12)), NOW, bigger).start_at == T(13, 0)  # raw 12:35
+
+
+def test_next_free_at_is_on_the_grid(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(10), T(12))
+    assert scheduler.next_free_at(db, "tls-proxy-nginx", NOW, GRID) == T(12, 30)
+
+
+def test_at_off_grid_start_is_refused_even_when_free(db):
+    std(db)
+    p = scheduler.place(db, req(start=T(10, 10), mode="at"), NOW, GRID)
+    assert p == NoFit(start_at=T(10, 10), end_at=T(12, 10), reason="off_grid")
+    ok = scheduler.place(db, req(start=T(10, 30), mode="at"), NOW, GRID)
+    assert isinstance(ok, Placed) and ok.start_at == T(10, 30) and ok.shifted is False
+
+
+def test_at_reason_precedence_past_then_grid_then_overlap(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(10), T(12))
+    assert scheduler.place(db, req(start=T(8, 10), mode="at"), NOW, GRID).reason == "in_the_past"
+    assert scheduler.place(db, req(start=T(10, 10), mode="at"), NOW, GRID).reason == "off_grid"
+    assert scheduler.place(db, req(start=T(11, 0), mode="at"), NOW, GRID).reason == "overlap"
+
+
+def test_at_on_the_grid_after_a_booking_respects_the_gap(db):
+    sid, uid = std(db)
+    mk_res(db, sid, uid, T(10), T(12))
+    assert scheduler.place(db, req(start=T(12, 0), hours=1, mode="at"), NOW, GRID).reason == "overlap"
+    assert isinstance(scheduler.place(db, req(start=T(12, 30), hours=1, mode="at"), NOW, GRID), Placed)
+
+
+def test_slot_min_below_one_is_an_error(db):
+    std(db)
+    with pytest.raises(ValueError, match="slot_min"):
+        scheduler.place(db, req(), NOW, dataclasses.replace(CFG, slot_min=0))
+
+
+@pytest.mark.parametrize("slot", [5, 30])
+def test_sweep_finds_the_earliest_grid_start(db, slot):
+    """Oracle: walk every grid point from the base and take the first one `_conflict` clears.
+    The sweep's jumps must never skip a free grid start (nor return a busy one)."""
+    import random
+    rng = random.Random(20261017 + slot)
+    cfg = dataclasses.replace(CFG, slot_min=slot)
+    sid = mk_setup(db, "setup-01", CAPS, dpu_hw_class="class-a")
+    names = {"uc-a": "class-a", "uc-b": "class-b", "uc-n": None}
+    ids = {n: mk_usecase(db, n, REQ, hw_class=c) for n, c in names.items()}
+    has_dpu, dpu_class = scheduler._setup_dpu(db, sid)
+    horizon_end = NOW + timedelta(hours=cfg.horizon_hours)
+    for _ in range(150):
+        db.execute("DELETE FROM reservations")
+        for _ in range(rng.randint(2, 9)):
+            start = NOW + timedelta(minutes=5 * rng.randint(0, 12 * 10))
+            mk_res(db, sid, rng.choice(list(ids.values())), start,
+                   start + timedelta(hours=rng.randint(1, 3)), state=rng.choice(["queued", "active"]))
+        name, hours = rng.choice(list(names)), rng.randint(1, 3)
+        asked = NOW + timedelta(minutes=5 * rng.randint(0, 12 * 10))
+        got = scheduler.place(db, req(usecase=name, start=asked, hours=hours), NOW, cfg)
+        tl = scheduler._timeline(db, sid, dpu_class, has_dpu, cfg)
+        s, expected = scheduler.snap_up(max(asked, NOW), slot), None
+        while s + timedelta(hours=hours) <= horizon_end:
+            lead = scheduler.lead_min(names[name], tl.class_at(s), cfg, has_dpu)
+            if scheduler._conflict(tl, s, hours, lead, names[name], cfg, has_dpu) is None:
+                expected = s
+                break
+            s += timedelta(minutes=slot)
+        assert isinstance(got, Placed) and got.start_at == expected, (asked, name, hours)
+
+
+def test_same_class_neighbour_wins_a_tie_the_grid_creates(db):             # B-12 done-when
+    # request: uc-a, 2h, asked for 10:00 (busy on both setups).
+    #   setup-01: previous booking is class-b -> reflash: raw earliest 11:55 + 10 + 15 = 12:20
+    #   setup-02: previous booking is class-a -> same class: raw earliest 12:10 + 10 + 5 = 12:25
+    # Grid off: setup-01 starts 5 min earlier and wins. Grid on: both snap to 12:30 -> a tie,
+    # and the same-class neighbour (setup-02, no reflash) wins although setup-01 sorts first.
+    s1 = mk_setup(db, "setup-01", CAPS, dpu_hw_class="class-a")
+    s2 = mk_setup(db, "setup-02", CAPS, dpu_hw_class="class-a")
+    uc_a = mk_usecase(db, "uc-a", REQ, hw_class="class-a")
+    uc_b = mk_usecase(db, "uc-b", REQ, hw_class="class-b")
+    mk_res(db, s1, uc_b, T(9, 55), T(11, 55))
+    mk_res(db, s2, uc_a, T(10, 10), T(12, 10))
+    off = scheduler.place(db, req(usecase="uc-a", start=T(10)), NOW, CFG)
+    assert (off.setup_name, off.start_at, off.lead_min) == ("setup-01", T(12, 20), 15)
+    on = scheduler.place(db, req(usecase="uc-a", start=T(10)), NOW, GRID)
+    assert (on.setup_name, on.start_at, on.lead_min) == ("setup-02", T(12, 30), 5)
+
+
+def test_tie_preference_never_beats_an_earlier_start(db):                  # FCFS is not broken
+    # same layout, but setup-02's previous booking ends later: its snapped start is 13:00,
+    # so the reflash setup-01 (12:30) still wins - the same-class preference only breaks ties.
+    s1 = mk_setup(db, "setup-01", CAPS, dpu_hw_class="class-a")
+    s2 = mk_setup(db, "setup-02", CAPS, dpu_hw_class="class-a")
+    uc_a = mk_usecase(db, "uc-a", REQ, hw_class="class-a")
+    uc_b = mk_usecase(db, "uc-b", REQ, hw_class="class-b")
+    mk_res(db, s1, uc_b, T(9, 55), T(11, 55))
+    mk_res(db, s2, uc_a, T(10, 40), T(12, 40))                             # raw 12:55 -> grid 13:00
+    p = scheduler.place(db, req(usecase="uc-a", start=T(10)), NOW, GRID)
+    assert (p.setup_name, p.start_at, p.lead_min) == ("setup-01", T(12, 30), 15)

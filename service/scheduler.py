@@ -10,13 +10,17 @@ Every reservation blocks ``[start_at - lead, end_at + cleanup_min)``: the lead b
 one after the other. Back-to-back bookings are therefore ``cleanup + lead`` apart: 15 min for
 the same hw_class, 25 min when a reflash is needed (plan/09 §5).
 
+Slot grid (B-12): a granted start is always a multiple of ``slot_min`` minutes after UTC
+midnight (30 by default -> :00 and :30). ``asap`` rounds each candidate start up to the next
+grid point; ``at`` never shifts, so an off-grid ``at`` start is refused (``NoFit("off_grid")``).
+
 No I/O other than the sqlite handle passed in (SELECTs only) — no clock reads,
 no env reads, no writes. Same DB state + same request + same now -> identical result.
 """
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 Mode = Literal["asap", "at"]
@@ -28,6 +32,7 @@ class SchedConfig:
     provision_lead_min: int = 5   # DAOLAB_PROVISION_LEAD_MIN — normal lead
     horizon_hours: int = 168      # DAOLAB_SCHED_HORIZON_HOURS — search horizon
     cleanup_min: int = 10         # DAOLAB_CLEANUP_MIN — turnaround buffer after every reservation
+    slot_min: int = 30            # DAOLAB_SLOT_MIN — start-time grid (minutes after UTC midnight)
 
 
 @dataclass(frozen=True)
@@ -64,7 +69,7 @@ class NoFreeSlot:                   # -> catalog reason "no_free_slot"
 class NoFit:                        # mode "at" only -> 409 slot_conflict (alternatives: B-13)
     start_at: datetime              # the exact window that was asked for ...
     end_at: datetime                # ... and could not be granted
-    reason: Literal["overlap", "in_the_past"]
+    reason: Literal["overlap", "in_the_past", "off_grid"]
 
 
 @dataclass(frozen=True)
@@ -109,6 +114,15 @@ def _parse(text: str) -> datetime:
     from datetime import timezone
     dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def snap_up(t: datetime, slot_min: int) -> datetime:
+    """Earliest grid point at or after `t`: a multiple of `slot_min` minutes after UTC midnight.
+    Whole minutes only (seconds round up too), so `slot_min=1` means "whole minutes"."""
+    t = t.astimezone(timezone.utc)
+    midnight = t.replace(hour=0, minute=0, second=0, microsecond=0)
+    step = timedelta(minutes=slot_min)
+    return midnight + -((midnight - t) // step) * step     # ceil((t - midnight) / step) steps
 
 
 def lead_min(uc_hw_class: str | None, projected: str | None,
@@ -185,7 +199,7 @@ def _conflict(tl: _Timeline, s: datetime, hours: int, lead: int, uc_hw_class,
 
 def _sweep(tl: _Timeline, uc_hw_class, base: datetime, hours: int,
            horizon_end: datetime, cfg: SchedConfig, has_dpu: bool) -> _Slot | None:
-    s = base
+    s = snap_up(base, cfg.slot_min)
     while s + timedelta(hours=hours) <= horizon_end:
         lead = lead_min(uc_hw_class, tl.class_at(s), cfg, has_dpu)
         hit = _conflict(tl, s, hours, lead, uc_hw_class, cfg, has_dpu)
@@ -193,7 +207,7 @@ def _sweep(tl: _Timeline, uc_hw_class, base: datetime, hours: int,
             return _Slot(start=s, lead_min=lead)
         just_after = hit[1] + timedelta(seconds=1)      # class_at is a step function
         nxt = hit[1] + timedelta(minutes=lead_min(uc_hw_class, tl.class_at(just_after), cfg, has_dpu))
-        s = max(nxt, s + timedelta(minutes=1))          # nxt > s always; max() makes a hang impossible
+        s = snap_up(max(nxt, s + timedelta(minutes=1)), cfg.slot_min)   # nxt > s always; max() makes a hang impossible
     return None                                         # this candidate has no slot in horizon
 
 
@@ -217,6 +231,8 @@ def _place_at(db, req: PlacementRequest, candidates, uc_hw_class,
     end = start + timedelta(hours=req.hours)
     if start < now:
         return NoFit(start_at=start, end_at=end, reason="in_the_past")
+    if snap_up(start, cfg.slot_min) != start:
+        return NoFit(start_at=start, end_at=end, reason="off_grid")    # snapping would be shifting
     free = []
     for s in candidates:
         has_dpu, dpu_class = _setup_dpu(db, s["id"])
@@ -233,6 +249,8 @@ def _place_at(db, req: PlacementRequest, candidates, uc_hw_class,
 
 def place(db: sqlite3.Connection, req: PlacementRequest, now: datetime,
           cfg: SchedConfig = SchedConfig()) -> Placed | NoSetup | NoFreeSlot | NoFit:
+    if cfg.slot_min < 1:
+        raise ValueError(f"slot_min must be >= 1 minute, got {cfg.slot_min}")
     if req.mode not in ("asap", "at"):
         raise ValueError(f"unknown placement mode: {req.mode!r} (expected 'asap' or 'at')")
     uc = db.execute(

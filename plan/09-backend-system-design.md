@@ -207,6 +207,8 @@ As implemented (B-11, [03-scheduler.md](03-scheduler.md) Step 3): the next booki
 **Slot grid:** starts snap to `DAOLAB_SLOT_MIN` (e.g. 30 minutes). This keeps the date picker
 simple and packs bookings back-to-back with no unusable gaps.
 
+As implemented (B-12, [03-scheduler.md](03-scheduler.md) Step 5a): the grid is multiples of `DAOLAB_SLOT_MIN` minutes after UTC midnight; `asap` rounds each candidate start up to it, and an `at` start that is off the grid is refused (`NoFit("off_grid")`) because snapping it would be shifting. The scheduler starts `asap` from `max(requested, now)` rounded up to the grid and does **not** add `provision_lead` to `now` as the sentence below says; which of the two is intended is an open question.
+
 **Placement:**
 
 - `asap`: earliest start at or after `now + provision_lead` on the grid, where the window plus
