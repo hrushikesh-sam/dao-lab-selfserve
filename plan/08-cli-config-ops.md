@@ -155,6 +155,9 @@ setting with its default; `cp .env.example .env` is part of Phase 0. Keep lines 
 | `DAOLAB_PROVISION_LEAD_MIN` | `5` | api (scheduler), engine | Lead minutes before `start_at` when no `hw_class` change is needed. |
 | `DAOLAB_CLEANUP_MIN` | `10` | api (scheduler) | Turnaround buffer blocked after every reservation's `end_at` (B-11); the gap between two bookings is this plus the next booking's lead. |
 | `DAOLAB_SLOT_MIN` | `30` | api (scheduler) | Start-time grid in minutes after UTC midnight (B-12); `asap` rounds up to it, `at` must be on it. Must be ≥ 1. |
+| `DAOLAB_RUNNER` | `ansible` | engine | Backend of `service/runner.py` (B-22): `mock` (no testbed; sleeps through each step and records it on the job) or `ansible` (the real backend, arrives with B-84 — until then it raises a clear "not implemented" error). Any other value is a configuration error. |
+| `DAOLAB_MOCK_STEP_SEC` | `5` | engine (mock runner) | Seconds the mock sleeps before each step; a default deploy has 6 steps, so about 30 s. `0` makes it instant (tests). Must be ≥ 0. |
+| `DAOLAB_MOCK_FAIL` | *(empty)* | engine (mock runner) | Failure injection: empty, or a comma-separated subset of `deploy`, `cleanup`. `deploy` makes the deploy fail at the `create_vms` step. `cleanup` makes cleanup *look* successful but leave residue, so `verify_clean` reports leftovers every time — the way to reach the quarantine path. |
 | `DAOLAB_ENGINE_INTERVAL_SEC` | `60` | engine | Sleep between ticks in `python -m service.engine --loop`. |
 | `DAOLAB_MAX_RETRIES` | `3` | engine | Playbook retries per phase before `failed`. |
 | `DAOLAB_SCHED_HORIZON_HOURS` | `168` | api (scheduler) | Slot-shift / availability search horizon (7 days). |

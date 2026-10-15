@@ -124,6 +124,16 @@ Tick order is fixed — (a) through (e) exactly as above — so releases and exp
 
 ## runner.py — one function per transition
 
+> **B-22 update:** `service/runner.py` now exists with the interface of
+> [09-backend-system-design.md](09-backend-system-design.md) §6 and §9, which replaces the four
+> playbook functions described below with one function per *job kind*:
+> `deploy(res, step)`, `cleanup(res, step)`, `probe(res, step)` and `verify_clean(res, step)`.
+> `res` is the reservation (a Row or dict with `id`); `step(name, state="ok", detail=None)` is a
+> callback the runner calls as each step finishes (`runner.job_sink` records them on the job);
+> each function returns `RunResult(ok, error, residue)`. `DAOLAB_RUNNER` picks the backend
+> (`get_runner()`): `mock` works today, `ansible` arrives with B-84. The ansible-runner sketch and
+> the playbook table below describe the older design and will be rewritten with B-80/B-84.
+
 `service/runner.py` is a thin ansible-runner wrapper. Each function runs the same-named playbook
 from `DAOLAB_PLAYBOOKS_DIR` against `DAOLAB_INVENTORY` (`inventory/hosts.yml`) and returns
 success/failure plus the runner event stream for logging.

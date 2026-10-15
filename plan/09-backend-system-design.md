@@ -496,7 +496,11 @@ class of "forgot to revoke" bugs.
 real `/internal/leases` and `/internal/vm-ip`, emits OTel spans, and writes fake metrics. The
 whole flow (booking, conflicts, IP exclusivity, DPU key window, cleanup, quarantine) can then be
 demonstrated on a laptop with no testbed. `DAOLAB_MOCK_FAIL=cleanup` forces residue so the
-quarantine path can be exercised.
+quarantine path can be exercised. *Built so far (B-22):* the sleeping, step-recording mock
+(`DAOLAB_MOCK_STEP_SEC`, default 5 s per step, 6 deploy steps ≈ 30 s) and the two failure
+switches — `deploy` fails the deploy at `create_vms`; `cleanup` makes cleanup report success
+while `verify_clean` keeps reporting residue. The lease/vm-ip calls (B-44), OTel spans (B-62)
+and fake metrics come with their own tasks.
 
 **Telemetry stack:** `deploy/otel/docker-compose.yml` runs `otelcol-contrib`, `prometheus` and
 `jaeger`. With `DAOLAB_OTEL_ENDPOINT` unset, the backend skips tracing and health falls back to
