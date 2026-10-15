@@ -105,8 +105,15 @@ def main(argv: list[str] | None = None) -> int:
 > A cleanup always runs
 > `verify_clean` afterwards, whatever the cleanup reported: clean → `released`, residue (or
 > verify unable to run) → `quarantined`. **Because the setup is freed in step (4), the next
-> booking on it starts on the next tick**, not the same one; the lead time absorbs that. Not
-> done yet: single-flight (B-24), retries (B-25), crash recovery (B-26), IP release and the
+> booking on it starts on the next tick**, not the same one; the lead time absorbs that.
+> **B-24 (single-flight):** a `deploy`, `cleanup` or `reconcile` job is only started when no
+> other such job is `running` on the same setup (a job belongs to a setup through its
+> reservation); health probes are exempt. The check and the `pending → running` move share one
+> `BEGIN IMMEDIATE` transaction, so two engine processes cannot both win. A job that has to wait
+> stays `pending` (it is not failed) and is retried next tick; jobs on one setup in the same tick
+> run one after the other. A job left `running` by a crashed engine therefore blocks its setup
+> until B-26 puts it back. This replaces the older "one reservation in `provisioning` or
+> `cleaning`" wording below. Not done yet: retries (B-25), crash recovery (B-26), IP release and the
 > setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67). `vms` rows
 > are not created by the engine yet.
 

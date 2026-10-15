@@ -450,8 +450,11 @@ Jobs have their own small lifecycle (`pending → running → succeeded | failed
 **new** job row for the same reservation and kind with `attempt + 1` (B-20; the crash-recovery
 rule of B-26, which puts a stale `running` job back to `pending`, is a separate, explicit
 exception added with that task). **Single-flight per setup:** the engine never runs two
-deploy or cleanup jobs against the same setup at once. Health-probe jobs are read-only and
-exempt.
+deploy, cleanup or reconcile jobs against the same setup at once. Health-probe jobs are
+read-only and exempt. *Built (B-24):* the engine checks for a running mutating job on the setup
+and marks its own job `running` in one write transaction; a job that must wait stays `pending`
+and is retried on the next tick, and a job stranded as `running` by a crashed engine blocks its
+setup until B-26.
 
 ---
 

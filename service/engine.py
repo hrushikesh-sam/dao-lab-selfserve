@@ -21,6 +21,13 @@ the clock. Every state change is a compare-and-set (`models.transition_reservati
 `models.transition_job`), so a second engine process can never double-fire a transition.
 Runner calls block; ticks are serialised, so a long deploy simply delays the next tick.
 
+Single-flight per setup (B-24): a deploy, cleanup or reconcile job is only started if no other
+such job is `running` on the same setup. The check and the pending -> running move happen in one
+BEGIN IMMEDIATE transaction, so two engine processes cannot both win. A job that has to wait is
+simply left `pending` and tried again next tick; it is not failed. Jobs on the same setup in one
+tick run one after the other. Health probes are read-only and exempt. A job left `running` by a
+crashed engine blocks its setup until crash recovery (B-26) puts it back.
+
 What a finished job does to its reservation:
   * deploy ok      -> ready, and the DPU's hw_class is recorded (plan/01 invariant 6)
   * deploy failed  -> failed, with the job error as failure_reason (no retries yet: B-25)
@@ -63,6 +70,7 @@ class TickResult:
     expired: int = 0         # active -> cleaning (cleanup job queued)
     started: int = 0         # queued -> provisioning (deploy job queued)
     jobs_run: int = 0
+    deferred: int = 0        # pending jobs left waiting because their setup is busy (B-24)
     ready: int = 0           # deploy ok
     redeployed: int = 0      # redeploy ok (reservation unchanged)
     failed: int = 0          # deploy failed
@@ -226,10 +234,38 @@ def _run_cleanup(db, rn, job, res, sink, out: TickResult) -> RunResult:
     return result
 
 
-def _run_job(db, rn, job, out: TickResult) -> None:
+class _Busy(Exception):
+    """The setup already has a running mutating job."""
+
+
+def _claim(db: sqlite3.Connection, job) -> str:
+    """Try to move `job` pending -> running. Returns "claimed", "busy" (single-flight: the
+    setup has a running deploy/cleanup/reconcile job; the job stays pending) or "taken"
+    (another engine got this job first). Check and move share one write transaction."""
     try:
-        models.transition_job(db, job["id"], "running")
+        with _txn(db):
+            fresh = models.job_by_id(db, job["id"])      # our snapshot may be stale
+            if fresh is None or fresh["state"] != "pending":
+                raise models.JobError(f"job {job['id']} is no longer pending")
+            if job["kind"] in models.MUTATING_JOB_KINDS:
+                res = models.reservation_by_id(db, job["reservation_id"])
+                if models.running_mutating_job(db, res["setup_id"]) is not None:
+                    raise _Busy
+            models.transition_job(db, job["id"], "running")
+    except _Busy:
+        return "busy"
     except models.JobError:
+        return "taken"
+    return "claimed"
+
+
+def _run_job(db, rn, job, out: TickResult) -> None:
+    claim = _claim(db, job)
+    if claim == "busy":
+        out.deferred += 1
+        log.info("job %s (%s) waits: its setup has a running job", job["id"], job["kind"])
+        return
+    if claim == "taken":
         return                                       # another engine took it
     out.jobs_run += 1
     res = models.reservation_by_id(db, job["reservation_id"])

@@ -324,6 +324,20 @@ def pending_jobs(conn, limit: int | None = None):
     return conn.execute(sql + " LIMIT ?", (limit,)).fetchall()
 
 
+def running_mutating_job(conn, setup_id: int):
+    """The `running` deploy / cleanup / reconcile job on `setup_id`, or None (B-24).
+
+    A job belongs to a setup through its reservation. Health probes are read-only and never
+    count; neither do pending or finished jobs. If several are running (they should never be)
+    the oldest is returned."""
+    marks = ", ".join("?" for _ in MUTATING_JOB_KINDS)
+    return conn.execute(
+        f"""SELECT j.* FROM jobs j JOIN reservations r ON r.id = j.reservation_id
+            WHERE r.setup_id = ? AND j.state = 'running' AND j.kind IN ({marks})
+            ORDER BY j.id LIMIT 1""",
+        (setup_id, *MUTATING_JOB_KINDS)).fetchone()
+
+
 def job_steps(job) -> list[dict]:
     """The parsed `steps` list of a job row."""
     return from_json(job["steps"])
