@@ -433,3 +433,31 @@ def test_26_availability_validation(env):
                                 headers=H(env.admin_token)), 422, "validation_error")
     assert_error(env.client.get(f"{base}&from=not-a-time", headers=H(env.admin_token)),
                  422, "validation_error")
+
+
+def test_27_cleanup_endpoint(env):
+    """B-27: POST /reservations/{id}/cleanup ends a ready/active slot early (202 + job)."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    rid = reserve(env, alice).json()["id"]
+    queued = reserve(env, alice).json()["id"]      # book before rid goes live (B-15 quota)
+    env.models.update(env.conn, "reservations", rid, {"state": "ready"})
+    # a non-owner cannot end someone else's slot
+    assert_error(env.client.post(f"/reservations/{rid}/cleanup", headers=H(bob)), 403, "forbidden")
+    # a queued reservation has nothing to tear down
+    assert_error(env.client.post(f"/reservations/{queued}/cleanup", headers=H(alice)),
+                 409, "invalid_state")
+    resp = env.client.post(f"/reservations/{rid}/cleanup", headers=H(alice))
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert body["id"] == rid and body["state"] == "cleaning"
+    assert body["job"]["kind"] == "cleanup" and body["job"]["state"] == "pending"
+    assert body["job"]["reservation_id"] == rid and body["job"]["steps"] == []
+    # the state change and the job are persisted
+    assert env.models.reservation_by_id(env.conn, rid)["state"] == "cleaning"
+    assert [j["kind"] for j in env.models.jobs_for_reservation(env.conn, rid)] == ["cleanup"]
+    # a second cleanup is refused and the action is audit-logged
+    assert_error(env.client.post(f"/reservations/{rid}/cleanup", headers=H(alice)),
+                 409, "invalid_state")
+    rows = env.client.get("/admin/audit", headers=H(env.admin_token)).json()
+    assert rows[0]["action"] == "cleanup" and rows[0]["object_id"] == rid

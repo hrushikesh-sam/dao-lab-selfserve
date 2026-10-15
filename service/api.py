@@ -222,6 +222,35 @@ def user_object(row) -> dict:
             "enabled": bool(row["enabled"]), "created_at": row["created_at"]}
 
 
+_LOG_TAIL_BYTES = 8192
+
+
+def _log_tail(path: str | None) -> str | None:
+    """The last few KB of a job's playbook log (plan/09 §4); None when there is no log yet."""
+    if not path:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - _LOG_TAIL_BYTES))
+            return fh.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+
+
+def job_object(job) -> dict:
+    """The canonical job shape (plan/09 §4), returned by the cleanup/redeploy responses and
+    GET /jobs/{id}: state, parsed steps, trace_id and the playbook log tail."""
+    return {
+        "id": job["id"], "reservation_id": job["reservation_id"], "kind": job["kind"],
+        "state": job["state"], "attempt": job["attempt"], "trace_id": job["trace_id"],
+        "log_path": job["log_path"], "log_tail": _log_tail(job["log_path"]),
+        "error": job["error"], "steps": models.job_steps(job),
+        "started_at": job["started_at"], "finished_at": job["finished_at"],
+        "created_at": job["created_at"], "updated_at": job["updated_at"],
+    }
+
+
 # ---- routes ----------------------------------------------------------------
 
 @app.get("/health")
@@ -542,6 +571,36 @@ def cancel_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
     models.audit(conn, user["username"], "cancel", "reservation", res_id,
                  {"previous_state": row["state"], "state": new_state})
     return {"id": res_id, "state": new_state}
+
+
+@app.post("/reservations/{res_id}/cleanup", status_code=202)
+def cleanup_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
+                        conn: sqlite3.Connection = Depends(db_conn)):
+    """Owner ends a running slot early (plan/09 §4): `ready`/`active` -> `cleaning` plus a
+    pending `cleanup` job the engine will run, `202`. Any other state -> `409 invalid_state`."""
+    row = _owned_reservation(conn, res_id, user)
+    if row["state"] not in ("ready", "active"):
+        raise DaolabError("invalid_state", 409,
+                          f"cannot clean up a reservation in state {row['state']}",
+                          {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        try:
+            models.transition_reservation(conn, res_id, "cleaning", from_state=row["state"])
+        except models.ReservationStateError:   # the engine moved it under us
+            current = models.reservation_by_id(conn, res_id)["state"]
+            raise DaolabError("invalid_state", 409,
+                              f"cannot clean up a reservation in state {current}",
+                              {"state": current})
+        job_id = models.create_job(conn, res_id, "cleanup")
+        models.audit(conn, user["username"], "cleanup", "reservation", res_id,
+                     {"previous_state": row["state"], "state": "cleaning"})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"id": res_id, "state": "cleaning",
+            "job": job_object(models.job_by_id(conn, job_id))}
 
 
 @app.post("/internal/vm-ip")
