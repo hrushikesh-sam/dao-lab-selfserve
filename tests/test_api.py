@@ -94,7 +94,7 @@ def test_3_catalog(env):
     assert tls["doc_url"].endswith("tls-proxy-nginx.html") and tls["doc_summary"]
     assert by_name["virtio-l2fwd"]["doc_url"].endswith("virtio-l2fwd.html")
     assert by_name["virtio-l2fwd"]["setups"] == []          # planned rows embed no testbed
-    assert [s["name"] for s in tls["setups"]] == ["setup-01"]
+    assert [s["name"] for s in tls["setups"]] == ["tb-01"]
     assert tls["setups"][0]["diagram"].startswith("graph") and tls["setups"][0]["members"]
     assert tls["roles"]["proxy"]["on"] == "dpu" and tls["requires"] == ["octeon-cn106", "e810", "wire"]
 
@@ -113,7 +113,7 @@ def test_5_reserve_simple(env):
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["state"] == "queued" and body["shifted"] is False and body["vms"] == []
-    assert body["setup"] == "setup-01" and body["user"] == "hrushi"
+    assert body["setup"] == "tb-01" and body["user"] == "hrushi"
 
 
 def test_6_overlap_shifts(env):               # Phase 2 checkpoint
@@ -132,24 +132,23 @@ def test_7_unmet_capability_names_missing(env):   # Phase 2 checkpoint
         "yaml_path": "usecases/uc-gpu.yml"})
     err = assert_error(reserve(env, env.user_token, usecase="uc-gpu"), 409, "unmet_capability")
     assert "gpu" in err["message"] and err["detail"]["missing"] == ["gpu"]
-    assert err["detail"]["closest_setup"] == "setup-01"
+    assert err["detail"]["closest_setup"] == "tb-01"
 
 
 def test_8_reserve_error_matrix(env):
     assert_error(reserve(env, env.user_token, usecase="nope"), 404, "not_found")
     assert_error(reserve(env, env.user_token, usecase="ovs-offload"), 409, "usecase_unavailable")
     assert_error(reserve(env, env.user_token, hours=0), 422, "validation_error")
-    assert_error(reserve(env, env.user_token, setup="setup-01"), 422, "validation_error")
-    assert_error(reserve(env, env.user_token, usecase="diy", setup="setup-01"), 422, "validation_error")
-    err = assert_error(reserve(env, env.user_token, usecase="diy", setup="setup-01",
-                               templates={"dpu-01-xcp": "tpl-ubuntu2204-dao"}),
-                       422, "validation_error")
-    assert "tg-01-xcp" in err["message"]
+    assert_error(reserve(env, env.user_token, setup="tb-01"), 422, "validation_error")
+    assert_error(reserve(env, env.user_token, usecase="diy", setup="tb-01"), 422, "validation_error")
+    err = assert_error(reserve(env, env.user_token, usecase="diy", setup="tb-01",
+                               templates={}), 422, "validation_error")
+    assert "tb-01-xcp" in err["message"]
 
 
 def test_9_reserve_diy(env):
-    r = reserve(env, env.user_token, usecase="diy", setup="setup-01",
-                templates={"dpu-01-xcp": "tpl-ubuntu2204-dao", "tg-01-xcp": "tpl-ubuntu2204-dao"})
+    r = reserve(env, env.user_token, usecase="diy", setup="tb-01",
+                templates={"tb-01-xcp": "tpl-ubuntu2204-dao"})
     assert r.status_code == 201, r.text
     assert r.json()["diy"] is True
 
@@ -182,7 +181,7 @@ def test_11_cancel_matrix(env):
 
 def _mk_vm(env, rid, role="backend"):
     return env.models.insert(env.conn, "vms", {
-        "reservation_id": rid, "role": role, "host": "dpu-01-xcp",
+        "reservation_id": rid, "role": role, "host": "tb-01-xcp",
         "template": "tpl-ubuntu2204-dao", "name": f"daolab-r{rid}-{role}"})
 
 
@@ -261,8 +260,8 @@ def test_18_reservation_diagram_and_credentials(env):
     rid = reserve(env, env.user_token).json()["id"]
     for role, host, tpl, name, ip in [
             ("proxy", "dpu-01", None, None, "10.20.0.10"),
-            ("backend", "dpu-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21"),
-            ("client", "tg-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-client", "10.20.0.31")]:
+            ("backend", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21"),
+            ("client", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-client", "10.20.0.31")]:
         env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": role, "host": host,
                                             "template": tpl, "name": name, "ip": ip})
     obj = env.client.get(f"/reservations/{rid}", headers=H(env.user_token)).json()

@@ -26,7 +26,7 @@ def conn():
 
 def test_sync_happy_path(conn):
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
-    setup = models.setup_by_name(conn, "setup-01")
+    setup = models.setup_by_name(conn, "tb-01")
     assert models.from_json(setup["capabilities"]) == ["e810", "octeon-cn106", "sdp", "wire"]
     uc = models.usecase_by_name(conn, "tls-proxy-nginx")
     assert uc["yaml_path"] and uc["variant"] == "separate-backend"
@@ -38,7 +38,7 @@ def test_sync_happy_path(conn):
 
 def test_sync_idempotent_preserves_hw_class(conn):
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
-    setup = models.setup_by_name(conn, "setup-01")
+    setup = models.setup_by_name(conn, "tb-01")
     dpu = conn.execute("SELECT id FROM resources WHERE setup_id=? AND name='dpu-01'",
                        (setup["id"],)).fetchone()
     models.update(conn, "resources", dpu["id"], {"hw_class": "sdp-pf1-vf8"})
@@ -57,7 +57,7 @@ def test_validation_errors_all_or_nothing(conn, tmp_path):
         catalog.sync(conn, str(bad), ST_DIR, INV)
     text = "\n".join(e.value.errors)
     assert "requires" in text and "surprise" in text and "roles" in text
-    assert models.setup_by_name(conn, "setup-01") is None  # nothing written
+    assert models.setup_by_name(conn, "tb-01") is None  # nothing written
 
 
 def test_unknown_host_rejected(conn, tmp_path):
@@ -75,7 +75,7 @@ def test_unknown_host_rejected(conn, tmp_path):
 def test_removal_blocked_by_active_reservation(conn, tmp_path):
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
     models.insert(conn, "users", {"username": "u1", "token_hash": "h", "ssh_pubkey": "k"})
-    setup = models.setup_by_name(conn, "setup-01")
+    setup = models.setup_by_name(conn, "tb-01")
     uc = models.usecase_by_name(conn, "tls-proxy-nginx")
     mk_res(conn, setup["id"], uc["id"], T(10), T(12))
     empty = tmp_path / "none"
@@ -83,4 +83,4 @@ def test_removal_blocked_by_active_reservation(conn, tmp_path):
     with pytest.raises(catalog.SyncError) as e:
         catalog.sync(conn, str(empty), str(empty), INV)
     assert "removal blocked" in "\n".join(e.value.errors)
-    assert models.setup_by_name(conn, "setup-01") is not None   # rolled back
+    assert models.setup_by_name(conn, "tb-01") is not None   # rolled back
