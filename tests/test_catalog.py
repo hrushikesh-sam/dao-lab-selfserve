@@ -114,3 +114,51 @@ def test_malformed_health_rule_rejected(conn, tmp_path):
     assert "health.nolid.promql" in text and "$RID" in text   # rule name + problem
     assert "health.badop.expect" in text
     assert "health.badsev.severity" in text
+
+
+# ---- B-43: IP pool from DAOLAB_IP_POOL --------------------------------------
+
+def test_sync_loads_ip_pool(conn):
+    from service import config
+    assert config.settings.ip_pool == "10.30.0.100-10.30.0.199"   # .env.example default
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    pool = models.ip_pool_by_name(conn, catalog.DEFAULT_IP_POOL)
+    assert pool["range_start"] == "10.30.0.100" and pool["range_end"] == "10.30.0.199"
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)                        # idempotent
+    assert len(models.list_ip_pools(conn)) == 1
+
+
+def test_sync_shrinks_range_but_keeps_live_leases(conn, monkeypatch):
+    import dataclasses
+    from service import config
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    models.insert(conn, "users", {"username": "u1", "token_hash": "h", "ssh_pubkey": "k"})
+    setup = models.setup_by_name(conn, "tb-01")
+    uc = models.usecase_by_name(conn, "tls-proxy-nginx")
+    rid = mk_res(conn, setup["id"], uc["id"], T(10), T(12))
+    pool = models.ip_pool_by_name(conn, catalog.DEFAULT_IP_POOL)
+    models.insert(conn, "ip_leases", {"pool_id": pool["id"], "ip": "10.30.0.199",
+                                      "reservation_id": rid, "role": "backend",
+                                      "state": "leased"})
+    monkeypatch.setattr(config, "settings", dataclasses.replace(
+        config.settings, ip_pool="10.30.0.100-10.30.0.150"))     # shrink past the lease
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    pool = models.ip_pool_by_name(conn, catalog.DEFAULT_IP_POOL)
+    assert pool["range_end"] == "10.30.0.150"                    # range updated
+    assert [l["ip"] for l in models.live_leases(conn, pool["id"])] == ["10.30.0.199"]
+
+
+def test_bad_ip_pool_rejected(conn, monkeypatch):
+    import dataclasses
+    from service import config
+    monkeypatch.setattr(config, "settings",
+                        dataclasses.replace(config.settings, ip_pool="not-a-range"))
+    with pytest.raises(catalog.SyncError) as e:
+        catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    assert "DAOLAB_IP_POOL" in "\n".join(e.value.errors)
+    assert models.list_ip_pools(conn) == []                      # rolled back
+    monkeypatch.setattr(config, "settings", dataclasses.replace(
+        config.settings, ip_pool="10.30.0.199-10.30.0.100"))     # reversed
+    with pytest.raises(catalog.SyncError) as e:
+        catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    assert "after end" in "\n".join(e.value.errors)

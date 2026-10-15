@@ -77,12 +77,17 @@ def cmd_add_user(args) -> int:
     token = secrets.token_urlsafe(32)
     conn = models.connect(config.settings.db_path)
     try:
+        if args.rotate:
+            row = conn.execute("SELECT id FROM users WHERE username = ?", (args.username,)).fetchone()
+            if row:  # reservations first (users FK has no cascade); their vms cascade
+                conn.execute("DELETE FROM reservations WHERE user_id = ?", (row["id"],))
+                conn.execute("DELETE FROM users WHERE id = ?", (row["id"],))
         models.insert(conn, "users", {
             "username": args.username, "role": args.role,
             "token_hash": hashlib.sha256(token.encode()).hexdigest(),
             "ssh_pubkey": pubkey})
     except sqlite3.IntegrityError:
-        _die(f"duplicate user: {args.username}")
+        _die(f"duplicate user: {args.username} (pass --rotate to replace it)")
     print(f"token: {token}")
     return 0
 
@@ -134,6 +139,8 @@ def main() -> None:
     p.add_argument("username")
     p.add_argument("pubkey_path")
     p.add_argument("--role", choices=("admin", "user"), default="user")
+    p.add_argument("--rotate", action="store_true",
+                   help="delete and re-create the user first (dev seeding)")
 
     p = sub.add_parser("reserve", help="reserve a use case (or diy) via the API")
     p.add_argument("usecase")

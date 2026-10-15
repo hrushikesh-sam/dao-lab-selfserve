@@ -297,3 +297,50 @@ def test_18_reservation_diagram_and_credentials(env):
     assert "e810-vf" in d                            # client -> proxy edge
     queued = reserve(env, env.user_token).json()
     assert queued["diagram"] is None                 # no vms yet -> no diagram
+
+
+def test_19_owner_only_credentials(env):
+    """B-54: ssh lines + VM/DPU IPs are returned only to the owner or an admin."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    rid = reserve(env, alice).json()["id"]
+    for role, host, tpl, name, ip in [
+            ("proxy", "dpu-01", None, None, "10.20.0.10"),
+            ("backend", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21")]:
+        env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": role, "host": host,
+                                            "template": tpl, "name": name, "ip": ip})
+    # the owner sees the credentials
+    obj = env.client.get(f"/reservations/{rid}", headers=H(alice)).json()
+    vms = {v["role"]: v for v in obj["vms"]}
+    assert vms["backend"]["ssh"] == "ssh alice@10.20.0.21"
+    assert "10.20.0.10" in obj["diagram"]
+    # a non-owner is refused the object outright, with no IPs in the error body
+    err = assert_error(env.client.get(f"/reservations/{rid}", headers=H(bob)), 403, "forbidden")
+    assert "10.20.0." not in str(err)
+    # a non-owner's own listing never contains someone else's rows (or IPs)
+    assert env.client.get("/reservations", headers=H(bob)).json() == []
+    # an admin sees them in the ?all=1 view
+    admin_rows = env.client.get("/reservations?all=1", headers=H(env.admin_token)).json()
+    assert [r["id"] for r in admin_rows] == [rid]
+    assert "ssh alice@10.20.0.21" in str(admin_rows)
+
+
+def test_20_admin_audit(env):
+    """B-55: mutating actions append audit rows; GET /admin/audit is admin-only."""
+    assert_error(env.client.get("/admin/audit", headers=H(env.user_token)), 403, "forbidden")
+    uid = env.conn.execute("SELECT id FROM users WHERE username='hrushi'").fetchone()["id"]
+    env.client.patch(f"/users/{uid}", json={"enabled": False}, headers=H(env.admin_token))
+    env.client.patch(f"/users/{uid}", json={"enabled": True}, headers=H(env.admin_token))
+    rid = reserve(env, env.user_token).json()["id"]
+    env.client.delete(f"/reservations/{rid}", headers=H(env.user_token))
+    rows = env.client.get("/admin/audit", headers=H(env.admin_token)).json()
+    assert [r["action"] for r in rows] == ["cancel", "admin_override", "admin_override"]
+    newest, oldest = rows[1], rows[2]
+    assert newest["actor"] == "hrushi-admin" and newest["object_type"] == "user"
+    assert newest["object_id"] == uid
+    assert [newest["detail"]["enabled"], oldest["detail"]["enabled"]] == [True, False]
+    cancel = rows[0]
+    assert cancel["actor"] == "hrushi" and cancel["object_type"] == "reservation"
+    assert cancel["object_id"] == rid
+    assert cancel["detail"] == {"previous_state": "queued", "state": "released"}
+    assert all(r["created_at"] for r in rows)
