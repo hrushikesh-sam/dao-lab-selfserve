@@ -8,6 +8,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, Request
 from fastapi.exceptions import RequestValidationError
@@ -98,8 +99,9 @@ def require_internal(x_daolab_secret: str | None = Header(None)) -> None:
 class ReservationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     usecase: str
+    mode: Literal["asap", "at"] = "asap"
     start_at: str | None = None
-    hours: int = 1
+    hours: int | None = None
     setup: str | None = None
     templates: dict[str, str] | None = None
 
@@ -355,7 +357,8 @@ def create_reservation(body: ReservationCreate,
                        user: sqlite3.Row = Depends(current_user),
                        conn: sqlite3.Connection = Depends(db_conn)):
     now = datetime.now(timezone.utc)
-    if body.hours < 1:
+    hours = body.hours if body.hours is not None else config.settings.default_hours
+    if hours < 1:
         raise DaolabError("validation_error", 422, "hours: must be >= 1")
     start = _parse_start(body.start_at, now)
     is_diy = body.usecase == "diy"
@@ -394,7 +397,7 @@ def create_reservation(body: ReservationCreate,
         placement = scheduler.place(
             conn,
             scheduler.PlacementRequest(usecase=body.usecase, requested_start_at=start,
-                                       hours=body.hours, setup=body.setup),
+                                       hours=hours, setup=body.setup, mode=body.mode),
             now, _sched_config())
         if isinstance(placement, scheduler.NoSetup):
             raise DaolabError(
@@ -409,6 +412,18 @@ def create_reservation(body: ReservationCreate,
                               f"{placement.horizon_hours}h",
                               {"reason": "no_free_slot",
                                "horizon_hours": placement.horizon_hours})
+        if isinstance(placement, scheduler.NoFit):
+            raise DaolabError(
+                "slot_conflict", 409,
+                f"{body.usecase}: requested window "
+                f"{models.format_ts(placement.start_at)}.."
+                f"{models.format_ts(placement.end_at)} is not available "
+                f"({placement.reason})",
+                {"usecase": body.usecase,
+                 "start_at": models.format_ts(placement.start_at),
+                 "end_at": models.format_ts(placement.end_at),
+                 "reason": placement.reason,
+                 "alternatives": [models.format_ts(a) for a in placement.alternatives]})
         rid = models.insert(conn, "reservations", {
             "user_id": user["id"], "usecase_id": uc["id"], "setup_id": placement.setup_id,
             "state": "queued", "requested_start_at": models.format_ts(start),

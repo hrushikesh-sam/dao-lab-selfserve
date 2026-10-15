@@ -344,3 +344,34 @@ def test_20_admin_audit(env):
     assert cancel["object_id"] == rid
     assert cancel["detail"] == {"previous_state": "queued", "state": "released"}
     assert all(r["created_at"] for r in rows)
+
+
+def test_21_at_conflict_returns_alternatives(env):
+    """B-14: mode 'at' refuses an overlapping window with 409 slot_conflict + alternatives."""
+    alice = env.add_user("alice")
+    bob = env.add_user("bob")
+    first = reserve(env, alice, mode="at", start_at=iso(env.T), hours=2)
+    assert first.status_code == 201, first.text
+    assert first.json()["start_at"] == iso(env.T)
+    err = assert_error(reserve(env, bob, mode="at", start_at=iso(env.T + timedelta(hours=1)),
+                               hours=1), 409, "slot_conflict")
+    assert err["detail"]["reason"] == "overlap"
+    assert err["detail"]["start_at"] == iso(env.T + timedelta(hours=1))
+    # freed only after alice's window + 10 min cleanup + 5 min lead = :15, rounded up to grid
+    assert err["detail"]["alternatives"] == [
+        iso(env.T + timedelta(hours=2, minutes=30)),
+        iso(env.T + timedelta(hours=3)),
+        iso(env.T + timedelta(hours=3, minutes=30))]
+    # the same window in asap mode shifts instead of failing
+    shifted = reserve(env, bob, mode="asap", start_at=iso(env.T), hours=1).json()
+    assert shifted["start_at"] == iso(env.T + timedelta(hours=2, minutes=30))
+
+
+def test_22_at_mode_validation(env):
+    """B-14: unknown mode -> 422; past/off-grid 'at' -> 409 slot_conflict with the reason."""
+    alice = env.add_user("alice")
+    assert reserve(env, alice, mode="later").status_code == 422
+    past = reserve(env, alice, mode="at", start_at=iso(env.T - timedelta(days=30)), hours=1)
+    assert assert_error(past, 409, "slot_conflict")["detail"]["reason"] == "in_the_past"
+    off = reserve(env, alice, mode="at", start_at=iso(env.T + timedelta(minutes=10)), hours=1)
+    assert assert_error(off, 409, "slot_conflict")["detail"]["reason"] == "off_grid"
