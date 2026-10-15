@@ -344,6 +344,22 @@ def test_cleanup_that_verifies_clean_releases_the_reservation(world):
     assert models.from_json(event["detail"])["residue"] == []
 
 
+def test_end_of_slot_cleanup_kills_the_dpu_user_session_first(world):
+    """B-53: the cleanup job queued at `end_at` starts by terminating the DPU's `lab` user
+    sessions (plan/09 §7/§9), so access is revoked at the end of the slot whatever the rest of
+    teardown does. The mock records the step."""
+    db, sid, _ = world
+    rid = res(world, state="active", start=T(7), end=T(9))
+    out = tick(db)                                    # end_at passed -> cleaning + cleanup job
+    assert out.expired == 1
+    [job] = jobs(db)
+    assert job["kind"] == "cleanup"
+    steps = [s["name"] for s in models.job_steps(job)]
+    assert steps == list(CLEANUP_STEPS + VERIFY_CLEAN_STEPS)
+    assert steps[0] == "terminate-user"
+    assert state(db, rid) == "released"
+
+
 def test_residue_after_cleanup_quarantines_the_reservation(world):
     db, sid, _ = world
     rid = res(world, state="active", start=T(7), end=T(9))
