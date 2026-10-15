@@ -164,3 +164,31 @@ def vm_by_role(conn, res_id: int, role: str):
 
 def set_vm_ip(conn, vm_id: int, ip: str) -> None:
     update(conn, "vms", vm_id, {"ip": ip})
+
+
+# ---- IP pools / leases (B-40) ----------------------------------------------
+
+def ip_pool_by_name(conn, name: str):
+    return conn.execute("SELECT * FROM ip_pools WHERE name = ?", (name,)).fetchone()
+
+
+def list_ip_pools(conn):
+    return conn.execute("SELECT * FROM ip_pools ORDER BY name").fetchall()
+
+
+def live_leases(conn, pool_id: int):
+    """Leases that still occupy an address: leased or quarantined, never released."""
+    return conn.execute(
+        "SELECT * FROM ip_leases WHERE pool_id = ? AND state != 'released' ORDER BY ip",
+        (pool_id,)).fetchall()
+
+
+def ip_lease_by_role(conn, res_id: int, role: str):
+    return conn.execute(
+        """SELECT * FROM ip_leases WHERE reservation_id = ? AND role = ? AND state != 'released'
+           ORDER BY id LIMIT 1""", (res_id, role)).fetchone()
+
+
+def ip_leases_for_reservation(conn, res_id: int):
+    return conn.execute(
+        "SELECT * FROM ip_leases WHERE reservation_id = ? ORDER BY id", (res_id,)).fetchall()

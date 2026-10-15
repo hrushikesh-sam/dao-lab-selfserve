@@ -63,7 +63,7 @@ def test_legacy_db_upgraded_without_data_loss():
     conn = _legacy_db()
     rid = _seed_reservation(conn)
     assert not migrations.has_column(conn, "reservations", "mode")
-    assert models.init_db(conn) == [1]
+    assert models.init_db(conn) == [m.version for m in migrations.MIGRATIONS]
     row = conn.execute("SELECT * FROM reservations WHERE id = ?", (rid,)).fetchone()
     assert row["state"] == "queued" and row["end_at"] == "2026-09-01T12:00:00Z"
     assert row["mode"] == "asap" and row["turnaround_min"] == 0
@@ -82,9 +82,9 @@ def test_new_mode_column_enforces_check():
 def test_column_already_present_is_tolerated():
     conn = _legacy_db()
     conn.execute("ALTER TABLE reservations ADD COLUMN mode TEXT NOT NULL DEFAULT 'asap'")
-    assert models.init_db(conn) == [1]
+    assert models.init_db(conn) == [m.version for m in migrations.MIGRATIONS]
     assert migrations.has_column(conn, "reservations", "turnaround_min")
-    assert migrations.current_version(conn) == 1
+    assert migrations.current_version(conn) == migrations.latest_version()
 
 
 def test_failed_migration_rolls_back_change_and_version(monkeypatch):
@@ -93,11 +93,12 @@ def test_failed_migration_rolls_back_change_and_version(monkeypatch):
         raise RuntimeError("boom")
     conn = _conn()
     models.init_db(conn)
+    base, nxt = migrations.latest_version(), migrations.latest_version() + 1
     monkeypatch.setattr(migrations, "MIGRATIONS",
-                        [*migrations.MIGRATIONS, migrations.Migration(2, "bad", boom)])
+                        [*migrations.MIGRATIONS, migrations.Migration(nxt, "bad", boom)])
     with pytest.raises(RuntimeError, match="boom"):
         migrations.apply(conn)
-    assert migrations.current_version(conn) == 1
+    assert migrations.current_version(conn) == base
     assert not migrations.has_column(conn, "reservations", "half_done")
     assert not conn.in_transaction
 
@@ -105,13 +106,14 @@ def test_failed_migration_rolls_back_change_and_version(monkeypatch):
 def test_later_migration_applies_after_earlier(monkeypatch):
     conn = _conn()
     models.init_db(conn)
+    nxt = migrations.latest_version() + 1
     monkeypatch.setattr(migrations, "MIGRATIONS", [
         *migrations.MIGRATIONS,
-        migrations.Migration(2, "extra", lambda c: migrations.add_column(c, "users", "note", "TEXT")),
+        migrations.Migration(nxt, "extra", lambda c: migrations.add_column(c, "users", "note", "TEXT")),
     ])
-    assert migrations.apply(conn) == [2]
+    assert migrations.apply(conn) == [nxt]
     assert migrations.has_column(conn, "users", "note")
-    assert migrations.current_version(conn) == 2
+    assert migrations.current_version(conn) == nxt
     assert migrations.apply(conn) == []
 
 
@@ -133,7 +135,7 @@ def test_versions_must_be_contiguous():
 def test_on_disk_wal_db_init_twice(tmp_path):
     path = str(tmp_path / "daolab.db")
     conn = models.connect(path)
-    assert models.init_db(conn) == [1]
+    assert models.init_db(conn) == [m.version for m in migrations.MIGRATIONS]
     conn.close()
     conn = models.connect(path)
     assert models.init_db(conn) == []
@@ -148,10 +150,12 @@ def _cli_settings(monkeypatch, tmp_path):
 
 def test_cli_init_twice(monkeypatch, tmp_path, capsys):
     _cli_settings(monkeypatch, tmp_path)
+    latest = migrations.latest_version()
     assert cli.cmd_init(None) == 0
-    assert "schema: v1 (applied: v1)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert f"schema: v{latest}" in out and "applied: v1" in out
     assert cli.cmd_init(None) == 0
-    assert "schema: v1 (up to date)" in capsys.readouterr().out
+    assert f"schema: v{latest} (up to date)" in capsys.readouterr().out
 
 
 def test_cli_init_refuses_newer_db(monkeypatch, tmp_path, capsys):

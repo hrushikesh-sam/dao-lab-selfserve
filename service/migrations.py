@@ -64,8 +64,45 @@ def _m1_reservation_mode(conn: sqlite3.Connection) -> None:
     add_column(conn, "reservations", "turnaround_min", "INTEGER NOT NULL DEFAULT 0")
 
 
+def _m2_ip_leases(conn: sqlite3.Connection) -> None:
+    """plan/09 §IPAM: IP pool ranges and leases. `(pool, ip)` is unique among *live*
+    leases (leased or quarantined) so no address is handed to two users; `(reservation,
+    role)` is unique among live leases, which makes re-leasing idempotent. Released rows
+    stay as history and free their address."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ip_pools (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL UNIQUE,
+            range_start TEXT    NOT NULL,
+            range_end   TEXT    NOT NULL,
+            created_at  TEXT    NOT NULL,
+            updated_at  TEXT    NOT NULL
+        )""")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS ip_leases (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            pool_id        INTEGER NOT NULL REFERENCES ip_pools(id),
+            ip             TEXT    NOT NULL,
+            reservation_id INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+            role           TEXT    NOT NULL,
+            state          TEXT    NOT NULL DEFAULT 'leased'
+                           CHECK (state IN ('leased', 'released', 'quarantined')),
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL
+        )""")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ip_leases_live_ip "
+        "ON ip_leases(pool_id, ip) WHERE state != 'released'")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ip_leases_res_role "
+        "ON ip_leases(reservation_id, role) WHERE state != 'released'")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
+    Migration(2, "ip_leases", _m2_ip_leases),
 ]
 
 
