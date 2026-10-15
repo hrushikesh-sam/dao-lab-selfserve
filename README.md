@@ -19,7 +19,7 @@ more files, zero code changes.
   must offer) and `roles` (what to provision where: a DAO app on the DPU, VMs from templates on
   the hosts). Scheduler matches `usecase.requires` ↔ `setup.capabilities`; nothing else couples them.
 - **Reservation** — user + use case (or DIY) + matched setup + time slot.
-  Lifecycle: queued→provisioning→ready→active→tearing_down→released.
+  Lifecycle: queued→provisioning→ready→active→cleaning→released (quarantined if cleanup leaves residue).
 
 ```
 daolab/
@@ -34,7 +34,7 @@ daolab/
 │   ├── catalog.py       load usecases/ + setups/ YAML, mirror into DB (`daolab sync`)
 │   ├── scheduler.py     pure placement (FCFS, slot-shift, capability match, hw_class lead time)
 │   ├── runner.py        ansible-runner wrapper, one fn per transition
-│   ├── engine.py        lifecycle loop: queued→provisioning→ready→active→tearing_down→released
+│   ├── engine.py        lifecycle loop: queued→provisioning→ready→active→cleaning→released
 │   ├── api.py           FastAPI: catalog / setups / reservations + internal IP callback; serves dashboard/
 │   └── cli.py           `daolab init | sync | add-user | reserve | status`
 ├── scripts/run/dev.sh   one-shot dev runner: venv + init + sync + dev users (prints tokens) + serve

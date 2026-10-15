@@ -29,13 +29,22 @@ additionally accepts `YYYY-MM-DDTHH:MM` (interpreted as UTC) and the literal `no
 
 ### `daolab init`
 
-Creates the sqlite file at `DAOLAB_DB_PATH`, applies `service/schema.sql`, enables WAL, seeds
-the 15 planned catalog rows from the README use-case table (`yaml_path` NULL) plus the `diy`
-pseudo-row (`yaml_path = 'builtin'`). Idempotent: safe to re-run, never overwrites existing rows.
+Creates the sqlite file at `DAOLAB_DB_PATH`, applies the `service/schema.sql` baseline, then
+every pending migration from `service/migrations.py` (tracked in `PRAGMA user_version`),
+enables WAL, seeds the 15 planned catalog rows from the README use-case table (`yaml_path`
+NULL) plus the `diy` pseudo-row (`yaml_path = 'builtin'`). Idempotent: safe to re-run, never
+overwrites existing rows, and upgrades an older DB in place without wiping data. Exit `1` if the
+DB's schema is newer than this checkout.
 
 ```
-$ daolab init
+$ daolab init                      # first run, or an older DB being upgraded
 db: ./daolab.db (journal_mode=wal)
+schema: v1 (applied: v1)
+usecases seeded: 15 planned + diy
+
+$ daolab init                      # re-run: no-op
+db: ./daolab.db (journal_mode=wal)
+schema: v1 (up to date)
 usecases seeded: 15 planned + diy
 ```
 
@@ -144,6 +153,11 @@ setting with its default; `cp .env.example .env` is part of Phase 0. Keep lines 
 | `DAOLAB_DASHBOARD_DIR` | `./dashboard` | api | Static directory served by `api.py` (`user.html`, `admin.html`). |
 | `DAOLAB_HW_CLASS_LEAD_MIN` | `15` | api (scheduler), engine | Lead minutes before `start_at` when the use case's `hw_class` differs from the DPU's current one (EBF reflash time). |
 | `DAOLAB_PROVISION_LEAD_MIN` | `5` | api (scheduler), engine | Lead minutes before `start_at` when no `hw_class` change is needed. |
+| `DAOLAB_CLEANUP_MIN` | `10` | api (scheduler) | Turnaround buffer blocked after every reservation's `end_at` (B-11); the gap between two bookings is this plus the next booking's lead. |
+| `DAOLAB_SLOT_MIN` | `30` | api (scheduler) | Start-time grid in minutes after UTC midnight (B-12); `asap` rounds up to it, `at` must be on it. Must be ≥ 1. |
+| `DAOLAB_RUNNER` | `ansible` | engine | Backend of `service/runner.py` (B-22): `mock` (no testbed; sleeps through each step and records it on the job) or `ansible` (the real backend, arrives with B-84 — until then it raises a clear "not implemented" error). Any other value is a configuration error. |
+| `DAOLAB_MOCK_STEP_SEC` | `5` | engine (mock runner) | Seconds the mock sleeps before each step; a default deploy has 6 steps, so about 30 s. `0` makes it instant (tests). Must be ≥ 0. |
+| `DAOLAB_MOCK_FAIL` | *(empty)* | engine (mock runner) | Failure injection: empty, or a comma-separated subset of `deploy`, `cleanup`. `deploy` makes the deploy fail at the `create_vms` step. `cleanup` makes cleanup *look* successful but leave residue, so `verify_clean` reports leftovers every time — the way to reach the quarantine path. |
 | `DAOLAB_ENGINE_INTERVAL_SEC` | `60` | engine | Sleep between ticks in `python -m service.engine --loop`. |
 | `DAOLAB_MAX_RETRIES` | `3` | engine | Playbook retries per phase before `failed`. |
 | `DAOLAB_SCHED_HORIZON_HOURS` | `168` | api (scheduler) | Slot-shift / availability search horizon (7 days). |
@@ -160,7 +174,7 @@ One `Makefile` at repo root; dependencies come from `pyproject.toml` (there is n
 | `setup` | `python -m pip install -e .` | Install dependencies + the `daolab` console script into the active venv. |
 | `test` | `python -m pytest tests/ -q` | Scheduler unit tests — run without hardware. |
 | `api` | `python -m uvicorn service.api:app --host $(DAOLAB_API_HOST) --port $(DAOLAB_API_PORT)` | Serve the API + dashboards (defaults → `http://localhost:8080`). |
-| `engine` | `python -m service.engine --loop` | Lifecycle loop, one tick per `DAOLAB_ENGINE_INTERVAL_SEC`. `python -m service.engine` with no flag runs **one tick and exits** — that form is for the systemd timer. |
+| `engine` | `python -m service.engine --loop` | Lifecycle loop, one tick per `DAOLAB_ENGINE_INTERVAL_SEC`. `python -m service.engine` with no flag runs **one tick and exits** — that form is for the systemd timer. Exit code 1 (with a message on stderr) if the database is not at the latest schema version or `DAOLAB_RUNNER` is invalid (B-23). |
 
 ## Deployment — systemd units and logs
 
@@ -250,13 +264,16 @@ failing playbook's task output appears under `daolab-engine`.
   Run nightly (cron or another systemd timer), prune by age. Restore: stop
   `daolab-api.service` and `daolab-engine.timer`, replace `daolab.db`, delete stale
   `-wal`/`-shm` files, start again.
-- **Schema evolution stance** — no migration framework. `service/schema.sql` is the single
-  source of truth and every statement is `CREATE ... IF NOT EXISTS`, so `daolab init` is always
-  safe to re-run. Catalog tables (`pools`, `setups`, `resources`, `usecases`) are fully
-  regenerable from YAML via `daolab sync`; only `users`, `reservations`, `vms` carry state.
-  A schema change ships as an edit to `schema.sql` plus, when live rows must survive, a
-  hand-applied `ALTER TABLE` against the file (take a `.backup` first). Dev databases are
-  simply deleted and rebuilt (`daolab init` + `daolab sync` + `daolab add-user`).
+- **Schema evolution stance** — a small migration runner, no external framework.
+  `service/schema.sql` is the frozen v0 baseline (every statement `CREATE ... IF NOT EXISTS`);
+  every later change is a numbered, append-only migration in `service/migrations.py`, applied
+  by `daolab init` and tracked in `PRAGMA user_version`. `init` is always safe to re-run and
+  upgrades live rows in place — no hand-applied `ALTER TABLE`. Still take a `.backup` before
+  upgrading a production DB. Catalog tables (`pools`, `setups`, `resources`, `usecases`) are
+  fully regenerable from YAML via `daolab sync`; only `users`, `reservations`, `vms` carry
+  state. A schema change = append a migration (idempotent, never edit a released one) + a test
+  in `tests/test_migrations.py`. Dev databases can still be deleted and rebuilt (`daolab init`
+  + `daolab sync` + `daolab add-user`).
 - **Postgres trigger** — exactly one condition, per README Phase 4: move sqlite → Postgres
   **only if you get >1 API worker**. Data volume, user count, and uptime wishes are not
   triggers; a single uvicorn worker plus WAL covers this system's write rates.

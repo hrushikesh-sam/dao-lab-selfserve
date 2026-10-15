@@ -2,7 +2,7 @@
 # scripts/run/dev.sh — one-shot dev runner for daolab.
 #
 # Boots the whole stack (the API process also serves both dashboards), seeds the
-# catalog from usecases/ + setups/, (re)creates the two dev users, prints their
+# catalog from usecases/ + setups/, (re)creates the three test users, prints their
 # tokens, and runs the server in the foreground until Ctrl-C.
 #
 # Usage:
@@ -10,8 +10,9 @@
 #   scripts/run/dev.sh --fresh    # wipe the dev DB first, then start
 #
 # Respects DAOLAB_* environment variables; falls back to .env, then defaults.
-# Dev users are `dev` and `dev-admin` — they are rotated (deleted + re-created)
-# on every run so their tokens can always be printed. Real users are untouched.
+# Test users are `alice`, `bob` (role user) and `dev-admin` (admin) — they are rotated
+# (deleted + re-created) on every run so their tokens can always be printed. Real users
+# are untouched.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -54,7 +55,7 @@ fi
 .venv/bin/daolab init
 .venv/bin/daolab sync
 
-# --- dev users: rotate so the tokens can always be printed -------------------
+# --- test users: rotate so the tokens can always be printed ------------------
 PUBKEY=""
 for f in "$HOME/.ssh/id_ed25519.pub" "$HOME/.ssh/id_ecdsa.pub" "$HOME/.ssh/id_rsa.pub"; do
     [ -f "$f" ] && PUBKEY="$f" && break
@@ -66,18 +67,9 @@ if [ -z "$PUBKEY" ]; then
     echo "==> no ~/.ssh key found; using generated .dev/dev_key"
 fi
 
-.venv/bin/python - <<'PY'
-from service import models
-conn = models.connect()
-for name in ("dev", "dev-admin"):
-    row = conn.execute("SELECT id FROM users WHERE username = ?", (name,)).fetchone()
-    if row:  # reservations first (users FK has no cascade); their vms cascade
-        conn.execute("DELETE FROM reservations WHERE user_id = ?", (row["id"],))
-        conn.execute("DELETE FROM users WHERE id = ?", (row["id"],))
-conn.close()
-PY
-USER_TOKEN="$(.venv/bin/daolab add-user dev "$PUBKEY" | sed -n 's/^token: //p')"
-ADMIN_TOKEN="$(.venv/bin/daolab add-user dev-admin "$PUBKEY" --role admin | sed -n 's/^token: //p')"
+ALICE_TOKEN="$(.venv/bin/daolab add-user alice "$PUBKEY" --rotate | sed -n 's/^token: //p')"
+BOB_TOKEN="$(.venv/bin/daolab add-user bob "$PUBKEY" --rotate | sed -n 's/^token: //p')"
+ADMIN_TOKEN="$(.venv/bin/daolab add-user dev-admin "$PUBKEY" --role admin --rotate | sed -n 's/^token: //p')"
 
 # --- free the port, then serve ----------------------------------------------
 lsof -ti:"${DAOLAB_API_PORT}" -sTCP:LISTEN 2>/dev/null | xargs -r kill || true
@@ -93,7 +85,8 @@ cat <<BANNER
    db               ${DAOLAB_DB_PATH}
 
  tokens (paste into the dashboard token gate):
-   dev        (user)   ${USER_TOKEN}
+   alice      (user)   ${ALICE_TOKEN}
+   bob        (user)   ${BOB_TOKEN}
    dev-admin  (admin)  ${ADMIN_TOKEN}
 
  Ctrl-C stops the server. Tokens rotate on every run of this script.

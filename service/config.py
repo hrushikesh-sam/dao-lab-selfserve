@@ -28,10 +28,26 @@ class Settings:
     sched_horizon_hours: int
     webhook_url: str
     log_level: str
+    runner: str
+    slot_min: int
+    cleanup_min: int
+    default_hours: int
+    ip_pool: str
+    early_access: bool
+    health_stale_sec: int
+    otel_endpoint: str
+    max_live_reservations: int
+    max_future_reservations: int
+    mock_step_sec: float
+    mock_fail: str
 
     @classmethod
     def from_env(cls) -> "Settings":
         env = os.environ.get
+
+        def flag(name: str, default: str = "false") -> bool:
+            return env(name, default).strip().lower() in ("1", "true", "yes", "on")
+
         return cls(
             db_path=env("DAOLAB_DB_PATH", "./daolab.db"),
             api_host=env("DAOLAB_API_HOST", "0.0.0.0"),
@@ -51,6 +67,18 @@ class Settings:
             sched_horizon_hours=int(env("DAOLAB_SCHED_HORIZON_HOURS", "168")),
             webhook_url=env("DAOLAB_WEBHOOK_URL", ""),
             log_level=env("DAOLAB_LOG_LEVEL", "INFO"),
+            runner=env("DAOLAB_RUNNER", "ansible"),
+            slot_min=int(env("DAOLAB_SLOT_MIN", "30")),
+            cleanup_min=int(env("DAOLAB_CLEANUP_MIN", "10")),
+            default_hours=int(env("DAOLAB_DEFAULT_HOURS", "1")),
+            ip_pool=env("DAOLAB_IP_POOL", "10.30.0.100-10.30.0.199"),
+            early_access=flag("DAOLAB_EARLY_ACCESS"),
+            health_stale_sec=int(env("DAOLAB_HEALTH_STALE_SEC", "120")),
+            otel_endpoint=env("DAOLAB_OTEL_ENDPOINT", ""),
+            max_live_reservations=int(env("DAOLAB_MAX_LIVE_RESERVATIONS", "1")),
+            max_future_reservations=int(env("DAOLAB_MAX_FUTURE_RESERVATIONS", "2")),
+            mock_step_sec=float(env("DAOLAB_MOCK_STEP_SEC", "5")),
+            mock_fail=env("DAOLAB_MOCK_FAIL", ""),
         )
 
 

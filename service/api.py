@@ -3,23 +3,28 @@ VM-IP callback; serves dashboard/. Views over the DB only — YAML is read by
 `daolab sync` (catalog.py), never by request handlers."""
 import hashlib
 import hmac
+import json
 import logging
 import os
 import re
 import sqlite3
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from . import config, models, scheduler
+from . import config, models, otel, scheduler
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
 log = logging.getLogger("daolab.api")
 
 app = FastAPI(title="daolab", docs_url=None, redoc_url=None)
+
+otel.setup_tracing(app, "daolab-api")
 
 
 # ---- error layer -----------------------------------------------------------
@@ -96,8 +101,9 @@ def require_internal(x_daolab_secret: str | None = Header(None)) -> None:
 class ReservationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     usecase: str
+    mode: Literal["asap", "at"] = "asap"
     start_at: str | None = None
-    hours: int = 1
+    hours: int | None = None
     setup: str | None = None
     templates: dict[str, str] | None = None
 
@@ -117,10 +123,7 @@ class UserPatch(BaseModel):
 # ---- serializers -----------------------------------------------------------
 
 def _sched_config() -> scheduler.SchedConfig:
-    s = config.settings
-    return scheduler.SchedConfig(hw_class_lead_min=s.hw_class_lead_min,
-                                 provision_lead_min=s.provision_lead_min,
-                                 horizon_hours=s.sched_horizon_hours)
+    return scheduler.SchedConfig.from_settings(config.settings)
 
 
 def _node_id(name: str) -> str:
@@ -216,6 +219,73 @@ def user_object(row) -> dict:
             "enabled": bool(row["enabled"]), "created_at": row["created_at"]}
 
 
+_LOG_TAIL_BYTES = 8192
+
+
+def _log_tail(path: str | None) -> str | None:
+    """The last few KB of a job's playbook log (plan/09 §4); None when there is no log yet."""
+    if not path:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - _LOG_TAIL_BYTES))
+            return fh.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+
+
+def job_object(job) -> dict:
+    """The canonical job shape (plan/09 §4), returned by the cleanup/redeploy responses and
+    GET /jobs/{id}: state, parsed steps, trace_id and the playbook log tail."""
+    return {
+        "id": job["id"], "reservation_id": job["reservation_id"], "kind": job["kind"],
+        "state": job["state"], "attempt": job["attempt"], "trace_id": job["trace_id"],
+        "log_path": job["log_path"], "log_tail": _log_tail(job["log_path"]),
+        "error": job["error"], "steps": models.job_steps(job),
+        "started_at": job["started_at"], "finished_at": job["finished_at"],
+        "created_at": job["created_at"], "updated_at": job["updated_at"],
+    }
+
+
+_TERMINAL_RESERVATION_STATES = ("released", "failed")
+_EVENTS_POLL_SEC = 1.0
+_EVENTS_MAX_SEC = 900.0
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+def _reservation_events(conn: sqlite3.Connection, res_id: int):
+    """Yield SSE frames for a reservation: its state, then every job step as it lands
+    (plan/09 §4). Ends when the reservation reaches a terminal state, or after
+    `_EVENTS_MAX_SEC` so an abandoned stream does not pin a connection forever."""
+    seen_steps: set[tuple[int, int]] = set()
+    last_state = None
+    deadline = time.monotonic() + _EVENTS_MAX_SEC
+    while True:
+        row = models.reservation_by_id(conn, res_id)
+        if row is None:                                   # deleted under us
+            return
+        if row["state"] != last_state:
+            last_state = row["state"]
+            yield _sse("state", {"id": res_id, "state": row["state"],
+                                 "start_at": row["start_at"], "end_at": row["end_at"]})
+        for job in models.jobs_for_reservation(conn, res_id):
+            for idx, step in enumerate(models.job_steps(job)):
+                key = (job["id"], idx)
+                if key in seen_steps:
+                    continue
+                seen_steps.add(key)
+                yield _sse("step", {"job_id": job["id"], "kind": job["kind"], **step})
+        if last_state in _TERMINAL_RESERVATION_STATES:
+            return
+        if time.monotonic() >= deadline:
+            return
+        time.sleep(_EVENTS_POLL_SEC)
+
+
 # ---- routes ----------------------------------------------------------------
 
 @app.get("/health")
@@ -304,6 +374,45 @@ def setups(user: sqlite3.Row = Depends(require_admin),
     return out
 
 
+@app.get("/availability")
+def availability(usecase: str,
+                 from_: str | None = Query(None, alias="from"),
+                 to: str | None = Query(None, alias="to"),
+                 user: sqlite3.Row = Depends(current_user),
+                 conn: sqlite3.Connection = Depends(db_conn)):
+    """Busy windows for the date picker (plan/09 §4). Each window is a live reservation's
+    blocked interval ``[start - lead, end + cleanup)`` on a capable setup overlapping the
+    ``[from, to)`` range — the same interval `place` tests, so the picker greys exactly the
+    slots the scheduler would refuse; the gaps are the free windows. The owner is exposed
+    only to admins, everyone else sees a boolean `mine` instead."""
+    now = datetime.now(timezone.utc)
+    uc = models.usecase_by_name(conn, usecase)
+    if uc is None:
+        raise DaolabError("not_found", 404, f"unknown use case: {usecase}", {"usecase": usecase})
+    start = _parse_start(from_, now)
+    end = _parse_start(to, start + timedelta(hours=config.settings.sched_horizon_hours))
+    if end <= start:
+        raise DaolabError("validation_error", 422, "to: must be after from")
+    requires = set(models.from_json(uc["requires"]))
+    admin = user["role"] == "admin"
+    windows = []
+    for setup in models.list_setups(conn):
+        if not requires <= set(models.from_json(setup["capabilities"])):
+            continue
+        for b0, b1, rid in scheduler.busy_windows(conn, setup["id"], start, end, _sched_config()):
+            r = models.reservation_by_id(conn, rid)
+            window = {"setup": setup["name"], "start_at": r["start_at"], "end_at": r["end_at"],
+                      "blocked_start_at": models.format_ts(b0),
+                      "blocked_end_at": models.format_ts(b1),
+                      "state": r["state"], "mine": r["user_id"] == user["id"]}
+            if admin:
+                window["owner"] = models.user_by_id(conn, r["user_id"])["username"]
+            windows.append(window)
+    windows.sort(key=lambda w: (w["blocked_start_at"], w["setup"]))
+    return {"usecase": usecase, "from": models.format_ts(start), "to": models.format_ts(end),
+            "slot_min": config.settings.slot_min, "windows": windows}
+
+
 @app.get("/users")
 def users(user: sqlite3.Row = Depends(require_admin),
           conn: sqlite3.Connection = Depends(db_conn)):
@@ -321,7 +430,20 @@ def patch_user(user_id: int, body: UserPatch,
         raise DaolabError("invalid_state", 409, "cannot disable your own account",
                           {"user_id": user_id})
     models.update(conn, "users", user_id, {"enabled": int(body.enabled)})
+    models.audit(conn, admin["username"], "admin_override", "user", user_id,
+                 {"username": target["username"], "enabled": bool(body.enabled)})
     return user_object(models.user_by_id(conn, user_id))
+
+
+@app.get("/admin/audit")
+def admin_audit(limit: int = 100, admin: sqlite3.Row = Depends(require_admin),
+                conn: sqlite3.Connection = Depends(db_conn)):
+    """Append-only log of who did what (B-55). Admin-only; newest first."""
+    rows = models.list_audit_events(conn, max(1, min(limit, 1000)))
+    return [{"id": r["id"], "actor": r["actor"], "action": r["action"],
+             "object_type": r["object_type"], "object_id": r["object_id"],
+             "detail": models.from_json(r["detail"]) if r["detail"] else None,
+             "trace_id": r["trace_id"], "created_at": r["created_at"]} for r in rows]
 
 
 def _parse_start(value: str | None, now: datetime) -> datetime:
@@ -338,7 +460,8 @@ def create_reservation(body: ReservationCreate,
                        user: sqlite3.Row = Depends(current_user),
                        conn: sqlite3.Connection = Depends(db_conn)):
     now = datetime.now(timezone.utc)
-    if body.hours < 1:
+    hours = body.hours if body.hours is not None else config.settings.default_hours
+    if hours < 1:
         raise DaolabError("validation_error", 422, "hours: must be >= 1")
     start = _parse_start(body.start_at, now)
     is_diy = body.usecase == "diy"
@@ -374,10 +497,23 @@ def create_reservation(body: ReservationCreate,
 
     conn.execute("BEGIN IMMEDIATE")
     try:
+        if user["role"] != "admin":
+            for reason, states, limit in (
+                    ("live", models.LIVE_RESERVATION_STATES,
+                     config.settings.max_live_reservations),
+                    ("future", models.FUTURE_RESERVATION_STATES,
+                     config.settings.max_future_reservations)):
+                current = models.count_user_reservations(conn, user["id"], states)
+                if current >= limit:
+                    raise DaolabError(
+                        "quota_exceeded", 409,
+                        f"at most {limit} {reason} reservation(s) per user; "
+                        f"you already have {current}",
+                        {"reason": reason, "limit": limit, "current": current})
         placement = scheduler.place(
             conn,
             scheduler.PlacementRequest(usecase=body.usecase, requested_start_at=start,
-                                       hours=body.hours, setup=body.setup),
+                                       hours=hours, setup=body.setup, mode=body.mode),
             now, _sched_config())
         if isinstance(placement, scheduler.NoSetup):
             raise DaolabError(
@@ -392,6 +528,18 @@ def create_reservation(body: ReservationCreate,
                               f"{placement.horizon_hours}h",
                               {"reason": "no_free_slot",
                                "horizon_hours": placement.horizon_hours})
+        if isinstance(placement, scheduler.NoFit):
+            raise DaolabError(
+                "slot_conflict", 409,
+                f"{body.usecase}: requested window "
+                f"{models.format_ts(placement.start_at)}.."
+                f"{models.format_ts(placement.end_at)} is not available "
+                f"({placement.reason})",
+                {"usecase": body.usecase,
+                 "start_at": models.format_ts(placement.start_at),
+                 "end_at": models.format_ts(placement.end_at),
+                 "reason": placement.reason,
+                 "alternatives": [models.format_ts(a) for a in placement.alternatives]})
         rid = models.insert(conn, "reservations", {
             "user_id": user["id"], "usecase_id": uc["id"], "setup_id": placement.setup_id,
             "state": "queued", "requested_start_at": models.format_ts(start),
@@ -441,15 +589,106 @@ def cancel_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
                        conn: sqlite3.Connection = Depends(db_conn)):
     row = _owned_reservation(conn, res_id, user)
     if row["state"] == "queued":
-        new_state = "released"        # nothing ran, nothing to tear down
+        new_state = "released"        # nothing ran, nothing to clean
     elif row["state"] in ("ready", "active"):
-        new_state = "tearing_down"    # the engine runs the teardown
+        new_state = "cleaning"        # the engine runs the cleanup
     else:
         raise DaolabError("invalid_state", 409,
                           f"cannot cancel a reservation in state {row['state']}",
                           {"state": row["state"]})
-    models.update(conn, "reservations", res_id, {"state": new_state})
+    try:
+        models.transition_reservation(conn, res_id, new_state, from_state=row["state"])
+    except models.ReservationStateError:   # the engine moved it between our read and write
+        current = models.reservation_by_id(conn, res_id)["state"]
+        raise DaolabError("invalid_state", 409,
+                          f"cannot cancel a reservation in state {current}",
+                          {"state": current})
+    models.audit(conn, user["username"], "cancel", "reservation", res_id,
+                 {"previous_state": row["state"], "state": new_state})
     return {"id": res_id, "state": new_state}
+
+
+@app.post("/reservations/{res_id}/cleanup", status_code=202)
+def cleanup_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
+                        conn: sqlite3.Connection = Depends(db_conn)):
+    """Owner ends a running slot early (plan/09 §4): `ready`/`active` -> `cleaning` plus a
+    pending `cleanup` job the engine will run, `202`. Any other state -> `409 invalid_state`."""
+    row = _owned_reservation(conn, res_id, user)
+    if row["state"] not in ("ready", "active"):
+        raise DaolabError("invalid_state", 409,
+                          f"cannot clean up a reservation in state {row['state']}",
+                          {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        try:
+            models.transition_reservation(conn, res_id, "cleaning", from_state=row["state"])
+        except models.ReservationStateError:   # the engine moved it under us
+            current = models.reservation_by_id(conn, res_id)["state"]
+            raise DaolabError("invalid_state", 409,
+                              f"cannot clean up a reservation in state {current}",
+                              {"state": current})
+        job_id = models.create_job(conn, res_id, "cleanup")
+        models.audit(conn, user["username"], "cleanup", "reservation", res_id,
+                     {"previous_state": row["state"], "state": "cleaning"})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"id": res_id, "state": "cleaning",
+            "job": job_object(models.job_by_id(conn, job_id))}
+
+
+@app.post("/reservations/{res_id}/redeploy", status_code=202)
+def redeploy_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
+                         conn: sqlite3.Connection = Depends(db_conn)):
+    """Owner re-runs `deploy.yml` for a live reservation (plan/09 §4) — idempotent replay,
+    allowed only inside its slot. Returns `202` + the new `deploy` job (attempt + 1); a
+    request outside `[start_at, end_at)` or in any non-live state is `409 invalid_state`."""
+    row = _owned_reservation(conn, res_id, user)
+    now = datetime.now(timezone.utc)
+    if not (models.parse_ts(row["start_at"]) <= now < models.parse_ts(row["end_at"])):
+        raise DaolabError("invalid_state", 409, f"reservation {res_id} is outside its slot",
+                          {"state": row["state"], "start_at": row["start_at"],
+                           "end_at": row["end_at"]})
+    if row["state"] not in ("ready", "active"):
+        raise DaolabError("invalid_state", 409,
+                          f"cannot redeploy a reservation in state {row['state']}",
+                          {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        prev = models.jobs_for_reservation(conn, res_id, kind="deploy")
+        attempt = max((j["attempt"] for j in prev), default=0) + 1
+        job_id = models.create_job(conn, res_id, "deploy", attempt=attempt)
+        models.audit(conn, user["username"], "redeploy", "reservation", res_id,
+                     {"attempt": attempt})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"id": res_id, "state": row["state"],
+            "job": job_object(models.job_by_id(conn, job_id))}
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: int, user: sqlite3.Row = Depends(current_user),
+            conn: sqlite3.Connection = Depends(db_conn)):
+    """A job's state, steps, `trace_id` and log tail (plan/09 §4); owner-gated."""
+    job = models.job_by_id(conn, job_id)
+    if job is None:
+        raise DaolabError("not_found", 404, f"unknown job: {job_id}", {"id": job_id})
+    _owned_reservation(conn, job["reservation_id"], user)
+    return job_object(job)
+
+
+@app.get("/reservations/{res_id}/events")
+def reservation_events(res_id: int, user: sqlite3.Row = Depends(current_user),
+                       conn: sqlite3.Connection = Depends(db_conn)):
+    """SSE of a reservation's state changes and job steps (owner only); the dashboard
+    progress bar uses this and falls back to polling (plan/09 §4)."""
+    _owned_reservation(conn, res_id, user)
+    return StreamingResponse(_reservation_events(conn, res_id),
+                             media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.post("/internal/vm-ip")
