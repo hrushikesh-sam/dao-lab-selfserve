@@ -36,6 +36,16 @@ class SchedConfig:
     cleanup_min: int = 10         # DAOLAB_CLEANUP_MIN — turnaround buffer after every reservation
     slot_min: int = 30            # DAOLAB_SLOT_MIN — start-time grid (minutes after UTC midnight)
 
+    @classmethod
+    def from_settings(cls, s) -> "SchedConfig":
+        """The one place DAOLAB_* settings become scheduler config — shared by the API and
+        the engine so both always use the same leads, buffer and grid."""
+        return cls(hw_class_lead_min=s.hw_class_lead_min,
+                   provision_lead_min=s.provision_lead_min,
+                   horizon_hours=s.sched_horizon_hours,
+                   cleanup_min=s.cleanup_min,
+                   slot_min=s.slot_min)
+
 
 @dataclass(frozen=True)
 class PlacementRequest:
@@ -133,6 +143,14 @@ def lead_min(uc_hw_class: str | None, projected: str | None,
     if has_dpu and uc_hw_class is not None and uc_hw_class != projected:
         return cfg.hw_class_lead_min     # EBF reflash takes real time
     return cfg.provision_lead_min        # same class, null class, or no DPU member
+
+
+def start_lead_min(db, setup_id: int, uc_hw_class: str | None, cfg: SchedConfig) -> int:
+    """The lead the engine applies to a queued reservation *right now*: the same `lead_min`
+    the scheduler used, but against the DPU's actual `hw_class` at tick time (the DB is the
+    single source of truth when provisioning starts)."""
+    has_dpu, current = _setup_dpu(db, setup_id)
+    return lead_min(uc_hw_class, current, cfg, has_dpu)
 
 
 def _setup_dpu(db, setup_id: int):

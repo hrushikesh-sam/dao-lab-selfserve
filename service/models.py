@@ -100,6 +100,23 @@ def list_users(conn) -> list[dict]:
     return [dict(r) | {"enabled": bool(r["enabled"])} for r in rows]
 
 
+def usecase_by_id(conn, usecase_id: int):
+    return conn.execute("SELECT * FROM usecases WHERE id = ?", (usecase_id,)).fetchone()
+
+
+def set_dpu_hw_class(conn, setup_id: int, hw_class: str) -> bool:
+    """Record the DPU personality after a successful deploy (invariant 6, plan/01). Targets
+    the same DPU member the scheduler reads (first `dpu` resource by name); returns False if
+    the setup has none."""
+    row = conn.execute(
+        "SELECT id FROM resources WHERE setup_id = ? AND kind = 'dpu' ORDER BY name LIMIT 1",
+        (setup_id,)).fetchone()
+    if row is None:
+        return False
+    update(conn, "resources", row["id"], {"hw_class": hw_class})
+    return True
+
+
 def usecase_by_name(conn, name: str):
     return conn.execute("SELECT * FROM usecases WHERE name = ?", (name,)).fetchone()
 
