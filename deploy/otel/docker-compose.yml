@@ -1,0 +1,39 @@
+# deploy/otel/docker-compose.yml — local telemetry stack (B-60).
+# otelcol-contrib receives OTLP + probes + app metrics, writes metrics to
+# Prometheus (remote-write) and traces to Jaeger. Versions are pinned.
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC (apps, agents, Ansible callback)
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # collector's own metrics
+      - "8889:8889"   # prometheus exporter (collector-scraped)
+    depends_on:
+      - jaeger
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-remote-write-receiver"
+      - "--enable-feature=exemplar-storage"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.65.0
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"   # Jaeger UI
+
+volumes:
+  prometheus-data:
