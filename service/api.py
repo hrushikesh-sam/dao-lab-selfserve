@@ -7,10 +7,10 @@ import logging
 import os
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict
@@ -310,6 +310,45 @@ def setups(user: sqlite3.Row = Depends(require_admin),
     return out
 
 
+@app.get("/availability")
+def availability(usecase: str,
+                 from_: str | None = Query(None, alias="from"),
+                 to: str | None = Query(None, alias="to"),
+                 user: sqlite3.Row = Depends(current_user),
+                 conn: sqlite3.Connection = Depends(db_conn)):
+    """Busy windows for the date picker (plan/09 §4). Each window is a live reservation's
+    blocked interval ``[start - lead, end + cleanup)`` on a capable setup overlapping the
+    ``[from, to)`` range — the same interval `place` tests, so the picker greys exactly the
+    slots the scheduler would refuse; the gaps are the free windows. The owner is exposed
+    only to admins, everyone else sees a boolean `mine` instead."""
+    now = datetime.now(timezone.utc)
+    uc = models.usecase_by_name(conn, usecase)
+    if uc is None:
+        raise DaolabError("not_found", 404, f"unknown use case: {usecase}", {"usecase": usecase})
+    start = _parse_start(from_, now)
+    end = _parse_start(to, start + timedelta(hours=config.settings.sched_horizon_hours))
+    if end <= start:
+        raise DaolabError("validation_error", 422, "to: must be after from")
+    requires = set(models.from_json(uc["requires"]))
+    admin = user["role"] == "admin"
+    windows = []
+    for setup in models.list_setups(conn):
+        if not requires <= set(models.from_json(setup["capabilities"])):
+            continue
+        for b0, b1, rid in scheduler.busy_windows(conn, setup["id"], start, end, _sched_config()):
+            r = models.reservation_by_id(conn, rid)
+            window = {"setup": setup["name"], "start_at": r["start_at"], "end_at": r["end_at"],
+                      "blocked_start_at": models.format_ts(b0),
+                      "blocked_end_at": models.format_ts(b1),
+                      "state": r["state"], "mine": r["user_id"] == user["id"]}
+            if admin:
+                window["owner"] = models.user_by_id(conn, r["user_id"])["username"]
+            windows.append(window)
+    windows.sort(key=lambda w: (w["blocked_start_at"], w["setup"]))
+    return {"usecase": usecase, "from": models.format_ts(start), "to": models.format_ts(end),
+            "slot_min": config.settings.slot_min, "windows": windows}
+
+
 @app.get("/users")
 def users(user: sqlite3.Row = Depends(require_admin),
           conn: sqlite3.Connection = Depends(db_conn)):
@@ -394,6 +433,19 @@ def create_reservation(body: ReservationCreate,
 
     conn.execute("BEGIN IMMEDIATE")
     try:
+        if user["role"] != "admin":
+            for reason, states, limit in (
+                    ("live", models.LIVE_RESERVATION_STATES,
+                     config.settings.max_live_reservations),
+                    ("future", models.FUTURE_RESERVATION_STATES,
+                     config.settings.max_future_reservations)):
+                current = models.count_user_reservations(conn, user["id"], states)
+                if current >= limit:
+                    raise DaolabError(
+                        "quota_exceeded", 409,
+                        f"at most {limit} {reason} reservation(s) per user; "
+                        f"you already have {current}",
+                        {"reason": reason, "limit": limit, "current": current})
         placement = scheduler.place(
             conn,
             scheduler.PlacementRequest(usecase=body.usecase, requested_start_at=start,
