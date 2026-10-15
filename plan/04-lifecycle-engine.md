@@ -88,8 +88,25 @@ def main(argv: list[str] | None = None) -> int:
         time.sleep(config.DAOLAB_ENGINE_INTERVAL_SEC)
 ```
 
-Tick order is fixed — (a) through (e) exactly as above — so releases and expiries free a setup
-*before* the same tick considers starting the next reservation on it. Rules:
+> **B-23 update:** `service/engine.py` now exists, with `tick(db, now, rn=None, cfg=None)`,
+> `run_loop(...)` and `main(argv)` (`--loop`). It follows the *job* model of
+> [09-backend-system-design.md](09-backend-system-design.md) rather than the (a)–(e) functions
+> sketched above. The order is: (1) `ready → active` at `start_at`; (2) `active → cleaning` at
+> `end_at`, queueing a `cleanup` job in the same transaction; (3) `queued → provisioning` at
+> `start_at − lead` when the setup is `available` and not held, queueing a `deploy` job in the
+> same transaction; (4) run the pending jobs oldest first through the runner. The lead uses the
+> DPU's *actual* class at tick time (`scheduler.start_lead_min`), so a late projection never
+> makes the engine start early. A job's result, the reservation move and the audit row commit in
+> one transaction. A deploy that succeeds sets `ready` and records `resources.hw_class`; a
+> deploy that fails sets `failed` immediately (retries arrive with B-25). A cleanup always runs
+> `verify_clean` afterwards, whatever the cleanup reported: clean → `released`, residue (or
+> verify unable to run) → `quarantined`. **Because the setup is freed in step (4), the next
+> booking on it starts on the next tick**, not the same one; the lead time absorbs that. Not
+> done yet: single-flight (B-24), retries (B-25), crash recovery (B-26), IP release and the
+> setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67). `vms` rows
+> are not created by the engine yet.
+
+Tick order is fixed — (a) through (e) exactly as above. Rules:
 
 - **Stateless.** Every decision derives from reservation rows, `vms` rows, `resources.hw_class`,
   the clock, and `config.py`. The engine keeps nothing in memory across ticks; killing it at any

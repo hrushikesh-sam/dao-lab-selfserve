@@ -174,7 +174,7 @@ One `Makefile` at repo root; dependencies come from `pyproject.toml` (there is n
 | `setup` | `python -m pip install -e .` | Install dependencies + the `daolab` console script into the active venv. |
 | `test` | `python -m pytest tests/ -q` | Scheduler unit tests — run without hardware. |
 | `api` | `python -m uvicorn service.api:app --host $(DAOLAB_API_HOST) --port $(DAOLAB_API_PORT)` | Serve the API + dashboards (defaults → `http://localhost:8080`). |
-| `engine` | `python -m service.engine --loop` | Lifecycle loop, one tick per `DAOLAB_ENGINE_INTERVAL_SEC`. `python -m service.engine` with no flag runs **one tick and exits** — that form is for the systemd timer. |
+| `engine` | `python -m service.engine --loop` | Lifecycle loop, one tick per `DAOLAB_ENGINE_INTERVAL_SEC`. `python -m service.engine` with no flag runs **one tick and exits** — that form is for the systemd timer. Exit code 1 (with a message on stderr) if the database is not at the latest schema version or `DAOLAB_RUNNER` is invalid (B-23). |
 
 ## Deployment — systemd units and logs
 

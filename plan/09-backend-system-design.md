@@ -502,6 +502,11 @@ switches — `deploy` fails the deploy at `create_vms`; `cleanup` makes cleanup 
 while `verify_clean` keeps reporting residue. The lease/vm-ip calls (B-44), OTel spans (B-62)
 and fake metrics come with their own tasks.
 
+*The engine (B-23):* `python -m service.engine` runs one tick and exits; `--loop` ticks every
+`DAOLAB_ENGINE_INTERVAL_SEC`. It refuses to start (exit 1, "run `daolab init` first") if the
+database schema is not the latest version. See [04-lifecycle-engine.md](04-lifecycle-engine.md)
+for the tick order and what each finished job does to its reservation.
+
 **Telemetry stack:** `deploy/otel/docker-compose.yml` runs `otelcol-contrib`, `prometheus` and
 `jaeger`. With `DAOLAB_OTEL_ENDPOINT` unset, the backend skips tracing and health falls back to
 the probe job only.
