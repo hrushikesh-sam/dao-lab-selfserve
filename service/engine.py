@@ -6,7 +6,9 @@
 A tick walks the reservations in a fixed order:
 
   1. ready  -> active        when start_at has passed
-  2. active -> cleaning      when end_at has passed (and queues a `cleanup` job)
+  2. active -> cleaning      when end_at has passed (and queues a `cleanup` job whose first
+                             step, `terminate-user`, kills the DPU's `lab` sessions so access
+                             is revoked at the end of the slot — plan/09 §7, B-53)
   3. queued -> provisioning  at start_at - lead, if the setup is available and not held
                              (and queues a `deploy` job)
   4. run the pending jobs, oldest first, through the runner (B-22)

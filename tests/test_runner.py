@@ -108,6 +108,14 @@ def test_each_function_walks_its_steps_in_order(fn, steps):
     assert sink.calls == [(n, "ok", None) for n in steps]
 
 
+def test_cleanup_terminates_the_dpu_lab_session_first():
+    """B-53: the first cleanup step revokes DPU access (`loginctl terminate-user lab`,
+    plan/09 §7), so access cannot outlive the slot even if teardown later fails."""
+    sink = Sink()
+    mock().cleanup(RES, sink)
+    assert sink.calls[0][0] == "terminate-user"
+
+
 def test_it_sleeps_before_every_step_and_the_step_is_visible_as_soon_as_it_finishes():
     events = []
     m = MockRunner(step_sec=2.5, sleep=lambda s: events.append(("sleep", s)))

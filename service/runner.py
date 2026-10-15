@@ -33,9 +33,11 @@ MOCK_FAIL_TARGETS = ("deploy", "cleanup", "health")
 # deploy/otel/ reads the same directory (mounted at /etc/prometheus/targets).
 OTEL_TARGETS_DIR = os.environ.get("DAOLAB_OTEL_TARGETS_DIR", "deploy/otel/targets")
 
-# The steps the mock walks through (names follow plan/09 §6 and §9).
+# The steps the mock walks through (names follow plan/09 §6 and §9). `terminate-user` is the
+# DPU session kill (`loginctl terminate-user lab` / `pkill -u lab`, plan/09 §7): it runs first
+# so access is revoked at `end_at` even if the rest of teardown fails.
 DEPLOY_STEPS = ("lease_ips", "dpu_prepare", "create_vms", "post_vm_ips", "start_app", "verify")
-CLEANUP_STEPS = ("terminate_sessions", "destroy_vms", "unbind_vfs", "stop_app")
+CLEANUP_STEPS = ("terminate-user", "destroy_vms", "unbind_vfs", "stop_app")
 VERIFY_CLEAN_STEPS = ("check_vms", "check_vfs", "check_sessions", "check_ips")
 PROBE_STEPS = ("ping_vms", "check_dpu_app")
 FAIL_AT_DEPLOY_STEP = "create_vms"       # where DAOLAB_MOCK_FAIL=deploy breaks the deploy
