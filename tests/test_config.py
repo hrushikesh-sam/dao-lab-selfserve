@@ -14,6 +14,7 @@ NEW_DEFAULTS = {
     "max_future_reservations": 2,
     "prometheus_url": "http://localhost:9090",
     "reconcile_attempts": 2,
+    "authz_secret": "",
 }
 
 ENV_NAMES = {
@@ -29,6 +30,7 @@ ENV_NAMES = {
     "max_future_reservations": "DAOLAB_MAX_FUTURE_RESERVATIONS",
     "prometheus_url": "DAOLAB_PROMETHEUS_URL",
     "reconcile_attempts": "DAOLAB_RECONCILE_ATTEMPTS",
+    "authz_secret": "DAOLAB_AUTHZ_SECRET",
 }
 
 

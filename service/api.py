@@ -15,10 +15,10 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from . import config, ipam, models, otel, scheduler
+from . import access, config, ipam, models, otel, scheduler
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
 log = logging.getLogger("daolab.api")
@@ -797,6 +797,40 @@ def lease_conflict(body: LeaseConflict, _: None = Depends(require_internal),
     log.warning("ip %s answers outside daolab: quarantined; reservation %s role %s now has %s",
                 ip, bad["reservation_id"], bad["role"], lease["ip"])
     return {**ipam.lease_object(lease), "replaced": ip}
+
+
+# ---- DPU access: sshd AuthorizedKeysCommand (B-51, plan/09 §7) -------------
+
+def _authz_secret_ok(given: str | None) -> bool:
+    """The DPU's `daolab-keys` holds DAOLAB_AUTHZ_SECRET, a read-only secret that cannot lease
+    addresses or post VM IPs. DAOLAB_INTERNAL_SECRET is accepted too (it is the superset)."""
+    if not given:
+        return False
+    for secret in (config.settings.authz_secret, config.settings.internal_secret):
+        if secret and hmac.compare_digest(given, secret):
+            return True
+    return False
+
+
+@app.get("/internal/authz/keys", response_class=PlainTextResponse)
+def authz_keys(host: str = "", login: str = "",
+               x_daolab_secret: str | None = Header(None)):
+    """The authorized_keys lines valid for `login`@`host` right now, as plain text sshd reads
+    directly (one key per line). Empty means no access, and so does every error: the caller
+    is sshd, so failing closed is the only safe answer."""
+    if not _authz_secret_ok(x_daolab_secret):
+        return PlainTextResponse("", status_code=401)
+    conn = None
+    try:
+        conn = models.connect(config.settings.db_path)
+        keys = access.keys_for(conn, host, login, datetime.now(timezone.utc))
+    except Exception:                                     # noqa: BLE001 — fail closed
+        log.exception("authz keys for %s@%s failed; answering no keys", login, host)
+        return PlainTextResponse("")
+    finally:
+        if conn is not None:
+            conn.close()
+    return PlainTextResponse("".join(f"{k}\n" for k in keys))
 
 
 # ---- static dashboards (registered after all API routes) -------------------

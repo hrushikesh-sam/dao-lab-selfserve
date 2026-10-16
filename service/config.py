@@ -43,6 +43,7 @@ class Settings:
     job_timeout_sec: int
     prometheus_url: str
     reconcile_attempts: int
+    authz_secret: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -85,6 +86,7 @@ class Settings:
             job_timeout_sec=int(env("DAOLAB_JOB_TIMEOUT_SEC", "1800")),
             prometheus_url=env("DAOLAB_PROMETHEUS_URL", "http://localhost:9090"),
             reconcile_attempts=int(env("DAOLAB_RECONCILE_ATTEMPTS", "2")),
+            authz_secret=env("DAOLAB_AUTHZ_SECRET", ""),
         )
 
 
