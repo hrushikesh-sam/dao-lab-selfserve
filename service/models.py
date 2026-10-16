@@ -260,7 +260,7 @@ def reservation_context(conn, res_id: int) -> dict:
     never touches the DB. Keys follow the playbook extravars (plan/04 runner contract):
     `reservation_id`, `usecase`, `setup`, `user`, `ssh_pubkey`, `hw_class`, `diy`,
     `templates`; plus `id` (what every runner function reads), the use case's `roles` and
-    `verify`, the setup `members` and the reservation's `vms`."""
+    `verify`, the setup `members`, the reservation's `vms` and its live `leases` (IPs)."""
     r = reservation_by_id(conn, res_id)
     user = user_by_id(conn, r["user_id"])
     uc = usecase_by_id(conn, r["usecase_id"])
@@ -278,6 +278,8 @@ def reservation_context(conn, res_id: int) -> dict:
                     for m in setup_members(conn, r["setup_id"])],
         "vms": [{"role": v["role"], "host": v["host"], "template": v["template"],
                  "name": v["name"], "ip": v["ip"]} for v in vms_for_reservation(conn, res_id)],
+        "leases": [l["ip"] for l in ip_leases_for_reservation(conn, res_id)
+                   if l["state"] != "released"],
     }
 
 

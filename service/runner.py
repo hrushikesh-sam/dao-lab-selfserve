@@ -50,10 +50,42 @@ class RunnerError(Exception):
 @dataclass(frozen=True)
 class RunResult:
     """Outcome of one runner call. For `verify_clean`, ok means *clean*: `residue` is then
-    empty; otherwise it lists what is left (VM names, leased IPs, ...)."""
+    empty; otherwise it lists what is left, one ``kind:ident`` string per item (B-70)."""
     ok: bool
     error: str | None = None
     residue: tuple[str, ...] = ()
+
+
+# B-70: residue is a structured list. Each item is ``<kind>:<ident>`` so it reads well in a
+# job error / audit row and can still be acted on (plan/09 §9 lists what verify checks):
+#   vm:daolab-r12-backend   a VM of the reservation still exists on XCP-ng
+#   vf:0000:5e:01.0         an E810/SDP VF is not back to pci-assignable
+#   dpu_session:lab         processes of the shared DPU login are still running
+#   dpu_app:<unit>          a use-case app unit is still active on the DPU
+#   ip:10.30.0.101          a leased address still answers ping
+RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "ip")
+CHECK_FOR_KIND = {"vm": "check_vms", "vf": "check_vfs", "dpu_session": "check_sessions",
+                  "dpu_app": "check_sessions", "ip": "check_ips"}
+
+
+def residue_item(kind: str, ident: str) -> str:
+    if kind not in RESIDUE_KINDS:
+        raise ValueError(f"unknown residue kind {kind!r}; expected one of {RESIDUE_KINDS}")
+    return f"{kind}:{ident}"
+
+
+def parse_residue(item: str) -> tuple[str, str]:
+    """``"vm:daolab-r1-a"`` -> ``("vm", "daolab-r1-a")``; anything unstructured -> ("other", item)."""
+    kind, sep, ident = item.partition(":")
+    return (kind, ident) if sep and kind in RESIDUE_KINDS else ("other", item)
+
+
+def _field(res: Mapping, key: str, default=None):
+    """`res[key]` for a dict or a sqlite Row, `default` when the key is absent."""
+    try:
+        return res[key]
+    except (KeyError, IndexError):
+        return default
 
 
 StepSink = Callable[..., None]           # step(name, state="ok", detail=None)
@@ -229,14 +261,27 @@ class MockRunner:
             self._work(name, step)
         return RunResult(ok=True)
 
+    def _residue(self, res: Mapping) -> tuple[str, ...]:
+        """What the mock pretends is left behind with DAOLAB_MOCK_FAIL=cleanup: the
+        reservation's VMs and leased addresses when the context lists them, else a stand-in
+        VM and a DPU session."""
+        if "cleanup" not in self.fail:
+            return ()
+        items = [residue_item("vm", v["name"]) for v in _field(res, "vms", []) or []
+                 if v.get("name")]
+        items += [residue_item("ip", ip) for ip in _field(res, "leases", []) or []]
+        if not items:
+            items = [residue_item("vm", models.vm_name(res["id"], "backend")),
+                     residue_item("dpu_session", "lab")]
+        return tuple(items)
+
     def verify_clean(self, res: Mapping, step: StepSink) -> RunResult:
-        rid = res["id"]
-        residue = ((f"vm daolab-r{rid}-backend", f"ip lease of reservation {rid}")
-                   if "cleanup" in self.fail else ())
+        residue = self._residue(res)
         for name in VERIFY_CLEAN_STEPS:
             self._sleep(self.step_sec)
-            if residue and name == "check_vms":
-                step(name, "failed", "; ".join(residue))
+            found = [r for r in residue if CHECK_FOR_KIND.get(parse_residue(r)[0]) == name]
+            if found:
+                step(name, "failed", "; ".join(found))
             else:
                 step(name)
         if residue:

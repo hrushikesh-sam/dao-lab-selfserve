@@ -1,0 +1,63 @@
+# playbooks/tasks/resolve.yml — "play 0" shared by every daolab playbook (plan/05).
+#
+# Runs on localhost. Resolves the reservation's setup to inventory hosts and adds them to two
+# transient groups:
+#   r_dom0  the XCP-ng dom0s that hold the setup's members (where `xe` runs)
+#   r_dpu   the setup's DPU member (where DAO apps and the lab login live)
+# add_host with an existing inventory name keeps its host_vars (BDF lists, SR uuid, ...).
+#
+# The engine's runner passes the structured facts as extravars (models.reservation_context):
+# daolab_members, daolab_roles, daolab_verify, daolab_vms, daolab_leases. A manual run
+# (`-e reservation_id=0 -e setup=tb-01 -e usecase=vpp ...`) has none of them, so the setup and
+# use-case YAML are loaded from the repo and only the missing facts are filled in (extra vars
+# always win over set_fact, so a value the runner passed is never replaced).
+- name: load the setup YAML (manual runs only)
+  ansible.builtin.include_vars:
+    file: "{{ daolab_repo | default(playbook_dir ~ '/..') }}/setups/{{ setup }}.yml"
+    name: _setup_yaml
+  when: daolab_members is not defined
+
+- name: build the member list from the setup YAML (manual runs only)
+  ansible.builtin.set_fact:
+    _members_from_yaml: "{{ (_members_from_yaml | default([])) + [{'name': item.key, 'kind': item.value.kind, 'host': item.value.host}] }}"
+  loop: "{{ (_setup_yaml.members | default({})) | dict2items }}"
+  when: daolab_members is not defined
+
+- name: load the use-case YAML (manual, non-diy runs only)
+  ansible.builtin.include_vars:
+    file: "{{ daolab_repo | default(playbook_dir ~ '/..') }}/usecases/{{ usecase }}.yml"
+    name: _usecase_yaml
+  when: daolab_roles is not defined and not (diy | default(false) | bool) and usecase is defined
+
+- name: fill in what a manual run did not pass
+  ansible.builtin.set_fact:
+    daolab_members: "{{ daolab_members | default(_members_from_yaml | default([])) }}"
+    daolab_roles: "{{ daolab_roles | default(_usecase_yaml.roles | default({})) }}"
+    daolab_verify: "{{ daolab_verify | default(_usecase_yaml.verify | default({})) }}"
+    daolab_vms: "{{ daolab_vms | default([]) }}"
+    daolab_leases: "{{ daolab_leases | default([]) }}"
+    daolab_lab_login: "{{ daolab_lab_login | default('lab') }}"
+
+- name: find the DPU member and the dom0s
+  ansible.builtin.set_fact:
+    daolab_dpu: "{{ (daolab_members | selectattr('kind', 'equalto', 'dpu') | map(attribute='name') | list + [''])[0] }}"
+    daolab_dom0s: "{{ daolab_members | map(attribute='host') | unique | list }}"
+
+- name: a setup must have at least one XCP-ng host
+  ansible.builtin.assert:
+    that: daolab_dom0s | length > 0
+    fail_msg: "setup {{ setup }} has no members; check setups/{{ setup }}.yml"
+
+- name: add the dom0s to r_dom0
+  ansible.builtin.add_host:
+    name: "{{ item }}"
+    groups: r_dom0
+  loop: "{{ daolab_dom0s }}"
+  changed_when: false
+
+- name: add the DPU to r_dpu
+  ansible.builtin.add_host:
+    name: "{{ daolab_dpu }}"
+    groups: r_dpu
+  when: daolab_dpu != ''
+  changed_when: false

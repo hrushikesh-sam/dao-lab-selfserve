@@ -167,10 +167,10 @@ def test_mock_fail_cleanup_looks_fine_but_leaves_residue():
     sink = Sink()
     result = m.verify_clean(RES, sink)
     assert result.ok is False and result.error == "residue found after cleanup"
-    assert result.residue == ("vm daolab-r7-backend", "ip lease of reservation 7")
+    assert result.residue == ("vm:daolab-r7-backend", "dpu_session:lab")
     assert sink.names == list(VERIFY_CLEAN_STEPS)                       # every check still runs
-    assert [c[1] for c in sink.calls] == ["failed", "ok", "ok", "ok"]
-    assert "daolab-r7-backend" in sink.calls[0][2]
+    assert [c[1] for c in sink.calls] == ["failed", "ok", "failed", "ok"]
+    assert sink.calls[0][2] == "vm:daolab-r7-backend" and sink.calls[2][2] == "dpu_session:lab"
 
 
 def test_residue_is_reported_every_time_so_reconcile_never_clears_it():
@@ -365,3 +365,26 @@ def test_get_runner_only_wires_exporters_when_otel_is_enabled(monkeypatch, tmp_p
     finally:
         exp.stop()
 
+
+
+# ---- B-70: structured residue ----------------------------------------------------------
+
+def test_residue_items_are_kind_colon_ident():
+    assert runner.residue_item("vm", "daolab-r1-a") == "vm:daolab-r1-a"
+    assert runner.parse_residue("vf:0000:5e:01.0") == ("vf", "0000:5e:01.0")   # BDF keeps its colons
+    assert runner.parse_residue("ip:10.30.0.101") == ("ip", "10.30.0.101")
+    assert runner.parse_residue("vf 0000:03:00.2 still bound") == ("other", "vf 0000:03:00.2 still bound")
+    with pytest.raises(ValueError):
+        runner.residue_item("disk", "x")
+
+
+def test_mock_residue_comes_from_the_context_vms_and_leases():
+    ctx = {"id": 9, "vms": [{"role": "vpp", "name": None, "ip": "10.0.0.1"},
+                            {"role": "sink", "name": "daolab-r9-sink", "ip": "10.30.0.101"}],
+           "leases": ["10.30.0.101"]}
+    sink = Sink()
+    result = mock(fail={"cleanup"}).verify_clean(ctx, sink)
+    assert result.residue == ("vm:daolab-r9-sink", "ip:10.30.0.101")
+    states = dict((c[0], c[1]) for c in sink.calls)
+    assert states == {"check_vms": "failed", "check_vfs": "ok", "check_sessions": "ok",
+                      "check_ips": "failed"}
