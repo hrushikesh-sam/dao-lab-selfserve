@@ -1,0 +1,50 @@
+---
+- name: Step 10 - Put 0002:02:00.0 back on vfio-pci
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Require explicit sign-off before changing PCI binding
+      assert:
+        that:
+          - allow_destructive_changes | bool
+        fail_msg: "Runbook requires sign-off before changing PCI device binding."
+
+    - name: Bring kernel interface down
+      become: true
+      command: ip link set enP2p2s0 down
+
+    - name: Unbind from rvu_nicpf
+      become: true
+      shell: "echo {{ pci_no_carrier }} | tee /sys/bus/pci/drivers/rvu_nicpf/unbind"
+
+    - name: Set vfio-pci override
+      become: true
+      shell: "echo vfio-pci | tee /sys/bus/pci/devices/{{ pci_no_carrier }}/driver_override"
+
+    - name: Probe vfio-pci
+      become: true
+      shell: "echo {{ pci_no_carrier }} | tee /sys/bus/pci/drivers_probe"
+
+    - name: Verify vfio-pci binding
+      shell: "ls -l /sys/bus/pci/devices/{{ pci_no_carrier }}/driver | awk '{print $NF}'"
+      register: no_carrier_vfio
+      changed_when: false
+
+    - name: Record application state and management path
+      shell: |
+        ps -eo pid,args | grep -E 'smart-nic|secgw|nginx' | grep -v grep | wc -l
+        ip route show default
+        ss -tn state established '( sport = :22 )' | head -3
+        pgrep -af 'dao-secgw-graph|nginx: master' | cut -c1-120
+        ls -l /sys/bus/pci/devices/{{ pci_live_port }}/driver | awk '{print $NF}'
+        cat /sys/bus/pci/devices/{{ pci_live_port }}/sriov_numvfs
+        ls /sys/bus/pci/devices | grep '^0002:04:'
+        ip -br addr show dev {{ data_interface_live }}
+      register: state_after_02
+      changed_when: false
+      failed_when: false
+
+    - debug:
+        var: no_carrier_vfio.stdout
+    - debug:
+        var: state_after_02.stdout_lines

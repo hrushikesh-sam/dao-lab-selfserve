@@ -1,0 +1,138 @@
+
+- name: Require explicit launch permission
+  ansible.builtin.assert:
+    that:
+      - allow_launch | bool
+    fail_msg: >-
+      Launch changes PCI drivers, hugepages, and starts SmartNIC.
+      Re-run with -e allow_launch=true after confirming VPP is not running.
+
+- name: Refuse launch if VPP is running
+  ansible.builtin.shell: |
+    if pgrep -x vpp >/dev/null; then
+      echo "VPP RUNNING - DO NOT LAUNCH"
+      exit 1
+    fi
+    echo "VPP NOT RUNNING"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Set six 512MB hugepages
+  ansible.builtin.shell: |
+    echo "{{ hugepage_count }}" > /sys/kernel/mm/hugepages/hugepages-{{ hugepage_size_kb }}kB/nr_hugepages
+  args:
+    executable: /bin/bash
+
+- name: Bind SmartNIC PF and SDP VFs to vfio-pci
+  ansible.builtin.command:
+    cmd: >-
+      dpdk-devbind.py -b vfio-pci
+      {{ smartnic_devices | join(' ') }}
+
+- name: Verify VFIO bindings
+  ansible.builtin.shell: |
+    dpdk-devbind.py -s | grep -E '0002:03:00.0|0002:01:0[01]\.'
+  args:
+    executable: /bin/bash
+  register: vfio_status
+  changed_when: false
+
+- name: Display VFIO bindings
+  ansible.builtin.debug:
+    var: vfio_status.stdout_lines
+
+- name: Remove stale SmartNIC runtime artifacts before launch
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/run/dpdk/smartnic
+    - /dev/hugepages/smartnicmap_0
+
+- name: Start DAO SmartNIC in background
+  ansible.builtin.shell: |
+    nohup "{{ smartnic_binary }}" \
+      -c 0xf \
+      --file-prefix={{ file_prefix }} \
+      --huge-dir={{ huge_dir }} \
+      -a {{ smartnic_pf }} \
+      {% for dev in sdp_vfs %}
+      -a {{ dev }} \
+      {% endfor %}
+      -- \
+      -s "{{ runtime_cli }}" \
+      -h "{{ telnet_host }}" \
+      -p "{{ telnet_port }}" \
+      
+      > /tmp/dao-smart-nic-ansible.log 2>&1 &
+    echo $!
+  args:
+    executable: /bin/bash
+  register: smartnic_pid
+  changed_when: true
+
+- name: Wait for SmartNIC process
+  ansible.builtin.shell: |
+    pgrep -x dao-smart-nic
+  args:
+    executable: /bin/bash
+  register: process_check
+  retries: 10
+  delay: 2
+  until: process_check.rc == 0
+  changed_when: false
+
+- name: Wait for startup log
+  ansible.builtin.shell: |
+    grep -E 'smart-nic application version|VFIO|Port [0-9]+:' /tmp/dao-smart-nic-ansible.log
+  register: startup_log
+  retries: 15
+  delay: 2
+  until: startup_log.rc == 0
+  changed_when: false
+
+- name: Show SmartNIC startup log
+  ansible.builtin.shell: |
+    tail -100 /tmp/dao-smart-nic-ansible.log
+  register: log_output
+  changed_when: false
+
+- name: Display startup log
+  ansible.builtin.debug:
+    var: log_output.stdout_lines
+
+- name: Verify telnet port is listening
+  ansible.builtin.wait_for:
+    host: "{{ telnet_host }}"
+    port: "{{ telnet_port }}"
+    timeout: 20
+
+- name: Verify SmartNIC hugepages
+  ansible.builtin.shell: |
+    grep -E 'HugePages_(Total|Free)' /proc/meminfo
+  register: hugepages
+  changed_when: false
+
+- name: Display hugepage state
+  ansible.builtin.debug:
+    var: hugepages.stdout_lines
+
+- name: Verify SmartNIC process is still running
+  ansible.builtin.shell: |
+    pgrep -af dao-smart-nic
+  args:
+    executable: /bin/bash
+  register: final_process
+  changed_when: false
+
+- name: Final verification summary
+  ansible.builtin.debug:
+    msg:
+      - "SmartNIC process is running."
+      - "Telnet port {{ telnet_port }} is listening."
+      - "Inspect full log with: sudo tail -100 /tmp/dao-smart-nic-ansible.log"
+      - "Restore is NOT performed by this project."
+
+
+

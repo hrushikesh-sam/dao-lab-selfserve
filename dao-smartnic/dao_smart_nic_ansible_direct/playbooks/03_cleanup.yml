@@ -1,0 +1,9 @@
+---
+- name: DAO SmartNIC - stop and restore the board
+  hosts: dpu
+  gather_facts: false
+  become: true
+  vars:
+    restore_before: "/home/dao-test/smartnic-restore/pci-before.txt"
+  roles:
+    - smartnic_cleanup

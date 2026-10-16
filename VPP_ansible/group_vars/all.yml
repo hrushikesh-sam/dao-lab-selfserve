@@ -1,0 +1,34 @@
+# Values taken directly from vpp-cn10k-clean-install-runbook.md
+
+vpp_package: vpp-24.02.0-cn10k
+vpp_version: "24.09.0"
+
+vpp_user: dao-test
+vpp_home: /home/dao-test
+vpp_dir: /home/dao-test/vpp
+vpp_old_dir: /home/dao-test/vpp.old-20261006
+vpp_run_dir: /run/vpp
+
+vpp_sysctl_file: /etc/sysctl.d/80-vpp.conf
+vpp_sysctl_disabled: /etc/sysctl.d/80-vpp.conf.disabled
+
+pci_no_carrier: "0002:02:00.0"
+pci_live_port: "0002:04:00.0"
+
+vpp_conf_no_carrier: /home/dao-test/vpp/startup-crb106-512m.conf
+vpp_conf_live_port: /home/dao-test/vpp/startup-crb106-p04.conf
+
+vpp_cli_socket: /run/vpp/cli.sock
+vpp_api_socket: /run/vpp/api.sock
+
+vpp_data_ip: "10.65.0.192/24"
+vpp_peer_ip: "10.65.0.36"
+
+management_interface: eth5
+data_interface_live: enP2p4s0
+
+nginx_service: nginx-tls.service
+
+# The runbook explicitly says these operations require owner/sign-off.
+# Leave false until you have that sign-off.
+allow_destructive_changes: false

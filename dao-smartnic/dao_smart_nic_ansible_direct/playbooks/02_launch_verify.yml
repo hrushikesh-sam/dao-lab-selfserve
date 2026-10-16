@@ -1,0 +1,7 @@
+---
+- name: DAO SmartNIC - launch and verify
+  hosts: dpu
+  gather_facts: false
+  become: true
+  roles:
+    - smartnic_launch
