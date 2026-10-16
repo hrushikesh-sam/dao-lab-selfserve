@@ -1,12 +1,17 @@
 #cloud-config
 # daolab-r{{ reservation_id | int }}-{{ vm.role }} — rendered by playbooks/roles/host_vm (B-80)
 hostname: {{ vm.name }}
-ssh_pwauth: false
+{% set _pw = daolab_access_password | default('') %}
+ssh_pwauth: {{ 'true' if _pw else 'false' }}
 users:
   - name: {{ user }}
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
-    ssh_authorized_keys: {{ ssh_pubkey.splitlines() | map('trim') | select | list | to_json }}
+    ssh_authorized_keys: {{ (ssh_pubkey | default('')).splitlines() | map('trim') | select | list | to_json }}
+{% if _pw %}
+    lock_passwd: false
+    plain_text_passwd: {{ _pw | to_json }}
+{% endif %}
 {% if host_vm_control_pubkey | trim %}
   - name: {{ host_vm_service_login }}
     shell: /bin/bash

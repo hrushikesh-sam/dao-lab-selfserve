@@ -236,6 +236,18 @@ def _m9_health_snapshots(conn: sqlite3.Connection) -> None:
         )""")
 
 
+def _m10_reservation_access(conn: sqlite3.Connection) -> None:
+    """How a reservation's owner gets into the testbed (dashboard Deploy dialog):
+    `reservations.ssh_pubkey` is the SSH key given at deploy (NULL: the owner's registered
+    key); `reservations.access_password` is the generated password when no key was given
+    (shown to the owner while the slot is live, wiped when it ends). `resources.address` is
+    a member's management address from the inventory (DPUs are static), which the API shows
+    as `ssh lab@<address>`."""
+    add_column(conn, "reservations", "ssh_pubkey", "TEXT")
+    add_column(conn, "reservations", "access_password", "TEXT")
+    add_column(conn, "resources", "address", "TEXT")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -246,6 +258,7 @@ MIGRATIONS: list[Migration] = [
     Migration(7, "lease_role_unique_while_leased", _m7_lease_role_unique_while_leased),
     Migration(8, "usecase_health", _m8_usecase_health),
     Migration(9, "health_snapshots", _m9_health_snapshots),
+    Migration(10, "reservation_access", _m10_reservation_access),
 ]
 
 

@@ -6,7 +6,8 @@
 #   apps/    the DPU    the use case's DAO app, by the runbook playbooks the board was brought up
 #                       with (apps/<app>/deploy.yml: dao-vpp, dao-smartnic, nginx-tls; `none`
 #                       for diy). The runner passes daolab_app.
-#   play 2   the DPU    telemetry (otel agent, the app's exporter); post its static address
+#   play 2   the DPU    the owner's access (dpu_access: `lab` with their key or the generated
+#                       password), telemetry (otel agent, the app's exporter), post its address
 #   play 3   dom0s      host_vm: the use case's VMs (clone, cloud-init seed, VF, boot, post IP),
 #                       when DAOLAB_DEPLOY_VMS is on (the XCP-ng host must be in the inventory)
 #   play 4   localhost  verify: the use case's YAML verify block, from its `from` VM
@@ -46,10 +47,15 @@
 - name: the DAO app on the DPU
   ansible.builtin.import_playbook: "apps/{{ daolab_app | default('none') }}/deploy.yml"
 
-- name: the DPU's telemetry and address
+- name: the owner's access, the DPU's telemetry and address
   hosts: r_dpu
   gather_facts: false
   tasks:
+    - name: access (the `lab` login with the owner's key or generated password)
+      ansible.builtin.include_role:
+        name: dpu_access
+      when: not (diy | default(false) | bool)
+
     - name: telemetry
       ansible.builtin.include_role:
         name: otel_agent

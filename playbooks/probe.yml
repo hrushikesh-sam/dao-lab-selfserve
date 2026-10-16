@@ -1,8 +1,10 @@
 # playbooks/probe.yml — B-84: the on-demand health probe (POST .../health/probe, B-66).
 #
-# Runs the use case's YAML verify block from its `from` VM, read-only, against the live
-# reservation: the same `verify` role deploy.yml ends with, using the VMs' recorded addresses
-# (daolab_vms) instead of a fresh lease. Diy reservations have nothing to probe.
+# With the use case's VMs (DAOLAB_DEPLOY_VMS): runs its YAML verify block from its `from` VM,
+# read-only - the same `verify` role deploy.yml ends with, using the VMs' recorded addresses
+# (daolab_vms) instead of a fresh lease. Without VMs: asks the DPU app itself, through the
+# health exporter deploy.yml installed (files/daolab-app-exporter --once), and fails unless
+# the app reports up. Diy reservations have nothing to probe.
 - name: probe
   hosts: localhost
   gather_facts: false
@@ -14,3 +16,29 @@
     - name: verify
       ansible.builtin.include_role:
         name: verify
+      when: daolab_deploy_vms | default(true) | bool
+
+- name: probe the DPU app (no VMs)
+  hosts: r_dpu
+  gather_facts: false
+  vars:
+    _probe_args:
+      dao-vpp: --app vpp --vpp-socket /run/vpp/cli.sock
+      dao-smartnic: --app smartnic
+      nginx-tls: --app nginx --nginx-addr 127.0.0.1:443
+  tasks:
+    - name: "step: probe_dpu_app"
+      become: true
+      ansible.builtin.command: >-
+        {{ app_exporter_bin | default('/usr/local/bin/daolab-app-exporter') }}
+        {{ _probe_args[daolab_app] }} --once
+      register: _probe
+      changed_when: false
+      when: not (daolab_deploy_vms | default(true) | bool) and (daolab_app | default('none')) in _probe_args
+
+    - name: the app reports up
+      ansible.builtin.assert:
+        that: _probe.stdout is search('^[a-z]+_up 1$', multiline=True)
+        fail_msg: "{{ daolab_app }} is not up: {{ _probe.stdout_lines | select('search', '_up ') | list }}"
+        success_msg: "{{ daolab_app }} is up"
+      when: _probe is not skipped

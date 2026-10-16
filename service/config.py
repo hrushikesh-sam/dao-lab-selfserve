@@ -79,7 +79,7 @@ class Settings:
             slot_min=int(env("DAOLAB_SLOT_MIN", "30")),
             cleanup_min=int(env("DAOLAB_CLEANUP_MIN", "10")),
             default_hours=int(env("DAOLAB_DEFAULT_HOURS", "1")),
-            ip_pool=env("DAOLAB_IP_POOL", "10.30.0.100-10.30.0.199"),
+            ip_pool=env("DAOLAB_IP_POOL", "10.68.1.0-10.68.2.200"),
             early_access=flag("DAOLAB_EARLY_ACCESS"),
             health_stale_sec=int(env("DAOLAB_HEALTH_STALE_SEC", "120")),
             otel_endpoint=env("DAOLAB_OTEL_ENDPOINT", ""),

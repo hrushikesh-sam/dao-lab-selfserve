@@ -104,7 +104,8 @@ def test_every_kind_runs_its_playbook(settings, ctx):
         "run-1-cleanup", "run-2-probe", "run-3-reconcile", "run-4-verify_clean"]
     for name in fake.calls:
         assert set(AnsibleRunner.PLAYBOOKS.values()) >= {name["playbook"]}
-    for pb in ("deploy.yml", "probe.yml", "reconcile.yml", "verify_clean.yml", "orphans.yml"):
+    for pb in ("deploy.yml", "cleanup.yml", "probe.yml", "reconcile.yml", "verify_clean.yml",
+               "orphans.yml"):
         assert os.path.exists(os.path.join(REPO, "playbooks", pb)), pb
 
 
@@ -277,3 +278,9 @@ def test_the_sign_off_switch_and_the_app_reach_the_playbooks(settings, ctx):
     diy = {**ctx, "diy": True}
     AnsibleRunner(on, run=fake).deploy(diy, Steps())
     assert fake.calls[1]["extravars"]["daolab_app"] == "none"
+
+
+def test_with_vms_off_the_orphan_sweep_asks_no_xcp_host(settings):
+    fake = FakeRun(output=["daolab-r999-x"])
+    rn = AnsibleRunner(dataclasses.replace(settings, deploy_vms=False), run=fake)
+    assert rn.tagged_vms() == [] and fake.calls == []

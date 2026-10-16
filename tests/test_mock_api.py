@@ -51,15 +51,15 @@ def test_a_mock_deploy_leases_and_posts_every_vm_ip(booked):
     assert out.ready == 1
     got = env.client.get(f"/reservations/{res['id']}", headers=H(env.tokens["alice"])).json()
     vms = {v["role"]: v for v in got["vms"]}
-    assert (vms["sink"]["ip"], vms["tgen"]["ip"]) == ("10.30.0.100", "10.30.0.101")  # role order
-    assert vms["tgen"]["ssh"] == "ssh alice@10.30.0.101"
-    assert vms["vpp"]["ip"] is None                                    # the DPU leases nothing
+    assert (vms["sink"]["ip"], vms["tgen"]["ip"]) == ("10.68.1.0", "10.68.1.1")  # role order
+    assert vms["tgen"]["ssh"] == "ssh alice@10.68.1.1"
+    assert vms["vpp"]["ip"] == "10.68.0.190"           # the DPU is static: its own address, never leased
     assert sorted((l["role"], l["ip"], l["state"]) for l in got["leases"]) == [
-        ("sink", "10.30.0.100", "leased"), ("tgen", "10.30.0.101", "leased")]
+        ("sink", "10.68.1.0", "leased"), ("tgen", "10.68.1.1", "leased")]
     [job] = models.jobs_for_reservation(env.conn, res["id"])
     steps = {s["name"]: s for s in models.job_steps(job)}
-    assert steps["lease_ips"]["detail"] == "sink=10.30.0.100, tgen=10.30.0.101"
-    assert steps["post_vm_ips"]["detail"] == "sink=10.30.0.100, tgen=10.30.0.101"
+    assert steps["lease_ips"]["detail"] == "sink=10.68.1.0, tgen=10.68.1.1"
+    assert steps["post_vm_ips"]["detail"] == "sink=10.68.1.0, tgen=10.68.1.1"
 
 
 def test_a_replayed_deploy_keeps_its_addresses(booked):
@@ -70,7 +70,7 @@ def test_a_replayed_deploy_keeps_its_addresses(booked):
     models.create_job(env.conn, rid, "deploy", attempt=2)              # a redeploy
     engine.tick(env.conn, models.parse_ts(res["start_at"]), rn, SchedConfig())
     leases = models.ip_leases_for_reservation(env.conn, rid)
-    assert sorted(l["ip"] for l in leases) == ["10.30.0.100", "10.30.0.101"]
+    assert sorted(l["ip"] for l in leases) == ["10.68.1.0", "10.68.1.1"]
 
 
 def test_two_mock_deploys_never_share_an_address(api_env):
@@ -125,7 +125,7 @@ def server():
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             seen.append((self.path, self.headers["X-Daolab-Secret"], body))
-            status, reply = replies.get(self.path, (200, {"ip": "10.30.0.100"}))
+            status, reply = replies.get(self.path, (200, {"ip": "10.68.1.0"}))
             raw = json.dumps(reply).encode() if isinstance(reply, dict) else reply
             self.send_response(status)
             self.end_headers()
@@ -144,11 +144,11 @@ def server():
 def test_internal_api_posts_json_with_the_secret(server):
     url, seen, _ = server
     api = InternalApi(url, "s3")
-    assert api.lease(5, "tgen") == "10.30.0.100"
-    api.vm_ip(5, "tgen", "10.30.0.100")
+    assert api.lease(5, "tgen") == "10.68.1.0"
+    api.vm_ip(5, "tgen", "10.68.1.0")
     assert seen == [("/internal/leases", "s3", {"reservation_id": 5, "role": "tgen"}),
                     ("/internal/vm-ip", "s3", {"reservation_id": 5, "role": "tgen",
-                                               "ip": "10.30.0.100"})]
+                                               "ip": "10.68.1.0"})]
 
 
 def test_internal_api_surfaces_the_api_error(server):

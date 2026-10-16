@@ -468,6 +468,10 @@ class AnsibleRunner:
             "daolab_internal_secret": self.s.internal_secret,
             "daolab_otel_collector": self.s.otel_agent_endpoint,
             "daolab_app": dpu_app(get("roles") or {}) if not get("diy", False) else "none",
+            "daolab_access_login": get("access_login") or "lab",
+            "daolab_access_password": get("access_password") or "",
+            "daolab_access_expires": get("access_expires") or "",
+            "daolab_access_until": get("access_until") or 0,
             "daolab_deploy_vms": bool(self.s.deploy_vms),
             # the runbook playbooks' owner sign-off (VPP_ansible, dao-smartnic): one switch
             "allow_destructive_changes": bool(self.s.allow_destructive),
@@ -559,6 +563,8 @@ class AnsibleRunner:
         return result                     # a run that could not verify is not clean either
 
     def tagged_vms(self):
+        if not self.s.deploy_vms:                    # no VMs are made: no XCP-ng host to ask
+            return []
         result, names = self._play("orphans", "orphans", None, lambda *a, **k: None)
         if not result.ok:
             raise RunnerError(f"could not list the testbed's VMs: {result.error}")

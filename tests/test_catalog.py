@@ -130,10 +130,10 @@ def test_malformed_health_rule_rejected(conn, tmp_path):
 
 def test_sync_loads_ip_pool(conn):
     from service import config
-    assert config.settings.ip_pool == "10.30.0.100-10.30.0.199"   # .env.example default
+    assert config.settings.ip_pool == "10.68.1.0-10.68.2.200"     # the lab's VM range
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
     pool = models.ip_pool_by_name(conn, catalog.DEFAULT_IP_POOL)
-    assert pool["range_start"] == "10.30.0.100" and pool["range_end"] == "10.30.0.199"
+    assert pool["range_start"] == "10.68.1.0" and pool["range_end"] == "10.68.2.200"
     catalog.sync(conn, UC_DIR, ST_DIR, INV)                        # idempotent
     assert len(models.list_ip_pools(conn)) == 1
 

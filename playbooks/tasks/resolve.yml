@@ -53,11 +53,11 @@
     that: daolab_dom0s | length > 0
     fail_msg: "setup {{ setup }} has no members; check setups/{{ setup }}.yml"
 
-- name: add the dom0s to r_dom0
+- name: add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)
   ansible.builtin.add_host:
     name: "{{ item }}"
     groups: r_dom0
-  loop: "{{ daolab_dom0s }}"
+  loop: "{{ daolab_dom0s if (daolab_deploy_vms | default(true) | bool) else [] }}"
   changed_when: false
 
 - name: add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)

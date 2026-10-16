@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230969da'/%3E%3C/svg%3E">
 <title>daolab admin</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <style>
@@ -66,6 +67,14 @@
   .modal button.act { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:5px 14px; cursor:pointer; }
   .kv { margin:2px 0; } .kv b { font-weight:600; }
   .held-star { color:var(--red); font-weight:700; }
+  .quarantine { margin:10px 0; padding:10px 12px; border:1px solid #ffb1b1; border-radius:8px;
+                background:#ffebe9; color:var(--red); font-size:13px; }
+  .quarantine .residue { color:var(--text); margin:4px 0 0 12px; font-family:ui-monospace,Menlo,monospace;
+                         font-size:12px; }
+  .quarantine button, button.endnow { border:1px solid var(--line); background:#fff; border-radius:6px;
+                padding:2px 10px; cursor:pointer; margin:8px 6px 0 0; }
+  button.endnow { margin:0; color:var(--amber); }
+  .progress { font-size:12px; color:var(--muted); }
 </style>
 </head>
 <body>
@@ -188,7 +197,9 @@ async function saveToken() {
 
 const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
                      cleaning:"b-amber", quarantined:"b-red", released:"b-muted", failed:"b-red"};
-const CANCELABLE = ["queued", "ready", "active"];
+const CANCELABLE = ["queued"];                     // not started: cancel (DELETE)
+const ENDABLE = ["ready", "active"];                // running: end now (POST .../cleanup)
+const AVAIL_BADGE = {available:"b-green", quarantined:"b-red", maintenance:"b-amber"};
 
 if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
 
@@ -232,7 +243,18 @@ function renderDetail() {
     return;
   }
   document.getElementById("detail-title").textContent = `Setup ${s.name} — pool ${s.pool}`;
+  const dirty = s.dirty || [];
+  const banner = (s.availability === "quarantined" || dirty.length) ? `
+    <div class="quarantine"><b>quarantined</b> — cleanup could not prove the testbed clean; new deploys
+      wait until it is.${dirty.map(d => `
+      <div class="residue">#${d.id} ${esc(d.user)} <code>${esc(d.usecase)}</code> (${esc(d.state)}):
+        ${esc(d.residue || "no residue recorded")}</div>`).join("")}
+      <div><button onclick="forceClean('${esc(s.name)}', false)">Force clean (reconcile, then verify)</button>
+           <button onclick="forceClean('${esc(s.name)}', true)">Mark clean without verifying</button></div>
+    </div>` : "";
   body.innerHTML = `
+    <div class="kv"><b>availability:</b> <span class="badge ${AVAIL_BADGE[s.availability] || "b-grey"}">${esc(s.availability || "available")}</span></div>
+    ${banner}
     <div class="kv"><b>capabilities:</b> ${s.capabilities.map(c => `<span class="cap">${esc(c)}</span>`).join("")}</div>
     <table style="margin:8px 0">
       <thead><tr><th>member</th><th>kind</th><th>host</th><th>hw_class</th><th>capabilities</th></tr></thead>
@@ -275,10 +297,44 @@ async function loadAllReservations() {
       <td><code>${esc(r.usecase)}</code>${r.diy ? ' <span class="badge b-grey">diy</span>' : ""}</td>
       <td>${esc(r.setup)}</td>
       <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span></td>
-      <td>${esc(r.start_at)} → ${esc(r.end_at)}${r.shifted ? ' <span class="badge b-amber">shifted</span>' : ""}</td>
+      <td>${esc(r.start_at)} → ${esc(r.end_at)}${r.shifted ? ' <span class="badge b-amber">shifted</span>' : ""}
+          ${progressLine(r)}</td>
       <td>${CANCELABLE.includes(r.state)
-        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>` : ""}</td>
+        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>`
+        : ENDABLE.includes(r.state)
+          ? `<button class="endnow" onclick="endReservation(${r.id})">End now</button>` : ""}</td>
     </tr>`).join("");
+}
+
+function progressLine(r) {
+  const j = r.job;
+  if (!j || !["pending", "running", "failed"].includes(j.state) || ["released"].includes(r.state)) return "";
+  if (j.state === "failed") return `<div class="progress">${esc(j.kind)} failed: ${esc(j.error || "")}</div>`;
+  const last = j.last_step ? esc(j.last_step.name) : "starting";
+  return `<div class="progress">${esc(j.kind)} ${esc(j.state)} · step ${j.steps}: ${last}</div>`;
+}
+
+async function endReservation(id) {
+  if (!confirm(`End reservation #${id} now? The owner loses access and the testbed is cleaned up.`)) return;
+  try {
+    const r = await api(`/reservations/${id}/cleanup`, {method: "POST"});
+    showBanner(`reservation #${r.id} → ${r.state}`, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
+}
+
+async function forceClean(name, skipVerify) {
+  const msg = skipVerify
+    ? `Mark ${name} clean WITHOUT verifying? Only do this after checking the testbed by hand.`
+    : `Force-clean ${name}? The reconciler runs again and the setup is freed once it verifies clean.`;
+  if (!confirm(msg)) return;
+  try {
+    const r = await api(`/admin/setups/${encodeURIComponent(name)}/force-clean`,
+                        {method: "POST", body: skipVerify ? {skip_verify: true} : {}});
+    showBanner(`${r.setup}: ${r.availability}` + (r.jobs.length ? ` · ${r.jobs.length} reconcile job(s) queued` : ""),
+               null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
 }
 
 async function cancelReservation(id) {

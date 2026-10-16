@@ -1,0 +1,97 @@
+# Open the DPU for this reservation's owner.
+- name: does the {{ dpu_access_login }} login exist
+  ansible.builtin.command: getent passwd {{ dpu_access_login }}
+  register: _acct
+  changed_when: false
+  failed_when: false
+
+- name: create it
+  become: true
+  ansible.builtin.command: useradd --create-home --shell /bin/bash {{ dpu_access_login }}
+  when: _acct.rc != 0
+
+- name: the config directories exist (they do on a real board; permissions are left alone)
+  become: true
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ dpu_access_sudoers_dir }}"
+    - "{{ dpu_access_sshd_dir }}"
+
+- name: sudo for the slot (the testbed is the owner's alone while it lasts)
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ dpu_access_sudoers_dir }}/90-daolab-{{ dpu_access_login }}"
+    content: "{{ dpu_access_login }} ALL=(ALL) NOPASSWD:ALL\n"
+    mode: "0440"
+    validate: visudo -cf %s
+
+- name: the key directory sshd reads
+  become: true
+  ansible.builtin.file:
+    path: "{{ dpu_access_keys_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: the end of the slot in the DPU's local time (sshd reads expiry-time in it)
+  ansible.builtin.command: date -d @{{ dpu_access_until | int }} +%Y%m%d%H%M
+  register: _until
+  changed_when: false
+  when: dpu_access_until | int > 0
+
+- name: every key stops working at the end of the slot (sshd expiry-time), even without a cleanup
+  ansible.builtin.set_fact:
+    _key_opt: "{{ ('expiry-time=\"' ~ _until.stdout ~ '\" ') if (dpu_access_until | int > 0) else '' }}"
+
+- name: "step: dpu_access"
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ dpu_access_keys_dir }}/{{ dpu_access_login }}"
+    content: "{{ (dpu_access_keys.splitlines() | map('trim') | select | map('regex_replace', '^', _key_opt) | join('\n') ~ '\n') if dpu_access_keys | trim else '' }}"
+    mode: "0644"
+
+- name: sshd - keys from that file, password login allowed, for this login only
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ dpu_access_sshd_dir }}/10-daolab-{{ dpu_access_login }}.conf"
+    mode: "0644"
+    content: |
+      # written by daolab (playbooks/roles/dpu_access) - the reservation's login on this DPU
+      Match User {{ dpu_access_login }}
+          AuthorizedKeysFile {{ dpu_access_keys_dir }}/%u
+          PubkeyAuthentication yes
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication no
+      Match all
+  register: _sshd_conf
+
+- name: sshd accepts its config
+  become: true
+  ansible.builtin.command: sshd -t
+  when: _sshd_conf.changed
+  changed_when: false
+
+- name: reload sshd
+  become: true
+  ansible.builtin.shell: systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+  when: _sshd_conf.changed
+
+- name: the generated password
+  become: true
+  ansible.builtin.command: chpasswd
+  args:
+    stdin: "{{ dpu_access_login }}:{{ dpu_access_password }}"
+  when: dpu_access_password | length > 0
+  no_log: true
+  changed_when: false
+
+- name: password login only when the owner chose a password
+  become: true
+  ansible.builtin.command: usermod {{ '-U' if dpu_access_password | length > 0 else '-L' }} {{ dpu_access_login }}
+  changed_when: false
+
+- name: the account ends with the slot even if cleanup never runs
+  become: true
+  ansible.builtin.command: chage -E {{ dpu_access_expires if dpu_access_expires | length > 0 else -1 }} {{ dpu_access_login }}
+  changed_when: false

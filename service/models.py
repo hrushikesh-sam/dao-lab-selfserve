@@ -255,6 +255,37 @@ def create_vms(conn, res_id: int) -> int:
     return added
 
 
+ACCESS_LOGIN = "lab"           # the DPU login users get (playbooks/roles/dpu_access)
+
+
+def access_keys(res, user) -> str:
+    """The SSH key(s) that open this reservation: the one given at deploy, else - unless the
+    owner asked for a password instead - their registered key."""
+    if res["ssh_pubkey"] is not None:
+        return res["ssh_pubkey"]
+    return "" if res["access_password"] is not None else user["ssh_pubkey"]
+
+
+def access_fields(res, user) -> dict:
+    """The access part of the runner context: `ssh_pubkey` (may be empty in password mode),
+    `access_password` (None in key mode), the login, `access_until` (end_at as a unix time:
+    the keys stop working then, sshd `expiry-time`) and `access_expires` - the day after
+    end_at, the account's expiry backstop if a cleanup never runs."""
+    from datetime import timedelta
+    end = parse_ts(res["end_at"])
+    return {"ssh_pubkey": access_keys(res, user), "access_password": res["access_password"],
+            "access_login": ACCESS_LOGIN, "access_until": int(end.timestamp()),
+            "access_expires": (end + timedelta(days=1)).date().isoformat()}
+
+
+def wipe_access_passwords(conn) -> int:
+    """Forget the generated passwords of reservations that are over (the account is locked
+    by then anyway). Returns how many were wiped."""
+    cur = conn.execute("UPDATE reservations SET access_password = NULL "
+                       "WHERE access_password IS NOT NULL AND state IN ('released', 'failed')")
+    return cur.rowcount
+
+
 def reservation_context(conn, res_id: int) -> dict:
     """Everything a runner needs about one reservation, read once by the engine so the runner
     never touches the DB. Keys follow the playbook extravars (plan/04 runner contract):
@@ -266,10 +297,11 @@ def reservation_context(conn, res_id: int) -> dict:
     uc = usecase_by_id(conn, r["usecase_id"])
     setup = conn.execute("SELECT name FROM setups WHERE id = ?", (r["setup_id"],)).fetchone()
     return {
+        **access_fields(r, user),
         "id": r["id"], "reservation_id": r["id"], "state": r["state"],
         "start_at": r["start_at"], "end_at": r["end_at"],
         "usecase": uc["name"], "setup": setup["name"],
-        "user": user["username"], "ssh_pubkey": user["ssh_pubkey"],
+        "user": user["username"],
         "hw_class": uc["hw_class"], "diy": bool(r["diy"]),
         "templates": from_json(r["diy_templates"]) if r["diy_templates"] else {},
         "roles": from_json(uc["roles"]) if uc["roles"] else {},
