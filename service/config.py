@@ -41,6 +41,7 @@ class Settings:
     mock_step_sec: float
     mock_fail: str
     job_timeout_sec: int
+    prometheus_url: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -81,6 +82,7 @@ class Settings:
             mock_step_sec=float(env("DAOLAB_MOCK_STEP_SEC", "5")),
             mock_fail=env("DAOLAB_MOCK_FAIL", ""),
             job_timeout_sec=int(env("DAOLAB_JOB_TIMEOUT_SEC", "1800")),
+            prometheus_url=env("DAOLAB_PROMETHEUS_URL", "http://localhost:9090"),
         )
 
 

@@ -12,6 +12,7 @@ NEW_DEFAULTS = {
     "otel_endpoint": "",
     "max_live_reservations": 1,
     "max_future_reservations": 2,
+    "prometheus_url": "http://localhost:9090",
 }
 
 ENV_NAMES = {
@@ -25,6 +26,7 @@ ENV_NAMES = {
     "otel_endpoint": "DAOLAB_OTEL_ENDPOINT",
     "max_live_reservations": "DAOLAB_MAX_LIVE_RESERVATIONS",
     "max_future_reservations": "DAOLAB_MAX_FUTURE_RESERVATIONS",
+    "prometheus_url": "DAOLAB_PROMETHEUS_URL",
 }
 
 
