@@ -901,3 +901,33 @@ def test_without_vms_verify_cleanup_and_reconcile_never_touch_the_dom0(lab, book
                    **books.vars) == 0, lab.stdout[-2000:]
     assert not lab.calls("xe") and not lab.calls("xl")
     assert "daolab-r12-sink" in lab.state()["vms"]    # untouched
+
+
+# ---- B-85: bringup.yml -------------------------------------------------------------------
+
+def test_bringup_lists_everything_missing(lab):
+    assert lab.run("bringup.yml", daolab_bringup_root=str(lab.dir / "root"),
+                   ansible_become=False, hw_class="sdp-pf1-vf8") != 0
+    assert "not ready yet" in lab.stdout
+    assert "dpu-01: missing: nginx-tls.service" in lab.stdout
+    assert "tb-01-xcp: host_vars/tb-01-xcp.yml: sr_uuid" not in lab.stdout   # inventory says ''
+    assert "tb-01-xcp: missing template" not in lab.stdout             # the fake has it
+    # the marker is written even while other things are missing
+    assert (lab.dir / "root" / "etc" / "daolab" / "hw_class").read_text() == "sdp-pf1-vf8\n"
+
+
+def test_bringup_of_a_ready_board_passes_and_keeps_an_existing_marker(lab):
+    st = lab.state()
+    st["installed"] = ["dpdk-devbind.py"]
+    st["units"]["nginx-tls.service"] = "active"
+    lab.set(st)
+    marker = lab.dir / "root" / "etc" / "daolab" / "hw_class"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("vf-only\n")
+    rc = lab.run("bringup.yml", daolab_bringup_root=str(lab.dir / "root"), ansible_become=False,
+                 hw_class="sdp-pf1-vf8", daolab_deploy_vms=False)
+    missing = [l for l in lab.stdout.splitlines() if l.strip().startswith("- dpu-01")]
+    # this machine has no /home/dao-test or Marvell repo: only those may be reported
+    assert all("dao-test" in l or "Marvell" in l for l in missing), missing
+    assert marker.read_text() == "vf-only\n"                     # never overwritten
+    assert rc == (0 if not missing else 2)

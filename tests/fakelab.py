@@ -266,6 +266,12 @@ def systemctl(args):
         sys.exit(0 if st == "active" else 3)
     if args[:1] in (["daemon-reload"], ["reload"]):
         return
+    if args[:1] == ["cat"]:
+        name = args[1] if args[1].endswith(".service") else args[1] + ".service"
+        if name not in units:
+            fail(f"No files found for {name}.", 1)
+        print(f"# /etc/systemd/system/{name}")
+        return
     fail(f"fakelab: unsupported systemctl {args}", 2)
 
 
