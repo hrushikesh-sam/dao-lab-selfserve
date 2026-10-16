@@ -48,6 +48,7 @@ class Settings:
     otel_agent_endpoint: str
     allow_destructive: bool
     deploy_vms: bool
+    become_password_file: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -95,6 +96,7 @@ class Settings:
             otel_agent_endpoint=env("DAOLAB_OTEL_AGENT_ENDPOINT", ""),
             allow_destructive=flag("DAOLAB_ALLOW_DESTRUCTIVE"),
             deploy_vms=flag("DAOLAB_DEPLOY_VMS", "true"),
+            become_password_file=env("DAOLAB_BECOME_PASSWORD_FILE", ""),
         )
 
 

@@ -597,6 +597,9 @@ def ansible_env(settings=None, traceparent: str | None = None) -> dict[str, str]
     s = settings or config.settings
     env = {"ANSIBLE_CONFIG": os.path.join(s.playbooks_dir, "ansible.cfg"),
            "ANSIBLE_NOCOLOR": "1", "ANSIBLE_RETRY_FILES_ENABLED": "0"}
+    become_file = (getattr(s, "become_password_file", "") or "").strip()
+    if become_file:                 # sudo password for the runbooks' account, never on argv / in logs
+        env["ANSIBLE_BECOME_PASSWORD_FILE"] = os.path.abspath(os.path.expanduser(become_file))
     endpoint = (s.otel_endpoint or "").strip()
     if not endpoint:
         return env

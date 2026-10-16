@@ -17,6 +17,7 @@ NEW_DEFAULTS = {
     "authz_secret": "",
     "allow_destructive": False,
     "deploy_vms": True,
+    "become_password_file": "",
 }
 
 ENV_NAMES = {
@@ -35,6 +36,7 @@ ENV_NAMES = {
     "authz_secret": "DAOLAB_AUTHZ_SECRET",
     "allow_destructive": "DAOLAB_ALLOW_DESTRUCTIVE",
     "deploy_vms": "DAOLAB_DEPLOY_VMS",
+    "become_password_file": "DAOLAB_BECOME_PASSWORD_FILE",
 }
 
 

@@ -463,3 +463,11 @@ def test_the_ansible_cfg_enables_the_callback_from_the_environment():
     cfg.read(os.path.join(os.path.dirname(__file__), "..", "playbooks", "ansible.cfg"))
     assert cfg["defaults"]["callbacks_enabled"] == "community.general.opentelemetry"
     assert cfg["callback_opentelemetry"]["enable_from_environment"] == "DAOLAB_ANSIBLE_OTEL"
+
+
+def test_ansible_env_hands_over_the_become_password_file(tmp_path):
+    f = tmp_path / "become"
+    env = runner.ansible_env(_settings(otel_endpoint="", become_password_file=str(f)))
+    assert env["ANSIBLE_BECOME_PASSWORD_FILE"] == str(f)
+    assert "ANSIBLE_BECOME_PASSWORD_FILE" not in runner.ansible_env(
+        _settings(otel_endpoint="", become_password_file=""))
