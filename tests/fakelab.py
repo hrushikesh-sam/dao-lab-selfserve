@@ -194,8 +194,8 @@ def xl(args):
 
 def pgrep(args):
     state = load()
-    if args[:1] == ["-x"]:                                 # pgrep -x <name>: is it running
-        hit = args[1] in state.get("procs", [])
+    if args[:1] == ["-x"]:                                 # pgrep -x <regex>: full name match
+        hit = any(re.fullmatch(args[1], name) for name in state.get("procs", []))
         if hit:
             print(4242)
         sys.exit(0 if hit else 1)
@@ -293,7 +293,7 @@ def which(args):
 
 def vppctl(args):
     state = load()
-    if "vpp" not in state.get("procs", []):
+    if not any(re.fullmatch("vpp|vpp_main", n) for n in state.get("procs", [])):
         fail("clib_socket_init: connect: No such file or directory")
     print("vpp v24.09.0-cn10k built by fakelab")
 

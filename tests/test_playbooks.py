@@ -408,8 +408,8 @@ def books(tmp_path):
     Plus a fake sysfs whose live port (0002:04:00.0) sits on `driver`."""
     root = tmp_path / "books"
     ran = tmp_path / "books-ran.log"
-    effect = {"03_install": "fakeproc install vpp", "10_verify_04": "fakeproc start vpp",
-              "11_cleanup_04": "fakeproc stop vpp", "02_launch_verify": "fakeproc start dao-smart-nic",
+    effect = {"03_install": "fakeproc install vpp", "10_verify_04": "fakeproc start vpp_main",
+              "11_cleanup_04": "fakeproc stop vpp_main", "02_launch_verify": "fakeproc start dao-smart-nic",
               "03_cleanup": "fakeproc stop dao-smart-nic"}
     for sub, names in (("vpp", VPP_BOOKS), ("smartnic", SMARTNIC_BOOKS)):
         (root / sub).mkdir(parents=True)
@@ -514,7 +514,7 @@ def test_deploy_twice_changes_nothing(lab, api, books):
     with_traffic(lab, pktgen="rx == tx")
     assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
     st = lab.state()                                   # what the first run left: VPP up on vfio
-    st["installed"], st["procs"] = ["vpp"], ["vpp"]
+    st["installed"], st["procs"] = ["vpp"], ["vpp_main"]
     lab.set(st)
     books.port_on("vfio-pci")
     first = lab.state()
@@ -641,11 +641,11 @@ def vpp_deploy(lab, books, **over):
 ])
 def test_vpp_deploy_runs_only_the_runbook_steps_the_board_needs(lab, books, installed, running,
                                                                 port, steps):
-    board(lab, installed=["vpp"] if installed else [], procs=["vpp"] if running else [])
+    board(lab, installed=["vpp"] if installed else [], procs=["vpp_main"] if running else [])
     books.port_on(port)
     assert vpp_deploy(lab, books) == 0, lab.stdout[-3000:]
     assert books.ran() == steps
-    assert "vpp" in lab.state()["procs"]
+    assert "vpp_main" in lab.state()["procs"]
     assert lab.state()["units"]["daolab-app-exporter.service"] == "active"
 
 
@@ -657,17 +657,17 @@ def test_vpp_deploy_without_sign_off_touches_nothing(lab, books):
 
 
 def test_a_running_vpp_needs_no_sign_off_to_redeploy(lab, books):
-    board(lab, installed=["vpp"], procs=["vpp"])
+    board(lab, installed=["vpp"], procs=["vpp_main"])
     books.port_on("vfio-pci")
     assert vpp_deploy(lab, books, allow_destructive_changes=False) == 0, lab.stdout[-2000:]
 
 
 def test_vpp_cleanup_gives_the_board_back(lab, books):
-    board(lab, installed=["vpp"], procs=["vpp"])
+    board(lab, installed=["vpp"], procs=["vpp_main"])
     books.port_on("vfio-pci")
     assert _cleanup(lab, books, "dao-vpp") == 0, lab.stdout[-2000:]
     assert books.ran() == ["11_cleanup_04"]
-    assert "vpp" not in lab.state()["procs"]
+    assert "vpp_main" not in lab.state()["procs"]
     assert ["systemctl", "start", "nginx-tls.service"] in lab.calls("systemctl")
 
 
@@ -723,7 +723,7 @@ def test_tls_proxy_deploy_keeps_nginx_tls_running(lab, books):
 
 
 def test_a_board_without_a_personality_marker_is_assumed_to_match(lab, books):
-    board(lab, installed=["vpp"], procs=["vpp"])
+    board(lab, installed=["vpp"], procs=["vpp_main"])
     books.port_on("vfio-pci")
     assert vpp_deploy(lab, books, hw_class="sdp-pf1-vf8",
                       ebf_marker=str(lab.dir / "no-marker")) == 0, lab.stdout[-2000:]
@@ -851,10 +851,10 @@ def test_cleanup_revokes_access_first_and_destroys_the_vms(lab, books):
 
 
 def test_cleanup_runs_the_apps_runbook_cleanup(lab, books):
-    board(lab, installed=["vpp"], procs=["vpp"])
+    board(lab, installed=["vpp"], procs=["vpp_main"])
     books.port_on("vfio-pci")
     assert cleanup(lab, books, daolab_app="dao-vpp") == 0, lab.stdout[-2000:]
-    assert books.ran() == ["11_cleanup_04"] and "vpp" not in lab.state()["procs"]
+    assert books.ran() == ["11_cleanup_04"] and "vpp_main" not in lab.state()["procs"]
 
 
 def test_cleanup_is_safe_on_a_clean_testbed(lab, books):
@@ -865,7 +865,7 @@ def test_cleanup_is_safe_on_a_clean_testbed(lab, books):
 
 
 def test_verify_clean_sees_an_app_process_left_running(lab):
-    board(lab, procs=["vpp"])
+    board(lab, procs=["vpp_main"])
     assert lab.run("verify_clean.yml") == 0
     assert lab.output() == ["dpu_app:vpp"]
 
@@ -974,7 +974,7 @@ def test_taking_the_port_first_pins_its_override_so_the_runbook_cleanup_can_rest
 
 
 def test_a_running_vpp_leaves_the_override_alone(lab, books):
-    board(lab, installed=["vpp"], procs=["vpp"])
+    board(lab, installed=["vpp"], procs=["vpp_main"])
     books.port_on("vfio-pci")
     assert vpp_deploy(lab, books) == 0, lab.stdout[-2000:]
     assert books.override() == "(null)"
@@ -987,3 +987,29 @@ def test_a_drop_in_sshd_rejects_is_removed_again(lab):
     assert access_play(lab, ssh_pubkey=KEY) != 0
     assert "sshd -t rejected the lab drop-in; it was removed" in lab.stdout
     assert not root(lab, "/etc/ssh/sshd_config.d/10-daolab-lab.conf").exists()
+
+
+# ---- found on xeon3-oct-112 --------------------------------------------------------------
+
+def test_a_running_vpp_is_seen_by_its_real_process_name_vpp_main(lab, books):
+    """VPP names its main thread vpp_main: `pgrep -x vpp` missed it, so every retry started
+    another VPP on the real board."""
+    board(lab, installed=["vpp"], procs=["vpp_main"])
+    books.port_on("vfio-pci")
+    assert vpp_deploy(lab, books) == 0, lab.stdout[-2000:]
+    assert books.ran() == ["04_configure_02"]                       # no second VPP started
+    assert "running=True" in lab.stdout
+
+
+def test_verify_clean_reports_a_vpp_main_left_running(lab):
+    board(lab, procs=["vpp_main"])
+    assert lab.run("verify_clean.yml") == 0
+    assert lab.output() == ["dpu_app:vpp"]
+
+
+def test_ansible_cfg_keeps_pipelining_off():
+    """vppctl exits 1 without output under pipelining (stdin at EOF -> early quit)."""
+    import configparser
+    cfg = configparser.ConfigParser()
+    cfg.read(os.path.join(REPO, "playbooks", "ansible.cfg"))
+    assert cfg["ssh_connection"].getboolean("pipelining") is False

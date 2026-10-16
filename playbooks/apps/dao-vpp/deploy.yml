@@ -26,8 +26,8 @@
       changed_when: false
       failed_when: false
 
-    - name: is VPP running
-      ansible.builtin.command: pgrep -x vpp
+    - name: is VPP running (its main thread is named vpp_main, so not just -x vpp)
+      ansible.builtin.command: pgrep -x 'vpp|vpp_main'
       register: _vpp_proc
       changed_when: false
       failed_when: false

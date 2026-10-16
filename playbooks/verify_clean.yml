@@ -67,9 +67,10 @@
 
     - name: list the DAO app processes the runbooks start by hand (VPP, SmartNIC)
       ansible.builtin.shell: |
-        for p in {{ daolab_app_processes | default(['vpp', 'dao-smart-nic']) | join(' ') }}; do
-          pgrep -x "$p" >/dev/null && echo "$p"
-        done; true
+        {% for name, pattern in (daolab_app_processes | default({'vpp': 'vpp|vpp_main', 'dao-smart-nic': 'dao-smart-nic'})).items() %}
+        pgrep -x '{{ pattern }}' >/dev/null && echo '{{ name }}'
+        {% endfor %}
+        true
       register: _procs
       changed_when: false
 
