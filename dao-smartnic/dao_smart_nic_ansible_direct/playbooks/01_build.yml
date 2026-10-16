@@ -1,0 +1,7 @@
+---
+- name: DAO SmartNIC - build existing dao-clone
+  hosts: dpu
+  gather_facts: true
+  become: true
+  roles:
+    - smartnic_build

@@ -1,0 +1,53 @@
+---
+- name: Step 1 - Record starting state
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Record VPP processes
+      shell: 'pgrep -a vpp | cut -c1-100; echo "vpp procs: $?"'
+      register: baseline_vpp
+      changed_when: false
+
+    - name: Record installed packages
+      shell: "dpkg -l | grep -E 'vpp|dpdk|cpt-firmware|oct-ep-target|strace'"
+      register: baseline_packages
+      changed_when: false
+      failed_when: false
+
+    - name: Check VPP sysctl file
+      shell: "ls /etc/sysctl.d/ | grep vpp"
+      register: baseline_sysctl
+      changed_when: false
+      failed_when: false
+
+    - name: List VPP directory
+      shell: "ls /home/dao-test/vpp/"
+      register: baseline_vpp_dir
+      changed_when: false
+      failed_when: false
+
+    - name: Count application processes
+      shell: "ps -eo pid,args | grep -E 'smart-nic|secgw|nginx' | grep -v grep | wc -l"
+      register: baseline_apps
+      changed_when: false
+
+    - name: Check drivers
+      shell: 'for d in 0002:02:00.0 0002:04:00.0; do echo "$d $(basename $(readlink /sys/bus/pci/devices/$d/driver))"; done'
+      register: baseline_drivers
+      changed_when: false
+
+    - name: Check hugepages
+      shell: 'for s in 2048kB 524288kB; do echo $s $(cat /sys/kernel/mm/hugepages/hugepages-$s/free_hugepages); done'
+      register: baseline_hugepages
+      changed_when: false
+
+    - name: Display baseline
+      debug:
+        msg:
+          - "{{ baseline_vpp.stdout }}"
+          - "{{ baseline_packages.stdout }}"
+          - "{{ baseline_sysctl.stdout }}"
+          - "{{ baseline_vpp_dir.stdout }}"
+          - "{{ baseline_apps.stdout }}"
+          - "{{ baseline_drivers.stdout }}"
+          - "{{ baseline_hugepages.stdout }}"

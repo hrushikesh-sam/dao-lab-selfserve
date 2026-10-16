@@ -352,3 +352,53 @@ def test_concurrent_step_appends_lose_nothing(tmp_path):
         mine = [n for n in names if n.startswith(f"w{w}-")]
         assert mine == [f"w{w}-s{n}" for n in range(10)]
     conn.close()
+
+
+# ---- running_mutating_job (B-24) ---------------------------------------------------------
+
+@pytest.fixture
+def two_setups(db):
+    a, b = mk_setup(db, "sa", ["wire"]), mk_setup(db, "sb", ["wire"])
+    cid = mk_usecase(db, "uc2", ["wire"])
+    return db, a, b, mk_res(db, a, cid, T(10), T(11)), mk_res(db, b, cid, T(10), T(11))
+
+
+@pytest.mark.parametrize("kind", models.MUTATING_JOB_KINDS)
+def test_a_running_mutating_job_is_found_through_its_reservation(two_setups, kind):
+    db, a, b, ra, rb = two_setups
+    jid = models.create_job(db, ra, kind)
+    models.transition_job(db, jid, "running")
+    assert models.running_mutating_job(db, a)["id"] == jid
+    assert models.running_mutating_job(db, b) is None                   # other setup: free
+
+
+def test_health_probes_never_count(two_setups):
+    db, a, _, ra, _ = two_setups
+    jid = models.create_job(db, ra, "health_probe")
+    models.transition_job(db, jid, "running")
+    assert models.running_mutating_job(db, a) is None
+
+
+def test_pending_and_finished_jobs_never_count(two_setups):
+    db, a, _, ra, _ = two_setups
+    models.create_job(db, ra, "deploy")                                  # pending
+    done = models.create_job(db, ra, "cleanup")
+    models.transition_job(db, done, "running")
+    models.transition_job(db, done, "succeeded")
+    bad = models.create_job(db, ra, "deploy", attempt=2)
+    models.transition_job(db, bad, "running")
+    models.transition_job(db, bad, "failed", error="x")
+    assert models.running_mutating_job(db, a) is None
+
+
+def test_the_oldest_running_job_is_reported(two_setups):
+    db, a, _, ra, _ = two_setups
+    first = models.create_job(db, ra, "deploy")
+    second = models.create_job(db, ra, "cleanup")
+    for j in (second, first):
+        models.transition_job(db, j, "running")
+    assert models.running_mutating_job(db, a)["id"] == first
+
+
+def test_an_unknown_setup_has_no_running_job(db):
+    assert models.running_mutating_job(db, 999) is None

@@ -277,7 +277,9 @@ JOB_TERMINAL_STATES = ("succeeded", "failed")
 STEP_STATES = ("ok", "failed", "skipped")
 
 # plan/09 §6: pending -> running -> succeeded | failed, nothing else. A failed job is final;
-# a retry is a *new* job row with attempt + 1 (create_job).
+# a retry is a *new* job row with attempt + 1 (create_job). The one explicit exception is crash
+# recovery (B-26): requeue_job puts a stale `running` job back to `pending`; it is not a
+# transition_job move.
 JOB_TRANSITIONS = {
     "pending": ("running",),
     "running": ("succeeded", "failed"),
@@ -323,6 +325,54 @@ def pending_jobs(conn, limit: int | None = None):
     if limit is None:
         return conn.execute(sql).fetchall()
     return conn.execute(sql + " LIMIT ?", (limit,)).fetchall()
+
+
+def running_mutating_job(conn, setup_id: int):
+    """The `running` deploy / cleanup / reconcile job on `setup_id`, or None (B-24).
+
+    A job belongs to a setup through its reservation. Health probes are read-only and never
+    count; neither do pending or finished jobs. If several are running (they should never be)
+    the oldest is returned."""
+    marks = ", ".join("?" for _ in MUTATING_JOB_KINDS)
+    return conn.execute(
+        f"""SELECT j.* FROM jobs j JOIN reservations r ON r.id = j.reservation_id
+            WHERE r.setup_id = ? AND j.state = 'running' AND j.kind IN ({marks})
+            ORDER BY j.id LIMIT 1""",
+        (setup_id, *MUTATING_JOB_KINDS)).fetchone()
+
+
+def stale_running_jobs(conn, idle_before: str):
+    """`running` jobs with no sign of life since before `idle_before` (a timestamp string), oldest
+    first (B-26). Every step a runner records bumps `updated_at`, so a deploy that is slow but
+    still reporting is never stale; one whose engine died stops reporting."""
+    return conn.execute(
+        "SELECT * FROM jobs WHERE state = 'running' AND updated_at < ? ORDER BY id",
+        (idle_before,)).fetchall()
+
+
+def requeue_job(conn, job) -> bool:
+    """Put a stale `running` job back to `pending` so an engine picks it up again (B-26).
+
+    This is the one allowed way out of `running` that is not `succeeded` or `failed`
+    (plan/09 §10): playbooks are idempotent, so replaying the job is safe. The attempt number
+    does not change. The steps recorded so far are kept, and a `requeued` marker step is added,
+    so a live viewer keeps its place in the list and the history shows what happened. The update
+    only applies if the job is still running AND has not recorded anything since `job` was read,
+    so a job that came back to life is left alone. Returns True if it was requeued."""
+    now = utcnow()
+    marker = {"name": "requeued", "state": "skipped", "at": now,
+              "detail": f"no activity since {job['updated_at']}; engine presumed dead"}
+    steps = to_json([*from_json(job["steps"]), marker])
+    cur = conn.execute(
+        "UPDATE jobs SET state = 'pending', started_at = NULL, steps = ?, updated_at = ? "
+        "WHERE id = ? AND state = 'running' AND updated_at = ? AND steps = ?",
+        (steps, now, job["id"], job["updated_at"], job["steps"]))
+    return cur.rowcount == 1
+
+
+def requeue_stale_jobs(conn, idle_before: str) -> list[int]:
+    """Requeue every stale running job (see `stale_running_jobs`); returns the ids requeued."""
+    return [j["id"] for j in stale_running_jobs(conn, idle_before) if requeue_job(conn, j)]
 
 
 def job_steps(job) -> list[dict]:

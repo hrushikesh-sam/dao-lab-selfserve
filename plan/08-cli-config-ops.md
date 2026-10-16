@@ -158,6 +158,7 @@ setting with its default; `cp .env.example .env` is part of Phase 0. Keep lines 
 | `DAOLAB_RUNNER` | `ansible` | engine | Backend of `service/runner.py` (B-22): `mock` (no testbed; sleeps through each step and records it on the job) or `ansible` (the real backend, arrives with B-84 — until then it raises a clear "not implemented" error). Any other value is a configuration error. |
 | `DAOLAB_MOCK_STEP_SEC` | `5` | engine (mock runner) | Seconds the mock sleeps before each step; a default deploy has 6 steps, so about 30 s. `0` makes it instant (tests). Must be ≥ 0. |
 | `DAOLAB_MOCK_FAIL` | *(empty)* | engine (mock runner) | Failure injection: empty, or a comma-separated subset of `deploy`, `cleanup`. `deploy` makes the deploy fail at the `create_vms` step. `cleanup` makes cleanup *look* successful but leave residue, so `verify_clean` reports leftovers every time — the way to reach the quarantine path. |
+| `DAOLAB_JOB_TIMEOUT_SEC` | `1800` | engine | Crash recovery (B-26): a `running` job with no recorded step for this many seconds is presumed dead and put back to `pending`. Must be > 0 and longer than the longest silent stretch of a healthy job. |
 | `DAOLAB_ENGINE_INTERVAL_SEC` | `60` | engine | Sleep between ticks in `python -m service.engine --loop`. |
 | `DAOLAB_MAX_RETRIES` | `3` | engine | Playbook retries per phase before `failed`. |
 | `DAOLAB_SCHED_HORIZON_HOURS` | `168` | api (scheduler) | Slot-shift / availability search horizon (7 days). |
