@@ -520,12 +520,18 @@ class AnsibleRunner:
         if run is None:
             import ansible_runner
             run = ansible_runner.run
+        envvars = ansible_env(self.s, otel.traceparent())
+        playbook_bin = ansible_playbook_path()
+        if playbook_bin:
+            # the engine runs as .venv/bin/python without the venv on PATH (systemd, dev.sh):
+            # put the directory of the ansible-playbook installed next to it first on the PATH
+            # ansible-runner resolves the command with (not `binary=`: that is raw mode)
+            envvars["PATH"] = os.path.dirname(playbook_bin) + os.pathsep + os.environ.get("PATH", "")
         try:
             r = run(private_data_dir=pdd, project_dir=os.path.abspath(self.s.playbooks_dir),
                     playbook=self.PLAYBOOKS[playbook_key],
                     inventory=os.path.abspath(self.s.inventory), extravars=ev,
-                    envvars=ansible_env(self.s, otel.traceparent()), event_handler=on_event,
-                    quiet=True, ident=kind)
+                    envvars=envvars, event_handler=on_event, quiet=True, ident=kind)
         finally:
             log.close()
         ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
@@ -572,6 +578,16 @@ class AnsibleRunner:
 
     def destroy_vms(self, names, step):
         return self._play("orphans", "orphans", None, step, {"daolab_vm_names": list(names)})[0]
+
+
+def ansible_playbook_path() -> str | None:
+    """The ansible-playbook of this interpreter's environment (.venv/bin), else the one on PATH."""
+    import shutil
+    import sys
+    here = os.path.join(os.path.dirname(sys.executable), "ansible-playbook")
+    if os.access(here, os.X_OK):
+        return here
+    return shutil.which("ansible-playbook")
 
 
 def dpu_app(roles: Mapping) -> str:

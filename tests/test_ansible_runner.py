@@ -284,3 +284,17 @@ def test_with_vms_off_the_orphan_sweep_asks_no_xcp_host(settings):
     fake = FakeRun(output=["daolab-r999-x"])
     rn = AnsibleRunner(dataclasses.replace(settings, deploy_vms=False), run=fake)
     assert rn.tagged_vms() == [] and fake.calls == []
+
+
+def test_the_runner_uses_the_ansible_playbook_of_its_own_environment(settings, ctx, monkeypatch):
+    """The engine runs as .venv/bin/python without the venv on PATH (systemd, dev.sh): the
+    first real run on xeon3-oct-112 failed with rc=127, ansible-playbook not found."""
+    import sys
+    fake = FakeRun()
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    AnsibleRunner(settings, run=fake).deploy(ctx, Steps())
+    kw = fake.calls[0]
+    expected = os.path.join(os.path.dirname(sys.executable), "ansible-playbook")
+    if os.access(expected, os.X_OK):
+        assert "binary" not in kw                     # raw mode would drop the playbook
+        assert kw["envvars"]["PATH"].split(os.pathsep)[0] == os.path.dirname(expected)
