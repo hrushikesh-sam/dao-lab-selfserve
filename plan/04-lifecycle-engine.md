@@ -134,8 +134,12 @@ def main(argv: list[str] | None = None) -> int:
 > replayed job is failed by the usual state check. The timeout must exceed the longest silent
 > stretch of a healthy job; a job that is slow *and* silent for longer could be replayed while
 > still running. Not done yet: IP release and the
-> setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67). `vms` rows
-> are not created by the engine yet.
+> setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67).
+> **B-23 follow-up:** step (3) now creates the reservation's `vms` rows
+> (`models.create_vms`, resolution as in "`vms` row creation in step (d)" below) in the same
+> transaction as `queued → provisioning`, and the runner receives
+> `models.reservation_context()` (the playbook extravars plus `roles`, `verify`, `members`,
+> `vms`, and the job's `job_id`/`attempt`) instead of a DB row.
 
 Tick order is fixed — (a) through (e) exactly as above. Rules:
 

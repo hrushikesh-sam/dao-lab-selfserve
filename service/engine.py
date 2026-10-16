@@ -10,7 +10,8 @@ A tick walks the reservations in a fixed order:
                              step, `terminate-user`, kills the DPU's `lab` sessions so access
                              is revoked at the end of the slot — plan/09 §7, B-53)
   3. queued -> provisioning  at start_at - lead, if the setup is available and not held
-                             (and queues a `deploy` job)
+                             (and, in the same transaction, creates the reservation's `vms`
+                             rows and queues a `deploy` job)
   4. run the pending jobs, oldest first, through the runner (B-22)
 
 A setup is freed by step 4 (cleanup verified clean -> released), after step 3 has already
@@ -178,6 +179,7 @@ def _start_due(db: sqlite3.Connection, now: datetime, cfg: scheduler.SchedConfig
                 if models.held_by(db, r["setup_id"]) is not None:   # re-check under the lock
                     raise _Skip
                 models.transition_reservation(db, r["id"], "provisioning", from_state="queued")
+                models.create_vms(db, r["id"])      # before any playbook: callbacks need them
                 models.create_job(db, r["id"], "deploy")
             n += 1
         except (_Skip, models.ReservationStateError):
@@ -187,13 +189,19 @@ def _start_due(db: sqlite3.Connection, now: datetime, cfg: scheduler.SchedConfig
 
 # ---- 4. run the pending jobs ----------------------------------------------------------
 
-def _call(fn, res, sink, what: str) -> RunResult:
+def _call(fn, ctx, sink, what: str) -> RunResult:
     """Run one runner function; a crash becomes a failed result instead of killing the tick."""
     try:
-        return fn(res, sink)
+        return fn(ctx, sink)
     except Exception as e:                           # noqa: BLE001 — the engine must survive
-        log.exception("runner %s crashed for reservation %s", what, res["id"])
+        log.exception("runner %s crashed for reservation %s", what, ctx["id"])
         return RunResult(ok=False, error=f"{type(e).__name__}: {e}")
+
+
+def _context(db, job, res) -> dict:
+    """What the runner gets instead of a DB row: the reservation context (models) plus the job."""
+    return {**models.reservation_context(db, res["id"]),
+            "job_id": job["id"], "job_kind": job["kind"], "attempt": job["attempt"]}
 
 
 def _audit(db, job, action: str, detail: dict) -> None:
@@ -218,9 +226,9 @@ def _finish(db, job_id: int, result: RunResult) -> None:
         models.transition_job(db, job_id, "failed", error=result.error or "failed")
 
 
-def _run_deploy(db, rn, job, res, sink, out: TickResult) -> RunResult:
+def _run_deploy(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
     redeploy = res["state"] != "provisioning"          # ready/active: replay inside a live slot
-    result = _call(rn.deploy, res, sink, "deploy")
+    result = _call(rn.deploy, ctx, sink, "deploy")
     with _txn(db):          # job result + reservation move + audit commit together or not at all
         _finish(db, job["id"], result)
         if redeploy:
@@ -249,9 +257,9 @@ def _run_deploy(db, rn, job, res, sink, out: TickResult) -> RunResult:
     return result
 
 
-def _run_cleanup(db, rn, job, res, sink, out: TickResult) -> RunResult:
-    cleaned = _call(rn.cleanup, res, sink, "cleanup")
-    verified = _call(rn.verify_clean, res, sink, "verify_clean")   # whatever the cleanup said
+def _run_cleanup(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+    cleaned = _call(rn.cleanup, ctx, sink, "cleanup")
+    verified = _call(rn.verify_clean, ctx, sink, "verify_clean")   # whatever the cleanup said
     clean = verified.ok and not verified.residue
     if clean:
         result = RunResult(ok=True)
@@ -321,12 +329,13 @@ def _run_job(db, rn, job, out: TickResult) -> None:
     except runner_mod.RunnerError as e:
         models.transition_job(db, job["id"], "failed", error=str(e))
         return
+    ctx = _context(db, job, res)
     if job["kind"] == "deploy":
-        _run_deploy(db, rn, job, res, sink, out)
+        _run_deploy(db, rn, job, res, ctx, sink, out)
     elif job["kind"] == "cleanup":
-        _run_cleanup(db, rn, job, res, sink, out)
+        _run_cleanup(db, rn, job, res, ctx, sink, out)
     else:                                            # health_probe
-        _finish(db, job["id"], _call(fn, res, sink, job["kind"]))
+        _finish(db, job["id"], _call(fn, ctx, sink, job["kind"]))
 
 
 def _run_pending(db, rn, out: TickResult) -> None:

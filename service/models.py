@@ -200,6 +200,87 @@ def set_vm_ip(conn, vm_id: int, ip: str) -> None:
     update(conn, "vms", vm_id, {"ip": ip})
 
 
+def vm_name(res_id: int, role: str) -> str:
+    """The XCP-ng name (and tag prefix) of a reservation's VM: `daolab-r<id>-<role>`."""
+    return f"daolab-r{res_id}-{role}"
+
+
+def _member_of_kind(members, kind: str):
+    return next((m for m in members if m["kind"] == kind), None)
+
+
+def planned_vms(conn, res) -> list[dict]:
+    """The `vms` rows a reservation will have (plan/04 step (d)), resolved against its setup:
+
+      * `on: dpu`      -> host = the DPU member's name, no template, no VM name;
+      * `on: dpu_host` -> host = the XCP-ng host of the DPU member;
+      * `on: tg_host`  -> host = the XCP-ng host of the NIC member;
+      * diy            -> one VM per host of `diy_templates`, the host name as the role.
+
+    A role whose member the setup lacks is left out (capability matching should make that
+    impossible; the deploy then fails on the missing VM instead of the engine crashing)."""
+    members = setup_members(conn, res["setup_id"])
+    out = []
+    if res["diy"]:
+        for host, template in sorted(from_json(res["diy_templates"] or "{}").items()):
+            out.append({"role": host, "host": host, "template": template,
+                        "name": vm_name(res["id"], host)})
+        return out
+    uc = usecase_by_id(conn, res["usecase_id"])
+    roles = from_json(uc["roles"]) if uc["roles"] else {}
+    dpu = _member_of_kind(members, "dpu")
+    nic = _member_of_kind(members, "nic")
+    for role, spec in roles.items():
+        on = spec.get("on")
+        if on == "dpu" and dpu is not None:
+            out.append({"role": role, "host": dpu["name"], "template": None, "name": None})
+        elif on in ("dpu_host", "tg_host"):
+            member = dpu if on == "dpu_host" else nic
+            if member is not None:
+                out.append({"role": role, "host": member["host"], "template": spec.get("vm"),
+                            "name": vm_name(res["id"], role)})
+    return out
+
+
+def create_vms(conn, res_id: int) -> int:
+    """Insert the reservation's `vms` rows (ip NULL) before any playbook runs, so the
+    `/internal/vm-ip` and `/internal/leases` callbacks always find their (reservation, role).
+    Idempotent: existing rows are kept. Returns how many rows were added."""
+    res = reservation_by_id(conn, res_id)
+    added = 0
+    for vm in planned_vms(conn, res):
+        if vm_by_role(conn, res_id, vm["role"]) is None:
+            insert(conn, "vms", {"reservation_id": res_id, **vm})
+            added += 1
+    return added
+
+
+def reservation_context(conn, res_id: int) -> dict:
+    """Everything a runner needs about one reservation, read once by the engine so the runner
+    never touches the DB. Keys follow the playbook extravars (plan/04 runner contract):
+    `reservation_id`, `usecase`, `setup`, `user`, `ssh_pubkey`, `hw_class`, `diy`,
+    `templates`; plus `id` (what every runner function reads), the use case's `roles` and
+    `verify`, the setup `members` and the reservation's `vms`."""
+    r = reservation_by_id(conn, res_id)
+    user = user_by_id(conn, r["user_id"])
+    uc = usecase_by_id(conn, r["usecase_id"])
+    setup = conn.execute("SELECT name FROM setups WHERE id = ?", (r["setup_id"],)).fetchone()
+    return {
+        "id": r["id"], "reservation_id": r["id"], "state": r["state"],
+        "start_at": r["start_at"], "end_at": r["end_at"],
+        "usecase": uc["name"], "setup": setup["name"],
+        "user": user["username"], "ssh_pubkey": user["ssh_pubkey"],
+        "hw_class": uc["hw_class"], "diy": bool(r["diy"]),
+        "templates": from_json(r["diy_templates"]) if r["diy_templates"] else {},
+        "roles": from_json(uc["roles"]) if uc["roles"] else {},
+        "verify": from_json(uc["verify"]) if uc["verify"] else {},
+        "members": [{"name": m["name"], "kind": m["kind"], "host": m["host"]}
+                    for m in setup_members(conn, r["setup_id"])],
+        "vms": [{"role": v["role"], "host": v["host"], "template": v["template"],
+                 "name": v["name"], "ip": v["ip"]} for v in vms_for_reservation(conn, res_id)],
+    }
+
+
 # ---- IP pools / leases (B-40) ----------------------------------------------
 
 def ip_pool_by_name(conn, name: str):
