@@ -13,11 +13,14 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 
 import pytest
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ANSIBLE = os.environ.get("DAOLAB_TEST_ANSIBLE_PLAYBOOK") or shutil.which("ansible-playbook")
+_VENV_ANSIBLE = os.path.join(os.path.dirname(sys.executable), "ansible-playbook")
+ANSIBLE = (os.environ.get("DAOLAB_TEST_ANSIBLE_PLAYBOOK") or shutil.which("ansible-playbook")
+           or (_VENV_ANSIBLE if os.path.exists(_VENV_ANSIBLE) else None))
 pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed "
                                                     "(pip install -e .[ansible])")
 
@@ -546,3 +549,24 @@ def test_a_manual_run_takes_its_addresses_and_calls_no_api(lab, api, fake_app):
                   manual_ips={"sink": "10.30.0.190", "tgen": "10.30.0.191"}) == 0, lab.stdout[-3000:]
     assert api["calls"] == []
     assert lab.state()["vms"]["daolab-r0-sink"]["ip"] == "10.30.0.190"
+
+
+# ---- B-84: probe.yml ---------------------------------------------------------------------
+
+def test_probe_runs_verify_against_the_recorded_addresses(lab, fake_app):
+    with_traffic(lab, pktgen="rx == tx")
+    vms = [{"role": "sink", "name": "daolab-r12-sink", "ip": "10.30.0.100"},
+           {"role": "tgen", "name": "daolab-r12-tgen", "ip": "10.30.0.101"},
+           {"role": "vpp", "name": None, "ip": "10.20.0.1"}]
+    assert lab.run("probe.yml", roles_path=str(fake_app), daolab_roles=VPP_ROLES,
+                   daolab_verify=VPP_VERIFY, daolab_vms=vms, daolab_vm_connection="local") == 0, \
+        lab.stdout[-2000:]
+    assert ["pktgen", "-t", "10.22.0.2", "--rate", "10mpps"] in lab.calls("pktgen")
+    assert lab.state()["vms"] == {}                                    # read-only
+
+
+def test_a_failing_probe_fails(lab, fake_app):
+    with_traffic(lab, pktgen="rx 0")
+    vms = [{"role": "tgen", "name": "daolab-r12-tgen", "ip": "10.30.0.101"}]
+    assert lab.run("probe.yml", roles_path=str(fake_app), daolab_roles=VPP_ROLES,
+                   daolab_verify=VPP_VERIFY, daolab_vms=vms, daolab_vm_connection="local") != 0

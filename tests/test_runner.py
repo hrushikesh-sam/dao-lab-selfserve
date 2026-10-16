@@ -271,12 +271,6 @@ def test_method_for_rejects_an_unknown_kind():
         runner.method_for(mock(), "reboot")
 
 
-@pytest.mark.parametrize("fn", ["deploy", "cleanup", "probe", "verify_clean", "reconcile"])
-def test_the_ansible_backend_says_plainly_that_it_is_not_built_yet(fn):
-    with pytest.raises(NotImplementedError, match="B-84.*DAOLAB_RUNNER=mock"):
-        getattr(AnsibleRunner(), fn)(RES, Sink())
-
-
 def test_every_job_kind_in_the_model_is_handled():
     for kind in models.JOB_KINDS:
         assert callable(runner.method_for(mock(), kind))

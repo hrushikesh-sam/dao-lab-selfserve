@@ -44,6 +44,8 @@ class Settings:
     prometheus_url: str
     reconcile_attempts: int
     authz_secret: str
+    artifacts_dir: str
+    otel_agent_endpoint: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -87,6 +89,8 @@ class Settings:
             prometheus_url=env("DAOLAB_PROMETHEUS_URL", "http://localhost:9090"),
             reconcile_attempts=int(env("DAOLAB_RECONCILE_ATTEMPTS", "2")),
             authz_secret=env("DAOLAB_AUTHZ_SECRET", ""),
+            artifacts_dir=env("DAOLAB_ARTIFACTS_DIR", "./var/jobs"),
+            otel_agent_endpoint=env("DAOLAB_OTEL_AGENT_ENDPOINT", ""),
         )
 
 

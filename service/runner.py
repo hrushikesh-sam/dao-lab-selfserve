@@ -6,7 +6,7 @@ function per procedure plus `verify_clean`, which proves a cleanup left nothing 
 
   * ``mock``    — a fake that sleeps through each step and records it, so the whole flow
                   (booking, deploy, cleanup, quarantine) can be demonstrated with no testbed.
-  * ``ansible`` — the real thing, arriving with B-84.
+  * ``ansible`` — the real thing (B-84): the playbooks, through ansible-runner.
 
 The runner never touches the database. Every function takes the reservation (anything that
 supports ``res["id"]``, e.g. a sqlite Row or dict) and a *step sink*: a callable
@@ -414,33 +414,152 @@ class MockRunner:
 
 
 class AnsibleRunner:
-    """The real backend (ansible-runner, `deploy.yml` / `cleanup.yml`) arrives with B-84."""
+    """The real backend (B-84): every procedure is a playbook under DAOLAB_PLAYBOOKS_DIR, run
+    with ansible-runner against DAOLAB_INVENTORY.
 
-    def _todo(self, what: str):
-        raise NotImplementedError(
-            f"the ansible runner ({what}) is not implemented yet (B-84); "
-            "set DAOLAB_RUNNER=mock to run the flow without a testbed")
+      deploy        deploy.yml        (B-80)          cleanup     cleanup.yml   (B-82)
+      probe         probe.yml         (verify only)   reconcile   reconcile.yml (B-72)
+      verify_clean  verify_clean.yml  (B-70)          orphans     orphans.yml   (B-73)
 
+    Extra vars are the playbook contract (plan/04): the reservation context's scalars plus the
+    structured `daolab_*` facts, the API URL + internal secret for the callbacks, and the
+    lab-reachable collector for the agents. The environment comes from `ansible_env` (B-63),
+    with the current job span as TRACEPARENT (B-62).
+
+    Each job gets `<DAOLAB_ARTIFACTS_DIR>/job-<id>/`: ansible-runner's artifacts per playbook,
+    and `job.log`, every playbook's output of the job in order - the engine records it as the
+    job's log_path, so GET /jobs/{id} shows its tail. A task named `step: <name>` becomes a job
+    step when it finishes; any failed task does too, and its message is the job error. Playbooks
+    that report data (verify_clean, orphans) write JSON to `daolab_output_file`.
+
+    `run` is ansible_runner.run, injectable for tests; ansible-runner is imported only when a
+    playbook actually runs (`pip install -e .[ansible]`)."""
+
+    PLAYBOOKS = {"deploy": "deploy.yml", "cleanup": "cleanup.yml", "probe": "probe.yml",
+                 "verify_clean": "verify_clean.yml", "reconcile": "reconcile.yml",
+                 "orphans": "orphans.yml"}
+    STEP_PREFIX = "step: "
+    _DONE = {"runner_on_ok": "ok", "runner_on_skipped": "skipped",
+             "runner_on_failed": "failed", "runner_on_unreachable": "failed"}
+
+    def __init__(self, settings=None, run: Callable | None = None):
+        self.s = settings or config.settings
+        self._run = run
+
+    # ---- paths -----------------------------------------------------------------------
+    def job_dir(self, job_id) -> str:
+        return os.path.abspath(os.path.join(self.s.artifacts_dir, f"job-{job_id}"))
+
+    def log_path_for(self, job_id) -> str:
+        """Where the job's combined playbook output goes (the engine stores it on the job)."""
+        return os.path.join(self.job_dir(job_id), "job.log")
+
+    # ---- the contract ------------------------------------------------------------------
+    def extravars(self, res: Mapping) -> dict:
+        get = lambda key, default=None: _field(res, key, default)            # noqa: E731
+        return {
+            "reservation_id": res["id"], "usecase": get("usecase"), "setup": get("setup"),
+            "user": get("user"), "ssh_pubkey": get("ssh_pubkey"), "hw_class": get("hw_class") or "",
+            "diy": bool(get("diy", False)), "templates": get("templates") or {},
+            "daolab_members": get("members") or [], "daolab_roles": get("roles") or {},
+            "daolab_verify": get("verify") or {}, "daolab_vms": get("vms") or [],
+            "daolab_leases": get("leases") or [],
+            "daolab_api_url": self.s.api_url.rstrip("/"),
+            "daolab_internal_secret": self.s.internal_secret,
+            "daolab_otel_collector": self.s.otel_agent_endpoint,
+        }
+
+    def _play(self, kind: str, playbook_key: str, res: Mapping | None, step: StepSink,
+              extra: dict | None = None) -> tuple[RunResult, object]:
+        """Run one playbook; returns (result, the JSON it wrote to daolab_output_file)."""
+        from . import otel
+        job_id = _field(res, "job_id") if res is not None else None
+        root = self.job_dir(job_id if job_id is not None else "sweep")
+        os.makedirs(root, exist_ok=True)
+        n = len([d for d in os.listdir(root) if d.startswith("run-")]) + 1
+        pdd = os.path.join(root, f"run-{n}-{playbook_key}")
+        out_file = os.path.join(pdd, "output.json")
+        os.makedirs(pdd, exist_ok=True)
+        ev = {**(self.extravars(res) if res is not None else {}),
+              "daolab_output_file": out_file, **(extra or {})}
+        failure: dict = {}
+        log = open(os.path.join(root, "job.log"), "a", encoding="utf-8")
+
+        def on_event(event: dict) -> bool:
+            if event.get("stdout"):
+                log.write(event["stdout"] + "\n")
+                log.flush()
+            state = self._DONE.get(event.get("event"))
+            if state is None:
+                return True
+            data = event.get("event_data", {})
+            task = (data.get("task") or "").strip()
+            if state == "failed" and data.get("ignore_errors"):
+                return True
+            detail = None
+            if state == "failed":
+                r = data.get("res") or {}
+                detail = str(r.get("msg") or r.get("stderr") or r.get("stdout") or "failed")[-500:]
+                failure.update(task=task, msg=detail, host=data.get("host"))
+            if task.startswith(self.STEP_PREFIX) or state == "failed":
+                name = task[len(self.STEP_PREFIX):] if task.startswith(self.STEP_PREFIX) else task
+                step(name, state, detail)
+            return True
+
+        run = self._run
+        if run is None:
+            import ansible_runner
+            run = ansible_runner.run
+        try:
+            r = run(private_data_dir=pdd, project_dir=os.path.abspath(self.s.playbooks_dir),
+                    playbook=self.PLAYBOOKS[playbook_key],
+                    inventory=os.path.abspath(self.s.inventory), extravars=ev,
+                    envvars=ansible_env(self.s, otel.traceparent()), event_handler=on_event,
+                    quiet=True, ident=kind)
+        finally:
+            log.close()
+        ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
+        error = None
+        if not ok:
+            where = f"{failure['task']} on {failure['host']}: " if failure.get("task") else ""
+            error = where + (failure.get("msg") or
+                             f"{self.PLAYBOOKS[playbook_key]} {getattr(r, 'status', 'failed')} "
+                             f"(rc={getattr(r, 'rc', None)})")
+        output = None
+        if os.path.exists(out_file):
+            with open(out_file, encoding="utf-8") as fh:
+                output = json.load(fh)
+        return RunResult(ok=ok, error=error), output
+
+    # ---- the runner interface ----------------------------------------------------------
     def deploy(self, res, step):
-        self._todo("deploy")
+        return self._play("deploy", "deploy", res, step)[0]
 
     def cleanup(self, res, step):
-        self._todo("cleanup")
+        return self._play("cleanup", "cleanup", res, step)[0]
 
     def probe(self, res, step):
-        self._todo("probe")
-
-    def verify_clean(self, res, step):
-        self._todo("verify_clean")
+        return self._play("probe", "probe", res, step)[0]
 
     def reconcile(self, res, step):
-        self._todo("reconcile")
+        return self._play("reconcile", "reconcile", res, step)[0]
+
+    def verify_clean(self, res, step):
+        result, residue = self._play("verify_clean", "verify_clean", res, step)
+        residue = tuple(residue or ())
+        if residue:
+            return RunResult(ok=False, error=result.error or "residue found after cleanup",
+                             residue=residue)
+        return result                     # a run that could not verify is not clean either
 
     def tagged_vms(self):
-        self._todo("tagged_vms")
+        result, names = self._play("orphans", "orphans", None, lambda *a, **k: None)
+        if not result.ok:
+            raise RunnerError(f"could not list the testbed's VMs: {result.error}")
+        return list(names or [])
 
     def destroy_vms(self, names, step):
-        self._todo("destroy_vms")
+        return self._play("orphans", "orphans", None, step, {"daolab_vm_names": list(names)})[0]
 
 
 ANSIBLE_SERVICE_NAME = "daolab-ansible"

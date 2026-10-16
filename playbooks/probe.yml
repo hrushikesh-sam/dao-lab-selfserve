@@ -1,0 +1,16 @@
+# playbooks/probe.yml — B-84: the on-demand health probe (POST .../health/probe, B-66).
+#
+# Runs the use case's YAML verify block from its `from` VM, read-only, against the live
+# reservation: the same `verify` role deploy.yml ends with, using the VMs' recorded addresses
+# (daolab_vms) instead of a fresh lease. Diy reservations have nothing to probe.
+- name: probe
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: resolve
+      ansible.builtin.import_tasks: tasks/resolve.yml
+    - name: plan
+      ansible.builtin.import_tasks: tasks/plan_vms.yml
+    - name: verify
+      ansible.builtin.include_role:
+        name: verify
