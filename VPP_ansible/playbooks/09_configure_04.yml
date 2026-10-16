@@ -1,0 +1,46 @@
+---
+- name: Step 12 - Move 0002:04:00.0 to vfio-pci and create live-port VPP config
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Require explicit sign-off before changing PCI binding
+      assert:
+        that:
+          - allow_destructive_changes | bool
+        fail_msg: "Runbook requires sign-off before changing PCI device binding."
+
+    - name: Unbind live port from rvu_nicpf
+      become: true
+      shell: "echo {{ pci_live_port }} | tee /sys/bus/pci/drivers/rvu_nicpf/unbind"
+
+    - name: Set vfio-pci override
+      become: true
+      shell: "echo vfio-pci | tee /sys/bus/pci/devices/{{ pci_live_port }}/driver_override"
+
+    - name: Probe vfio-pci
+      become: true
+      shell: "echo {{ pci_live_port }} | tee /sys/bus/pci/drivers_probe"
+
+    - name: Verify live port binding and state
+      shell: |
+        ls -l /sys/bus/pci/devices/{{ pci_live_port }}/driver | awk '{print $NF}'
+        ls /sys/bus/pci/devices | grep '^0002:04:'
+        readlink /sys/bus/pci/devices/{{ pci_live_port }}/iommu_group
+        ps -eo pid,args | grep -E 'smart-nic' | grep -v grep | cut -c1-60
+        ip -br addr show dev {{ management_interface }}
+      register: live_port_vfio
+      changed_when: false
+
+    - name: Create live-port VPP configuration by documented substitution
+      become: true
+      shell: "sed 's#pci/{{ pci_no_carrier }}#pci/{{ pci_live_port }}#' {{ vpp_conf_no_carrier }} > {{ vpp_conf_live_port }}"
+
+    - name: Verify live-port PCI address in config
+      shell: "grep -n 'dev pci' {{ vpp_conf_live_port }}"
+      register: live_config_check
+      changed_when: false
+
+    - debug:
+        var: live_port_vfio.stdout_lines
+    - debug:
+        var: live_config_check.stdout_lines

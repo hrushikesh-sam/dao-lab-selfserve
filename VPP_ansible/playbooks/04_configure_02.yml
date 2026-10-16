@@ -1,0 +1,81 @@
+---
+- name: Step 6 - Create VPP configuration for 0002:02:00.0
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Create VPP directory
+      file:
+        path: "{{ vpp_dir }}"
+        state: directory
+        owner: "{{ vpp_user }}"
+        group: "{{ vpp_user }}"
+
+    - name: Write startup-crb106-512m.conf exactly from the runbook
+      copy:
+        dest: "{{ vpp_conf_no_carrier }}"
+        owner: "{{ vpp_user }}"
+        group: "{{ vpp_user }}"
+        mode: "0644"
+        content: |
+          unix {
+            nodaemon
+            log /home/dao-test/vpp/vpp.log
+            cli-listen /run/vpp/cli.sock
+            cli-no-pager
+          }
+          cpu {
+            main-core 4
+            corelist-workers 5-6
+          }
+          socksvr { socket-name /run/vpp/api.sock }
+          memory {
+            main-heap-size 512M
+          }
+          buffers {
+            buffers-per-numa 16384
+            default data-size 2048
+          }
+          devices {
+            dev pci/0002:02:00.0
+            {
+              driver octeon
+              port 0
+              {
+                name eth0
+                num-rx-queues 4
+                num-tx-queues 5
+              }
+            }
+          }
+          plugins {
+            path /lib/aarch64-linux-gnu/vpp_plugins
+            plugin default { disable }
+            plugin dev_octeon_plugin.so { enable }
+            plugin ping_plugin.so { enable }
+          }
+          logging {
+            default-log-level info
+            default-syslog-log-level info
+          }
+
+    - name: Count configuration lines
+      shell: "grep -c . {{ vpp_conf_no_carrier }}"
+      register: config_lines
+      changed_when: false
+
+    - name: Confirm no page options
+      shell: "grep -n 'page-size\\|hugepage' {{ vpp_conf_no_carrier }} || echo 'no page options (expected)'"
+      register: page_options
+      changed_when: false
+
+    - name: Check hugepage pools
+      shell: 'for s in 2048kB 524288kB; do echo $s $(cat /sys/kernel/mm/hugepages/hugepages-$s/free_hugepages); done'
+      register: config_hugepages
+      changed_when: false
+
+    - debug:
+        var: config_lines.stdout
+    - debug:
+        var: page_options.stdout
+    - debug:
+        var: config_hugepages.stdout_lines

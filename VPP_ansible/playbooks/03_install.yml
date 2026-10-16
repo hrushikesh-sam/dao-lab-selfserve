@@ -1,0 +1,74 @@
+---
+- name: Steps 4-5 - Install VPP and disable package sysctl file
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Check Marvell repository
+      shell: "grep -rn marvell /etc/apt/sources.list.d/"
+      register: repo_check
+      changed_when: false
+
+    - name: Count application processes
+      shell: "ps -eo pid,args | grep -E 'smart-nic|secgw|nginx' | grep -v grep | wc -l"
+      register: app_count
+      changed_when: false
+
+    - name: Check no-carrier PCI driver
+      shell: "ls -l /sys/bus/pci/devices/{{ pci_no_carrier }}/driver | awk '{print $NF}'"
+      register: pci_driver
+      changed_when: false
+
+    - name: Check VFIO group usage
+      shell: "lsof /dev/vfio/8 2>/dev/null | wc -l"
+      become: true
+      register: vfio_usage
+      changed_when: false
+
+    - name: Check hugepage baseline
+      shell: |
+        grep -E 'HugePages_Free|Hugepagesize' /proc/meminfo
+        for s in 2048kB 524288kB; do echo $s $(cat /sys/kernel/mm/hugepages/hugepages-$s/free_hugepages); done
+      register: hugepage_baseline
+      changed_when: false
+
+    - name: Install VPP package
+      become: true
+      apt:
+        name: "{{ vpp_package }}"
+        state: present
+
+    - name: Confirm package sysctl file exists
+      shell: "ls /etc/sysctl.d/ | grep vpp"
+      changed_when: false
+
+    - name: Read package sysctl file
+      become: true
+      command: "cat {{ vpp_sysctl_file }}"
+      register: vpp_sysctl_contents
+      changed_when: false
+
+    - name: Disable package sysctl file exactly as documented
+      become: true
+      command: "mv {{ vpp_sysctl_file }} {{ vpp_sysctl_disabled }}"
+
+    - name: Verify live sysctl values
+      command: "sysctl vm.nr_hugepages vm.max_map_count vm.hugetlb_shm_group kernel.shmmax"
+      register: sysctl_live
+      changed_when: false
+
+    - name: Verify package status and VPP binaries
+      shell: |
+        dpkg -s {{ vpp_package }} | grep -E '^(Status|Version)'
+        which -a vpp vppctl
+        ldd "$(which vpp)" | grep 'not found'
+        dpkg -L {{ vpp_package }} | grep dev_octeon_plugin.so
+        ps -eo pid,args | grep -E 'smart-nic|secgw|nginx' | grep -v grep | wc -l
+      register: install_verify
+      changed_when: false
+
+    - debug:
+        var: vpp_sysctl_contents.stdout_lines
+    - debug:
+        var: sysctl_live.stdout_lines
+    - debug:
+        var: install_verify.stdout_lines

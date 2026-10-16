@@ -1,0 +1,141 @@
+---
+- name: Steps 7-8 - Start and verify VPP on 0002:02:00.0
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Create VPP runtime directory
+      become: true
+      file:
+        path: "{{ vpp_run_dir }}"
+        state: directory
+
+    - name: Start VPP using the documented command
+      become: true
+      shell: "vpp -c {{ vpp_conf_no_carrier }}"
+      async: 86400
+      poll: 0
+      register: vpp_job
+      changed_when: true
+
+    - name: Wait for VPP CLI socket
+      wait_for:
+        path: "{{ vpp_cli_socket }}"
+        state: present
+        timeout: 30
+
+    - name: Verify VPP process
+      become: true
+      shell: "pgrep -a vpp | cut -c1-120"
+      register: vpp_process
+      changed_when: false
+
+    - name: Show VPP version
+      become: true
+      command: "vppctl -s {{ vpp_cli_socket }} show version"
+      register: vpp_version_out
+      changed_when: false
+
+    - name: Show VPP plugins
+      become: true
+      command: "vppctl -s {{ vpp_cli_socket }} show plugins"
+      register: vpp_plugins_out
+      changed_when: false
+
+    - name: Show VPP threads
+      become: true
+      command: "vppctl -s {{ vpp_cli_socket }} show threads"
+      register: vpp_threads
+      changed_when: false
+
+    - name: Show VPP interfaces
+      become: true
+      command: "vppctl -s {{ vpp_cli_socket }} show interface"
+      register: vpp_interfaces
+      changed_when: false
+
+    - name: Show hardware interfaces
+      become: true
+      shell: "vppctl -s {{ vpp_cli_socket }} show hardware-interfaces | head -12"
+      register: vpp_hardware
+      changed_when: false
+
+    - name: Show VPP errors
+      become: true
+      shell: "vppctl -s {{ vpp_cli_socket }} show errors | head -20"
+      register: vpp_errors
+      changed_when: false
+
+    - name: Count application processes
+      shell: "ps -eo pid,args | grep -E 'smart-nic|secgw|nginx' | grep -v grep | wc -l"
+      register: app_count
+      changed_when: false
+
+    - name: Check hugepages after VPP start
+      shell: 'for s in 2048kB 524288kB; do echo $s $(cat /sys/kernel/mm/hugepages/hugepages-$s/free_hugepages); done'
+      register: hugepages_after_vpp
+      changed_when: false
+
+    - name: Show buffers
+      become: true
+      command: "vppctl -s {{ vpp_cli_socket }} show buffers"
+      register: vpp_buffers
+      changed_when: false
+
+    - name: Enable eth0 and inspect link
+      become: true
+      shell: |
+        vppctl -s {{ vpp_cli_socket }} set interface state eth0 up
+        sleep 3
+        vppctl -s {{ vpp_cli_socket }} show interface eth0
+        vppctl -s {{ vpp_cli_socket }} show hardware-interfaces eth0 | head -8
+      register: no_carrier_link
+      changed_when: true
+
+    - name: Wait exactly as documented before second link check
+      pause:
+        seconds: 10
+
+    - name: Check link after wait
+      become: true
+      shell: "vppctl -s {{ vpp_cli_socket }} show hardware-interfaces eth0 | head -3"
+      register: no_carrier_link_after
+      changed_when: false
+
+    - name: Check SR-IOV state and interfaces
+      shell: |
+        cat /sys/bus/pci/devices/{{ pci_no_carrier }}/sriov_totalvfs /sys/bus/pci/devices/{{ pci_no_carrier }}/sriov_numvfs
+        ls /sys/bus/pci/devices | grep '^0002:02:'
+        for n in /sys/class/net/*; do echo $(basename $n) $(basename $(readlink $n/device 2>/dev/null)) oper=$(cat $n/operstate 2>/dev/null) carrier=$(cat $n/carrier 2>/dev/null); done
+      register: no_carrier_state
+      changed_when: false
+      failed_when: false
+
+    - debug:
+        var: vpp_process.stdout_lines
+
+    - debug:
+        var: vpp_version_out.stdout_lines
+
+    - debug:
+        var: vpp_plugins_out.stdout_lines
+
+    - debug:
+        var: vpp_threads.stdout_lines
+
+    - debug:
+        var: vpp_hardware.stdout_lines
+
+    - debug:
+        var: vpp_errors.stdout_lines
+
+    - debug:
+        var: hugepages_after_vpp.stdout_lines
+
+    - debug:
+        var: no_carrier_link.stdout_lines
+
+    - debug:
+        var: no_carrier_link_after.stdout_lines
+
+    - debug:
+        var: no_carrier_state.stdout_lines
