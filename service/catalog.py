@@ -468,7 +468,8 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
             row = models.usecase_by_name(conn, u["name"])
             fields = {"variant": u["variant"], "requires": models.to_json(u["requires"]),
                       "hw_class": u["hw_class"], "roles": models.to_json(u["roles"]),
-                      "verify": models.to_json(u["verify"]), "yaml_path": u["yaml_path"]}
+                      "verify": models.to_json(u["verify"]), "health": models.to_json(u["health"]),
+                      "yaml_path": u["yaml_path"]}
             if row:
                 models.update(conn, "usecases", row["id"], fields)   # description preserved
             else:

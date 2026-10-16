@@ -96,6 +96,16 @@ def test_health_rules_loaded():
     assert [r.get("severity") for r in vpp["health"]] == [None, None, None, "degraded"]
 
 
+def test_sync_stores_health_rules_on_the_usecase(conn):
+    """B-64 follow-up (migration v8): the validated rules are persisted, so the API and the
+    engine evaluate them without reading YAML."""
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    rules = models.from_json(models.usecase_by_name(conn, "vpp")["health"])
+    assert [r["name"] for r in rules] == ["vms_up", "ssh_reachable", "dpu_app", "datapath"]
+    assert rules[-1]["severity"] == "degraded"
+    assert models.from_json(models.usecase_by_name(conn, "diy")["health"]) == []
+
+
 def test_malformed_health_rule_rejected(conn, tmp_path):
     bad = tmp_path / "usecases"
     bad.mkdir()

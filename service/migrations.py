@@ -208,6 +208,13 @@ def _m7_lease_role_unique_while_leased(conn: sqlite3.Connection) -> None:
         "ON ip_leases(reservation_id, role) WHERE state = 'leased'")
 
 
+def _m8_usecase_health(conn: sqlite3.Connection) -> None:
+    """plan/09 §8 (B-64 follow-up, needed by B-65): the use case's `health:` rules, as the
+    JSON list `daolab sync` validated. Request handlers and the engine never read YAML, so
+    the rules have to live on the row. Existing rows have none until the next sync."""
+    add_column(conn, "usecases", "health", "TEXT NOT NULL DEFAULT '[]'")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -216,6 +223,7 @@ MIGRATIONS: list[Migration] = [
     Migration(5, "jobs", _m5_jobs),
     Migration(6, "reservation_states", _m6_reservation_states),
     Migration(7, "lease_role_unique_while_leased", _m7_lease_role_unique_while_leased),
+    Migration(8, "usecase_health", _m8_usecase_health),
 ]
 
 
