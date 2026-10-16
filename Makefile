@@ -5,7 +5,7 @@ DAOLAB_API_PORT ?= 8080
 
 .PHONY: setup test api engine engine-loop dev
 setup:
-	python -m pip install -e .
+	python -m pip install -e ".[ansible]"
 test:
 	python -m pytest tests/ -q
 api:

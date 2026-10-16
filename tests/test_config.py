@@ -6,7 +6,7 @@ NEW_DEFAULTS = {
     "slot_min": 30,
     "cleanup_min": 10,
     "default_hours": 1,
-    "ip_pool": "10.30.0.100-10.30.0.199",
+    "ip_pool": "10.68.1.0-10.68.2.200",
     "early_access": False,
     "health_stale_sec": 120,
     "otel_endpoint": "",

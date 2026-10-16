@@ -47,9 +47,9 @@ if [ ! -x .venv/bin/python ]; then
     echo "==> creating .venv"
     python3 -m venv .venv
 fi
-if [ ! -x .venv/bin/daolab ]; then
-    echo "==> installing daolab (pip install -e .)"
-    .venv/bin/python -m pip install -q -e .
+if [ ! -x .venv/bin/daolab ] || [ ! -x .venv/bin/ansible-playbook ]; then
+    echo "==> installing daolab + the ansible runner (pip install -e .[ansible])"
+    .venv/bin/python -m pip install -q -e ".[ansible]"
 fi
 
 # --- .env with an internal secret -------------------------------------------

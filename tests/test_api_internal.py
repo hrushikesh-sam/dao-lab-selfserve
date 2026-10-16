@@ -48,10 +48,10 @@ def test_lease_returns_the_lowest_free_address_and_is_idempotent(deploying):
     env, rid = deploying
     first = lease(env, rid, "tgen")
     assert first.status_code == 200
-    assert first.json() == {"ip": "10.30.0.100", "reservation_id": rid, "role": "tgen",
+    assert first.json() == {"ip": "10.68.1.0", "reservation_id": rid, "role": "tgen",
                             "state": "leased"}
-    assert lease(env, rid, "tgen").json()["ip"] == "10.30.0.100"       # playbook replay
-    assert lease(env, rid, "sink").json()["ip"] == "10.30.0.101"
+    assert lease(env, rid, "tgen").json()["ip"] == "10.68.1.0"       # playbook replay
+    assert lease(env, rid, "sink").json()["ip"] == "10.68.1.1"
 
 
 def test_lease_rejects_unknown_reservations_and_roles(deploying):
@@ -103,31 +103,31 @@ def test_a_conflicting_address_is_quarantined_and_replaced(deploying):
     env, rid = deploying
     lease(env, rid, "tgen")                                             # .100
     lease(env, rid, "sink")                                             # .101
-    r = conflict(env, "10.30.0.100")
+    r = conflict(env, "10.68.1.0")
     assert r.status_code == 200
-    assert r.json() == {"ip": "10.30.0.102", "reservation_id": rid, "role": "tgen",
-                        "state": "leased", "replaced": "10.30.0.100"}
-    assert lease(env, rid, "tgen").json()["ip"] == "10.30.0.102"       # the new one sticks
+    assert r.json() == {"ip": "10.68.1.2", "reservation_id": rid, "role": "tgen",
+                        "state": "leased", "replaced": "10.68.1.0"}
+    assert lease(env, rid, "tgen").json()["ip"] == "10.68.1.2"       # the new one sticks
     states = {l["ip"]: l["state"] for l in models.ip_leases_for_reservation(env.conn, rid)}
-    assert states == {"10.30.0.100": "quarantined", "10.30.0.101": "leased",
-                      "10.30.0.102": "leased"}
+    assert states == {"10.68.1.0": "quarantined", "10.68.1.1": "leased",
+                      "10.68.1.2": "leased"}
 
 
 def test_conflict_needs_the_secret_and_a_leased_valid_address(deploying):
     env, rid = deploying
     lease(env, rid, "tgen")
-    assert conflict(env, "10.30.0.100", headers={}).status_code == 401
-    assert conflict(env, "10.30.0.150").status_code == 404              # not leased
+    assert conflict(env, "10.68.1.0", headers={}).status_code == 401
+    assert conflict(env, "10.68.1.50").status_code == 404              # not leased
     assert conflict(env, "not-an-ip").status_code == 422
-    assert conflict(env, "10.30.0.100").status_code == 200
-    assert conflict(env, "10.30.0.100").status_code == 404              # already quarantined
+    assert conflict(env, "10.68.1.0").status_code == 200
+    assert conflict(env, "10.68.1.0").status_code == 404              # already quarantined
 
 
 def test_conflict_for_a_reservation_that_moved_on_changes_nothing(deploying):
     env, rid = deploying
     lease(env, rid, "tgen")
     env.conn.execute("UPDATE reservations SET state = 'cleaning' WHERE id = ?", (rid,))
-    assert conflict(env, "10.30.0.100").status_code == 409
+    assert conflict(env, "10.68.1.0").status_code == 409
     [l] = models.ip_leases_for_reservation(env.conn, rid)
     assert l["state"] == "leased"                                       # rolled back
 
