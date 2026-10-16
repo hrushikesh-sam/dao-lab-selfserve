@@ -66,11 +66,23 @@
       Match all
   register: _sshd_conf
 
-- name: sshd accepts its config
-  become: true
-  ansible.builtin.command: sshd -t
+- name: sshd accepts its config - or the drop-in goes, so sshd can always start again
   when: _sshd_conf.changed
-  changed_when: false
+  block:
+    - name: sshd accepts its config
+      become: true
+      ansible.builtin.command: sshd -t
+      changed_when: false
+  rescue:
+    - name: take the drop-in back out
+      become: true
+      ansible.builtin.file:
+        path: "{{ dpu_access_sshd_dir }}/10-daolab-{{ dpu_access_login }}.conf"
+        state: absent
+
+    - name: and stop here
+      ansible.builtin.fail:
+        msg: "sshd -t rejected the lab drop-in; it was removed and sshd was not reloaded"
 
 - name: reload sshd
   become: true

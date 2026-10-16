@@ -431,6 +431,7 @@ def books(tmp_path):
         link.symlink_to(sysfs / "bus" / "pci" / "drivers" / driver)
 
     port_on("rvu_nicpf")
+    (dev / "driver_override").write_text("(null)\n")                  # after a reboot
     return types.SimpleNamespace(
         vars={"daolab_vpp_books": str(root / "vpp"), "daolab_smartnic_books": str(root / "smartnic"),
               "daolab_sysfs": str(sysfs), "smartnic_binary": str(tmp_path / "dao-smart-nic"),
@@ -439,7 +440,8 @@ def books(tmp_path):
               "app_exporter_unit_dir": str(tmp_path), "ansible_become": False,
               "dpu_access_root": str(tmp_path / "root")},
         ran=lambda: ran.read_text().split() if ran.exists() else [],
-        port_on=port_on, binary=tmp_path / "dao-smart-nic", reset=lambda: ran.unlink(missing_ok=True))
+        port_on=port_on, binary=tmp_path / "dao-smart-nic", reset=lambda: ran.unlink(missing_ok=True),
+        override=lambda: (dev / "driver_override").read_text().strip())
 
 
 def deploy(lab, api, books, **over):
@@ -959,3 +961,29 @@ def test_probe_without_vms_asks_the_dpu_app(lab, up, rc_ok):
                  app_exporter_bin=_fake_exporter(lab, up))
     assert (rc == 0) is rc_ok, lab.stdout[-2000:]
     assert not lab.calls("pktgen")                                      # no VM to verify from
+
+
+def test_taking_the_port_first_pins_its_override_so_the_runbook_cleanup_can_restore_it(lab, books):
+    """xeon3-oct-112 after a reboot: the live port is on rvu_nicpf with no override. 08 saves
+    the override as found, and 11 only restores "override=rvu_nicpf" - so it is pinned first."""
+    board(lab, installed=["vpp"])
+    assert books.override() == "(null)"
+    assert vpp_deploy(lab, books) == 0, lab.stdout[-3000:]
+    assert books.override() == "rvu_nicpf"
+    assert books.ran() == ["04_configure_02", "08_prepare_04", "09_configure_04", "10_verify_04"]
+
+
+def test_a_running_vpp_leaves_the_override_alone(lab, books):
+    board(lab, installed=["vpp"], procs=["vpp"])
+    books.port_on("vfio-pci")
+    assert vpp_deploy(lab, books) == 0, lab.stdout[-2000:]
+    assert books.override() == "(null)"
+
+
+def test_a_drop_in_sshd_rejects_is_removed_again(lab):
+    st = lab.state()
+    st["sshd_broken"] = True
+    lab.set(st)
+    assert access_play(lab, ssh_pubkey=KEY) != 0
+    assert "sshd -t rejected the lab drop-in; it was removed" in lab.stdout
+    assert not root(lab, "/etc/ssh/sshd_config.d/10-daolab-lab.conf").exists()

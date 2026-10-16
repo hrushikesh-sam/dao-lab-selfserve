@@ -389,7 +389,7 @@ def visudo(args):
 
 def sshd(args):
     if args == ["-t"]:
-        return
+        sys.exit(1 if load().get("sshd_broken") else 0)
     fail(f"fakelab: unsupported sshd {args}", 2)
 
 

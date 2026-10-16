@@ -7,7 +7,8 @@
 #   03_install       only when vpp is not installed
 #   04_configure_02  always (writes the base startup config that 09 derives the live one from)
 #   08_prepare_04    when VPP is not running and the live port is still on rvu_nicpf
-#                    (saves nginx + PCI state, stops nginx-tls)
+#                    (saves nginx + PCI state, stops nginx-tls) - after pinning the port's
+#                    override to rvu_nicpf, the state 11_cleanup_04 insists on restoring
 #   09_configure_04  same condition (live port -> vfio-pci, live-port config)
 #   10_verify_04     when VPP is not running (start VPP, bring eth0 up, set its IP, ping the peer)
 # Their sign-off guard (allow_destructive_changes) comes from the runner: DAOLAB_ALLOW_DESTRUCTIVE.
@@ -36,6 +37,12 @@
       register: _vpp_port
       changed_when: false
 
+    - name: and its driver override
+      ansible.builtin.command: cat {{ daolab_sysfs | default('/sys') }}/bus/pci/devices/{{ pci_live_port }}/driver_override
+      register: _vpp_override
+      changed_when: false
+      failed_when: false
+
     - name: what this deploy has to do
       ansible.builtin.set_fact:
         daolab_vpp_installed: "{{ _vpp_bin.rc == 0 }}"
@@ -55,6 +62,20 @@
           deploying VPP stops nginx-tls and moves {{ pci_live_port }} to vfio-pci; the runbook
           requires owner sign-off. Set DAOLAB_ALLOW_DESTRUCTIVE=true on the daolab server.
       when: not (daolab_vpp_running | bool)
+
+- name: VPP - the resting state 11_cleanup_04 restores to
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    # 08_prepare_04 saves the live port's driver AND override, and 11_cleanup_04 only gives the
+    # port back when that save reads "driver=rvu_nicpf override=rvu_nicpf". After a reboot the
+    # override is unset ("(null)"), so the save would make the cleanup refuse and leave VPP
+    # running with nginx-tls stopped. Pinning the override to the driver the port is already
+    # on changes nothing about the binding and is exactly what 11_cleanup_04 leaves behind.
+    - name: pin the live port's override to rvu_nicpf (it is on rvu_nicpf already)
+      become: true
+      ansible.builtin.shell: echo rvu_nicpf > {{ daolab_sysfs | default('/sys') }}/bus/pci/devices/{{ pci_live_port }}/driver_override
+      when: daolab_vpp_take_port | bool and (_vpp_override.stdout | trim) != 'rvu_nicpf'
 
 - name: VPP - install (runbook steps 4-5)
   ansible.builtin.import_playbook: "{{ daolab_vpp_books | default('../../../VPP_ansible/playbooks') }}/03_install.yml"
