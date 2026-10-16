@@ -24,6 +24,11 @@ the clock. Every state change is a compare-and-set (`models.transition_reservati
 `models.transition_job`), so a second engine process can never double-fire a transition.
 Runner calls block; ticks are serialised, so a long deploy simply delays the next tick.
 
+Tracing (B-62): with DAOLAB_OTEL_ENDPOINT set, every job runs inside its own span. The span's
+trace id is stored on the job (retries and the automatic cleanup of a failed deploy inherit it,
+so one booking's whole story is one trace), every recorded step becomes a child span, and the
+runner can hand `otel.traceparent()` to Ansible as TRACEPARENT. Off by default; no-op then.
+
 Crash recovery (B-26): every tick starts by putting `running` jobs that have shown no activity
 for DAOLAB_JOB_TIMEOUT_SEC (default 30 min) back to `pending`. Each step a runner records counts
 as activity, so a slow but healthy job is not touched; a job whose engine died stops reporting
@@ -63,7 +68,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from . import config, migrations, models, runner as runner_mod, scheduler
+from . import config, migrations, models, otel, runner as runner_mod, scheduler
 from .runner import RunResult
 
 log = logging.getLogger("daolab.engine")
@@ -330,12 +335,28 @@ def _run_job(db, rn, job, out: TickResult) -> None:
         models.transition_job(db, job["id"], "failed", error=str(e))
         return
     ctx = _context(db, job, res)
-    if job["kind"] == "deploy":
-        _run_deploy(db, rn, job, res, ctx, sink, out)
-    elif job["kind"] == "cleanup":
-        _run_cleanup(db, rn, job, res, ctx, sink, out)
-    else:                                            # health_probe
-        _finish(db, job["id"], _call(fn, ctx, sink, job["kind"]))
+    with otel.job_span(job, ctx) as span:            # B-62: one trace per job (no-op if off)
+        if span is not None:
+            if models.set_job_trace_id(db, job["id"], span.trace_id):
+                job = models.job_by_id(db, job["id"])     # retries / auto-cleanup inherit it
+            sink = _traced(sink, span)
+        if job["kind"] == "deploy":
+            result = _run_deploy(db, rn, job, res, ctx, sink, out)
+        elif job["kind"] == "cleanup":
+            result = _run_cleanup(db, rn, job, res, ctx, sink, out)
+        else:                                        # health_probe
+            result = _call(fn, ctx, sink, job["kind"])
+            _finish(db, job["id"], result)
+        if span is not None:
+            span.finish(result.ok, result.error)
+
+
+def _traced(sink, span):
+    """Record each step on the job row and as a child span of the job's span."""
+    def step(name: str, state: str = "ok", detail: str | None = None) -> None:
+        sink(name, state, detail)
+        span.step(name, state, detail)
+    return step
 
 
 def _run_pending(db, rn, out: TickResult) -> None:
@@ -388,6 +409,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="tick every DAOLAB_ENGINE_INTERVAL_SEC seconds until interrupted")
     opts = parser.parse_args(argv)
     logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
+    otel.setup_tracing(None, "daolab-engine")       # B-61/B-62: no-op without an endpoint
     db = models.connect(config.settings.db_path)
     have, want = migrations.current_version(db), migrations.latest_version()
     if have != want:

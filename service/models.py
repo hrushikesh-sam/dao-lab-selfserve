@@ -457,6 +457,14 @@ def requeue_stale_jobs(conn, idle_before: str) -> list[int]:
     return [j["id"] for j in stale_running_jobs(conn, idle_before) if requeue_job(conn, j)]
 
 
+def set_job_trace_id(conn, job_id: int, trace_id: str) -> bool:
+    """Record the OpenTelemetry trace id of a job (B-62); only fills an empty one, so a retry
+    that continues an earlier trace keeps it. Returns True if it was written."""
+    cur = conn.execute("UPDATE jobs SET trace_id = ?, updated_at = ? "
+                       "WHERE id = ? AND trace_id IS NULL", (trace_id, utcnow(), job_id))
+    return cur.rowcount == 1
+
+
 def job_steps(job) -> list[dict]:
     """The parsed `steps` list of a job row."""
     return from_json(job["steps"])
