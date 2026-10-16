@@ -562,6 +562,8 @@ class AnsibleRunner:
         return result                     # a run that could not verify is not clean either
 
     def tagged_vms(self):
+        if not self.s.deploy_vms:                    # no VMs are made: no XCP-ng host to ask
+            return []
         result, names = self._play("orphans", "orphans", None, lambda *a, **k: None)
         if not result.ok:
             raise RunnerError(f"could not list the testbed's VMs: {result.error}")

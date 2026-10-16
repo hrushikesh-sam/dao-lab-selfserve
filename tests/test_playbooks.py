@@ -885,3 +885,19 @@ def test_a_password_deploy_reaches_the_vms_too(lab, api, books):
     owner = next(u for u in ud["users"] if u["name"] == "alice")
     assert owner["plain_text_passwd"] == "Pw0rdPw0rdPw0rd1" and owner["lock_passwd"] is False
     assert owner["ssh_authorized_keys"] == [] and ud["ssh_pwauth"] is True
+
+
+# ---- DAOLAB_DEPLOY_VMS off: nothing reaches the XCP-ng host -------------------------------
+
+def test_without_vms_verify_cleanup_and_reconcile_never_touch_the_dom0(lab, books):
+    st = dirty(clean_state())                         # a VM exists, but VMs are off
+    st["units"].pop("daolab-app-dao-vpp.service")
+    st["lab_procs"] = 0
+    lab.set(st)
+    assert lab.run("verify_clean.yml", daolab_deploy_vms=False) == 0, lab.stdout[-2000:]
+    assert lab.output() == []                         # only the DPU was checked
+    assert cleanup(lab, books, daolab_deploy_vms=False) == 0, lab.stdout[-2000:]
+    assert lab.run("reconcile.yml", daolab_deploy_vms=False, daolab_app="none",
+                   **books.vars) == 0, lab.stdout[-2000:]
+    assert not lab.calls("xe") and not lab.calls("xl")
+    assert "daolab-r12-sink" in lab.state()["vms"]    # untouched

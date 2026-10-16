@@ -278,3 +278,9 @@ def test_the_sign_off_switch_and_the_app_reach_the_playbooks(settings, ctx):
     diy = {**ctx, "diy": True}
     AnsibleRunner(on, run=fake).deploy(diy, Steps())
     assert fake.calls[1]["extravars"]["daolab_app"] == "none"
+
+
+def test_with_vms_off_the_orphan_sweep_asks_no_xcp_host(settings):
+    fake = FakeRun(output=["daolab-r999-x"])
+    rn = AnsibleRunner(dataclasses.replace(settings, deploy_vms=False), run=fake)
+    assert rn.tagged_vms() == [] and fake.calls == []
