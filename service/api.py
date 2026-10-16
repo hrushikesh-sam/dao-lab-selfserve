@@ -128,6 +128,11 @@ class LeaseConflict(BaseModel):
     ip: str
 
 
+class ForceClean(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    skip_verify: bool = False
+
+
 class UserPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
@@ -394,10 +399,23 @@ def setups(user: sqlite3.Row = Depends(require_admin),
             "capabilities": models.from_json(s["capabilities"]),
             "members": members, "links": models.from_json(s["links"]),
             "diagram": s["diagram"],
+            "availability": s["availability"],
             "held_by": reservation_summary(conn, hold) if hold else None,
             "queue": [reservation_summary(conn, r) for r in models.queued_for(conn, s["id"])],
+            "dirty": [_dirty_object(conn, r) for r in models.dirty_reservations(conn, s["id"])],
         })
     return out
+
+
+def _dirty_object(conn, row) -> dict:
+    """A reservation whose residue is not cleared, with what its last cleanup / reconcile
+    found: the admin.html quarantine banner (plan/09 §9)."""
+    last = [j for j in models.jobs_for_reservation(conn, row["id"])
+            if j["kind"] in ("cleanup", "reconcile")]
+    job = last[-1] if last else None
+    return {**reservation_summary(conn, row),
+            "residue_job": job["id"] if job else None,
+            "residue": job["error"] if job else None}
 
 
 @app.get("/availability")
@@ -459,6 +477,57 @@ def patch_user(user_id: int, body: UserPatch,
     models.audit(conn, admin["username"], "admin_override", "user", user_id,
                  {"username": target["username"], "enabled": bool(body.enabled)})
     return user_object(models.user_by_id(conn, user_id))
+
+
+@app.post("/admin/setups/{name}/force-clean", status_code=202)
+def force_clean(name: str, body: ForceClean | None = None,
+                admin: sqlite3.Row = Depends(require_admin),
+                conn: sqlite3.Connection = Depends(db_conn)):
+    """Clear a setup's quarantine (plan/09 §9, B-74), audit-logged. Admin only.
+
+    Default: queue a `reconcile` job for every dirty reservation on the setup (one already
+    waiting is reused). The engine destroys the leftovers, verifies, and releases the
+    reservations; the setup goes back to `available` once the last one verifies clean
+    (B-71), so a queued booking never starts on a testbed that is still dirty. With nothing
+    dirty, a quarantined setup is cleared at once.
+
+    `{"skip_verify": true}`: the admin vouches that the testbed is clean (e.g. verify keeps
+    flagging something they checked by hand). Every dirty reservation is released and its
+    addresses freed now, without running anything. A `maintenance` flag is never touched."""
+    skip = bool(body and body.skip_verify)
+    setup = models.setup_by_name(conn, name)
+    if setup is None:
+        raise DaolabError("not_found", 404, f"unknown setup: {name}", {"setup": name})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        previous = setup["availability"]
+        dirty = models.dirty_reservations(conn, setup["id"])
+        job_ids = []
+        if skip:
+            for r in dirty:
+                models.transition_reservation(conn, r["id"], "released", from_state=r["state"])
+                ipam.clear(conn, r["id"])
+        else:
+            for r in dirty:
+                waiting = [j for j in models.jobs_for_reservation(conn, r["id"], kind="reconcile")
+                           if j["state"] in ("pending", "running")]
+                job_ids.append(waiting[-1]["id"] if waiting
+                               else models.create_job(conn, r["id"], "reconcile"))
+        if previous == "quarantined" and (skip or not dirty):
+            models.set_setup_availability(conn, setup["id"], "available")
+        availability = conn.execute("SELECT availability FROM setups WHERE id = ?",
+                                    (setup["id"],)).fetchone()[0]
+        models.audit(conn, admin["username"], "force_clean", "setup", setup["id"], {
+            "setup": name, "skip_verify": skip, "previous_availability": previous,
+            "availability": availability, "reservations": [r["id"] for r in dirty],
+            "jobs": job_ids})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"setup": name, "availability": availability, "previous_availability": previous,
+            "skip_verify": skip, "reservations": [r["id"] for r in dirty],
+            "jobs": [job_object(models.job_by_id(conn, j)) for j in job_ids]}
 
 
 @app.get("/admin/audit")
