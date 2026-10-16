@@ -333,6 +333,34 @@ def test_mock_exporter_serves_metrics_and_registers_a_file_sd_target(tmp_path):
     assert not (tmp_path / "res-7.json").exists()          # stopping drops the target
 
 
+def test_the_mock_exporter_serves_every_series_the_usecase_rules_read(tmp_path):
+    """B-68 follow-up: a mock deploy has to read `healthy`, so every metric a shipped health
+    rule queries (except `up`, which Prometheus generates) is served, with the rule's labels."""
+    import os
+    import re
+    from service import catalog
+    ucs, errors = catalog.load_usecases(os.path.join(os.path.dirname(__file__), "..", "usecases"))
+    assert errors == []
+    wanted = set()
+    for uc in ucs:
+        for rule in uc["health"]:
+            for metric, labels in re.findall(r"([a-z_]+)\{([^}]*)\}", rule["promql"]):
+                if metric != "up":
+                    fixed = dict(re.findall(r'([a-z_]+)="([^"$]+)"', labels))
+                    wanted.add((metric, tuple(sorted(fixed.items()))))
+    exp = runner.MockExporter(7, targets_dir=str(tmp_path))
+    exp.start()
+    try:
+        body = urllib.request.urlopen(f"http://{exp.target}/metrics", timeout=5).read().decode()
+    finally:
+        exp.stop()
+    for metric, fixed in wanted:
+        line = next((l for l in body.splitlines() if l.startswith(metric + "{")), None)
+        assert line is not None, f"mock exporter does not serve {metric}"
+        assert all(f'{k}="{v}"' in line for k, v in fixed), (metric, line)
+        assert float(line.rsplit(" ", 1)[1]) >= 0
+
+
 def test_deploy_starts_the_exporter_and_cleanup_stops_it(tmp_path):
     started = []
 

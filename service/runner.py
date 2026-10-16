@@ -138,16 +138,35 @@ class MockExporter:
         self._httpd = None
         self._thread = None
         self._target_file = None
+        self._started = time.time()
 
     @property
     def target(self) -> str:
         return f"{self.host}:{self.port}"
 
+    # The series the use-case health rules read (usecases/*.yml `health:`), so a mock deploy
+    # reads `healthy` end to end; Prometheus adds `up` itself. App series carry the DPU's
+    # host label like the rules do. Counters grow at a steady rate so rate() is > 0.
+    GAUGES = (("tcpcheck_status", {"port": "22"}), ("httpcheck_status", {}),
+              ("vpp_up", {"host": "dpu-01"}), ("nginx_up", {"host": "dpu-01"}),
+              ("smartnic_up", {"host": "dpu-01"}))
+    COUNTERS = (("vpp_interface_rx_packets", {"host": "dpu-01"}, 1000.0),
+                ("smartnic_offload_pps", {"host": "dpu-01"}, 500.0))
+
     def _metrics_text(self) -> str:
-        label_str = ",".join(f'{k}="{v}"' for k, v in sorted(self.labels.items()))
-        return ("# HELP daolab_mock_up Mock agent liveness (B-68).\n"
-                "# TYPE daolab_mock_up gauge\n"
-                f'daolab_mock_up{{{label_str}}} 1\n')
+        def series(name, extra, value):
+            labels = {**self.labels, **extra}
+            label_str = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
+            return f"{name}{{{label_str}}} {value}\n"
+
+        elapsed = max(0.0, time.time() - self._started)
+        out = ["# HELP daolab_mock_up Mock agent liveness (B-68).\n",
+               "# TYPE daolab_mock_up gauge\n", series("daolab_mock_up", {}, 1)]
+        for name, extra in self.GAUGES:
+            out += [f"# TYPE {name} gauge\n", series(name, extra, 1)]
+        for name, extra, per_sec in self.COUNTERS:
+            out += [f"# TYPE {name} counter\n", series(name, extra, round(per_sec * elapsed, 3))]
+        return "".join(out)
 
     def _write_target_file(self) -> None:
         os.makedirs(self.targets_dir, exist_ok=True)
