@@ -110,7 +110,7 @@ def test_upgrade_renames_rows_and_keeps_every_child_row(tmp_path):
     ids = _seed_v5(conn)
     with pytest.raises(sqlite3.IntegrityError):                      # the old CHECK refuses it
         conn.execute("UPDATE reservations SET state = 'cleaning' WHERE id = ?", (ids["queued"],))
-    assert models.init_db(conn) == [6]
+    assert models.init_db(conn) == [m.version for m in migrations.MIGRATIONS if m.version > 5]
     states = {r["id"]: r["state"] for r in conn.execute("SELECT id, state FROM reservations")}
     assert states == {ids["queued"]: "queued", ids["tearing_down"]: "cleaning",
                       ids["released"]: "released", ids["failed"]: "failed"}

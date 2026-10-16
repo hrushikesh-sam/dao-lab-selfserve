@@ -195,6 +195,19 @@ _OLD_STATES = "'tearing_down', 'released', 'failed'"
 _NEW_STATES = "'cleaning', 'quarantined', 'released', 'failed'"
 
 
+def _m7_lease_role_unique_while_leased(conn: sqlite3.Connection) -> None:
+    """B-41: `(reservation, role)` is unique among *leased* rows only (v2 made it unique
+    among live rows, i.e. leased or quarantined). A quarantined lease still blocks its
+    address through `(pool, ip)`, but it must not stop the same role from leasing a
+    replacement: that is how an address something else answers on is swapped out
+    (`ipam.mark_conflict`). Re-leasing stays idempotent: there is at most one `leased` row
+    per (reservation, role)."""
+    conn.execute("DROP INDEX IF EXISTS idx_ip_leases_res_role")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ip_leases_res_role_leased "
+        "ON ip_leases(reservation_id, role) WHERE state = 'leased'")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -202,6 +215,7 @@ MIGRATIONS: list[Migration] = [
     Migration(4, "audit_events", _m4_audit_events),
     Migration(5, "jobs", _m5_jobs),
     Migration(6, "reservation_states", _m6_reservation_states),
+    Migration(7, "lease_role_unique_while_leased", _m7_lease_role_unique_while_leased),
 ]
 
 

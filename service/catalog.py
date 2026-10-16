@@ -11,7 +11,7 @@ import sqlite3
 
 import yaml
 
-from . import models
+from . import ipam, models
 
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ROLE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -20,7 +20,7 @@ EXPECT = re.compile(r"^(==|!=|>=|<=|>|<)\s*-?\d+(\.\d+)?$")
 KINDS = ("dpu", "gpu", "nic", "compute")
 ON_VALUES = ("dpu", "dpu_host", "tg_host")
 SEVERITIES = ("critical", "degraded")
-DEFAULT_IP_POOL = "default"     # the single DAOLAB_IP_POOL-backed pool (B-43)
+DEFAULT_IP_POOL = ipam.DEFAULT_POOL   # the single DAOLAB_IP_POOL-backed pool (B-43)
 
 # Seeded by `daolab init` from the root README use-case table; doc_url/doc_summary
 # carry the verbatim intro text and page link from the DAO application docs.

@@ -218,8 +218,10 @@ def live_leases(conn, pool_id: int):
 
 
 def ip_lease_by_role(conn, res_id: int, role: str):
+    """The `leased` row of (reservation, role), or None. There is at most one (migration 7);
+    quarantined rows of the same role (a swapped-out conflicting address) are not returned."""
     return conn.execute(
-        """SELECT * FROM ip_leases WHERE reservation_id = ? AND role = ? AND state != 'released'
+        """SELECT * FROM ip_leases WHERE reservation_id = ? AND role = ? AND state = 'leased'
            ORDER BY id LIMIT 1""", (res_id, role)).fetchone()
 
 
