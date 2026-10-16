@@ -333,16 +333,19 @@ def test_cancel_in_any_other_state_is_a_409(api_env, state):
 
 def test_cancel_loses_a_race_with_the_engine_cleanly(api_env, monkeypatch):
     """The engine moves the reservation between the API's read and write: 409, not an overwrite."""
+    from service import api
     rid = _api_res(api_env, "active")
-    real = models.transition_reservation
+    real_owned = api._owned_reservation
 
-    def engine_got_there_first(conn, res_id, new_state, *a, **kw):
-        real(conn, res_id, "cleaning")                              # the engine's move
-        return real(conn, res_id, new_state, *a, **kw)              # ours now fails
-    monkeypatch.setattr(models, "transition_reservation", engine_got_there_first)
+    def read_then_the_engine_moves(conn, res_id, user):
+        row = real_owned(conn, res_id, user)                        # the API's read: active
+        models.transition_reservation(conn, res_id, "cleaning")     # the engine's move, committed
+        return row
+    monkeypatch.setattr(api, "_owned_reservation", read_then_the_engine_moves)
     r = _delete(api_env, rid)
     assert r.status_code == 409
     assert r.json()["error"] == {"code": "invalid_state",
                                  "message": "cannot cancel a reservation in state cleaning",
                                  "detail": {"state": "cleaning"}}
     assert _state(api_env.conn, rid) == "cleaning"
+    assert models.jobs_for_reservation(api_env.conn, rid) == []    # ours rolled back whole

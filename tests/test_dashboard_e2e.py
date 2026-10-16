@@ -72,6 +72,9 @@ def stack(tmp_path):
 
 
 def _login(page, base, token, path="/"):
+    # the dashboards load mermaid from a CDN and fall back to plain text without it: block it,
+    # so the test is deterministic and runs offline
+    page.route(re.compile(r"^https?://(?!127\.0\.0\.1)"), lambda route: route.abort())
     page.goto(base + path)
     page.fill("#gate-token", token)
     page.click("#gate button:has-text('Save')")
