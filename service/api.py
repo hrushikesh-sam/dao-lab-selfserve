@@ -3,6 +3,7 @@ VM-IP callback; serves dashboard/. Views over the DB only — YAML is read by
 `daolab sync` (catalog.py), never by request handlers."""
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -14,10 +15,11 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from . import config, models, otel, scheduler
+from . import access, config, ipam, models, otel, scheduler
+from . import health as health_eval     # `health` is the liveness route below
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
 log = logging.getLogger("daolab.api")
@@ -115,6 +117,22 @@ class VmIpCallback(BaseModel):
     ip: str
 
 
+class LeaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reservation_id: int
+    role: str
+
+
+class LeaseConflict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ip: str
+
+
+class ForceClean(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    skip_verify: bool = False
+
+
 class UserPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
@@ -203,8 +221,21 @@ def reservation_object(conn, row) -> dict:
         "end_at": row["end_at"], "shifted": row["start_at"] != row["requested_start_at"],
         "failure_reason": row["failure_reason"],
         "vms": vms, "diagram": _reservation_diagram(conn, row, user, uc),
+        "leases": [{"role": l["role"], "ip": l["ip"], "state": l["state"]}
+                   for l in models.ip_leases_for_reservation(conn, row["id"])
+                   if l["state"] != "released"],
+        "health": _health_summary(conn, row["id"]),
         "created_at": row["created_at"], "updated_at": row["updated_at"],
     }
+
+
+def _health_summary(conn, res_id: int) -> dict | None:
+    """The engine's latest verdict (B-67) for the card's badge; None until it has one."""
+    snap = models.health_snapshot(conn, res_id)
+    if snap is None:
+        return None
+    return {"verdict": snap["verdict"], "reason": snap["reason"],
+            "evaluated_at": snap["evaluated_at"], "changed_at": snap["changed_at"]}
 
 
 def reservation_summary(conn, row) -> dict:
@@ -368,10 +399,23 @@ def setups(user: sqlite3.Row = Depends(require_admin),
             "capabilities": models.from_json(s["capabilities"]),
             "members": members, "links": models.from_json(s["links"]),
             "diagram": s["diagram"],
+            "availability": s["availability"],
             "held_by": reservation_summary(conn, hold) if hold else None,
             "queue": [reservation_summary(conn, r) for r in models.queued_for(conn, s["id"])],
+            "dirty": [_dirty_object(conn, r) for r in models.dirty_reservations(conn, s["id"])],
         })
     return out
+
+
+def _dirty_object(conn, row) -> dict:
+    """A reservation whose residue is not cleared, with what its last cleanup / reconcile
+    found: the admin.html quarantine banner (plan/09 §9)."""
+    last = [j for j in models.jobs_for_reservation(conn, row["id"])
+            if j["kind"] in ("cleanup", "reconcile")]
+    job = last[-1] if last else None
+    return {**reservation_summary(conn, row),
+            "residue_job": job["id"] if job else None,
+            "residue": job["error"] if job else None}
 
 
 @app.get("/availability")
@@ -433,6 +477,57 @@ def patch_user(user_id: int, body: UserPatch,
     models.audit(conn, admin["username"], "admin_override", "user", user_id,
                  {"username": target["username"], "enabled": bool(body.enabled)})
     return user_object(models.user_by_id(conn, user_id))
+
+
+@app.post("/admin/setups/{name}/force-clean", status_code=202)
+def force_clean(name: str, body: ForceClean | None = None,
+                admin: sqlite3.Row = Depends(require_admin),
+                conn: sqlite3.Connection = Depends(db_conn)):
+    """Clear a setup's quarantine (plan/09 §9, B-74), audit-logged. Admin only.
+
+    Default: queue a `reconcile` job for every dirty reservation on the setup (one already
+    waiting is reused). The engine destroys the leftovers, verifies, and releases the
+    reservations; the setup goes back to `available` once the last one verifies clean
+    (B-71), so a queued booking never starts on a testbed that is still dirty. With nothing
+    dirty, a quarantined setup is cleared at once.
+
+    `{"skip_verify": true}`: the admin vouches that the testbed is clean (e.g. verify keeps
+    flagging something they checked by hand). Every dirty reservation is released and its
+    addresses freed now, without running anything. A `maintenance` flag is never touched."""
+    skip = bool(body and body.skip_verify)
+    setup = models.setup_by_name(conn, name)
+    if setup is None:
+        raise DaolabError("not_found", 404, f"unknown setup: {name}", {"setup": name})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        previous = setup["availability"]
+        dirty = models.dirty_reservations(conn, setup["id"])
+        job_ids = []
+        if skip:
+            for r in dirty:
+                models.transition_reservation(conn, r["id"], "released", from_state=r["state"])
+                ipam.clear(conn, r["id"])
+        else:
+            for r in dirty:
+                waiting = [j for j in models.jobs_for_reservation(conn, r["id"], kind="reconcile")
+                           if j["state"] in ("pending", "running")]
+                job_ids.append(waiting[-1]["id"] if waiting
+                               else models.create_job(conn, r["id"], "reconcile"))
+        if previous == "quarantined" and (skip or not dirty):
+            models.set_setup_availability(conn, setup["id"], "available")
+        availability = conn.execute("SELECT availability FROM setups WHERE id = ?",
+                                    (setup["id"],)).fetchone()[0]
+        models.audit(conn, admin["username"], "force_clean", "setup", setup["id"], {
+            "setup": name, "skip_verify": skip, "previous_availability": previous,
+            "availability": availability, "reservations": [r["id"] for r in dirty],
+            "jobs": job_ids})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"setup": name, "availability": availability, "previous_availability": previous,
+            "skip_verify": skip, "reservations": [r["id"] for r in dirty],
+            "jobs": [job_object(models.job_by_id(conn, j)) for j in job_ids]}
 
 
 @app.get("/admin/audit")
@@ -669,6 +764,86 @@ def redeploy_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
             "job": job_object(models.job_by_id(conn, job_id))}
 
 
+# ---- health (B-66, plan/09 §8) ----------------------------------------------
+
+_HEALTH_CACHE_SEC = 15.0
+_health_cache: dict[int, tuple[float, dict]] = {}      # reservation id -> (monotonic, verdict)
+_LIVE_STATES = ("ready", "active")
+
+
+def _latest_job(conn, res_id: int, kind: str):
+    jobs = models.jobs_for_reservation(conn, res_id, kind=kind)
+    return jobs[-1] if jobs else None
+
+
+def _probe_summary(job) -> dict | None:
+    if job is None:
+        return None
+    return {"job_id": job["id"], "state": job["state"], "error": job["error"],
+            "steps": models.job_steps(job), "finished_at": job["finished_at"]}
+
+
+def _evaluate_cached(conn, res_id: int) -> tuple[dict, bool]:
+    """The verdict for a live reservation, at most _HEALTH_CACHE_SEC old. Returns (verdict,
+    served_from_cache). A dashboard polling every 30 s per card costs one evaluation per 15 s
+    per reservation, however many tabs are open."""
+    hit = _health_cache.get(res_id)
+    now = time.monotonic()
+    if hit is not None and now - hit[0] < _HEALTH_CACHE_SEC:
+        return hit[1], True
+    verdict = health_eval.verdict_object(
+        health_eval.evaluate_reservation(conn, res_id, datetime.now(timezone.utc)))
+    _health_cache[res_id] = (now, verdict)
+    return verdict, False
+
+
+@app.get("/reservations/{res_id}/health")
+def reservation_health(res_id: int, user: sqlite3.Row = Depends(current_user),
+                       conn: sqlite3.Connection = Depends(db_conn)):
+    """The latest health verdict with every check (owner). Evaluated from Prometheus with a
+    15 s cache when the telemetry stack is on; otherwise `unknown`, and health is whatever
+    the last probe job (POST .../health/probe) found. Always carries the deploy trace id."""
+    row = _owned_reservation(conn, res_id, user)
+    deploy = _latest_job(conn, res_id, "deploy")
+    probe = _probe_summary(_latest_job(conn, res_id, "health_probe"))
+    base = {"reservation_id": res_id, "state": row["state"],
+            "trace_id": deploy["trace_id"] if deploy else None, "probe": probe,
+            "cached": False}
+    if row["state"] not in _LIVE_STATES:
+        return {**base, "verdict": "unknown", "checks": [], "evaluated_at": None,
+                "last_seen": None, "reason": f"reservation is {row['state']}"}
+    if not (config.settings.otel_endpoint or "").strip():
+        return {**base, "verdict": "unknown", "checks": [], "evaluated_at": None,
+                "last_seen": None,
+                "reason": "telemetry stack is off (DAOLAB_OTEL_ENDPOINT unset); "
+                          "see the probe result"}
+    verdict, cached = _evaluate_cached(conn, res_id)
+    return {**base, **verdict, "cached": cached}
+
+
+@app.post("/reservations/{res_id}/health/probe", status_code=202)
+def probe_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
+                      conn: sqlite3.Connection = Depends(db_conn)):
+    """On-demand active check (owner): queues a `health_probe` job, which runs the use case's
+    verify command; the result is recorded on the job. A probe already waiting or running is
+    returned instead of queueing another. 409 unless the reservation is ready or active."""
+    row = _owned_reservation(conn, res_id, user)
+    if row["state"] not in _LIVE_STATES:
+        raise DaolabError("invalid_state", 409,
+                          f"cannot probe a reservation in state {row['state']}",
+                          {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        waiting = [j for j in models.jobs_for_reservation(conn, res_id, kind="health_probe")
+                   if j["state"] in ("pending", "running")]
+        job_id = waiting[-1]["id"] if waiting else models.create_job(conn, res_id, "health_probe")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"id": res_id, "state": row["state"], "job": job_object(models.job_by_id(conn, job_id))}
+
+
 @app.get("/jobs/{job_id}")
 def get_job(job_id: int, user: sqlite3.Row = Depends(current_user),
             conn: sqlite3.Connection = Depends(db_conn)):
@@ -701,6 +876,121 @@ def vm_ip_callback(body: VmIpCallback, _: None = Depends(require_internal),
                           {"reservation_id": body.reservation_id, "role": body.role})
     models.set_vm_ip(conn, vm["id"], body.ip)     # idempotent: re-posting is a harmless UPDATE
     return {"ok": True}
+
+
+# ---- IP leases for the deploy playbook (B-42, plan/09 §6) ------------------
+
+_LEASE_STATES = ("provisioning", "ready", "active")     # deploying, or a redeploy in the slot
+
+
+def _lease_target(conn, reservation_id: int, role: str):
+    """The reservation + VM a playbook may lease for; raises the API error otherwise."""
+    res = models.reservation_by_id(conn, reservation_id)
+    if res is None:
+        raise DaolabError("not_found", 404, f"unknown reservation: {reservation_id}",
+                          {"reservation_id": reservation_id})
+    if res["state"] not in _LEASE_STATES:
+        raise DaolabError("invalid_state", 409,
+                          f"reservation {reservation_id} is {res['state']}; addresses are "
+                          f"leased only while {', '.join(_LEASE_STATES)}",
+                          {"reservation_id": reservation_id, "state": res["state"]})
+    vm = models.vm_by_role(conn, reservation_id, role)
+    if vm is None:
+        raise DaolabError("not_found", 404,
+                          f"no vm for reservation {reservation_id} role {role}",
+                          {"reservation_id": reservation_id, "role": role})
+    if vm["name"] is None:
+        raise DaolabError("validation_error", 422,
+                          f"role {role} runs on the DPU and has no VM to lease an address for",
+                          {"reservation_id": reservation_id, "role": role})
+    return res
+
+
+def _lease(conn, reservation_id: int, role: str):
+    try:
+        return ipam.lease(conn, reservation_id, role)
+    except ipam.PoolExhausted as e:
+        raise DaolabError("pool_exhausted", 409, str(e), {"reservation_id": reservation_id})
+    except ipam.IpamError as e:
+        raise DaolabError("no_ip_pool", 409, str(e), {})
+
+
+@app.post("/internal/leases")
+def lease_ip(body: LeaseRequest, _: None = Depends(require_internal),
+             conn: sqlite3.Connection = Depends(db_conn)):
+    """The deploy playbook asks for a VM's address (plan/09 §6). Idempotent per
+    (reservation, role): a replayed playbook gets the same address back. Only while the
+    reservation is deploying or live; only for VM roles (the DPU has its own address)."""
+    conn.execute("BEGIN IMMEDIATE")              # state check and lease see the same row
+    try:
+        _lease_target(conn, body.reservation_id, body.role)
+        lease = _lease(conn, body.reservation_id, body.role)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return ipam.lease_object(lease)
+
+
+@app.post("/internal/leases/conflict")
+def lease_conflict(body: LeaseConflict, _: None = Depends(require_internal),
+                   conn: sqlite3.Connection = Depends(db_conn)):
+    """Something outside daolab answers on a leased address (the playbook pings / arpings it
+    before use). The address is quarantined so it is never issued again, and the same
+    (reservation, role) gets a new one, returned here."""
+    try:
+        ip = str(ipaddress.ip_address(body.ip))
+    except ValueError:
+        raise DaolabError("validation_error", 422, f"ip: not an IP address: {body.ip}")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        try:
+            bad = ipam.mark_conflict(conn, ip)
+        except ipam.IpamError as e:
+            raise DaolabError("not_found", 404, str(e), {"ip": ip})
+        _lease_target(conn, bad["reservation_id"], bad["role"])
+        lease = _lease(conn, bad["reservation_id"], bad["role"])
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    log.warning("ip %s answers outside daolab: quarantined; reservation %s role %s now has %s",
+                ip, bad["reservation_id"], bad["role"], lease["ip"])
+    return {**ipam.lease_object(lease), "replaced": ip}
+
+
+# ---- DPU access: sshd AuthorizedKeysCommand (B-51, plan/09 §7) -------------
+
+def _authz_secret_ok(given: str | None) -> bool:
+    """The DPU's `daolab-keys` holds DAOLAB_AUTHZ_SECRET, a read-only secret that cannot lease
+    addresses or post VM IPs. DAOLAB_INTERNAL_SECRET is accepted too (it is the superset)."""
+    if not given:
+        return False
+    for secret in (config.settings.authz_secret, config.settings.internal_secret):
+        if secret and hmac.compare_digest(given, secret):
+            return True
+    return False
+
+
+@app.get("/internal/authz/keys", response_class=PlainTextResponse)
+def authz_keys(host: str = "", login: str = "",
+               x_daolab_secret: str | None = Header(None)):
+    """The authorized_keys lines valid for `login`@`host` right now, as plain text sshd reads
+    directly (one key per line). Empty means no access, and so does every error: the caller
+    is sshd, so failing closed is the only safe answer."""
+    if not _authz_secret_ok(x_daolab_secret):
+        return PlainTextResponse("", status_code=401)
+    conn = None
+    try:
+        conn = models.connect(config.settings.db_path)
+        keys = access.keys_for(conn, host, login, datetime.now(timezone.utc))
+    except Exception:                                     # noqa: BLE001 — fail closed
+        log.exception("authz keys for %s@%s failed; answering no keys", login, host)
+        return PlainTextResponse("")
+    finally:
+        if conn is not None:
+            conn.close()
+    return PlainTextResponse("".join(f"{k}\n" for k in keys))
 
 
 # ---- static dashboards (registered after all API routes) -------------------
