@@ -1,0 +1,84 @@
+# {{ otel_agent_config }} — rendered by playbooks/roles/otel_agent (B-83). Do not edit by hand:
+# every deploy rewrites it with the reservation's resource attributes.
+{% set _httpcheck = [otel_agent_httpcheck] if otel_agent_httpcheck is string and otel_agent_httpcheck else (otel_agent_httpcheck or []) %}
+receivers:
+  hostmetrics:
+    collection_interval: {{ otel_agent_interval }}
+    scrapers:
+      cpu: {}
+      memory: {}
+      load: {}
+      network: {}
+      filesystem: {}
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: daolab-agent
+          scrape_interval: {{ otel_agent_interval }}
+          static_configs:
+            - targets: ["127.0.0.1:{{ otel_agent_self_port }}"]
+{% for t in otel_agent_scrape_targets %}
+        - job_name: {{ t.job }}
+          scrape_interval: {{ otel_agent_interval }}
+          static_configs:
+            - targets: ["{{ t.target }}"]
+{% endfor %}
+{% if otel_agent_ssh_check | bool %}
+  tcpcheck:
+    collection_interval: {{ otel_agent_interval }}
+    targets:
+      - endpoint: 127.0.0.1:22
+{% endif %}
+{% if _httpcheck %}
+  httpcheck:
+    collection_interval: {{ otel_agent_interval }}
+    targets:
+{% for url in _httpcheck %}
+      - endpoint: {{ url }}
+        method: GET
+        tls:
+          insecure_skip_verify: true
+{% endfor %}
+{% endif %}
+
+processors:
+  resource:
+    attributes:
+{% for key, value in otel_agent_attributes | dictsort %}
+      - key: {{ key }}
+        value: "{{ value }}"
+        action: upsert
+{% endfor %}
+  attributes/ssh:            # the use-case rules select tcpcheck_status{port="22"}
+    actions:
+      - key: port
+        value: "22"
+        action: insert
+  batch: {}
+
+exporters:
+  otlp:
+    endpoint: {{ otel_agent_collector }}
+    tls:
+      insecure: {{ otel_agent_insecure | bool | lower }}
+
+service:
+  telemetry:
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 127.0.0.1
+                port: {{ otel_agent_self_port }}
+  pipelines:
+    metrics:
+      receivers: [hostmetrics, prometheus{{ ', httpcheck' if _httpcheck else '' }}]
+      processors: [resource, batch]
+      exporters: [otlp]
+{% if otel_agent_ssh_check | bool %}
+    metrics/ssh:
+      receivers: [tcpcheck]
+      processors: [attributes/ssh, resource, batch]
+      exporters: [otlp]
+{% endif %}

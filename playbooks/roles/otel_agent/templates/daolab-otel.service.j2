@@ -1,0 +1,13 @@
+# {{ otel_agent_unit_dir }}/{{ otel_agent_unit }}.service — playbooks/roles/otel_agent (B-83)
+[Unit]
+Description=daolab OpenTelemetry agent (otelcol-contrib)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart={{ otel_agent_bin }} --config {{ otel_agent_config }}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

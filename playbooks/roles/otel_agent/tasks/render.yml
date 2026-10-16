@@ -1,0 +1,4 @@
+# Render the agent config into a fact, for host_vm's cloud-init user-data (role VMs).
+- name: render the agent config
+  ansible.builtin.set_fact:
+    otel_agent_config_text: "{{ lookup('ansible.builtin.template', 'otelcol.yaml.j2') }}"

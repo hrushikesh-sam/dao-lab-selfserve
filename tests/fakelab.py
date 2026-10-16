@@ -237,15 +237,20 @@ def systemctl(args):
         return
     if args[:1] in (["stop"], ["disable"], ["start"], ["enable"], ["restart"]):
         verb = args[0]
+        now = "--now" in args
         names = [a for a in args[1:] if not a.startswith("-")]
         for n in names:
             hits = [u for u in units if _match(n, u)]
             if not hits and verb in ("start", "enable", "restart"):
-                fail(f"Failed to {verb} {n}: Unit {n} not found.", 5)
+                # starting a unit the playbook just installed (any non-glob name)
+                if any(c in n for c in "*?["):
+                    fail(f"Failed to {verb} {n}: Unit {n} not found.", 5)
+                hits = [n if n.endswith(".service") else n + ".service"]
+                units[hits[0]] = "inactive"
             for u in hits:
-                if verb in ("stop",):
+                if verb == "stop" or (verb == "disable" and now):
                     units[u] = "inactive"
-                elif verb in ("start", "restart"):
+                elif verb in ("start", "restart") or (verb == "enable" and now):
                     units[u] = "active"
         save(state)
         return

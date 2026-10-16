@@ -238,3 +238,93 @@ def test_orphans_destroys_exactly_the_named_vms(lab):
     assert lab.run("orphans.yml", daolab_vm_names=["daolab-r999-x", "daolab-r998-y",
                                                    "daolab-r1-not-there"]) == 0, lab.stdout
     assert sorted(lab.state()["vms"]) == ["daolab-r12-sink"]
+
+
+# ---- B-83: the otel_agent role ------------------------------------------------------------
+
+def _role_play(lab, role, tasks_from="main", **role_vars):
+    """A one-play wrapper that runs a role on dpu-01 (roles from playbooks/roles)."""
+    import yaml
+    play = [{"hosts": "dpu-01", "gather_facts": False, "tasks": [
+        {"ansible.builtin.include_role": {"name": role, "tasks_from": tasks_from},
+         "vars": role_vars},
+        {"ansible.builtin.copy": {"content": "{{ otel_agent_config_text | default('') }}",
+                                  "dest": str(lab.dir / "rendered.yaml")},
+         "delegate_to": "localhost"}]}]
+    path = lab.dir / "wrapper.yml"
+    path.write_text(yaml.safe_dump(play, sort_keys=False))
+    return path
+
+
+def _agent_vars(lab, **over):
+    v = {"otel_agent_collector": "otel.lab:4317",
+         "otel_agent_attributes": {"daolab.reservation": "12", "daolab.user": "alice",
+                                   "daolab.role": "vpp", "daolab.setup": "tb-01",
+                                   "host": "dpu-01"},
+         "otel_agent_scrape_targets": [{"job": "vpp", "target": "127.0.0.1:9273"}],
+         "otel_agent_bin": str(lab.dir / "otelcol-contrib"),
+         "otel_agent_config": str(lab.dir / "etc" / "otelcol.yaml"),
+         "otel_agent_unit_dir": str(lab.dir)}
+    v.update(over)
+    return v
+
+
+def run_role(lab, path):
+    return lab.run(str(path))
+
+
+def test_otel_agent_renders_the_daolab_attributes_and_starts_the_unit(lab):
+    import yaml
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")        # "installed" already
+    path = _role_play(lab, "otel_agent", **_agent_vars(lab))
+    assert run_role(lab, path) == 0, lab.stdout
+    cfg = yaml.safe_load((lab.dir / "etc" / "otelcol.yaml").read_text())
+    attrs = {a["key"]: a["value"] for a in cfg["processors"]["resource"]["attributes"]}
+    assert attrs == {"daolab.reservation": "12", "daolab.user": "alice", "daolab.role": "vpp",
+                     "daolab.setup": "tb-01", "host": "dpu-01"}
+    assert all(a["action"] == "upsert" for a in cfg["processors"]["resource"]["attributes"])
+    jobs = {j["job_name"]: j["static_configs"][0]["targets"]
+            for j in cfg["receivers"]["prometheus"]["config"]["scrape_configs"]}
+    assert jobs == {"daolab-agent": ["127.0.0.1:8888"], "vpp": ["127.0.0.1:9273"]}
+    assert cfg["exporters"]["otlp"] == {"endpoint": "otel.lab:4317", "tls": {"insecure": True}}
+    assert cfg["service"]["pipelines"]["metrics/ssh"]["processors"][0] == "attributes/ssh"
+    assert "httpcheck" not in cfg["receivers"]
+    assert lab.state()["units"]["daolab-otel.service"] == "active"
+    unit = (lab.dir / "daolab-otel.service").read_text()
+    assert f"--config {lab.dir / 'etc' / 'otelcol.yaml'}" in unit
+
+
+def test_otel_agent_second_run_restarts_nothing(lab):
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
+    path = _role_play(lab, "otel_agent", **_agent_vars(lab))
+    run_role(lab, path)
+    restarts = len([c for c in lab.calls("systemctl") if c[1] == "restart"])
+    assert run_role(lab, path) == 0, lab.stdout
+    assert len([c for c in lab.calls("systemctl") if c[1] == "restart"]) == restarts
+
+
+def test_otel_agent_without_a_collector_does_nothing(lab):
+    path = _role_play(lab, "otel_agent", **_agent_vars(lab, otel_agent_collector=""))
+    assert run_role(lab, path) == 0, lab.stdout
+    assert not (lab.dir / "etc").exists() and not lab.calls("systemctl")
+
+
+def test_otel_agent_render_only_for_cloud_init(lab):
+    import yaml
+    path = _role_play(lab, "otel_agent", tasks_from="render",
+                      **_agent_vars(lab, otel_agent_scrape_targets=[], otel_agent_ssh_check=True,
+                                    otel_agent_httpcheck=["https://10.30.0.100/"]))
+    assert run_role(lab, path) == 0, lab.stdout
+    cfg = yaml.safe_load((lab.dir / "rendered.yaml").read_text())
+    assert cfg["receivers"]["httpcheck"]["targets"][0]["endpoint"] == "https://10.30.0.100/"
+    assert "httpcheck" in cfg["service"]["pipelines"]["metrics"]["receivers"]
+    assert not lab.calls("systemctl")                               # nothing installed
+
+
+def test_otel_agent_accepts_a_single_url_for_httpcheck(lab):
+    import yaml
+    path = _role_play(lab, "otel_agent", tasks_from="render",
+                      **_agent_vars(lab, otel_agent_httpcheck="https://10.30.0.100/"))
+    assert run_role(lab, path) == 0, lab.stdout
+    cfg = yaml.safe_load((lab.dir / "rendered.yaml").read_text())
+    assert [t["endpoint"] for t in cfg["receivers"]["httpcheck"]["targets"]] == ["https://10.30.0.100/"]
