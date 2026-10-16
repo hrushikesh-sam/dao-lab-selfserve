@@ -443,6 +443,37 @@ class AnsibleRunner:
         self._todo("destroy_vms")
 
 
+ANSIBLE_SERVICE_NAME = "daolab-ansible"
+
+
+def ansible_env(settings=None, traceparent: str | None = None) -> dict[str, str]:
+    """The environment of an ansible-playbook run (B-63, used by the ansible runner, B-84).
+
+    Always points ANSIBLE_CONFIG at playbooks/ansible.cfg. With DAOLAB_OTEL_ENDPOINT set it
+    also switches on the community.general.opentelemetry callback (DAOLAB_ANSIBLE_OTEL=true),
+    tells it where the collector is, and passes the job span's TRACEPARENT (B-62), so each
+    Ansible task becomes a child span of the job. With the endpoint unset nothing OTel is set
+    and the callback stays off."""
+    from . import otel
+    s = settings or config.settings
+    env = {"ANSIBLE_CONFIG": os.path.join(s.playbooks_dir, "ansible.cfg"),
+           "ANSIBLE_NOCOLOR": "1", "ANSIBLE_RETRY_FILES_ENABLED": "0"}
+    endpoint = (s.otel_endpoint or "").strip()
+    if not endpoint:
+        return env
+    target, insecure = otel._grpc_target(endpoint)
+    env.update({
+        "DAOLAB_ANSIBLE_OTEL": "true",
+        "OTEL_SERVICE_NAME": ANSIBLE_SERVICE_NAME,
+        "OTEL_EXPORTER_OTLP_ENDPOINT": ("http://" if insecure else "https://") + target,
+        "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "grpc",
+        "OTEL_EXPORTER_OTLP_INSECURE": "true" if insecure else "false",
+    })
+    if traceparent:
+        env["TRACEPARENT"] = traceparent
+    return env
+
+
 def get_runner(settings=None) -> Runner:
     """The backend named by DAOLAB_RUNNER (`settings` defaults to the live config)."""
     s = settings or config.settings

@@ -437,3 +437,35 @@ def test_mock_residue_comes_from_the_context_vms_and_leases():
     states = dict((c[0], c[1]) for c in sink.calls)
     assert states == {"check_vms": "failed", "check_vfs": "ok", "check_sessions": "ok",
                       "check_ips": "failed"}
+
+
+# ---- B-63: the Ansible OpenTelemetry callback ----------------------------------------------
+
+def test_ansible_env_without_telemetry_only_points_at_the_config():
+    env = runner.ansible_env(_settings(otel_endpoint="", playbooks_dir="/opt/daolab/playbooks"))
+    assert env["ANSIBLE_CONFIG"] == "/opt/daolab/playbooks/ansible.cfg"
+    assert not [k for k in env if k.startswith(("OTEL_", "DAOLAB_ANSIBLE_OTEL", "TRACEPARENT"))]
+
+
+def test_ansible_env_with_telemetry_turns_the_callback_on_under_the_job_span():
+    tp = "00-" + "ab" * 16 + "-" + "cd" * 8 + "-01"
+    env = runner.ansible_env(_settings(otel_endpoint="collector:4317"), traceparent=tp)
+    assert env["DAOLAB_ANSIBLE_OTEL"] == "true"
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://collector:4317"
+    assert env["OTEL_EXPORTER_OTLP_INSECURE"] == "true"
+    assert env["OTEL_SERVICE_NAME"] == "daolab-ansible" and env["TRACEPARENT"] == tp
+
+
+def test_ansible_env_keeps_tls_endpoints_and_skips_an_absent_traceparent():
+    env = runner.ansible_env(_settings(otel_endpoint="https://otel.lab:443"))
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://otel.lab:443"
+    assert env["OTEL_EXPORTER_OTLP_INSECURE"] == "false" and "TRACEPARENT" not in env
+
+
+def test_the_ansible_cfg_enables_the_callback_from_the_environment():
+    import configparser
+    import os
+    cfg = configparser.ConfigParser()
+    cfg.read(os.path.join(os.path.dirname(__file__), "..", "playbooks", "ansible.cfg"))
+    assert cfg["defaults"]["callbacks_enabled"] == "community.general.opentelemetry"
+    assert cfg["callback_opentelemetry"]["enable_from_environment"] == "DAOLAB_ANSIBLE_OTEL"
