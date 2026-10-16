@@ -188,7 +188,8 @@ async function saveToken() {
 
 const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
                      cleaning:"b-amber", quarantined:"b-red", released:"b-muted", failed:"b-red"};
-const CANCELABLE = ["queued", "ready", "active"];
+const CANCELABLE = ["queued"];                 // DELETE only cancels a queued booking
+const CLEANABLE = ["ready", "active"];         // a live slot is ended with POST /cleanup
 
 if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
 
@@ -277,7 +278,9 @@ async function loadAllReservations() {
       <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span></td>
       <td>${esc(r.start_at)} → ${esc(r.end_at)}${r.shifted ? ' <span class="badge b-amber">shifted</span>' : ""}</td>
       <td>${CANCELABLE.includes(r.state)
-        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>` : ""}</td>
+        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>`
+        : CLEANABLE.includes(r.state)
+          ? `<button class="cancel" onclick="cleanupReservation(${r.id})">Cleanup</button>` : ""}</td>
     </tr>`).join("");
 }
 
@@ -285,6 +288,15 @@ async function cancelReservation(id) {
   if (!confirm(`Cancel reservation #${id}?`)) return;
   try {
     const r = await api(`/reservations/${id}`, {method: "DELETE"});
+    showBanner(`reservation #${r.id} → ${r.state}`, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
+}
+
+async function cleanupReservation(id) {
+  if (!confirm(`End reservation #${id} early? This tears down the deploy and verifies cleanup.`)) return;
+  try {
+    const r = await api(`/reservations/${id}/cleanup`, {method: "POST"});
     showBanner(`reservation #${r.id} → ${r.state}`, null, true);
     await refresh();
   } catch (e) { reportError(e); }

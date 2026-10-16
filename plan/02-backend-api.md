@@ -96,7 +96,11 @@ All bodies JSON. Paths: plural nouns, no version prefix, kebab-case segments.
 | POST | `/reservations` | user | Create — use-case mode or DIY mode. |
 | GET | `/reservations` | user | Own reservations, newest first; `?all=1` admin-only. |
 | GET | `/reservations/{id}` | user (owner) or admin | One reservation, live state + SSH details. |
-| DELETE | `/reservations/{id}` | user (owner) or admin | Cancel (allowed in `queued`, `ready`, `active`). |
+| POST | `/reservations/{id}/cleanup` | user (owner) | End a `ready`/`active` slot early → `202` + cleanup job (`cleaning`). |
+| POST | `/reservations/{id}/redeploy` | user (owner) | Re-run `deploy.yml` inside the slot → `202` + deploy job; `409` outside the slot. |
+| DELETE | `/reservations/{id}` | user (owner) or admin | Cancel a `queued` booking → `released`; other states → `409 invalid_state`. |
+| GET | `/reservations/{id}/events` | user (owner) | SSE stream of job steps / state changes. |
+| GET | `/jobs/{id}` | user (owner) | Job state, steps, `trace_id`, log tail. |
 | POST | `/internal/vm-ip` | internal | VM-IP callback from `host_vm.yml` / `dpu_prepare.yml`. |
 
 **GET /health** → `200 {"status": "ok"}`
@@ -126,8 +130,9 @@ user page can render the testbed without `GET /setups`; `[]` on planned rows:
 reservations not in `released`/`failed`).
 **PATCH /users/{id}** — request `{"enabled": false}` → `200` the user object. Unknown id →
 `404 not_found`; an admin disabling their own account → `409 invalid_state` (lockout guard);
-disabling leaves the user's reservations untouched — cancel them via
-`DELETE /reservations/{id}` if the hold must end.
+disabling leaves the user's reservations untouched — cancel a `queued` one with
+`DELETE /reservations/{id}` or end a `ready`/`active` one early with
+`POST /reservations/{id}/cleanup` if the hold must end.
 
 **GET /setups** → `200`, one row per setup; `held_by` = the reservation currently in
 `provisioning`/`ready`/`active`/`cleaning`/`quarantined` on the setup or `null`; `queue` = `queued`
@@ -176,10 +181,13 @@ the provisioned topology (one node per role with IP/ssh, edges from the roles' `
 stays topology-free; `null` while no `vms` rows exist.
 
 **DELETE /reservations/{id}** → `200 {"id": 12, "state": "released"}` when it was `queued`
-(nothing ran, nothing to tear down), or `{"id": 12, "state": "cleaning"}` from
-`ready`/`active` (the API changes state only; the engine runs the teardown —
-[04-lifecycle-engine.md](04-lifecycle-engine.md)). Cancel in `provisioning`, `cleaning`,
-`quarantined`, `released`, `failed` → `409 invalid_state` (also when the engine moves the reservation between the API's read and its write: the state change is a compare-and-set, `models.transition_reservation`).
+(nothing ran, nothing to tear down) — this is the only state DELETE accepts. Any other state
+(`provisioning`, `ready`, `active`, `cleaning`, `quarantined`, `released`, `failed`) →
+`409 invalid_state` (also when the engine moves the reservation between the API's read and its
+write: the state change is a compare-and-set, `models.transition_reservation`).
+Ending a live `ready`/`active` slot early is a **separate** action, `POST /reservations/{id}/cleanup`
+→ `202` + `{"id", "state": "cleaning"}` (the API changes state only; the engine runs the teardown —
+[04-lifecycle-engine.md](04-lifecycle-engine.md)) — see plan/09 §4/§10, which own these transitions.
 
 **POST /internal/vm-ip** — request `{"reservation_id": 12, "role": "backend", "ip": "10.20.0.21"}`
 → `200 {"ok": true}`. Unknown `(reservation_id, role)` → `404 not_found`.
@@ -315,7 +323,7 @@ Every non-2xx response has exactly this envelope — a stable machine `code`, a 
 | `validation_error` | 422 | Malformed body/timestamp, `hours` < 1, unknown fields, diy-field presence violations, template map not covering every VM host. |
 | `usecase_unavailable` | 409 | Reserving a `planned` row (`detail.reason: "no_yaml"`); horizon exhausted (`detail.reason: "no_free_slot"`). |
 | `unmet_capability` | 409 | No setup's capabilities ⊇ `requires`; message names the missing list. |
-| `invalid_state` | 409 | Cancel while `provisioning`/`cleaning`/`quarantined`/`released`/`failed`; `detail: {"state": "..."}`. |
+| `invalid_state` | 409 | Cancel while not `queued` (i.e. `provisioning`/`ready`/`active`/`cleaning`/`quarantined`/`released`/`failed`); also cleanup of a non-`ready`/`active` reservation; `detail: {"state": "..."}`. |
 | `internal_error` | 500 | Unhandled exception. |
 
 Further examples (unknown use case, bad token, wrong role):
@@ -387,7 +395,8 @@ Cases (each asserts the error envelope shape on every non-2xx):
 | 8 | Reserve unknown name / planned row / `hours: 0` / `setup` on non-diy / diy without `templates` / diy templates missing a host | `404` / `409 usecase_unavailable` / `422` / `422` / `422` / `422` |
 | 9 | Reserve `diy` with `setup: setup-01` + full template map | `201`, `diy: true` |
 | 10 | Owner reads own reservation; other user reads it; admin reads it | `200` / `403` / `200`; list is newest-first |
-| 11 | Cancel matrix (states set directly via models helpers) | `queued`→`released`; `ready`→`cleaning`; `provisioning`→`409 invalid_state` |
+| 11 | Cancel matrix (`DELETE`, states set via models helpers) | `queued`→`released`; every other state (`provisioning`/`ready`/`active`/`cleaning`/`quarantined`/`released`/`failed`)→`409 invalid_state` |
+| 11b | Cleanup matrix (`POST /reservations/{id}/cleanup`) | `ready`/`active`→`202` + `cleaning` job; `queued`/`released`→`409 invalid_state`; non-owner→`403` |
 | 12 | Callback: wrong secret; secret unset in settings; unknown role; happy path | `401`; `401`; `404`; `{"ok": true}` then reservation object shows `ip` and `ssh: "ssh <user>@<ip>"` |
 | 13 | Callback replay with same body | `200` again (idempotent) |
 | 14 | `GET /` and `/admin.html` | `200`, HTML bodies from `DAOLAB_DASHBOARD_DIR` |

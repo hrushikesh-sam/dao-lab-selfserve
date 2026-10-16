@@ -1,6 +1,7 @@
 """B-22: the runner interface, the mock backend, and the DAOLAB_RUNNER switch (plan/09 §6, §9, §13)."""
 import dataclasses
 import json
+import os
 import time
 import urllib.request
 
@@ -48,7 +49,8 @@ def test_mock_settings_defaults_and_overrides(monkeypatch):
 
 
 def test_env_example_lists_the_new_variables():
-    text = open(config.__file__.replace("service/config.py", ".env.example")).read()
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(config.__file__)))
+    text = open(os.path.join(repo_root, ".env.example")).read()
     assert "DAOLAB_MOCK_STEP_SEC=" in text and "DAOLAB_MOCK_FAIL=" in text
 
 
@@ -132,9 +134,10 @@ def test_the_default_deploy_takes_about_half_a_minute(monkeypatch):
 
 
 def test_real_sleeping_actually_takes_time():
+    # 0.05 s per step keeps the assertion clear of the OS timer granularity (Windows ~15 ms).
     started = time.monotonic()
-    MockRunner(step_sec=0.02).probe(RES, Sink())
-    assert time.monotonic() - started >= 0.02 * len(PROBE_STEPS) * 0.9
+    MockRunner(step_sec=0.05).probe(RES, Sink())
+    assert time.monotonic() - started >= 0.05 * len(PROBE_STEPS) * 0.9
 
 
 def test_accepts_a_sqlite_row_as_well_as_a_dict(db):

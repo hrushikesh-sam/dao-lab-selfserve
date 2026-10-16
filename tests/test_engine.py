@@ -5,7 +5,7 @@ from datetime import timedelta
 
 import pytest
 
-from service import config, engine, migrations, models, runner, scheduler
+from service import config, engine, models, runner, scheduler
 from service.models import JobError
 from service.runner import (CLEANUP_STEPS, DEPLOY_STEPS, VERIFY_CLEAN_STEPS, MockRunner,
                             RunResult)
@@ -219,7 +219,7 @@ def test_a_second_engine_with_a_stale_view_cannot_start_it_twice(world, monkeypa
 def test_the_stale_view_is_refused_even_if_the_hold_check_passes(world, monkeypatch):
     """Belt and braces: with the held-by guard blinded, the state compare-and-set still refuses."""
     db = world[0]
-    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    res(world, uc="a", start=T(9, 5), end=T(10))
     stale = scheduler.startable_queued(db)
     engine._start_due(db, NOW, CFG)
     monkeypatch.setattr(scheduler, "startable_queued", lambda _db: stale)
@@ -327,6 +327,53 @@ def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world, m
     tick(db, rn=runner.AnsibleRunner())
     assert state(db, rid) == "failed"
     assert "B-84" in jobs(db)[0]["error"]
+
+
+# ---- 3b. redeploy of a live slot (B-28, plan/09 §4/§6) --------------------------------------
+
+def test_redeploy_of_a_ready_slot_runs_and_leaves_the_slot_ready(world):
+    db = world[0]
+    rid = res(world, uc="a", state="ready", start=T(9, 5), end=T(12))
+    models.create_job(db, rid, "deploy")
+    rn = Fake()
+    out = tick(db, rn=rn)
+    assert rn.calls == ["deploy"]
+    assert state(db, rid) == "ready" and out.ready == 0 and out.retried == 0
+    assert jobs(db, rid)[0]["state"] == "succeeded"
+
+
+def test_redeploy_of_an_active_slot_runs_and_leaves_it_active(world):
+    db, sid, _ = world
+    rid = res(world, uc="a", state="active", start=T(9, 5), end=T(12))
+    models.create_job(db, rid, "deploy")
+    out = tick(db, rn=Fake())
+    assert state(db, rid) == "active" and out.ready == 0
+    assert jobs(db, rid)[0]["state"] == "succeeded"
+    assert models.held_by(db, sid)["id"] == rid                 # the slot is still held
+
+
+def test_a_failed_redeploy_is_replayed_as_a_new_job_keeping_the_slot_live(world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=3))
+    db = world[0]
+    rid = res(world, uc="a", state="ready", start=T(9, 5), end=T(12))
+    models.create_job(db, rid, "deploy")
+    out = tick(db, rn=mock(fail={"deploy"}))
+    assert state(db, rid) == "ready" and out.failed == 0 and out.retried == 1
+    assert [(j["kind"], j["attempt"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", 1, "failed"), ("deploy", 2, "pending")]
+
+
+def test_a_redeploy_that_fails_for_good_leaves_the_live_slot_live(world, monkeypatch):
+    """Plan/09 §6: the slot stays the user's. A redeploy that fails for good must not tear the
+    running slot down — no `failed`, no automatic cleanup job (only a first deploy does that)."""
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
+    db, sid, _ = world
+    rid = res(world, uc="a", state="active", start=T(9, 5), end=T(12))
+    models.create_job(db, rid, "deploy")
+    out = tick(db, rn=mock(fail={"deploy"}))
+    assert state(db, rid) == "active" and out.failed == 0
+    assert [(j["kind"], j["state"]) for j in jobs(db, rid)] == [("deploy", "failed")]
+    assert models.held_by(db, sid)["id"] == rid                 # the slot is still held
 
 
 # ---- 4. running jobs: cleanup --------------------------------------------------------------
@@ -450,7 +497,7 @@ def test_a_job_whose_reservation_moved_on_fails_without_calling_the_runner(world
     out = tick(db, rn=rn)
     assert rn.calls == [] and out.jobs_run == 1
     job = jobs(db)[0]
-    assert job["state"] == "failed" and "reservation is released, expected provisioning" in job["error"]
+    assert job["state"] == "failed" and "reservation is released, expected provisioning or ready or active" in job["error"]
 
 
 def test_health_probe_records_the_job_and_leaves_the_reservation_alone(world):
@@ -547,7 +594,10 @@ def test_full_lifecycle_across_ticks_and_back_to_back_bookings(world):
     first = res(world, uc="a", start=T(10), end=T(11))
     second = res(world, uc="a", start=T(11, 15), end=T(12))             # gap = cleanup 10 + lead 5
     rn = mock()
-    at = lambda h, m=0: engine.tick(db, T(h, m), rn, CFG)
+
+    def at(h, m=0):
+        return engine.tick(db, T(h, m), rn, CFG)
+
 
     at(9, 50)
     assert (state(db, first), state(db, second)) == ("queued", "queued")      # 09:55 is the first due moment

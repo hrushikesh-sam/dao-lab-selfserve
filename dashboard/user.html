@@ -209,7 +209,8 @@ async function saveToken() {
 
 const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
                      cleaning:"b-amber", quarantined:"b-red", released:"b-muted", failed:"b-red"};
-const CANCELABLE = ["queued", "ready", "active"];
+const CANCELABLE = ["queued"];                 // DELETE only cancels a queued booking
+const CLEANABLE = ["ready", "active"];         // a live slot is ended with POST /cleanup
 
 if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
 let MERMAID_N = 0;
@@ -257,7 +258,9 @@ async function loadReservations() {
   document.getElementById("res-empty").hidden = rows.length > 0;
   tbody.innerHTML = rows.map(r => {
     const cancel = CANCELABLE.includes(r.state)
-      ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>` : "";
+        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>`
+        : CLEANABLE.includes(r.state)
+          ? `<button class="cancel" onclick="cleanupReservation(${r.id})">Cleanup</button>` : "";
     const shifted = r.shifted ? ` <span class="shift">shifted from ${esc(r.requested_start_at)}</span>` : "";
     const fail = r.state === "failed" && r.failure_reason
       ? `<tr class="vms"><td></td><td colspan="5"><span class="badge b-red">${esc(r.failure_reason)}</span></td></tr>` : "";
@@ -291,6 +294,15 @@ async function cancelReservation(id) {
   if (!confirm(`Cancel reservation #${id}?`)) return;
   try {
     const r = await api(`/reservations/${id}`, {method: "DELETE"});
+    showBanner(`reservation #${r.id} → ${r.state}`, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
+}
+
+async function cleanupReservation(id) {
+  if (!confirm(`End reservation #${id} early? This tears down the deploy and verifies cleanup.`)) return;
+  try {
+    const r = await api(`/reservations/${id}/cleanup`, {method: "POST"});
     showBanner(`reservation #${r.id} → ${r.state}`, null, true);
     await refresh();
   } catch (e) { reportError(e); }

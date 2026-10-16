@@ -126,7 +126,8 @@ def test_db_newer_than_code_is_refused():
 
 
 def test_versions_must_be_contiguous():
-    noop = lambda c: None
+    def noop(c):
+        return None
     with pytest.raises(RuntimeError, match="1..N"):
         migrations._check_contiguous([migrations.Migration(1, "a", noop),
                                       migrations.Migration(3, "c", noop)])

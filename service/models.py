@@ -70,6 +70,7 @@ def insert(conn: sqlite3.Connection, table: str, row: dict) -> int:
     cols = ", ".join(row)
     marks = ", ".join("?" for _ in row)
     cur = conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({marks})", list(row.values()))
+    assert cur.lastrowid is not None, f"insert into {table} returned no rowid"
     return cur.lastrowid
 
 
@@ -346,7 +347,7 @@ def transition_job(conn, job_id: int, new_state: str, error: str | None = None) 
     if error is not None and new_state != "failed":
         raise JobError(f"job {job_id}: error is only recorded for a failed job")
     now = utcnow()
-    changes = {"state": new_state, "updated_at": now}
+    changes: dict[str, object] = {"state": new_state, "updated_at": now}
     if new_state == "running":
         changes["started_at"] = now
     else:
@@ -432,7 +433,7 @@ def transition_reservation(conn, res_id: int, new_state: str, from_state: str | 
     if failure_reason is not None and new_state != "failed":
         raise ReservationStateError(
             f"reservation {res_id}: failure_reason is only recorded when moving to failed")
-    changes = {"state": new_state, "updated_at": utcnow()}
+    changes: dict[str, object] = {"state": new_state, "updated_at": utcnow()}
     if new_state == "failed":
         changes["failure_reason"] = failure_reason
     assign = ", ".join(f"{k} = ?" for k in changes)

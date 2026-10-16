@@ -172,22 +172,24 @@ copyable `ssh` login, and `username` + "your registered SSH key" from the `auth`
 it the reservation's `diagram` (server-generated mermaid of the provisioned topology with IPs)
 is rendered via the same mermaid plumbing as admin.html.
 
-| state | badge | SSH shown | Cancel button |
+| state | badge | SSH shown | Action |
 |---|---|---|---|
-| `queued` | grey | no (`vms` is `[]`) | yes → `released` |
-| `provisioning` | amber | no (ips filling in) | no (API would 409 `invalid_state`) |
-| `ready` | green | yes | yes → `cleaning` |
-| `active` | green | yes | yes → `cleaning` |
+| `queued` | grey | no (`vms` is `[]`) | **Cancel** → `released` |
+| `provisioning` | amber | no (ips filling in) | none (API would 409 `invalid_state`) |
+| `ready` | green | yes | **Cleanup** → `cleaning` |
+| `active` | green | yes | **Cleanup** → `cleaning` |
 | `cleaning` | amber | no | no |
 | `quarantined` | red | no | no (API would 409 `invalid_state`) |
 | `released` | muted | no | no |
 | `failed` | red + `failure_reason` | no | no |
 
-Cancel = confirm dialog → `DELETE /reservations/{id}` → response `{"id", "state"}` updates the
-row instantly, then `refresh()`.
+Two distinct actions, matching the API ([09-backend-system-design.md](09-backend-system-design.md) §10):
+**Cancel** = confirm dialog → `DELETE /reservations/{id}` (a `queued` booking → `released`); **Cleanup**
+= confirm dialog → `POST /reservations/{id}/cleanup` (a live `ready`/`active` slot → `cleaning`).
+Either response `{"id", "state"}` updates the row instantly, then `refresh()`.
 
 Build order: (1) token gate + `api()` + banner; (2) catalog table; (3) use-case reserve modal;
-(4) DIY modal; (5) my-reservations list + cancel; (6) polling wiring; (7) empty/error pass.
+(4) DIY modal; (5) my-reservations list + cancel/cleanup; (6) polling wiring; (7) empty/error pass.
 
 ## admin.html — drill-down, topology, holds, queue
 
@@ -208,7 +210,7 @@ Build order: (1) token gate + `api()` + banner; (2) catalog table; (3) use-case 
 |                |  queue:   #13 hrushi tls-proxy-nginx queued 12:00Z->14:00Z   |
 +----------------+--------------------------------------------------------------+
 | ALL RESERVATIONS (GET /reservations?all=1)                                    |
-|  id  user    usecase          setup     state    start_at -> end_at   [Cancel]|
+|  id  user    usecase          setup     state    start_at -> end_at  [action]|
 +------------------------------------------------------------------------------+
 ```
 
@@ -244,8 +246,9 @@ async function renderDiagram(setup) {                  // setup = one GET /setup
 with the same badges as user.html — a teardown-failure reservation surfaces here in `failed`
 until an admin intervenes manually. `queue` lists the `queued` summaries ordered by `start_at`.
 The pools column marks held setups. The global **ALL RESERVATIONS** table shows every user's
-reservations with an admin Cancel (`DELETE /reservations/{id}`, allowed in
-`queued`/`ready`/`active`).
+reservations with an admin action: Cancel (`DELETE /reservations/{id}`, `queued` only → `released`)
+or Cleanup (`POST /reservations/{id}/cleanup`, `ready`/`active` → `cleaning`) — same split as
+user.html, and the admin may act on any user's reservation.
 
 **Users panel.** `GET /users` fills a table — `username`, `role` badge, `enabled` badge,
 `active_reservations` count. *Disable* (confirm dialog) and *Enable* call `PATCH /users/{id}`
@@ -255,7 +258,7 @@ answers `409 invalid_state` regardless). Disabling kills the user's token immedi
 cancel those in ALL RESERVATIONS if the hold must end.
 
 Build order: (1) role gate; (2) pools column; (3) setup detail panel; (4) mermaid render;
-(5) held_by + queue; (6) global table + admin cancel; (7) users panel + enable/disable;
+(5) held_by + queue; (6) global table + admin cancel/cleanup; (7) users panel + enable/disable;
 (8) polling + empty/error pass.
 
 ## Component-to-endpoint map
@@ -268,13 +271,15 @@ Build order: (1) role gate; (2) pools column; (3) setup detail panel; (4) mermai
 | user.html | reserve modal (use-case mode) | `POST /reservations` | on submit |
 | user.html | DIY modal | `POST /reservations`; `GET /setups` | `/setups` only for admin tokens (dropdown assist); others type the name |
 | user.html | my-reservations list | `GET /reservations` | polled; full objects incl. `vms`/`ssh` |
-| user.html | post-action row refresh | `GET /reservations/{id}` | after reserve/cancel |
-| user.html | cancel button | `DELETE /reservations/{id}` | `queued`/`ready`/`active` only |
+| user.html | post-action row refresh | `GET /reservations/{id}` | after reserve/cancel/cleanup |
+| user.html | cancel button | `DELETE /reservations/{id}` | `queued` only (`provisioning` onward → 409) |
+| user.html | cleanup button | `POST /reservations/{id}/cleanup` | `ready`/`active` only; ends the slot early |
 | admin.html | role gate | `GET /whoami` | refuses render unless `role == "admin"` |
 | admin.html | pools column | `GET /pools` | polled |
 | admin.html | setup detail (members, links, diagram, held_by, queue) | `GET /setups` | polled; one call drives the whole panel |
 | admin.html | global reservation table | `GET /reservations?all=1` | polled; admin token required |
-| admin.html | admin cancel | `DELETE /reservations/{id}` | any user's reservation |
+| admin.html | admin cancel | `DELETE /reservations/{id}` | any user's `queued` reservation → `released` |
+| admin.html | admin cleanup | `POST /reservations/{id}/cleanup` | any user's `ready`/`active` reservation → `cleaning` |
 | admin.html | users panel | `GET /users` | polled; enabled badge + active count |
 | admin.html | enable/disable toggle | `PATCH /users/{id}` | confirm on disable; self-row inert |
 | — | never called by the frontend | `POST /internal/vm-ip` | internal auth (`X-Daolab-Secret`); playbook callback only |
@@ -335,7 +340,7 @@ DAOLAB_TOKEN=<user-token> daolab reserve tls-proxy-nginx 2026-09-01T10:00 --hour
    (reservation_id, role, host, template, name, ip, created_at, updated_at) VALUES
    (1,'client','tg-01-xcp','tpl-ubuntu2204-dao','daolab-r1-client','10.20.0.31',
    strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now'));"` — within one
-   poll the row shows `ssh hrushi@10.20.0.31`; Cancel is enabled again.
+   poll the row shows `ssh hrushi@10.20.0.31`; Cleanup is enabled again.
 6. DIY with an unknown setup name → banner shows `not_found`; DIY on `setup-01` with only one
    `host = template` row → banner shows the `validation_error` message naming the uncovered
    host; with both `dpu-01-xcp` and `tg-01-xcp` mapped to `tpl-ubuntu2204-dao` → `201`, row

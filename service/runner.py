@@ -59,6 +59,12 @@ class RunResult:
 StepSink = Callable[..., None]           # step(name, state="ok", detail=None)
 
 
+def _prom_label(value) -> str:
+    """Escape a Prometheus label value for the text exposition format: backslash, double
+    quote and newline are the three characters that must be escaped."""
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
 class Runner(Protocol):
     def deploy(self, res: Mapping, step: StepSink) -> RunResult: ...
     def cleanup(self, res: Mapping, step: StepSink) -> RunResult: ...
@@ -67,7 +73,8 @@ class Runner(Protocol):
 
 
 def parse_mock_fail(text: str) -> frozenset[str]:
-    """``DAOLAB_MOCK_FAIL`` is empty or a comma-separated subset of deploy / cleanup."""
+    """``DAOLAB_MOCK_FAIL`` is empty or a comma-separated subset of ``MOCK_FAIL_TARGETS``
+    (``deploy`` / ``cleanup`` / ``health``)."""
     names = [n.strip() for n in (text or "").split(",") if n.strip()]
     unknown = [n for n in names if n not in MOCK_FAIL_TARGETS]
     if unknown:
@@ -99,16 +106,16 @@ class MockExporter:
         self.labels = {"daolab_reservation": str(reservation_id)}
         if labels:
             self.labels.update({str(k): str(v) for k, v in labels.items()})
-        self._httpd = None
-        self._thread = None
-        self._target_file = None
+        self._httpd: ThreadingHTTPServer | None = None
+        self._thread: threading.Thread | None = None
+        self._target_file: str | None = None
 
     @property
     def target(self) -> str:
         return f"{self.host}:{self.port}"
 
     def _metrics_text(self) -> str:
-        label_str = ",".join(f'{k}="{v}"' for k, v in sorted(self.labels.items()))
+        label_str = ",".join(f'{k}="{_prom_label(v)}"' for k, v in sorted(self.labels.items()))
         return ("# HELP daolab_mock_up Mock agent liveness (B-68).\n"
                 "# TYPE daolab_mock_up gauge\n"
                 f'daolab_mock_up{{{label_str}}} 1\n')
@@ -271,9 +278,12 @@ def get_runner(settings=None) -> Runner:
     if s.runner == "mock":
         # B-68: only run the fake exporters when the telemetry stack is switched on, so a
         # plain `DAOLAB_RUNNER=mock` (and the tests) stay side-effect free (plan/09 §13).
-        factory = None
+        def exporter_factory(rid: int) -> MockExporter:
+            return MockExporter(rid, targets_dir=OTEL_TARGETS_DIR)
+
+        factory: Callable[[int], MockExporter] | None = None
         if (s.otel_endpoint or "").strip():
-            factory = lambda rid: MockExporter(rid, targets_dir=OTEL_TARGETS_DIR)
+            factory = exporter_factory
         return MockRunner(step_sec=s.mock_step_sec, fail=parse_mock_fail(s.mock_fail),
                           exporter_factory=factory)
     if s.runner == "ansible":

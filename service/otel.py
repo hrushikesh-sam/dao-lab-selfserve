@@ -56,6 +56,6 @@ def setup_tracing(app=None, service_name: str = "daolab") -> bool:
         log.info("otel: tracing enabled -> %s (service=%s)", target, service_name)
 
     if app is not None:
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore[import-not-found]
         FastAPIInstrumentor.instrument_app(app)
     return True

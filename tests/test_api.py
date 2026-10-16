@@ -190,16 +190,16 @@ def test_10_ownership_and_order(env):
 
 
 def test_11_cancel_matrix(env):
+    # DELETE cancels a *queued* booking only; a live slot is ended with POST /cleanup
+    # (plan/09 §4/§10).
     rid = reserve(env, env.user_token).json()["id"]
     r = env.client.delete(f"/reservations/{rid}", headers=H(env.user_token))
     assert r.json() == {"id": rid, "state": "released"}
     rid2 = reserve(env, env.user_token).json()["id"]
-    env.models.update(env.conn, "reservations", rid2, {"state": "ready"})
-    assert env.client.delete(f"/reservations/{rid2}", headers=H(env.user_token)).json()["state"] == "cleaning"
-    rid3 = reserve(env, env.user_token).json()["id"]
-    env.models.update(env.conn, "reservations", rid3, {"state": "provisioning"})
-    assert_error(env.client.delete(f"/reservations/{rid3}", headers=H(env.user_token)),
-                 409, "invalid_state")
+    for live_state in ("ready", "provisioning"):     # re-use one booking: two live bookings would hit the quota
+        env.models.update(env.conn, "reservations", rid2, {"state": live_state})
+        assert_error(env.client.delete(f"/reservations/{rid2}", headers=H(env.user_token)),
+                     409, "invalid_state")
 
 
 def _mk_vm(env, rid, role="backend"):

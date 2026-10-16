@@ -19,7 +19,7 @@ force-clean to `released`) was added. The legal moves are exactly the diagram of
 `models.transition_reservation`; where the older diagram and table below differ (the
 `cleaning → failed` edge, retry self-loops), plan/09 §10 wins and retries move onto job rows
 (B-20, B-25). There is no `cancelled` state: cancelling a `queued` reservation goes
-straight to `released`; cancelling `ready`/`active` goes through `cleaning` → `released`.
+straight to `released`; ending a `ready`/`active` slot early (`POST /reservations/{id}/cleanup`) goes through `cleaning` → `released`.
 
 ```mermaid
 stateDiagram-v2
@@ -30,8 +30,8 @@ stateDiagram-v2
     provisioning --> ready: all playbooks ok · every vms.ip set
     provisioning --> failed: retries exhausted (best-effort teardown)
     ready --> active: engine · now ≥ start_at
-    ready --> cleaning: DELETE (cancel)
-    active --> cleaning: engine · now ≥ end_at · or DELETE
+    ready --> cleaning: POST /cleanup (end early)
+    active --> cleaning: engine · now ≥ end_at · or POST /cleanup
     cleaning --> released: runner.teardown ok
     cleaning --> quarantined: residue persists after cleanup (B-21)
     quarantined --> released: reconcile / force-clean (B-21)
@@ -47,13 +47,14 @@ stateDiagram-v2
 | `provisioning` | engine tick (e): one full attempt | non-diy: `runner.dpu_prepare` (includes `ebf_set` iff `usecase.hw_class` differs from the DPU's `resources.hw_class`) → `runner.host_vm` → `runner.verify`; diy: `runner.host_vm` only | `ready` when all succeed and every VM role has an `ip`; update `resources.hw_class` after a reflash; fire webhook if `DAOLAB_WEBHOOK_URL` set | `retries += 1`, stay `provisioning` while `retries < DAOLAB_MAX_RETRIES` (idempotent replay next tick) |
 | `provisioning` | a failure brings `retries` to `DAOLAB_MAX_RETRIES` | best-effort single `runner.teardown`; set `failure_reason` | `failed` | teardown here is best-effort — its failure is logged, state is `failed` either way |
 | `ready` | engine tick (a): `now >= start_at` | none | `active` | — |
-| `ready` | `DELETE /reservations/{id}` (api) | state change + `retries = 0`; engine drives the teardown | `cleaning` | — |
-| `active` | engine tick (b): `now >= end_at`, or `DELETE /reservations/{id}` | `retries = 0` on entry | `cleaning` | — |
+| `ready` | `POST /reservations/{id}/cleanup` (api) | state change + `retries = 0`; engine drives the teardown | `cleaning` | — |
+| `active` | engine tick (b): `now >= end_at`, or `POST /reservations/{id}/cleanup` | `retries = 0` on entry | `cleaning` | — |
 | `cleaning` | engine tick (c): `runner.teardown` succeeds | setup freed; **`resources.hw_class` is left untouched** | `released` | `retries += 1`; after `DAOLAB_MAX_RETRIES`: `failed`, set `failure_reason`, setup stays held and surfaces under `held_by` on `admin.html` until an admin intervenes manually |
 | `queued` | `DELETE /reservations/{id}` before provisioning began (api) | no playbooks ran; nothing to tear down | `released` | — |
 
-Cancel while `provisioning` or `cleaning` → `409 invalid_state` (retry once `ready`) — the
-engine never has to interrupt a running playbook.
+Cancel (`DELETE /reservations/{id}`) is valid only for `queued`; every other state → `409 invalid_state`,
+and cleanup is valid only for `ready`/`active`. The engine therefore never has to interrupt a
+running playbook.
 
 ## Engine loop — one tick, every minute
 

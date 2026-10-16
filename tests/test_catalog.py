@@ -145,7 +145,7 @@ def test_sync_shrinks_range_but_keeps_live_leases(conn, monkeypatch):
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
     pool = models.ip_pool_by_name(conn, catalog.DEFAULT_IP_POOL)
     assert pool["range_end"] == "10.30.0.150"                    # range updated
-    assert [l["ip"] for l in models.live_leases(conn, pool["id"])] == ["10.30.0.199"]
+    assert [lease["ip"] for lease in models.live_leases(conn, pool["id"])] == ["10.30.0.199"]
 
 
 def test_bad_ip_pool_rejected(conn, monkeypatch):

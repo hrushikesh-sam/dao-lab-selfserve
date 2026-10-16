@@ -24,11 +24,13 @@ the clock. Every state change is a compare-and-set (`models.transition_reservati
 Runner calls block; ticks are serialised, so a long deploy simply delays the next tick.
 
 What a finished job does to its reservation:
-  * deploy ok      -> ready, and the DPU's hw_class is recorded (plan/01 invariant 6)
+  * deploy ok      -> ready (first deploy), and the DPU's hw_class is recorded (plan/01
+                      invariant 6); a redeploy of a `ready`/`active` slot leaves it as it was
   * deploy failed  -> retried as a fresh deploy job (attempt + 1) until DAOLAB_MAX_RETRIES
-                      observed failures (B-25); once exhausted -> failed, with the job error as
-                      failure_reason, plus an automatic `cleanup` job to tear down whatever the
-                      partial deploy left behind (plan/09 §10)
+                      observed failures (B-25); once exhausted, a *first* deploy -> failed, with
+                      the job error as failure_reason, plus an automatic `cleanup` job to tear
+                      down whatever the partial deploy left behind (plan/09 §10). A redeploy of a
+                      live slot leaves the slot untouched, so the owner can try again (plan/09 §6)
   * cleanup        -> cleanup, then verify_clean regardless of the cleanup result (plan/09 §9);
                       from `cleaning`: clean -> released, residue -> quarantined;
                       from `failed`: clean -> released, residue stays `failed` (no edge to
@@ -50,9 +52,11 @@ from .runner import RunResult
 log = logging.getLogger("daolab.engine")
 
 # The reservation state a job of each kind needs when it starts. If the reservation moved on
-# (cancelled, admin override...) the job fails without calling the runner.
+# (cancelled, admin override...) the job fails without calling the runner. A `deploy` job is
+# either a first deploy (reservation `provisioning`, from `_start_due`) or a redeploy of a live
+# slot (`ready`/`active`, from `POST /reservations/{id}/redeploy`, plan/09 §4).
 EXPECTED_STATES = {
-    "deploy": ("provisioning",),
+    "deploy": ("provisioning", "ready", "active"),
     "cleanup": ("cleaning", "failed"),
     "health_probe": ("ready", "active"),
     "reconcile": ("quarantined",),
@@ -186,25 +190,31 @@ def _finish(db, job_id: int, result: RunResult) -> None:
 
 def _run_deploy(db, rn, job, res, sink, out: TickResult) -> RunResult:
     result = _call(rn.deploy, res, sink, "deploy")
+    first = res["state"] == "provisioning"   # a first deploy; otherwise a redeploy of a live slot
     with _txn(db):          # job result + reservation move + audit commit together or not at all
         _finish(db, job["id"], result)
         if result.ok:
             uc = models.usecase_by_id(db, res["usecase_id"])
             if uc["hw_class"] is not None:
                 models.set_dpu_hw_class(db, res["setup_id"], uc["hw_class"])
-            if _move(db, res["id"], "ready", from_state="provisioning"):
+            if first and _move(db, res["id"], "ready", from_state="provisioning"):
                 out.ready += 1
+            # a successful redeploy leaves the slot `ready`/`active` exactly as it was
         elif job["attempt"] < config.settings.max_retries:
-            # B-25: replay the deploy as a brand-new job; the reservation stays provisioning.
-            # A later tick picks it up (pending_jobs was snapshotted before this row existed).
+            # B-25: replay the deploy as a brand-new job; the reservation stays where it is
+            # (provisioning for a first deploy, ready/active for a redeploy). A later tick picks
+            # it up (pending_jobs was snapshotted before this row existed).
             models.create_job(db, res["id"], "deploy", attempt=job["attempt"] + 1,
                               trace_id=job["trace_id"])
             out.retried += 1
-        else:
+        elif first:
+            # a first deploy finally failed: mark it failed and queue the teardown
             if _move(db, res["id"], "failed", from_state="provisioning",
                      failure_reason=result.error or "deploy failed"):
                 out.failed += 1
             models.create_job(db, res["id"], "cleanup", trace_id=job["trace_id"])
+        # else: a redeploy of a live slot failed for good — leave the running slot untouched
+        # (no teardown, no `failed`); the slot stays the user's to redeploy again (plan/09 §6).
         _audit(db, job, "deploy", {"ok": result.ok, "error": result.error})
     return result
 

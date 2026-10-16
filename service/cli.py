@@ -8,11 +8,12 @@ import sqlite3
 import sys
 import urllib.error
 import urllib.request
+from typing import NoReturn, cast
 
 from . import catalog, config, migrations, models
 
 
-def _die(msg: str) -> "NoReturn":
+def _die(msg: str) -> NoReturn:
     print(f"error: {msg}", file=sys.stderr)
     sys.exit(1)
 
@@ -104,7 +105,7 @@ def cmd_reserve(args) -> int:
             host, template = item.split("=", 1)
             templates[host] = template
         body["templates"] = templates
-    r = _api("POST", "/reservations", body)
+    r = cast("dict", _api("POST", "/reservations", body))
     print(f"id: {r['id']}  setup: {r['setup']}  state: {r['state']}")
     print(f"slot: {r['start_at']} -> {r['end_at']}")
     if r["shifted"]:
@@ -113,7 +114,7 @@ def cmd_reserve(args) -> int:
 
 
 def cmd_status(args) -> int:
-    rows = _api("GET", "/reservations" + ("?all=1" if args.all else ""))
+    rows = cast("list", _api("GET", "/reservations" + ("?all=1" if args.all else "")))
     if not rows:
         print("no reservations")
         return 0
