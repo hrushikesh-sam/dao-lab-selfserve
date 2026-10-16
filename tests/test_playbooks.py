@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not instal
                                                     "(pip install -e .[ansible])")
 
 FAKES = ("xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping",
-         "pktgen", "h2load")
+         "pktgen", "h2load", "which", "vppctl", "dpdk-devbind.py", "fakeproc")
 E810_VFS = ["0000:5e:01.0", "0000:5e:01.1"]
 SDP_VFS = ["0000:03:02.0", "0000:03:02.1"]
 TPL_UUID = "11111111-tpl0-0000-0000-000000000000"
@@ -64,7 +64,7 @@ class Lab:
                                "e810_vfs": E810_VFS, "sdp_vfs": SDP_VFS,
                                "mgmt_network": "Pool-wide network associated with eth0",
                                "sr_uuid": "33333333-sr00"}}},
-                           "dpus": {"hosts": {"dpu-01": {}}}}}}
+                           "dpus": {"hosts": {"dpu-01": {"ansible_host": "10.68.0.190"}}}}}}
         self.inventory = tmp_path / "hosts.json"
         self.inventory.write_text(json.dumps(inv))
 
@@ -339,6 +339,7 @@ def test_otel_agent_accepts_a_single_url_for_httpcheck(lab):
 # ---- B-80: deploy.yml ----------------------------------------------------------------------
 
 import base64                                                     # noqa: E402
+import types                                                      # noqa: E402
 import threading                                                  # noqa: E402
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
 
@@ -394,40 +395,65 @@ def api():
     httpd.server_close()
 
 
+VPP_BOOKS = ("03_install", "04_configure_02", "08_prepare_04", "09_configure_04",
+             "10_verify_04", "11_cleanup_04")
+SMARTNIC_BOOKS = ("01_build", "02_launch_verify", "03_cleanup")
+
+
 @pytest.fixture
-def fake_app(tmp_path):
-    """A stand-in DPU app role (the real ones are B-81): runs daolab-app-<app> and exposes a
-    metrics target, idempotently."""
-    root = tmp_path / "test-roles"
-    tasks = root / "fake_app" / "tasks"
-    tasks.mkdir(parents=True)
-    (tasks / "main.yml").write_text(yaml.safe_dump([
-        {"name": "run the app", "ansible.builtin.command": "systemctl is-active {{ dpu_app_unit }}",
-         "register": "_a", "changed_when": False, "failed_when": False},
-        {"name": "start it", "ansible.builtin.command": "systemctl enable --now {{ dpu_app_unit }}",
-         "when": "_a.rc != 0"},
-        {"name": "remember what the app was given", "ansible.builtin.copy": {
-            "content": "{{ {'upstream': dpu_app_upstream_ip, 'addresses': dpu_app_addresses} | to_json }}",
-            "dest": str(tmp_path / "app-args.json")}, "delegate_to": "localhost",
-         "changed_when": False},
-        {"name": "metrics", "ansible.builtin.set_fact": {
-            "dpu_app_scrape_targets": [{"job": "fake", "target": "127.0.0.1:9273"}]}}]))
-    return root
+def books(tmp_path):
+    """Stand-ins for Akshay's runbook playbooks (VPP_ansible/, dao-smartnic/): each one only
+    records that it ran, so the tests check which steps a wrapper picks for a board state.
+    Plus a fake sysfs whose live port (0002:04:00.0) sits on `driver`."""
+    root = tmp_path / "books"
+    ran = tmp_path / "books-ran.log"
+    effect = {"03_install": "fakeproc install vpp", "10_verify_04": "fakeproc start vpp",
+              "11_cleanup_04": "fakeproc stop vpp", "02_launch_verify": "fakeproc start dao-smart-nic",
+              "03_cleanup": "fakeproc stop dao-smart-nic"}
+    for sub, names in (("vpp", VPP_BOOKS), ("smartnic", SMARTNIC_BOOKS)):
+        (root / sub).mkdir(parents=True)
+        for name in names:
+            cmd = f"echo {name} >> {ran}" + (f" && {effect[name]}" if name in effect else "")
+            (root / sub / f"{name}.yml").write_text(yaml.safe_dump([{
+                "hosts": "dpu", "gather_facts": False, "tasks": [
+                    {"ansible.builtin.shell": cmd, "changed_when": False}]}]))
+    sysfs = tmp_path / "sys"
+    dev = sysfs / "bus" / "pci" / "devices" / "0002:04:00.0"
+    dev.mkdir(parents=True)
+    (sysfs / "bus" / "pci" / "drivers" / "rvu_nicpf").mkdir(parents=True)
+    (sysfs / "bus" / "pci" / "drivers" / "vfio-pci").mkdir(parents=True)
+
+    def port_on(driver):
+        link = dev / "driver"
+        if link.is_symlink():
+            link.unlink()
+        link.symlink_to(sysfs / "bus" / "pci" / "drivers" / driver)
+
+    port_on("rvu_nicpf")
+    return types.SimpleNamespace(
+        vars={"daolab_vpp_books": str(root / "vpp"), "daolab_smartnic_books": str(root / "smartnic"),
+              "daolab_sysfs": str(sysfs), "smartnic_binary": str(tmp_path / "dao-smart-nic"),
+              "restore_before": str(tmp_path / "smartnic-restore" / "pci-before.txt"),
+              "app_exporter_bin": str(tmp_path / "daolab-app-exporter"),
+              "app_exporter_unit_dir": str(tmp_path), "ansible_become": False},
+        ran=lambda: ran.read_text().split() if ran.exists() else [],
+        port_on=port_on, binary=tmp_path / "dao-smart-nic", reset=lambda: ran.unlink(missing_ok=True))
 
 
-def deploy(lab, api, fake_app, **over):
+def deploy(lab, api, books, **over):
     marker = lab.dir / "hw_class"
     if not marker.exists():
         marker.write_text("sdp-pf1-vf8\n")
     ev = {"usecase": "vpp", "hw_class": "sdp-pf1-vf8", "daolab_roles": VPP_ROLES,
           "daolab_verify": VPP_VERIFY, "daolab_api_url": api["url"],
-          "daolab_internal_secret": "s3", "daolab_otel_collector": "",
-          "dpu_app_roles": {"dao-vpp": "fake_app"}, "ebf_marker": str(marker),
+          "daolab_internal_secret": "s3", "daolab_otel_collector": "", "daolab_app": "dao-vpp",
+          "daolab_deploy_vms": True, "allow_destructive_changes": True, "allow_launch": True,
+          "allow_cleanup": True, "ebf_marker": str(marker),
           "host_vm_control_pubkey": "ssh-ed25519 AAAAdaolab daolab@engine",
           "host_vm_ip_retries": 2, "host_vm_ip_delay": 0, "daolab_vm_connection": "local",
-          "daolab_no_log": False}
+          "daolab_no_log": False, **books.vars}
     ev.update(over)
-    return lab.run("deploy.yml", roles_path=str(fake_app), **ev)
+    return lab.run("deploy.yml", **ev)
 
 
 def with_traffic(lab, **out):
@@ -440,9 +466,9 @@ def seed(vm, key):
     return base64.b64decode(vm["xenstore"][f"vm-data/daolab/{key}"]).decode()
 
 
-def test_deploy_vpp_end_to_end(lab, api, fake_app):
+def test_deploy_vpp_end_to_end(lab, api, books):
     with_traffic(lab, pktgen="tx 1000 rx 1000: rx == tx")
-    assert deploy(lab, api, fake_app) == 0, lab.stdout[-3000:]
+    assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
     st = lab.state()
     # the VMs, on their leased addresses, sink and tgen sorted by role name
     assert sorted(st["vms"]) == ["daolab-r12-sink", "daolab-r12-tgen"]
@@ -462,78 +488,83 @@ def test_deploy_vpp_end_to_end(lab, api, fake_app):
     net = yaml.safe_load(seed(sink, "network-config"))
     assert net["ethernets"]["mgmt0"]["addresses"] == ["10.30.0.100/24"]
     assert net["ethernets"]["data0"] == {"match": {"driver": "iavf"}, "set-name": "data0",
-                                         "addresses": ["10.22.0.2/24"]}
+                                         "addresses": ["10.65.0.37/24"]}
     assert "pktgen-dpdk" in yaml.safe_load(seed(tgen, "user-data"))["packages"]
-    # the DPU app ran with its data-plane addresses and the upstream's data IP
-    assert st["units"]["daolab-app-dao-vpp.service"] == "active"
-    args = json.loads((lab.dir / "app-args.json").read_text())
-    assert args == {"upstream": "10.22.0.2",
-                    "addresses": {"wire0": "10.20.0.1/24", "wire1": "10.22.0.1/24"}}
-    # the callbacks: leases for the VM roles, vm-ip for all three (the DPU on its wire IP)
+    # the DPU app: Akshay's VPP runbook steps for a board at rest, then its health exporter
+    assert books.ran() == ["03_install", "04_configure_02", "08_prepare_04", "09_configure_04",
+                           "10_verify_04"]
+    assert st["units"]["daolab-app-exporter.service"] == "active"
+    unit = (lab.dir / "daolab-app-exporter.service").read_text()
+    assert "--app vpp --vpp-socket /run/vpp/cli.sock" in unit
+    # the callbacks: leases for the VM roles, vm-ip for all three (the DPU: its static address)
     leases = [b["role"] for p, _, b in api["calls"] if p == "/internal/leases"]
     assert sorted(leases) == ["sink", "tgen"]
     posted = {b["role"]: b["ip"] for p, _, b in api["calls"] if p == "/internal/vm-ip"}
-    assert posted == {"vpp": "10.20.0.1", "sink": "10.30.0.100", "tgen": "10.30.0.101"}
+    assert posted == {"vpp": "10.68.0.190", "sink": "10.30.0.100", "tgen": "10.30.0.101"}
     assert all(secret == "s3" for _, secret, _ in api["calls"])
     # verify ran pktgen against the sink's DATA address
-    assert ["pktgen", "-t", "10.22.0.2", "--rate", "10mpps"] in lab.calls("pktgen")
+    assert ["pktgen", "-t", "10.65.0.37", "--rate", "10mpps"] in lab.calls("pktgen")
 
 
-def test_deploy_twice_changes_nothing(lab, api, fake_app):
+def test_deploy_twice_changes_nothing(lab, api, books):
     with_traffic(lab, pktgen="rx == tx")
-    assert deploy(lab, api, fake_app) == 0, lab.stdout[-3000:]
+    assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
+    st = lab.state()                                   # what the first run left: VPP up on vfio
+    st["installed"], st["procs"] = ["vpp"], ["vpp"]
+    lab.set(st)
+    books.port_on("vfio-pci")
     first = lab.state()
-    assert deploy(lab, api, fake_app) == 0, lab.stdout[-3000:]
+    assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
     assert lab.state()["vms"] == first["vms"]
     recap = [l for l in lab.stdout.splitlines() if " : ok=" in l]
     assert recap and all("changed=0" in l for l in recap), "\n".join(recap)
 
 
-def test_a_conflicting_address_is_swapped_before_use(lab, api, fake_app):
+def test_a_conflicting_address_is_swapped_before_use(lab, api, books):
     st = clean_state()
     st["pingable"] = ["10.30.0.100"]                      # something squats on the first lease
     st["traffic"] = {"pktgen": "rx == tx"}
     lab.set(st)
-    assert deploy(lab, api, fake_app) == 0, lab.stdout[-3000:]
+    assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
     assert api["blocked"] == {"10.30.0.100"}
     assert {v["ip"] for v in lab.state()["vms"].values()} == {"10.30.0.101", "10.30.0.102"}
 
 
-def test_a_failed_verify_fails_the_deploy_and_says_why(lab, api, fake_app):
+def test_a_failed_verify_fails_the_deploy_and_says_why(lab, api, books):
     with_traffic(lab, pktgen="tx 1000 rx 3")
-    assert deploy(lab, api, fake_app) != 0
+    assert deploy(lab, api, books) != 0
     assert "verify failed: 'rx == tx' not in the output" in lab.stdout
 
 
-def test_a_board_on_another_personality_stops_with_the_manual_flash_message(lab, api, fake_app):
+def test_a_board_on_another_personality_stops_with_the_manual_flash_message(lab, api, books):
     (lab.dir / "hw_class").write_text("vf-only\n")
-    assert deploy(lab, api, fake_app) != 0
+    assert deploy(lab, api, books) != 0
     assert "ebf_set stub: board is vf-only, use case needs sdp-pf1-vf8" in lab.stdout
     assert lab.state()["vms"] == {}                       # nothing cloned on a wrong board
 
 
-def test_a_missing_template_is_named(lab, api, fake_app):
+def test_a_missing_template_is_named(lab, api, books):
     st = clean_state()
     st["templates"] = {}
     lab.set(st)
-    assert deploy(lab, api, fake_app) != 0
+    assert deploy(lab, api, books) != 0
     assert "template tpl-ubuntu2204-dao is not on tb-01-xcp" in lab.stdout
 
 
-def test_running_out_of_vfs_is_named(lab, api, fake_app):
-    assert deploy(lab, api, fake_app, daolab_roles={**VPP_ROLES, "extra": {
+def test_running_out_of_vfs_is_named(lab, api, books):
+    assert deploy(lab, api, books, daolab_roles={**VPP_ROLES, "extra": {
         "on": "tg_host", "vm": "tpl-ubuntu2204-dao", "install": [], "connect": "e810-vf"}}) != 0
     assert "has no VF #2 in e810_vfs" in lab.stdout
 
 
-def test_an_unknown_install_id_is_refused(lab, api, fake_app):
+def test_an_unknown_install_id_is_refused(lab, api, books):
     roles = {**VPP_ROLES, "sink": {**VPP_ROLES["sink"], "install": ["nope"]}}
-    assert deploy(lab, api, fake_app, daolab_roles=roles) != 0
+    assert deploy(lab, api, books, daolab_roles=roles) != 0
     assert "install id 'nope' has no packages" in lab.stdout
 
 
-def test_deploy_diy_makes_bare_vms_only(lab, api, fake_app):
-    assert deploy(lab, api, fake_app, usecase="diy", diy=True, daolab_roles={},
+def test_deploy_diy_makes_bare_vms_only(lab, api, books):
+    assert deploy(lab, api, books, usecase="diy", diy=True, daolab_roles={}, daolab_app="none",
                   daolab_verify={}, templates={"tb-01-xcp": "tpl-ubuntu2204-dao"}) == 0, \
         lab.stdout[-3000:]
     st = lab.state()
@@ -543,9 +574,9 @@ def test_deploy_diy_makes_bare_vms_only(lab, api, fake_app):
     assert "data0" not in yaml.safe_load(seed(vm, "network-config"))["ethernets"]
 
 
-def test_a_manual_run_takes_its_addresses_and_calls_no_api(lab, api, fake_app):
+def test_a_manual_run_takes_its_addresses_and_calls_no_api(lab, api, books):
     with_traffic(lab, pktgen="rx == tx")
-    assert deploy(lab, api, fake_app, reservation_id=0,
+    assert deploy(lab, api, books, reservation_id=0,
                   manual_ips={"sink": "10.30.0.190", "tgen": "10.30.0.191"}) == 0, lab.stdout[-3000:]
     assert api["calls"] == []
     assert lab.state()["vms"]["daolab-r0-sink"]["ip"] == "10.30.0.190"
@@ -553,20 +584,143 @@ def test_a_manual_run_takes_its_addresses_and_calls_no_api(lab, api, fake_app):
 
 # ---- B-84: probe.yml ---------------------------------------------------------------------
 
-def test_probe_runs_verify_against_the_recorded_addresses(lab, fake_app):
+def test_probe_runs_verify_against_the_recorded_addresses(lab):
     with_traffic(lab, pktgen="rx == tx")
     vms = [{"role": "sink", "name": "daolab-r12-sink", "ip": "10.30.0.100"},
            {"role": "tgen", "name": "daolab-r12-tgen", "ip": "10.30.0.101"},
            {"role": "vpp", "name": None, "ip": "10.20.0.1"}]
-    assert lab.run("probe.yml", roles_path=str(fake_app), daolab_roles=VPP_ROLES,
+    assert lab.run("probe.yml", daolab_roles=VPP_ROLES,
                    daolab_verify=VPP_VERIFY, daolab_vms=vms, daolab_vm_connection="local") == 0, \
         lab.stdout[-2000:]
-    assert ["pktgen", "-t", "10.22.0.2", "--rate", "10mpps"] in lab.calls("pktgen")
+    assert ["pktgen", "-t", "10.65.0.37", "--rate", "10mpps"] in lab.calls("pktgen")
     assert lab.state()["vms"] == {}                                    # read-only
 
 
-def test_a_failing_probe_fails(lab, fake_app):
+def test_a_failing_probe_fails(lab):
     with_traffic(lab, pktgen="rx 0")
     vms = [{"role": "tgen", "name": "daolab-r12-tgen", "ip": "10.30.0.101"}]
-    assert lab.run("probe.yml", roles_path=str(fake_app), daolab_roles=VPP_ROLES,
+    assert lab.run("probe.yml", daolab_roles=VPP_ROLES,
                    daolab_verify=VPP_VERIFY, daolab_vms=vms, daolab_vm_connection="local") != 0
+
+
+# ---- B-81: the DPU apps run Akshay's runbook playbooks (apps/<app>/) ----------------------
+
+def app_run(lab, books, playbook, **over):
+    ev = {"usecase": "vpp", "daolab_roles": VPP_ROLES, "allow_destructive_changes": True,
+          "allow_launch": True, "allow_cleanup": True, "daolab_otel_collector": "",
+          **books.vars}
+    ev.update(over)
+    return lab.run(playbook, **ev)
+
+
+def board(lab, installed=(), procs=()):
+    st = lab.state()
+    st["installed"], st["procs"] = list(installed), list(procs)
+    lab.set(st)
+
+
+def vpp_deploy(lab, books, **over):
+    """deploy.yml for vpp with VMs off: play 0, ebf_set, the app, telemetry."""
+    ev = {"daolab_app": "dao-vpp", "daolab_deploy_vms": False, "hw_class": "",
+          "daolab_api_url": "http://127.0.0.1:1", "daolab_internal_secret": "x",
+          "reservation_id": 0, **over}
+    return app_run(lab, books, "deploy.yml", **ev)
+
+
+@pytest.mark.parametrize("installed,running,port,steps", [
+    (False, False, "rvu_nicpf", ["03_install", "04_configure_02", "08_prepare_04",
+                                 "09_configure_04", "10_verify_04"]),          # board at rest
+    (True, False, "rvu_nicpf", ["04_configure_02", "08_prepare_04", "09_configure_04",
+                                "10_verify_04"]),                              # installed already
+    (True, False, "vfio-pci", ["04_configure_02", "10_verify_04"]),            # died after 09
+    (True, True, "vfio-pci", ["04_configure_02"]),                             # redeploy: VPP up
+])
+def test_vpp_deploy_runs_only_the_runbook_steps_the_board_needs(lab, books, installed, running,
+                                                                port, steps):
+    board(lab, installed=["vpp"] if installed else [], procs=["vpp"] if running else [])
+    books.port_on(port)
+    assert vpp_deploy(lab, books) == 0, lab.stdout[-3000:]
+    assert books.ran() == steps
+    assert "vpp" in lab.state()["procs"]
+    assert lab.state()["units"]["daolab-app-exporter.service"] == "active"
+
+
+def test_vpp_deploy_without_sign_off_touches_nothing(lab, books):
+    board(lab, installed=["vpp"])
+    assert vpp_deploy(lab, books, allow_destructive_changes=False) != 0
+    assert "Set DAOLAB_ALLOW_DESTRUCTIVE=true" in lab.stdout
+    assert books.ran() == []
+
+
+def test_a_running_vpp_needs_no_sign_off_to_redeploy(lab, books):
+    board(lab, installed=["vpp"], procs=["vpp"])
+    books.port_on("vfio-pci")
+    assert vpp_deploy(lab, books, allow_destructive_changes=False) == 0, lab.stdout[-2000:]
+
+
+def test_vpp_cleanup_gives_the_board_back(lab, books):
+    board(lab, installed=["vpp"], procs=["vpp"])
+    books.port_on("vfio-pci")
+    assert _cleanup(lab, books, "dao-vpp") == 0, lab.stdout[-2000:]
+    assert books.ran() == ["11_cleanup_04"]
+    assert "vpp" not in lab.state()["procs"]
+    assert ["systemctl", "start", "nginx-tls.service"] in lab.calls("systemctl")
+
+
+def _cleanup(lab, books, app):
+    wrapper = lab.dir / f"cleanup-{app}.yml"
+    wrapper.write_text(yaml.safe_dump([
+        {"hosts": "localhost", "gather_facts": False, "tasks": [
+            {"ansible.builtin.import_tasks": os.path.join(REPO, "playbooks", "tasks", "resolve.yml")},
+            {"ansible.builtin.set_fact": {"daolab_playbooks": os.path.join(REPO, "playbooks")}}]},
+        {"ansible.builtin.import_playbook": os.path.join(REPO, "playbooks", "apps", app,
+                                                          "cleanup.yml")}]))
+    return lab.run(str(wrapper), allow_destructive_changes=True, allow_cleanup=True,
+                   daolab_roles=VPP_ROLES, **books.vars)
+
+
+def test_vpp_cleanup_of_a_board_at_rest_only_makes_sure_nginx_runs(lab, books):
+    board(lab, installed=["vpp"])
+    assert _cleanup(lab, books, "dao-vpp") == 0, lab.stdout[-2000:]
+    assert books.ran() == []
+    assert ["systemctl", "start", "nginx-tls.service"] in lab.calls("systemctl")
+
+
+@pytest.mark.parametrize("built,running,steps", [
+    (False, False, ["01_build", "02_launch_verify"]),
+    (True, False, ["02_launch_verify"]),
+    (True, True, []),
+])
+def test_smartnic_deploy_builds_and_launches_only_when_needed(lab, books, built, running, steps):
+    if built:
+        books.binary.write_text("#!/bin/sh\n")
+    board(lab, procs=["dao-smart-nic"] if running else [])
+    assert vpp_deploy(lab, books, daolab_app="dao-smartnic", usecase="smartnic",
+                      daolab_roles={"snapp": {"on": "dpu", "app": "dao-smartnic"}}) == 0, \
+        lab.stdout[-3000:]
+    assert books.ran() == steps
+    assert "dao-smart-nic" in lab.state()["procs"]
+    restore = books.vars["restore_before"]
+    assert os.path.exists(restore) == (not running)          # runbook step 10 before a launch
+
+
+def test_smartnic_cleanup_runs_the_runbook_cleanup(lab, books):
+    board(lab, procs=["dao-smart-nic"])
+    assert _cleanup(lab, books, "dao-smartnic") == 0, lab.stdout[-2000:]
+    assert books.ran() == ["03_cleanup"] and "dao-smart-nic" not in lab.state()["procs"]
+
+
+def test_tls_proxy_deploy_keeps_nginx_tls_running(lab, books):
+    assert vpp_deploy(lab, books, daolab_app="nginx-tls", usecase="tls-proxy-nginx",
+                      daolab_roles={"proxy": {"on": "dpu", "app": "nginx-tls"}}) == 0, \
+        lab.stdout[-2000:]
+    assert ["systemctl", "start", "nginx-tls.service"] in lab.calls("systemctl")
+    assert "--app nginx" in (lab.dir / "daolab-app-exporter.service").read_text()
+
+
+def test_a_board_without_a_personality_marker_is_assumed_to_match(lab, books):
+    board(lab, installed=["vpp"], procs=["vpp"])
+    books.port_on("vfio-pci")
+    assert vpp_deploy(lab, books, hw_class="sdp-pf1-vf8",
+                      ebf_marker=str(lab.dir / "no-marker")) == 0, lab.stdout[-2000:]
+    assert "personality is not tracked yet" in lab.stdout

@@ -10,7 +10,7 @@
   ansible.builtin.set_fact:
     _addr: >-
       {{ (_addr | default({})) | combine({item: (
-           daolab_dpu_ip if item == daolab_dpu_role else
+           daolab_dpu_data_ip if item == daolab_dpu_role else
            (_dp[item].split('/')[0] if (_dp[item] | default(None)) is string
             else _mgmt[item] | default('')))}) }}
   loop: "{{ daolab_roles | list }}"

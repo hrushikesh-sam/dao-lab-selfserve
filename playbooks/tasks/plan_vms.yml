@@ -85,9 +85,13 @@
   loop_control:
     label: "{{ item.role }}"
 
-- name: the address posted for the DPU role (its first wire address, plan/07) and used by verify
+- name: the DPU's addresses
   ansible.builtin.set_fact:
+    # what users SSH to and what is posted as the DPU role's vms.ip: its static mgmt address
     daolab_dpu_ip: >-
+      {{ (hostvars[daolab_dpu].ansible_host | default(daolab_dpu)) if daolab_dpu_role else '' }}
+    # what verify's {<dpu role>_ip} means: its first data-plane wire address, else the above
+    daolab_dpu_data_ip: >-
       {{ ((_dp[daolab_dpu_role] | dict2items | selectattr('key', 'match', 'wire')
            | sort(attribute='key') | map(attribute='value') | list + [''])[0]).split('/')[0]
          if (daolab_dpu_role and (_dp[daolab_dpu_role] | default(None)) is mapping)

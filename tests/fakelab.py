@@ -193,6 +193,11 @@ def xl(args):
 
 def pgrep(args):
     state = load()
+    if args[:1] == ["-x"]:                                 # pgrep -x <name>: is it running
+        hit = args[1] in state.get("procs", [])
+        if hit:
+            print(4242)
+        sys.exit(0 if hit else 1)
     if args[:1] == ["-u"] and "-c" in args:
         print(state["lab_procs"])
         sys.exit(0 if state["lab_procs"] else 1)
@@ -270,6 +275,50 @@ def traffic(args):
     print(state.get("traffic", {}).get(name, ""))
 
 
+def which(args):
+    """`which <cmd>`: only the commands the state says are installed exist."""
+    state = load()
+    found = [a for a in args if a in state.get("installed", [])]
+    for a in found:
+        print(f"/usr/bin/{a}")
+    sys.exit(0 if found and len(found) == len(args) else 1)
+
+
+def vppctl(args):
+    state = load()
+    if "vpp" not in state.get("procs", []):
+        fail("clib_socket_init: connect: No such file or directory")
+    print("vpp v24.09.0-cn10k built by fakelab")
+
+
+def devbind(args):
+    state = load()
+    if args[:1] == ["-s"]:
+        for bdf, drv in sorted(state.get("bindings", {}).items()):
+            print(f"{bdf} 'fake device' drv={drv} unused=")
+        return
+    if args[:1] == ["-b"]:
+        for bdf in args[2:]:
+            state.setdefault("bindings", {})[bdf] = args[1]
+        save(state)
+        return
+    fail(f"fakelab: unsupported dpdk-devbind.py {args}", 2)
+
+
+def fakeproc(args):
+    """Test helper for stand-in playbooks: `fakeproc start|stop|install <name>`."""
+    state = load()
+    verb, name = args[0], args[1]
+    procs, installed = state.setdefault("procs", []), state.setdefault("installed", [])
+    if verb == "start" and name not in procs:
+        procs.append(name)
+    elif verb == "stop" and name in procs:
+        procs.remove(name)
+    elif verb == "install" and name not in installed:
+        installed.append(name)
+    save(state)
+
+
 def ping(args):
     state = load()
     ip = args[-1]
@@ -285,7 +334,8 @@ def main():
     log([name, *sys.argv[1:]])
     handler = {"xe": xe, "xl": xl, "pgrep": pgrep, "pkill": pkill, "loginctl": loginctl,
                "systemctl": systemctl, "ping": ping, "arping": arping,
-               "pktgen": traffic, "h2load": traffic}.get(name)
+               "pktgen": traffic, "h2load": traffic, "which": which, "vppctl": vppctl,
+               "dpdk-devbind.py": devbind, "fakeproc": fakeproc}.get(name)
     if handler is None:
         fail(f"fakelab: no fake for {name}", 2)
     handler(sys.argv[1:])

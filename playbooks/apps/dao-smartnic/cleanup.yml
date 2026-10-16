@@ -1,0 +1,26 @@
+# playbooks/apps/dao-smartnic/cleanup.yml — B-81/B-82: stop SmartNIC and restore the board by
+# Akshay's 03_cleanup.yml (smartnic_cleanup role) imported unchanged; it is safe when the app
+# is not running. Its guard (allow_cleanup) comes from the runner: DAOLAB_ALLOW_DESTRUCTIVE.
+- name: SmartNIC cleanup - runbook values
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: the runbook values (dao_smart_nic_ansible_direct/group_vars/all.yml)
+      ansible.builtin.include_vars:
+        file: "{{ hostvars['localhost'].daolab_playbooks }}/../dao-smartnic/dao_smart_nic_ansible_direct/group_vars/all.yml"
+
+    - name: stop the health exporter
+      become: true
+      ansible.builtin.shell: systemctl disable --now daolab-app-exporter 2>/dev/null || true
+      changed_when: false
+
+- name: SmartNIC cleanup - runbook steps 13-14
+  ansible.builtin.import_playbook: "{{ daolab_smartnic_books | default('../../../dao-smartnic/dao_smart_nic_ansible_direct/playbooks') }}/03_cleanup.yml"
+
+- name: SmartNIC cleanup - done
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: "step: stop_app"
+      ansible.builtin.shell: "! pgrep -x dao-smart-nic"
+      changed_when: false

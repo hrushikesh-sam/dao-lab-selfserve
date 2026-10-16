@@ -467,6 +467,12 @@ class AnsibleRunner:
             "daolab_api_url": self.s.api_url.rstrip("/"),
             "daolab_internal_secret": self.s.internal_secret,
             "daolab_otel_collector": self.s.otel_agent_endpoint,
+            "daolab_app": dpu_app(get("roles") or {}) if not get("diy", False) else "none",
+            "daolab_deploy_vms": bool(self.s.deploy_vms),
+            # the runbook playbooks' owner sign-off (VPP_ansible, dao-smartnic): one switch
+            "allow_destructive_changes": bool(self.s.allow_destructive),
+            "allow_launch": bool(self.s.allow_destructive),
+            "allow_cleanup": bool(self.s.allow_destructive),
         }
 
     def _play(self, kind: str, playbook_key: str, res: Mapping | None, step: StepSink,
@@ -560,6 +566,14 @@ class AnsibleRunner:
 
     def destroy_vms(self, names, step):
         return self._play("orphans", "orphans", None, step, {"daolab_vm_names": list(names)})[0]
+
+
+def dpu_app(roles: Mapping) -> str:
+    """The DAO app of a use case's `on: dpu` role (selects playbooks/apps/<app>/), or "none"."""
+    for spec in (roles or {}).values():
+        if isinstance(spec, Mapping) and spec.get("on") == "dpu" and spec.get("app"):
+            return str(spec["app"])
+    return "none"
 
 
 ANSIBLE_SERVICE_NAME = "daolab-ansible"

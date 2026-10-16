@@ -3,7 +3,8 @@
 # Runs on localhost. Resolves the reservation's setup to inventory hosts and adds them to two
 # transient groups:
 #   r_dom0  the XCP-ng dom0s that hold the setup's members (where `xe` runs)
-#   r_dpu   the setup's DPU member (where DAO apps and the lab login live)
+#   r_dpu   the setup's DPU member (where DAO apps and the lab login live); also added to
+#           `dpu`, which Akshay's VPP_ansible / dao-smartnic playbooks target
 # add_host with an existing inventory name keeps its host_vars (BDF lists, SR uuid, ...).
 #
 # The engine's runner passes the structured facts as extravars (models.reservation_context):
@@ -28,6 +29,10 @@
     file: "{{ daolab_repo | default(playbook_dir ~ '/..') }}/usecases/{{ usecase }}.yml"
     name: _usecase_yaml
   when: daolab_roles is not defined and not (diy | default(false) | bool) and usecase is defined
+
+- name: where the playbooks live (imported playbooks see their own playbook_dir)
+  ansible.builtin.set_fact:
+    daolab_playbooks: "{{ playbook_dir }}"
 
 - name: fill in what a manual run did not pass
   ansible.builtin.set_fact:
@@ -55,9 +60,9 @@
   loop: "{{ daolab_dom0s }}"
   changed_when: false
 
-- name: add the DPU to r_dpu
+- name: add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)
   ansible.builtin.add_host:
     name: "{{ daolab_dpu }}"
-    groups: r_dpu
+    groups: [r_dpu, dpu]
   when: daolab_dpu != ''
   changed_when: false

@@ -85,6 +85,10 @@ def test_deploy_runs_deploy_yml_with_the_playbook_contract(settings, ctx):
     assert (e["daolab_api_url"], e["daolab_internal_secret"]) == ("http://10.30.0.2:8080", "s3")
     assert e["daolab_otel_collector"] == "10.30.0.2:4317"
     assert e["daolab_output_file"].endswith("output.json")
+    assert e["daolab_app"] == "dao-vpp"                        # selects playbooks/apps/dao-vpp
+    assert (e["allow_destructive_changes"], e["allow_launch"], e["allow_cleanup"]) == \
+        (False, False, False)                                  # DAOLAB_ALLOW_DESTRUCTIVE off
+    assert e["daolab_deploy_vms"] is settings.deploy_vms
     assert kw["envvars"]["ANSIBLE_CONFIG"] == os.path.join(settings.playbooks_dir, "ansible.cfg")
     assert "TRACEPARENT" not in kw["envvars"]                       # tracing off
 
@@ -258,3 +262,18 @@ def test_real_orphan_sweep(lab, tmp_path):
     assert rn.tagged_vms() == ["daolab-r999-x"]
     assert rn.destroy_vms(["daolab-r999-x"], Steps()).ok
     assert lab.state()["vms"] == {}
+
+
+def test_the_sign_off_switch_and_the_app_reach_the_playbooks(settings, ctx):
+    fake = FakeRun()
+    on = dataclasses.replace(settings, allow_destructive=True, deploy_vms=False)
+    AnsibleRunner(on, run=fake).deploy(ctx, Steps())
+    e = fake.calls[0]["extravars"]
+    assert e["allow_destructive_changes"] and e["allow_launch"] and e["allow_cleanup"]
+    assert e["daolab_deploy_vms"] is False
+    assert runner.dpu_app({"x": {"on": "dpu", "app": "dao-smartnic"}, "y": {"on": "tg_host"}}) \
+        == "dao-smartnic"
+    assert runner.dpu_app({}) == "none"
+    diy = {**ctx, "diy": True}
+    AnsibleRunner(on, run=fake).deploy(diy, Steps())
+    assert fake.calls[1]["extravars"]["daolab_app"] == "none"

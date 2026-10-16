@@ -8,19 +8,19 @@
 #     <on: dpu role>: {<dpu interface key>: addr/prefix, ...}   keys name host_vars devices
 #     <VM role>:      addr/prefix                               on the role's VF (data0)
 #
-# The DPU role's first `wire*` address is what deploy.yml posts as its vms.ip (plan/07: the
-# client must reach the proxy across the wire), and verify substitutes these addresses for
-# `{<role>_ip}`, so the verify traffic crosses the real datapath. A role with no entry falls
-# back to its management address.
+# DPUs are static: the DPU role's vms.ip is its management address (inventory ansible_host),
+# what users SSH to. Verify substitutes these data-plane addresses for `{<role>_ip}` (the DPU
+# role: its first `wire*` one), so the verify traffic crosses the real datapath. A role with
+# no entry falls back to its management address.
 daolab_dataplane:
   tls-proxy-nginx:
     proxy: {wire: 10.20.0.10/24, sdp: 10.21.0.1/24}
     backend: 10.21.0.2/24
     client: 10.20.0.30/24
   vpp:
-    vpp: {wire0: 10.20.0.1/24, wire1: 10.22.0.1/24}
-    tgen: 10.20.0.30/24
-    sink: 10.22.0.2/24
+    vpp: {wire0: 10.65.0.192/24}     # VPP_ansible/group_vars: vpp_data_ip (peer 10.65.0.36)
+    tgen: 10.65.0.36/24              # the runbook's ping peer; confirm at bring-up (B-85)
+    sink: 10.65.0.37/24
   smartnic:
     snapp: {wire: 10.20.0.10/24, sdp: 10.21.0.1/24}
     tgen: 10.20.0.30/24
