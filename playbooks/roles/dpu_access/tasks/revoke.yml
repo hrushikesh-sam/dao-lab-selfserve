@@ -1,0 +1,37 @@
+# Close the DPU at the end of the slot. Runs first in cleanup.yml, so access ends at end_at
+# whatever the rest of teardown does (plan/09 §7, B-53). Safe when the login does not exist.
+- name: "step: terminate-user"
+  become: true
+  ansible.builtin.shell: |
+    loginctl terminate-user {{ dpu_access_login }} 2>/dev/null || true
+    pkill -KILL -u {{ dpu_access_login }} 2>/dev/null || true
+  changed_when: false
+
+- name: does the {{ dpu_access_login }} login exist
+  ansible.builtin.command: getent passwd {{ dpu_access_login }}
+  register: _acct
+  changed_when: false
+  failed_when: false
+
+- name: shut it
+  when: _acct.rc == 0
+  block:
+    - name: no key opens it
+      become: true
+      ansible.builtin.shell: |
+        [ -d {{ dpu_access_keys_dir }} ] || exit 0
+        : > {{ dpu_access_keys_dir }}/{{ dpu_access_login }}
+      changed_when: false
+
+    - name: no password opens it
+      become: true
+      ansible.builtin.command: chpasswd
+      args:
+        stdin: "{{ dpu_access_login }}:{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']) }}"
+      no_log: true
+      changed_when: false
+
+    - name: "step: revoke_access"
+      become: true
+      ansible.builtin.shell: usermod -L {{ dpu_access_login }} && chage -E 0 {{ dpu_access_login }}
+      changed_when: false

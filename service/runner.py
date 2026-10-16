@@ -468,6 +468,9 @@ class AnsibleRunner:
             "daolab_internal_secret": self.s.internal_secret,
             "daolab_otel_collector": self.s.otel_agent_endpoint,
             "daolab_app": dpu_app(get("roles") or {}) if not get("diy", False) else "none",
+            "daolab_access_login": get("access_login") or "lab",
+            "daolab_access_password": get("access_password") or "",
+            "daolab_access_expires": get("access_expires") or "",
             "daolab_deploy_vms": bool(self.s.deploy_vms),
             # the runbook playbooks' owner sign-off (VPP_ansible, dao-smartnic): one switch
             "allow_destructive_changes": bool(self.s.allow_destructive),

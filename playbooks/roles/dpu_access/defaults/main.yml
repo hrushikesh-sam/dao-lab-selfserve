@@ -1,0 +1,22 @@
+# playbooks/roles/dpu_access — the reservation owner's way into the DPU (dashboard Deploy).
+#
+# One login, `lab` (plan/09 §7: who and when, not per-user accounts), with sudo for the slot.
+# Deploy (tasks/main.yml) opens it with what the owner chose in the Deploy dialog: their SSH
+# key (ssh_pubkey) or, without one, the generated password (daolab_access_password). Cleanup
+# (tasks_from: revoke) kills the sessions first, then empties the key, scrambles and locks the
+# password and expires the account. The account also expires the day after the slot on its
+# own (daolab_access_expires), in case a cleanup never runs.
+#
+# Keys come from a root-owned file sshd reads for `lab` only (Match User), so the owner cannot
+# add their own; password login is allowed for `lab` only. The operator account the runbooks
+# use (dao-test) is never touched.
+dpu_access_login: "{{ daolab_access_login | default('lab') }}"
+dpu_access_keys: "{{ ssh_pubkey | default('') }}"
+dpu_access_password: "{{ daolab_access_password | default('') }}"
+dpu_access_expires: "{{ daolab_access_expires | default('') }}"
+
+# where things go (a prefix for tests)
+dpu_access_root: ""
+dpu_access_sshd_dir: "{{ dpu_access_root }}/etc/ssh/sshd_config.d"
+dpu_access_sudoers_dir: "{{ dpu_access_root }}/etc/sudoers.d"
+dpu_access_keys_dir: "{{ dpu_access_root }}/etc/daolab/authorized_keys"

@@ -94,6 +94,13 @@ def cmd_add_user(args) -> int:
 
 def cmd_reserve(args) -> int:
     body = {"usecase": args.usecase, "start_at": args.start, "hours": args.hours}
+    if args.password:
+        body["ssh_pubkey"] = ""                       # no key: the API generates a password
+    elif args.ssh_key:
+        try:
+            body["ssh_pubkey"] = open(args.ssh_key).read()
+        except OSError as e:
+            _die(f"cannot read {args.ssh_key}: {e}")
     if args.setup:
         body["setup"] = args.setup
     if args.template:
@@ -107,6 +114,10 @@ def cmd_reserve(args) -> int:
     r = _api("POST", "/reservations", body)
     print(f"id: {r['id']}  setup: {r['setup']}  state: {r['state']}")
     print(f"slot: {r['start_at']} -> {r['end_at']}")
+    if r.get("access"):
+        how = "a generated password (shown once the slot is live)" \
+            if r["access"]["auth"] == "password" else "your SSH key"
+        print(f"access: {r['access']['ssh']}  with {how}")
     if r["shifted"]:
         print(f"shifted from {r['requested_start_at']}")
     return 0
@@ -122,6 +133,10 @@ def cmd_status(args) -> int:
         print(f"{r['id']:<4}{r['usecase']:<18}{r['setup']:<10}{r['state']:<12}"
               f"{r['start_at']:<22}{r['end_at']}")
         if r["state"] in ("ready", "active"):
+            acc = r.get("access")
+            if acc:
+                print(f"      {acc['ssh']}   (dpu)" +
+                      (f"   password: {acc['password']}" if acc.get("password") else ""))
             for vm in r["vms"]:
                 if vm["ssh"]:
                     print(f"      {vm['ssh']}   ({vm['role']})")
@@ -149,6 +164,10 @@ def main() -> None:
     p.add_argument("--setup", help="diy only: setup name")
     p.add_argument("--template", action="append", metavar="HOST=TEMPLATE",
                    help="diy only: repeatable, one per VM host of the setup")
+    p.add_argument("--ssh-key", metavar="PUBKEY_PATH",
+                   help="log in with this public key instead of your registered one")
+    p.add_argument("--password", action="store_true",
+                   help="no key: get a generated password for this reservation")
 
     p = sub.add_parser("status", help="list reservations via the API")
     p.add_argument("--all", action="store_true", help="every user's (admin token required)")

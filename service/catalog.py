@@ -186,6 +186,29 @@ def inventory_hosts(inventory_path: str) -> set[str]:
     return hosts
 
 
+def inventory_addresses(inventory_path: str) -> dict[str, str]:
+    """{host: ansible_host} for every inventory host that has one (any nesting)."""
+    if not os.path.exists(inventory_path):
+        return {}
+    with open(inventory_path) as f:
+        data = _load_yaml(f) or {}
+    out: dict[str, str] = {}
+
+    def walk(node):
+        if not isinstance(node, dict):
+            return
+        for key, value in node.items():
+            if key == "hosts" and isinstance(value, dict):
+                for host, hv in value.items():
+                    if isinstance(hv, dict) and hv.get("ansible_host"):
+                        out[host] = str(hv["ansible_host"])
+            else:
+                walk(value)
+
+    walk(data)
+    return out
+
+
 def _yaml_files(dir_path: str) -> list[str]:
     if not os.path.isdir(dir_path):
         return []
@@ -431,6 +454,7 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
     if errors:
         raise SyncError(errors)
 
+    addresses = inventory_addresses(inventory_path)
     conn.execute("BEGIN IMMEDIATE")
     try:
         # pools
@@ -454,7 +478,8 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
                     "SELECT id FROM resources WHERE setup_id = ? AND name = ?",
                     (setup_id, mname)).fetchone()
                 fields = {"kind": spec["kind"], "capabilities": models.to_json(sorted(spec["capabilities"])),
-                          "host": spec["host"]}      # hw_class never written by sync
+                          "host": spec["host"],      # hw_class never written by sync
+                          "address": addresses.get(mname)}   # a static DPU's mgmt address
                 if existing:
                     models.update(conn, "resources", existing["id"], fields)
                 else:

@@ -7,7 +7,8 @@
 #   vm:<name>        an XCP-ng VM named daolab-r<id>-* still exists
 #   vf:<bdf>         an E810/SDP VF from host_vars is not back in `xl pci-assignable-list`
 #   dpu_session:lab  processes of the shared DPU login are still running
-#   dpu_app:<unit>   a use-case app unit (daolab-app-*.service) is still active on the DPU
+#   dpu_app:<unit>   a use-case app unit (daolab-app-*.service) is still active on the DPU,
+#   dpu_app:<proc>   or an app process the runbooks start by hand (vpp, dao-smart-nic) runs
 #   ip:<address>     an address leased to the reservation still answers ping
 #
 # A host that cannot be reached fails the run (rc != 0), so the runner reports "could not
@@ -64,12 +65,21 @@
       register: _apps
       changed_when: false
 
+    - name: list the DAO app processes the runbooks start by hand (VPP, SmartNIC)
+      ansible.builtin.shell: |
+        for p in {{ daolab_app_processes | default(['vpp', 'dao-smart-nic']) | join(' ') }}; do
+          pgrep -x "$p" >/dev/null && echo "$p"
+        done; true
+      register: _procs
+      changed_when: false
+
     - name: collect this host's residue
       ansible.builtin.set_fact:
         daolab_residue: >-
           {{ (['dpu_session:' ~ hostvars['localhost'].daolab_lab_login]
               if (_sessions.stdout | trim | int(0)) > 0 else [])
-             + (_apps.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list) }}
+             + (_apps.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list)
+             + (_procs.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list) }}
 
 - name: check the leased addresses are silent
   hosts: r_dom0[0]

@@ -1,0 +1,56 @@
+# playbooks/cleanup.yml — B-82: best-effort teardown of one reservation (plan/09 §9).
+#
+#   play 0   localhost  resolve the setup
+#   play 1   the DPU    revoke the owner's access FIRST (sessions killed, key emptied, password
+#                       scrambled, account locked + expired: access ends at end_at whatever
+#                       else happens - plan/09 §7), stop the reservation's telemetry agent
+#   apps/    the DPU    the app's cleanup by its runbook (apps/<app>/cleanup.yml: VPP stopped
+#                       and its port given back to the kernel, SmartNIC stopped and its devices
+#                       rebound, nginx-tls left running as the board's resting state)
+#   play 2   dom0s      destroy the reservation's daolab-r<id>-* VMs (their VFs go back)
+#
+# The DPU keeps its hw_class (plan/01 invariant). Safe on an already-clean testbed. Its result
+# is not trusted: the engine runs verify_clean.yml after it either way and reconciles residue.
+- name: resolve the setup
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: resolve
+      ansible.builtin.import_tasks: tasks/resolve.yml
+
+- name: revoke the owner's access, stop the telemetry
+  hosts: r_dpu
+  gather_facts: false
+  tasks:
+    - name: access
+      ansible.builtin.include_role:
+        name: dpu_access
+        tasks_from: revoke
+
+    - name: the reservation's otel agent
+      become: true
+      ansible.builtin.shell: systemctl disable --now daolab-otel 2>/dev/null || true
+      changed_when: false
+
+- name: the DAO app's cleanup
+  ansible.builtin.import_playbook: "apps/{{ daolab_app | default('none') }}/cleanup.yml"
+
+- name: destroy the reservation's VMs
+  hosts: r_dom0
+  gather_facts: false
+  tasks:
+    - name: "step: destroy_vms"
+      ansible.builtin.shell: |
+        set -o pipefail
+        for name in $(xe vm-list is-control-domain=false params=name-label --minimal | tr ',' '\n' \
+                      | grep -E '^daolab-r{{ reservation_id | int }}-' || true); do
+          for uuid in $(xe vm-list name-label="$name" --minimal | tr ',' ' '); do
+            xe vm-shutdown uuid="$uuid" force=true 2>/dev/null || true
+            xe vm-uninstall uuid="$uuid" force=true
+          done
+          echo "destroyed $name"
+        done
+      args:
+        executable: /bin/bash
+      register: _destroyed
+      changed_when: "'destroyed' in _destroyed.stdout"

@@ -104,7 +104,8 @@ def test_every_kind_runs_its_playbook(settings, ctx):
         "run-1-cleanup", "run-2-probe", "run-3-reconcile", "run-4-verify_clean"]
     for name in fake.calls:
         assert set(AnsibleRunner.PLAYBOOKS.values()) >= {name["playbook"]}
-    for pb in ("deploy.yml", "probe.yml", "reconcile.yml", "verify_clean.yml", "orphans.yml"):
+    for pb in ("deploy.yml", "cleanup.yml", "probe.yml", "reconcile.yml", "verify_clean.yml",
+               "orphans.yml"):
         assert os.path.exists(os.path.join(REPO, "playbooks", pb)), pb
 
 

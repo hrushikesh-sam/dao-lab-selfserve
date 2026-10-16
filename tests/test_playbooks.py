@@ -25,7 +25,8 @@ pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not instal
                                                     "(pip install -e .[ansible])")
 
 FAKES = ("xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping",
-         "pktgen", "h2load", "which", "vppctl", "dpdk-devbind.py", "fakeproc")
+         "pktgen", "h2load", "which", "vppctl", "dpdk-devbind.py", "fakeproc", "getent",
+         "useradd", "usermod", "chpasswd", "chage", "visudo", "sshd")
 E810_VFS = ["0000:5e:01.0", "0000:5e:01.1"]
 SDP_VFS = ["0000:03:02.0", "0000:03:02.1"]
 TPL_UUID = "11111111-tpl0-0000-0000-000000000000"
@@ -435,7 +436,8 @@ def books(tmp_path):
               "daolab_sysfs": str(sysfs), "smartnic_binary": str(tmp_path / "dao-smart-nic"),
               "restore_before": str(tmp_path / "smartnic-restore" / "pci-before.txt"),
               "app_exporter_bin": str(tmp_path / "daolab-app-exporter"),
-              "app_exporter_unit_dir": str(tmp_path), "ansible_become": False},
+              "app_exporter_unit_dir": str(tmp_path), "ansible_become": False,
+              "dpu_access_root": str(tmp_path / "root")},
         ran=lambda: ran.read_text().split() if ran.exists() else [],
         port_on=port_on, binary=tmp_path / "dao-smart-nic", reset=lambda: ran.unlink(missing_ok=True))
 
@@ -724,3 +726,162 @@ def test_a_board_without_a_personality_marker_is_assumed_to_match(lab, books):
     assert vpp_deploy(lab, books, hw_class="sdp-pf1-vf8",
                       ebf_marker=str(lab.dir / "no-marker")) == 0, lab.stdout[-2000:]
     assert "personality is not tracked yet" in lab.stdout
+
+
+# ---- deploy access: the `lab` login (playbooks/roles/dpu_access) ---------------------------
+
+KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAlice alice@laptop"
+
+
+def access_play(lab, tasks_from="main", **over):
+    play = [{"hosts": "dpu-01", "gather_facts": False, "tasks": [
+        {"ansible.builtin.include_role": {"name": "dpu_access", "tasks_from": tasks_from}}]}]
+    path = lab.dir / f"access-{tasks_from}.yml"
+    path.write_text(yaml.safe_dump(play))
+    ev = {"dpu_access_root": str(lab.dir / "root"), "ansible_become": False,
+          "daolab_access_expires": "2026-10-17", **over}
+    return lab.run(str(path), **ev)
+
+
+def lab_user(lab):
+    return lab.state()["users"]["lab"]
+
+
+def root(lab, path):
+    return lab.dir / "root" / path.lstrip("/")
+
+
+def test_deploy_access_with_a_key(lab):
+    assert access_play(lab, ssh_pubkey=KEY) == 0, lab.stdout[-2000:]
+    u = lab_user(lab)
+    assert (u["locked"], u["password"], u["expires"]) == (True, None, "2026-10-17")
+    assert root(lab, "/etc/daolab/authorized_keys/lab").read_text() == KEY + "\n"
+    assert root(lab, "/etc/sudoers.d/90-daolab-lab").read_text() == "lab ALL=(ALL) NOPASSWD:ALL\n"
+    conf = root(lab, "/etc/ssh/sshd_config.d/10-daolab-lab.conf").read_text()
+    assert "Match User lab" in conf and "PasswordAuthentication yes" in conf
+    assert f"AuthorizedKeysFile {root(lab, '/etc/daolab/authorized_keys')}/%u" in conf
+
+
+def test_deploy_access_with_a_generated_password(lab):
+    assert access_play(lab, ssh_pubkey="", daolab_access_password="s3cretPassw0rd16") == 0, \
+        lab.stdout[-2000:]
+    u = lab_user(lab)
+    assert (u["locked"], u["password"]) == (False, "s3cretPassw0rd16")
+    assert root(lab, "/etc/daolab/authorized_keys/lab").read_text() == ""
+    assert "s3cretPassw0rd16" not in lab.stdout                         # no_log
+
+
+def test_deploy_access_twice_reports_no_change(lab):
+    access_play(lab, ssh_pubkey=KEY)
+    assert access_play(lab, ssh_pubkey=KEY) == 0
+    recap = [l for l in lab.stdout.splitlines() if " : ok=" in l]
+    assert all("changed=0" in l for l in recap), recap
+
+
+def test_revoke_kills_sessions_and_shuts_every_door(lab):
+    access_play(lab, ssh_pubkey="", daolab_access_password="s3cretPassw0rd16")
+    st = lab.state()
+    st["lab_procs"] = 4
+    lab.set(st)
+    assert access_play(lab, tasks_from="revoke") == 0, lab.stdout[-2000:]
+    u = lab_user(lab)
+    assert u["locked"] is True and u["expires"] == "0"
+    assert u["password"] not in (None, "s3cretPassw0rd16") and len(u["password"]) == 32
+    assert lab.state()["lab_procs"] == 0
+    assert root(lab, "/etc/daolab/authorized_keys/lab").read_text() == ""
+
+
+def test_revoke_without_the_login_is_harmless(lab):
+    assert access_play(lab, tasks_from="revoke") == 0, lab.stdout[-2000:]
+    assert "lab" not in lab.state().get("users", {})
+
+
+SSHD = shutil.which("sshd") or ("/usr/sbin/sshd" if os.path.exists("/usr/sbin/sshd") else None)
+
+
+@pytest.mark.skipif(SSHD is None, reason="sshd not installed")
+def test_the_access_drop_in_opens_lab_only(lab, tmp_path):
+    access_play(lab, ssh_pubkey=KEY)
+    dropin = root(lab, "/etc/ssh/sshd_config.d/10-daolab-lab.conf")
+    key = tmp_path / "hostkey"
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
+    main = tmp_path / "sshd_config"
+    main.write_text(f"Include {dropin}\nHostKey {key}\nPasswordAuthentication no\n")
+
+    def eff(user):
+        p = subprocess.run([SSHD, "-T", "-f", str(main), "-C", f"user={user},host=x,addr=10.0.0.9"],
+                           capture_output=True, text=True)
+        if p.returncode != 0:
+            pytest.skip(p.stderr[:200])
+        return dict(line.split(" ", 1) for line in p.stdout.splitlines() if " " in line)
+
+    lab_cfg, root_cfg = eff("lab"), eff("root")
+    assert lab_cfg["passwordauthentication"] == "yes"
+    assert lab_cfg["authorizedkeysfile"].endswith("/etc/daolab/authorized_keys/%u")
+    assert root_cfg["passwordauthentication"] == "no"                  # the board's own policy
+    assert root_cfg["authorizedkeysfile"] != lab_cfg["authorizedkeysfile"]
+
+
+# ---- B-82: cleanup.yml -------------------------------------------------------------------
+
+def cleanup(lab, books, **over):
+    ev = {"daolab_app": "none", "daolab_roles": VPP_ROLES, "allow_destructive_changes": True,
+          "allow_cleanup": True, "dpu_access_root": str(lab.dir / "root"), **books.vars}
+    ev.update(over)
+    return lab.run("cleanup.yml", **ev)
+
+
+def test_cleanup_revokes_access_first_and_destroys_the_vms(lab, books):
+    access_play(lab, ssh_pubkey=KEY)
+    st = dirty(lab.state())
+    st["units"].pop("daolab-app-dao-vpp.service")
+    lab.set(st)
+    assert cleanup(lab, books) == 0, lab.stdout[-2000:]
+    st = lab.state()
+    assert st["vms"] == {} and sorted(st["assignable"]) == sorted(E810_VFS + SDP_VFS)
+    assert st["lab_procs"] == 0 and lab_user(lab)["expires"] == "0"
+    names = [l for l in lab.stdout.splitlines() if l.startswith("TASK [")]
+    assert names.index(next(n for n in names if "terminate-user" in n)) < \
+        names.index(next(n for n in names if "destroy_vms" in n))     # access ends first
+    st["pingable"] = []
+    lab.set(st)
+    assert lab.run("verify_clean.yml") == 0 and lab.output() == []
+
+
+def test_cleanup_runs_the_apps_runbook_cleanup(lab, books):
+    board(lab, installed=["vpp"], procs=["vpp"])
+    books.port_on("vfio-pci")
+    assert cleanup(lab, books, daolab_app="dao-vpp") == 0, lab.stdout[-2000:]
+    assert books.ran() == ["11_cleanup_04"] and "vpp" not in lab.state()["procs"]
+
+
+def test_cleanup_is_safe_on_a_clean_testbed(lab, books):
+    before = lab.state()
+    assert cleanup(lab, books) == 0, lab.stdout[-2000:]
+    assert lab.state()["vms"] == before["vms"]
+    assert not [c for c in lab.calls("xe") if c[1] in ("vm-shutdown", "vm-uninstall")]
+
+
+def test_verify_clean_sees_an_app_process_left_running(lab):
+    board(lab, procs=["vpp"])
+    assert lab.run("verify_clean.yml") == 0
+    assert lab.output() == ["dpu_app:vpp"]
+
+
+def test_deploy_gives_the_owner_the_lab_login(lab, api, books):
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, books, ssh_pubkey=KEY,
+                  dpu_access_root=str(lab.dir / "root")) == 0, lab.stdout[-3000:]
+    assert root(lab, "/etc/daolab/authorized_keys/lab").read_text() == KEY + "\n"
+    assert lab_user(lab)["locked"] is True
+
+
+def test_a_password_deploy_reaches_the_vms_too(lab, api, books):
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, books, ssh_pubkey="", daolab_access_password="Pw0rdPw0rdPw0rd1",
+                  dpu_access_root=str(lab.dir / "root")) == 0, lab.stdout[-3000:]
+    assert lab_user(lab)["password"] == "Pw0rdPw0rdPw0rd1"
+    ud = yaml.safe_load(seed(lab.state()["vms"]["daolab-r12-sink"], "user-data"))
+    owner = next(u for u in ud["users"] if u["name"] == "alice")
+    assert owner["plain_text_passwd"] == "Pw0rdPw0rdPw0rd1" and owner["lock_passwd"] is False
+    assert owner["ssh_authorized_keys"] == [] and ud["ssh_pwauth"] is True

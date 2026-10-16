@@ -8,7 +8,9 @@ import json
 import logging
 import os
 import re
+import secrets
 import sqlite3
+import string
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal
@@ -108,6 +110,9 @@ class ReservationCreate(BaseModel):
     hours: int | None = None
     setup: str | None = None
     templates: dict[str, str] | None = None
+    # How the owner gets in (the dashboard's Deploy dialog): absent -> their registered key;
+    # a public key (one per line) -> that key; "" -> no key, a generated password instead.
+    ssh_pubkey: str | None = None
 
 
 class VmIpCallback(BaseModel):
@@ -136,6 +141,61 @@ class ForceClean(BaseModel):
 class UserPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
+
+
+# ---- access: SSH key or generated password ----------------------------------
+
+_PUBKEY = re.compile(r"^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521)|"
+                     r"sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) [A-Za-z0-9+/]+={0,3}"
+                     r"( [^\x00-\x1f]*)?$")
+_PASSWORD_CHARS = string.ascii_letters + string.digits
+_LIVE = ("ready", "active")
+
+
+def _deploy_access(given: str | None) -> tuple[str | None, str | None]:
+    """(ssh_pubkey, access_password) to store for a new reservation. Keys are checked line by
+    line; a blank answer means "give me a password" (16 random letters and digits)."""
+    if given is None:
+        return None, None                             # the owner's registered key
+    lines = [ln.strip() for ln in given.strip().splitlines() if ln.strip()]
+    if not lines:
+        return None, "".join(secrets.choice(_PASSWORD_CHARS) for _ in range(16))
+    if len(lines) > 5 or len(given) > 8192:
+        raise DaolabError("validation_error", 422, "ssh_pubkey: at most 5 keys")
+    bad = [ln for ln in lines if not _PUBKEY.match(ln)]
+    if bad:
+        raise DaolabError("validation_error", 422,
+                          f"ssh_pubkey: not an SSH public key: {bad[0][:40]}...",
+                          {"hint": "paste the contents of ~/.ssh/id_ed25519.pub, or leave it "
+                                   "empty to get a password"})
+    return "\n".join(lines), None
+
+
+def _key_label(keys: str) -> str | None:
+    """`ssh-ed25519 …alice@laptop` for display (type + comment, never the whole key)."""
+    first = (keys or "").strip().splitlines()[:1]
+    if not first:
+        return None
+    parts = first[0].split()
+    return f"{parts[0]} …{parts[2] if len(parts) > 2 else parts[1][-8:]}"
+
+
+def _access_object(conn, row, user) -> dict | None:
+    """How the owner logs into the DPU: `ssh lab@<static address>` plus their key or the
+    generated password. The password is only shown while the slot is live; this object is
+    only ever served to the owner or an admin (B-54)."""
+    dpu = conn.execute("SELECT * FROM resources WHERE setup_id = ? AND kind = 'dpu' "
+                       "ORDER BY name LIMIT 1", (row["setup_id"],)).fetchone()
+    if dpu is None or row["diy"]:
+        return None
+    host = dpu["address"] or dpu["name"]
+    password_mode = row["access_password"] is not None
+    live = row["state"] in _LIVE
+    return {"login": models.ACCESS_LOGIN, "host": host,
+            "ssh": f"ssh {models.ACCESS_LOGIN}@{host}", "live": live,
+            "auth": "password" if password_mode else "ssh-key",
+            "password": row["access_password"] if (password_mode and live) else None,
+            "key": None if password_mode else _key_label(models.access_keys(row, user))}
 
 
 # ---- serializers -----------------------------------------------------------
@@ -206,6 +266,7 @@ def reservation_object(conn, row) -> dict:
     uc = conn.execute("SELECT * FROM usecases WHERE id = ?", (row["usecase_id"],)).fetchone()
     setup = conn.execute("SELECT name FROM setups WHERE id = ?", (row["setup_id"],)).fetchone()
     vms = []
+    password_mode = row["access_password"] is not None
     for vm in models.vms_for_reservation(conn, row["id"]):
         ssh = None
         if vm["ip"] and vm["name"]:                       # on: dpu roles have no VM, no ssh
@@ -213,7 +274,9 @@ def reservation_object(conn, row) -> dict:
         vms.append({"role": vm["role"], "host": vm["host"], "template": vm["template"],
                     "name": vm["name"], "ip": vm["ip"], "ssh": ssh,
                     "username": user["username"] if vm["name"] else None,
-                    "auth": "ssh-key" if vm["name"] else None})
+                    "auth": (("password" if password_mode else "ssh-key") if vm["name"] else None),
+                    "password": (row["access_password"] if (vm["name"] and password_mode
+                                                             and row["state"] in _LIVE) else None)})
     return {
         "id": row["id"], "user": user["username"], "usecase": uc["name"],
         "setup": setup["name"], "state": row["state"], "diy": bool(row["diy"]),
@@ -225,8 +288,22 @@ def reservation_object(conn, row) -> dict:
                    for l in models.ip_leases_for_reservation(conn, row["id"])
                    if l["state"] != "released"],
         "health": _health_summary(conn, row["id"]),
+        "access": _access_object(conn, row, user),
+        "job": _latest_job_summary(conn, row["id"]),
         "created_at": row["created_at"], "updated_at": row["updated_at"],
     }
+
+
+def _latest_job_summary(conn, res_id: int) -> dict | None:
+    """The reservation's most recent job, for the card's progress line."""
+    jobs = models.jobs_for_reservation(conn, res_id)
+    if not jobs:
+        return None
+    j = jobs[-1]
+    steps = models.job_steps(j)
+    return {"id": j["id"], "kind": j["kind"], "state": j["state"], "attempt": j["attempt"],
+            "error": j["error"], "steps": len(steps),
+            "last_step": steps[-1] if steps else None}
 
 
 def _health_summary(conn, res_id: int) -> dict | None:
@@ -327,7 +404,7 @@ def health():
 @app.get("/whoami")
 def whoami(user: sqlite3.Row = Depends(current_user)):
     return {"id": user["id"], "username": user["username"], "role": user["role"],
-            "created_at": user["created_at"]}
+            "created_at": user["created_at"], "ssh_pubkey": user["ssh_pubkey"]}
 
 
 @app.get("/usecases")
@@ -590,6 +667,7 @@ def create_reservation(body: ReservationCreate,
                 parts.append(f"unknown hosts: {', '.join(extra)}")
             raise DaolabError("validation_error", 422, "; ".join(parts))
 
+    ssh_pubkey, access_password = _deploy_access(body.ssh_pubkey)
     conn.execute("BEGIN IMMEDIATE")
     try:
         if user["role"] != "admin":
@@ -642,6 +720,7 @@ def create_reservation(body: ReservationCreate,
             "end_at": models.format_ts(placement.end_at),
             "diy": int(is_diy),
             "diy_templates": models.to_json(body.templates) if is_diy else None,
+            "ssh_pubkey": ssh_pubkey, "access_password": access_password,
         })
         conn.execute("COMMIT")
     except BaseException:

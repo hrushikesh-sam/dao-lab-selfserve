@@ -465,6 +465,7 @@ def _sweep_log_sink(name: str, state: str = "ok", detail: str | None = None) -> 
 
 
 def _sweep_orphans(db, rn, out: TickResult) -> None:
+    models.wipe_access_passwords(db)                 # a finished slot's password is not kept
     lister, destroyer = getattr(rn, "tagged_vms", None), getattr(rn, "destroy_vms", None)
     left_behind: set[int] = set()                    # reservations whose VMs survived
     if lister is not None and destroyer is not None:

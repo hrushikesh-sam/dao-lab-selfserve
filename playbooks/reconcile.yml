@@ -6,7 +6,8 @@
 #      VIFs and VDIs; its passed-through VF goes back to the host);
 #   2. on each dom0: every host_vars VF missing from `xl pci-assignable-list` -> re-seized
 #      with `xl pci-assignable-add` ("unbind VFs");
-#   3. on the DPU: every daolab-app-* unit stopped (hw_class untouched, plan/01 invariant);
+#   3. on the DPU: the app's runbook cleanup again (apps/<app>/cleanup.yml), then every
+#      daolab-app-* unit stopped (hw_class untouched, plan/01 invariant);
 #   4. on the DPU: every session / process of the shared lab login killed.
 #
 # Every step is idempotent and safe on a clean testbed. Followed by verify_clean.yml.
@@ -64,6 +65,9 @@
       register: _rebind
       changed_when: _rebind.rc == 0
       failed_when: false          # a VF still held by a running VM: verify reports it
+
+- name: the DAO app's own cleanup, again (VPP / SmartNIC give their devices back)
+  ansible.builtin.import_playbook: "apps/{{ daolab_app | default('none') }}/cleanup.yml"
 
 - name: reconcile the DPU
   hosts: r_dpu

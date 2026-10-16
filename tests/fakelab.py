@@ -18,6 +18,7 @@ State:
 """
 import json
 import os
+import re
 import sys
 import uuid as uuidlib
 
@@ -263,7 +264,7 @@ def systemctl(args):
         st = units.get(args[1]) or units.get(args[1] + ".service") or "inactive"
         print(st)
         sys.exit(0 if st == "active" else 3)
-    if args[:1] == ["daemon-reload"]:
+    if args[:1] in (["daemon-reload"], ["reload"]):
         return
     fail(f"fakelab: unsupported systemctl {args}", 2)
 
@@ -319,6 +320,73 @@ def fakeproc(args):
     save(state)
 
 
+def _users(state):
+    return state.setdefault("users", {})
+
+
+def getent(args):
+    state = load()
+    if args[:1] == ["passwd"] and args[1] in _users(state):
+        print(f"{args[1]}:x:1001:1001::/home/{args[1]}:/bin/bash")
+        return
+    sys.exit(2)
+
+
+def useradd(args):
+    state = load()
+    name = args[-1]
+    if name in _users(state):
+        fail(f"useradd: user '{name}' already exists", 9)
+    _users(state)[name] = {"password": None, "locked": True, "expires": None}
+    save(state)
+
+
+def usermod(args):
+    state = load()
+    name = args[-1]
+    if name not in _users(state):
+        fail(f"usermod: user '{name}' does not exist", 6)
+    if "-L" in args:
+        _users(state)[name]["locked"] = True
+    if "-U" in args:
+        if _users(state)[name]["password"] is None:
+            fail("usermod: unlocking the user's password would result in a passwordless account.")
+        _users(state)[name]["locked"] = False
+    save(state)
+
+
+def chpasswd(args):
+    state = load()
+    for line in sys.stdin.read().splitlines():
+        name, _, pw = line.partition(":")
+        if name not in _users(state):
+            fail(f"chpasswd: line 1: user '{name}' does not exist")
+        _users(state)[name]["password"] = pw
+        _users(state)[name]["locked"] = False
+    save(state)
+
+
+def chage(args):
+    state = load()
+    name = args[-1]
+    if name not in _users(state):
+        fail(f"chage: user '{name}' does not exist in /etc/passwd")
+    _users(state)[name]["expires"] = args[args.index("-E") + 1]
+    save(state)
+
+
+def visudo(args):
+    path = args[-1]
+    text = open(path).read()
+    sys.exit(0 if re.search(r"^\S+ ALL=\(ALL\) NOPASSWD:ALL$", text, re.M) else 1)
+
+
+def sshd(args):
+    if args == ["-t"]:
+        return
+    fail(f"fakelab: unsupported sshd {args}", 2)
+
+
 def ping(args):
     state = load()
     ip = args[-1]
@@ -335,7 +403,9 @@ def main():
     handler = {"xe": xe, "xl": xl, "pgrep": pgrep, "pkill": pkill, "loginctl": loginctl,
                "systemctl": systemctl, "ping": ping, "arping": arping,
                "pktgen": traffic, "h2load": traffic, "which": which, "vppctl": vppctl,
-               "dpdk-devbind.py": devbind, "fakeproc": fakeproc}.get(name)
+               "dpdk-devbind.py": devbind, "fakeproc": fakeproc, "getent": getent,
+               "useradd": useradd, "usermod": usermod, "chpasswd": chpasswd, "chage": chage,
+               "visudo": visudo, "sshd": sshd}.get(name)
     if handler is None:
         fail(f"fakelab: no fake for {name}", 2)
     handler(sys.argv[1:])

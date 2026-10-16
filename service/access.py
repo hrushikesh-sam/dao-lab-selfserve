@@ -13,7 +13,8 @@ to revoke:
     the window as soon as it is deployed, before `start_at`;
   * its owner must be enabled.
 
-The answer is the owner's public key(s), or nothing. A slot that has ended stops granting at
+The answer is the key(s) the owner deployed with (the key given in the Deploy dialog, else
+their registered key; none when they chose a password instead), or nothing. A slot that has ended stops granting at
 `end_at` exactly, whatever cleanup is doing.
 """
 import sqlite3
@@ -70,7 +71,7 @@ def keys_for(conn: sqlite3.Connection, host: str, login: str, now: datetime,
     keys: list[str] = []
     for r in holders(conn, host, now, early_access):
         owner = models.user_by_id(conn, r["user_id"])
-        for line in _key_lines(owner["ssh_pubkey"]):
+        for line in _key_lines(models.access_keys(r, owner)):
             if line not in keys:
                 keys.append(line)
     return keys
