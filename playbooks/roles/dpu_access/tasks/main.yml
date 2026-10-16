@@ -34,11 +34,21 @@
     state: directory
     mode: "0755"
 
+- name: the end of the slot in the DPU's local time (sshd reads expiry-time in it)
+  ansible.builtin.command: date -d @{{ dpu_access_until | int }} +%Y%m%d%H%M
+  register: _until
+  changed_when: false
+  when: dpu_access_until | int > 0
+
+- name: every key stops working at the end of the slot (sshd expiry-time), even without a cleanup
+  ansible.builtin.set_fact:
+    _key_opt: "{{ ('expiry-time=\"' ~ _until.stdout ~ '\" ') if (dpu_access_until | int > 0) else '' }}"
+
 - name: "step: dpu_access"
   become: true
   ansible.builtin.copy:
     dest: "{{ dpu_access_keys_dir }}/{{ dpu_access_login }}"
-    content: "{{ (dpu_access_keys.splitlines() | map('trim') | select | join('\n') ~ '\n') if dpu_access_keys | trim else '' }}"
+    content: "{{ (dpu_access_keys.splitlines() | map('trim') | select | map('regex_replace', '^', _key_opt) | join('\n') ~ '\n') if dpu_access_keys | trim else '' }}"
     mode: "0644"
 
 - name: sshd - keys from that file, password login allowed, for this login only

@@ -268,12 +268,14 @@ def access_keys(res, user) -> str:
 
 def access_fields(res, user) -> dict:
     """The access part of the runner context: `ssh_pubkey` (may be empty in password mode),
-    `access_password` (None in key mode), the login, and `access_expires` - the day after
+    `access_password` (None in key mode), the login, `access_until` (end_at as a unix time:
+    the keys stop working then, sshd `expiry-time`) and `access_expires` - the day after
     end_at, the account's expiry backstop if a cleanup never runs."""
     from datetime import timedelta
+    end = parse_ts(res["end_at"])
     return {"ssh_pubkey": access_keys(res, user), "access_password": res["access_password"],
-            "access_login": ACCESS_LOGIN,
-            "access_expires": (parse_ts(res["end_at"]) + timedelta(days=1)).date().isoformat()}
+            "access_login": ACCESS_LOGIN, "access_until": int(end.timestamp()),
+            "access_expires": (end + timedelta(days=1)).date().isoformat()}
 
 
 def wipe_access_passwords(conn) -> int:

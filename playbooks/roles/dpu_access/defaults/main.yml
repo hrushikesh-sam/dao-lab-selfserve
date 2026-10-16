@@ -5,7 +5,8 @@
 # key (ssh_pubkey) or, without one, the generated password (daolab_access_password). Cleanup
 # (tasks_from: revoke) kills the sessions first, then empties the key, scrambles and locks the
 # password and expires the account. The account also expires the day after the slot on its
-# own (daolab_access_expires), in case a cleanup never runs.
+# own (daolab_access_expires), in case a cleanup never runs, and every key carries sshd's
+# expiry-time option set to end_at, so key logins stop at the end of the slot exactly.
 #
 # Keys come from a root-owned file sshd reads for `lab` only (Match User), so the owner cannot
 # add their own; password login is allowed for `lab` only. The operator account the runbooks
@@ -14,6 +15,7 @@ dpu_access_login: "{{ daolab_access_login | default('lab') }}"
 dpu_access_keys: "{{ ssh_pubkey | default('') }}"
 dpu_access_password: "{{ daolab_access_password | default('') }}"
 dpu_access_expires: "{{ daolab_access_expires | default('') }}"
+dpu_access_until: "{{ daolab_access_until | default(0) }}"   # end_at, unix time: keys stop then
 
 # where things go (a prefix for tests)
 dpu_access_root: ""

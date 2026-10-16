@@ -735,6 +735,7 @@ def create_reservation(body: ReservationCreate,
             "diy": int(is_diy),
             "diy_templates": models.to_json(body.templates) if is_diy else None,
             "ssh_pubkey": ssh_pubkey, "access_password": access_password,
+            "mode": body.mode,
         })
         conn.execute("COMMIT")
     except BaseException:

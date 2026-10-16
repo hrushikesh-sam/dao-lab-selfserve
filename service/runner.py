@@ -471,6 +471,7 @@ class AnsibleRunner:
             "daolab_access_login": get("access_login") or "lab",
             "daolab_access_password": get("access_password") or "",
             "daolab_access_expires": get("access_expires") or "",
+            "daolab_access_until": get("access_until") or 0,
             "daolab_deploy_vms": bool(self.s.deploy_vms),
             # the runbook playbooks' owner sign-off (VPP_ansible, dao-smartnic): one switch
             "allow_destructive_changes": bool(self.s.allow_destructive),

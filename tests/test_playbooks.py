@@ -931,3 +931,31 @@ def test_bringup_of_a_ready_board_passes_and_keeps_an_existing_marker(lab):
     assert all("dao-test" in l or "Marvell" in l for l in missing), missing
     assert marker.read_text() == "vf-only\n"                     # never overwritten
     assert rc == (0 if not missing else 2)
+
+
+def test_deployed_keys_stop_working_at_the_end_of_the_slot(lab):
+    """Every key line carries sshd's expiry-time = end_at, in the DPU's local time, so key
+    logins end at the end of the slot even if no cleanup runs (checked by hand against a real
+    sshd: an expired expiry-time is "Refused by key options")."""
+    import time as _t
+    end = 1792148400                                                    # 2026-10-15T15:00:00Z
+    assert access_play(lab, ssh_pubkey=KEY, daolab_access_until=end) == 0, lab.stdout[-2000:]
+    local = _t.strftime("%Y%m%d%H%M", _t.localtime(end))
+    assert root(lab, "/etc/daolab/authorized_keys/lab").read_text() == \
+        f'expiry-time="{local}" {KEY}\n'
+
+
+def _fake_exporter(lab, up):
+    exp = lab.dir / "fake-exporter"
+    exp.write_text(f"#!/bin/sh\necho '# TYPE vpp_up gauge'\necho 'vpp_up {up}'\n")
+    exp.chmod(0o755)
+    return str(exp)
+
+
+@pytest.mark.parametrize("up,rc_ok", [(1, True), (0, False)])
+def test_probe_without_vms_asks_the_dpu_app(lab, up, rc_ok):
+    rc = lab.run("probe.yml", daolab_roles=VPP_ROLES, daolab_verify=VPP_VERIFY,
+                 daolab_deploy_vms=False, daolab_app="dao-vpp", ansible_become=False,
+                 app_exporter_bin=_fake_exporter(lab, up))
+    assert (rc == 0) is rc_ok, lab.stdout[-2000:]
+    assert not lab.calls("pktgen")                                      # no VM to verify from

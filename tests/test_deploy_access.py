@@ -189,3 +189,20 @@ def test_the_dpu_role_shows_the_dpus_static_address_before_anything_is_posted(ap
     assert vms["vpp"]["ip"] == "10.68.0.190" and vms["vpp"]["ssh"] is None
     assert vms["tgen"]["ip"] is None                               # VMs wait for their lease
     assert "10.68.0.190" in body["diagram"]
+
+
+def test_the_booking_mode_is_recorded(api_env):
+    start = (datetime.now(timezone.utc) + timedelta(days=1)).replace(hour=10, minute=0, second=0,
+                                                                       microsecond=0)
+    at = deploy(api_env, "alice", mode="at", start_at=models.format_ts(start)).json()["id"]
+    asap = deploy(api_env, "bob").json()["id"]
+    assert models.reservation_by_id(api_env.conn, at)["mode"] == "at"
+    assert models.reservation_by_id(api_env.conn, asap)["mode"] == "asap"
+
+
+def test_the_runner_gets_the_end_of_the_slot_for_key_expiry(api_env):
+    rid = deploy(api_env, ssh_pubkey=KEY).json()["id"]
+    e = runner.AnsibleRunner(config.settings, run=lambda **kw: None).extravars(
+        models.reservation_context(api_env.conn, rid))
+    end = models.parse_ts(models.reservation_by_id(api_env.conn, rid)["end_at"])
+    assert e["daolab_access_until"] == int(end.timestamp())
