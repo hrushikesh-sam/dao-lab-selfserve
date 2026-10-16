@@ -479,7 +479,8 @@ def test_a_retry_succeeding_makes_the_reservation_ready_and_queues_no_cleanup(wo
 
 def test_residue_after_the_cleanup_of_a_failed_deploy_leaves_the_reservation_failed(world, monkeypatch):
     """There is no failed -> quarantined edge (plan/09 s10): the cleanup job fails and says why,
-    the audit row lists the residue, and the reservation stays `failed`. Flagging the setup is B-71."""
+    the audit row lists the residue, and the reservation stays `failed`; the setup carries the
+    quarantine flag instead (B-71)."""
     monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
     db = world[0]
     rid = res(world, uc="a", start=T(9, 5), end=T(10))
@@ -490,6 +491,9 @@ def test_residue_after_the_cleanup_of_a_failed_deploy_leaves_the_reservation_fai
     assert cleanup["state"] == "failed" and cleanup["error"].startswith("residue after cleanup:")
     [event] = [e for e in models.list_audit_events(db) if e["action"] == "cleanup"]
     assert len(models.from_json(event["detail"])["residue"]) == 2
+    sid = world[1]
+    assert db.execute("SELECT availability FROM setups WHERE id = ?", (sid,)).fetchone()[0] == \
+        "quarantined"
 
 
 def test_the_automatic_cleanup_is_held_back_by_a_running_job_like_any_other(world, monkeypatch):

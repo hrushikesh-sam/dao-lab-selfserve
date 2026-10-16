@@ -133,8 +133,18 @@ def main(argv: list[str] | None = None) -> int:
 > so it also frees a setup that B-24 was holding. If the reservation has moved on by then, the
 > replayed job is failed by the usual state check. The timeout must exceed the longest silent
 > stretch of a healthy job; a job that is slow *and* silent for longer could be replayed while
-> still running. Not done yet: IP release and the
-> setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67).
+> still running.
+> **B-71/B-72 (cleanup flow):** a cleanup job runs teardown, then `verify_clean`; while residue
+> remains it runs `reconcile` + `verify_clean` again, up to `DAOLAB_RECONCILE_ATTEMPTS` times.
+> Clean: the IP leases are released, the reservation goes `released`, and a quarantined setup is
+> available again once none of its reservations is dirty (`models.dirty_reservations`).
+> Residue: the reservation's addresses are quarantined, the setup is flagged `quarantined` (an
+> admin's `maintenance` is left alone) and the reservation goes `quarantined` (a `failed` one
+> stays `failed`). A `reconcile` job (queued by force-clean, B-74) runs reconcile + verify once on
+> a `quarantined` or dirty `failed` reservation: clean releases it and all its leases.
+> **B-67:** with the telemetry stack on, step (5) evaluates the health of every `active`
+> reservation, stores the latest verdict in `health_snapshots`, and fires the webhook on a flip
+> to `down`.
 > **B-23 follow-up:** step (3) now creates the reservation's `vms` rows
 > (`models.create_vms`, resolution as in "`vms` row creation in step (d)" below) in the same
 > transaction as `queued → provisioning`, and the runner receives

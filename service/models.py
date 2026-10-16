@@ -324,11 +324,25 @@ def set_setup_availability(conn, setup_id: int, availability: str) -> None:
     update(conn, "setups", setup_id, {"availability": availability})
 
 
+def dirty_reservations(conn, setup_id: int) -> list:
+    """Reservations on the setup whose residue is not cleared (B-71): `quarantined` ones, and
+    `failed` ones whose latest cleanup / reconcile job failed (residue after the cleanup of a
+    failed deploy has no reservation state to go to). The setup stays quarantined while any
+    is left."""
+    return conn.execute(
+        """SELECT r.* FROM reservations r
+           WHERE r.setup_id = ? AND (r.state = 'quarantined' OR (r.state = 'failed' AND (
+               SELECT j.state FROM jobs j WHERE j.reservation_id = r.id
+               AND j.kind IN ('cleanup', 'reconcile') ORDER BY j.id DESC LIMIT 1) = 'failed'))
+           ORDER BY r.id""", (setup_id,)).fetchall()
+
+
 # ---- audit log (B-55) ------------------------------------------------------
 
 AUDIT_ACTIONS = (
     "cancel", "admin_override",                        # written by the API today
     "deploy", "cleanup", "redeploy", "force_clean",    # written by the engine (B-20/B-23)
+    "reconcile", "orphan_sweep",                       # engine: B-71/B-72, B-73
 )
 
 

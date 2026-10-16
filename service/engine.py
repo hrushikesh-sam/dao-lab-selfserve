@@ -57,10 +57,20 @@ What a finished job does to its reservation:
                       reservation keeps its state either way (no retries, no automatic cleanup):
                       a failed replay must not tear down a lab the user is still working in;
                       they can redeploy again or clean up.
-  * cleanup        -> cleanup, then verify_clean regardless of the cleanup result (plan/09 §9);
-                      from `cleaning`: clean -> released, residue -> quarantined;
-                      from `failed`: clean -> released, residue stays `failed` (no edge to
-                      quarantined). Releasing IP leases and flagging the setup come with B-71.
+  * cleanup        -> B-71: cleanup, then verify_clean regardless of the cleanup result
+                      (plan/09 §9); while residue remains, reconcile + verify again, up to
+                      DAOLAB_RECONCILE_ATTEMPTS times. Clean: the IP leases are released and
+                      the reservation goes `released` (from `cleaning` or `failed`); if that
+                      was the setup's last dirty reservation, a quarantined setup is available
+                      again. Residue: the reservation's leased IPs are quarantined, the setup
+                      is flagged `quarantined` (a `maintenance` flag is left alone), and the
+                      reservation goes `quarantined` (from `cleaning`; a `failed` one stays
+                      `failed`, there is no edge).
+  * reconcile      -> reconcile then verify_clean, once (force-clean, B-74, queues these):
+                      clean -> every lease of the reservation is released (quarantined ones
+                      too), the reservation goes `released`, and the setup is available again
+                      if nothing else on it is dirty; residue -> the job fails and the setup
+                      stays (or goes back to) quarantined.
   * health_probe   -> only the job is recorded
 """
 import argparse
@@ -74,7 +84,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from . import config, health, migrations, models, otel, runner as runner_mod, scheduler
+from . import config, health, ipam, migrations, models, otel, runner as runner_mod, scheduler
 from .runner import RunResult
 
 log = logging.getLogger("daolab.engine")
@@ -85,7 +95,7 @@ EXPECTED_STATES = {
     "deploy": ("provisioning", "ready", "active"),     # ready/active = redeploy
     "cleanup": ("cleaning", "failed"),
     "health_probe": ("ready", "active"),
-    "reconcile": ("quarantined",),
+    "reconcile": ("quarantined", "failed"),           # failed: residue after a failed deploy
 }
 
 
@@ -102,7 +112,8 @@ class TickResult:
     redeployed: int = 0      # redeploy ok (reservation unchanged)
     failed: int = 0          # deploy failed for the last time
     released: int = 0        # cleanup verified clean
-    quarantined: int = 0     # residue after cleanup
+    quarantined: int = 0     # residue after cleanup (and reconcile attempts)
+    reconciled: int = 0      # reconcile job verified clean -> released (B-71/B-72)
     health_checked: int = 0  # active reservations whose health was evaluated (B-67)
     went_down: int = 0       # ... of which flipped to `down` (webhook fired)
 
@@ -270,29 +281,81 @@ def _run_deploy(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
     return result
 
 
+def _is_clean(verified: RunResult) -> bool:
+    return verified.ok and not verified.residue       # `ok` alone is not trusted
+
+
+def _residue_result(verified: RunResult, after: str) -> RunResult:
+    if _is_clean(verified):
+        return RunResult(ok=True)
+    what = ", ".join(verified.residue) if verified.residue else (verified.error or "unknown")
+    return RunResult(ok=False, error=f"residue after {after}: {what}", residue=verified.residue)
+
+
+def _quarantine_setup(db, res) -> None:
+    """Residue survived: block the reservation's addresses and stop new deploys on the setup
+    (B-18 gate). An admin's `maintenance` flag is stronger and is left alone."""
+    ipam.quarantine_reservation(db, res["id"])
+    setup = db.execute("SELECT availability FROM setups WHERE id = ?",
+                       (res["setup_id"],)).fetchone()
+    if setup["availability"] == "available":
+        models.set_setup_availability(db, res["setup_id"], "quarantined")
+
+
+def _maybe_free_setup(db, setup_id: int) -> None:
+    """A quarantined setup is available again once none of its reservations is dirty."""
+    setup = db.execute("SELECT availability FROM setups WHERE id = ?", (setup_id,)).fetchone()
+    if setup["availability"] == "quarantined" and not models.dirty_reservations(db, setup_id):
+        models.set_setup_availability(db, setup_id, "available")
+
+
 def _run_cleanup(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
     cleaned = _call(rn.cleanup, ctx, sink, "cleanup")
     verified = _call(rn.verify_clean, ctx, sink, "verify_clean")   # whatever the cleanup said
-    clean = verified.ok and not verified.residue
-    if clean:
-        result = RunResult(ok=True)
-    else:
-        what = ", ".join(verified.residue) if verified.residue else (verified.error or "unknown")
-        result = RunResult(ok=False, error=f"residue after cleanup: {what}", residue=verified.residue)
+    reconcile, attempts = getattr(rn, "reconcile", None), 0
+    while not _is_clean(verified) and reconcile is not None \
+            and attempts < config.settings.reconcile_attempts:
+        attempts += 1                                # B-71: reconcile x N, verifying each time
+        _call(reconcile, ctx, sink, "reconcile")
+        verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
+    result = _residue_result(verified, "cleanup")
     with _txn(db):          # job result + reservation move + audit commit together or not at all
         _finish(db, job["id"], result)
-        if clean:
+        if result.ok:
+            ipam.release(db, res["id"])
             # from `cleaning` or from `failed` (the cleanup queued when retries ran out):
             # both have exactly one legal exit, this one.
             if _move(db, res["id"], "released", from_state=res["state"]):
                 out.released += 1
-        elif res["state"] == "cleaning":
-            if _move(db, res["id"], "quarantined", from_state="cleaning"):
+            _maybe_free_setup(db, res["setup_id"])
+        else:
+            _quarantine_setup(db, res)
+            # residue after an already-failed deploy has no reservation state to go to (no
+            # failed -> quarantined edge); it stays `failed` and the setup carries the flag.
+            if res["state"] == "cleaning" and _move(db, res["id"], "quarantined",
+                                                    from_state="cleaning"):
                 out.quarantined += 1
-        # residue after an already-failed deploy has nowhere to go (no failed -> quarantined);
-        # the reservation stays `failed`, noted in the audit detail below.
         _audit(db, job, "cleanup", {"ok": result.ok, "cleanup_ok": cleaned.ok,
+                                    "reconcile_attempts": attempts,
                                     "residue": list(verified.residue), "error": result.error})
+    return result
+
+
+def _run_reconcile(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+    reconciled = _call(rn.reconcile, ctx, sink, "reconcile")
+    verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
+    result = _residue_result(verified, "reconcile")
+    with _txn(db):
+        _finish(db, job["id"], result)
+        if result.ok:
+            ipam.clear(db, res["id"])                 # quarantined addresses proven free too
+            if _move(db, res["id"], "released", from_state=res["state"]):
+                out.reconciled += 1
+            _maybe_free_setup(db, res["setup_id"])
+        else:
+            _quarantine_setup(db, res)
+        _audit(db, job, "reconcile", {"ok": result.ok, "reconcile_ok": reconciled.ok,
+                                      "residue": list(verified.residue), "error": result.error})
     return result
 
 
@@ -352,6 +415,8 @@ def _run_job(db, rn, job, out: TickResult) -> None:
             result = _run_deploy(db, rn, job, res, ctx, sink, out)
         elif job["kind"] == "cleanup":
             result = _run_cleanup(db, rn, job, res, ctx, sink, out)
+        elif job["kind"] == "reconcile":
+            result = _run_reconcile(db, rn, job, res, ctx, sink, out)
         else:                                        # health_probe
             result = _call(fn, ctx, sink, job["kind"])
             _finish(db, job["id"], result)

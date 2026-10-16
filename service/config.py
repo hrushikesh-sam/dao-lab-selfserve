@@ -42,6 +42,7 @@ class Settings:
     mock_fail: str
     job_timeout_sec: int
     prometheus_url: str
+    reconcile_attempts: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -83,6 +84,7 @@ class Settings:
             mock_fail=env("DAOLAB_MOCK_FAIL", ""),
             job_timeout_sec=int(env("DAOLAB_JOB_TIMEOUT_SEC", "1800")),
             prometheus_url=env("DAOLAB_PROMETHEUS_URL", "http://localhost:9090"),
+            reconcile_attempts=int(env("DAOLAB_RECONCILE_ATTEMPTS", "2")),
         )
 
 
