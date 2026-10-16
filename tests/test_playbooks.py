@@ -211,3 +211,30 @@ def test_reconcile_twice_in_a_row(lab):
     after_first = lab.state()
     assert lab.run("reconcile.yml") == 0, lab.stdout
     assert lab.state() == after_first
+
+
+# ---- B-73: orphans.yml -------------------------------------------------------------------
+
+def _vm(name, power="running"):
+    return {"uuid": f"u-{name}", "power": power, "other_config": {}, "xenstore": {},
+            "vifs": [], "ip": None}
+
+
+def test_orphans_lists_every_daolab_tagged_vm(lab):
+    st = clean_state()
+    for name in ("daolab-r999-x", "daolab-r12-sink", "admin-scratch", "daolab-notes"):
+        st["vms"][name] = _vm(name)
+    lab.set(st)
+    assert lab.run("orphans.yml") == 0, lab.stdout
+    assert sorted(lab.output()) == ["daolab-r12-sink", "daolab-r999-x"]
+    assert lab.state() == st                                          # list mode is read-only
+
+
+def test_orphans_destroys_exactly_the_named_vms(lab):
+    st = clean_state()
+    for name in ("daolab-r999-x", "daolab-r998-y", "daolab-r12-sink"):
+        st["vms"][name] = _vm(name, power="halted" if name.endswith("y") else "running")
+    lab.set(st)
+    assert lab.run("orphans.yml", daolab_vm_names=["daolab-r999-x", "daolab-r998-y",
+                                                   "daolab-r1-not-there"]) == 0, lab.stdout
+    assert sorted(lab.state()["vms"]) == ["daolab-r12-sink"]

@@ -100,6 +100,9 @@ class Runner(Protocol):
     def probe(self, res: Mapping, step: StepSink) -> RunResult: ...
     def verify_clean(self, res: Mapping, step: StepSink) -> RunResult: ...
     def reconcile(self, res: Mapping, step: StepSink) -> RunResult: ...
+    # B-73, the orphan sweep (optional: the engine skips the sweep for a runner without them)
+    def tagged_vms(self) -> list[str]: ...
+    def destroy_vms(self, names: list[str], step: StepSink) -> RunResult: ...
 
 
 def parse_mock_fail(text: str) -> frozenset[str]:
@@ -280,6 +283,7 @@ class MockRunner:
         self._exporter_factory = exporter_factory
         self._exporters: dict[int, MockExporter] = {}
         self.api = api
+        self.vms: set[str] = set()       # the "testbed": VM names a deploy created (B-73)
 
     def _work(self, name: str, step: StepSink) -> None:
         self._sleep(self.step_sec)
@@ -323,6 +327,21 @@ class MockRunner:
             return None
         return ", ".join(f"{r}={ip}" for r, ip in leased.items()) or None
 
+    def _vm_names(self, res: Mapping) -> set[str]:
+        return {v["name"] for v in _field(res, "vms", []) or [] if v.get("name")}
+
+    def tagged_vms(self) -> list[str]:
+        """B-73: every daolab-r<id>-* VM on the fake testbed."""
+        return sorted(self.vms)
+
+    def destroy_vms(self, names: list[str], step: StepSink) -> RunResult:
+        """B-73: destroy exactly these VMs (the orphan sweep)."""
+        self._sleep(self.step_sec)
+        gone = [n for n in names if n in self.vms]
+        self.vms.difference_update(names)
+        step("destroy_vms", "ok", ", ".join(gone) or None)
+        return RunResult(ok=True)
+
     def deploy(self, res: Mapping, step: StepSink) -> RunResult:
         leased: dict[str, str] = {}
         for name in DEPLOY_STEPS:
@@ -338,12 +357,16 @@ class MockRunner:
                 step(name, "failed", str(e))
                 return RunResult(ok=False, error=f"{name}: {e}")
             step(name, "ok", detail)
+            if name == "create_vms":
+                self.vms.update(self._vm_names(res))
         self._start_exporter(res)
         return RunResult(ok=True)
 
     def cleanup(self, res: Mapping, step: StepSink) -> RunResult:
         for name in CLEANUP_STEPS:
             self._work(name, step)
+        if "cleanup" not in self.fail:               # stubborn residue keeps its VMs
+            self.vms.difference_update(self._vm_names(res))
         self._stop_exporter(res)
         return RunResult(ok=True)
 
@@ -371,6 +394,8 @@ class MockRunner:
         stubborn and survives it, so the quarantine path stays reachable (plan/09 §13)."""
         for name in RECONCILE_STEPS:
             self._work(name, step)
+        if "cleanup" not in self.fail:
+            self.vms.difference_update(self._vm_names(res))
         self._stop_exporter(res)
         return RunResult(ok=True)
 
@@ -410,6 +435,12 @@ class AnsibleRunner:
 
     def reconcile(self, res, step):
         self._todo("reconcile")
+
+    def tagged_vms(self):
+        self._todo("tagged_vms")
+
+    def destroy_vms(self, names, step):
+        self._todo("destroy_vms")
 
 
 def get_runner(settings=None) -> Runner:

@@ -13,7 +13,10 @@ A tick walks the reservations in a fixed order:
                              (and, in the same transaction, creates the reservation's `vms`
                              rows and queues a `deploy` job)
   4. run the pending jobs, oldest first, through the runner (B-22)
-  5. evaluate the health rules of every `active` reservation (B-67), store the verdict as its
+  5. sweep orphans (B-73): destroy every daolab-r<id>-* VM whose reservation is terminal or
+     gone and has no cleanup / reconcile job waiting, and release `leased` addresses still
+     held by terminal reservations. Catches residue from crashes and manual runs.
+  6. evaluate the health rules of every `active` reservation (B-67), store the verdict as its
      latest snapshot, and fire DAOLAB_WEBHOOK_URL when it flips to `down` (only then, not on
      every tick that stays down). Runs only with the telemetry stack switched on
      (DAOLAB_OTEL_ENDPOINT set); without it health falls back to the probe job (plan/09 §13).
@@ -76,6 +79,7 @@ What a finished job does to its reservation:
 import argparse
 import json
 import logging
+import re
 import sqlite3
 import sys
 import time
@@ -114,12 +118,15 @@ class TickResult:
     released: int = 0        # cleanup verified clean
     quarantined: int = 0     # residue after cleanup (and reconcile attempts)
     reconciled: int = 0      # reconcile job verified clean -> released (B-71/B-72)
+    orphan_vms: int = 0      # VMs of terminal / unknown reservations destroyed (B-73)
+    orphan_leases: int = 0   # leased addresses of terminal reservations released (B-73)
     health_checked: int = 0  # active reservations whose health was evaluated (B-67)
     went_down: int = 0       # ... of which flipped to `down` (webhook fired)
 
     @property
     def total(self) -> int:
-        return self.recovered + self.activated + self.expired + self.started + self.jobs_run
+        return (self.recovered + self.activated + self.expired + self.started + self.jobs_run
+                + self.orphan_vms + self.orphan_leases)
 
 
 def _ts(now: datetime) -> str:
@@ -432,7 +439,64 @@ def _traced(sink, span):
     return step
 
 
-# ---- 5. health of active reservations (B-67) ---------------------------------------------
+# ---- 5. orphan sweep (B-73) ----------------------------------------------------------------
+
+_TAGGED = re.compile(r"^daolab-r(\d+)-")
+
+
+def _job_waiting(db, res_id: int) -> bool:
+    """A pending or running job will deal with this reservation's leftovers itself."""
+    return db.execute("SELECT 1 FROM jobs WHERE reservation_id = ? AND state IN "
+                      "('pending', 'running') LIMIT 1", (res_id,)).fetchone() is not None
+
+
+def _orphan(db, res_id: int) -> bool:
+    res = models.reservation_by_id(db, res_id)
+    if res is None:
+        return True                                  # e.g. a VM made by hand or a dropped row
+    return res["state"] in models.TERMINAL_STATES and not _job_waiting(db, res_id)
+
+
+def _sweep_log_sink(name: str, state: str = "ok", detail: str | None = None) -> None:
+    log.info("event=orphan_sweep step=%s state=%s detail=%s", name, state, detail)
+
+
+def _sweep_orphans(db, rn, out: TickResult) -> None:
+    lister, destroyer = getattr(rn, "tagged_vms", None), getattr(rn, "destroy_vms", None)
+    left_behind: set[int] = set()                    # reservations whose VMs survived
+    if lister is not None and destroyer is not None:
+        try:
+            names = list(lister())
+        except Exception:                            # noqa: BLE001 — never stop the tick
+            log.exception("orphan sweep: could not list the testbed's VMs")
+            names = []
+        doomed = [n for n in names
+                  if (m := _TAGGED.match(n)) is not None and _orphan(db, int(m.group(1)))]
+        if doomed:
+            result = _call(lambda _ctx, sink: destroyer(doomed, sink), {"id": 0},
+                           _sweep_log_sink, "destroy_vms")
+            if result.ok:
+                out.orphan_vms += len(doomed)
+            else:
+                left_behind = {int(_TAGGED.match(n).group(1)) for n in doomed}
+            models.audit(db, "engine", "orphan_sweep", None, None,
+                         {"vms": doomed, "ok": result.ok, "error": result.error})
+    rows = db.execute(
+        f"""SELECT DISTINCT l.reservation_id FROM ip_leases l
+            JOIN reservations r ON r.id = l.reservation_id
+            WHERE l.state = 'leased' AND r.state IN ({", ".join("?" for _ in models.TERMINAL_STATES)})""",
+        models.TERMINAL_STATES).fetchall()
+    for r in rows:
+        rid = r["reservation_id"]
+        if rid in left_behind or _job_waiting(db, rid):
+            continue
+        n = ipam.release(db, rid)
+        if n:
+            out.orphan_leases += n
+            models.audit(db, "engine", "orphan_sweep", "reservation", rid, {"leases_released": n})
+
+
+# ---- 6. health of active reservations (B-67) ---------------------------------------------
 
 def post_webhook(payload: dict) -> None:
     """POST `payload` to DAOLAB_WEBHOOK_URL, at most once: a failure is logged, never retried
@@ -497,6 +561,7 @@ def tick(db: sqlite3.Connection, now: datetime, rn=None,
     out.expired = _expire_active(db, now)
     out.started = _start_due(db, now, cfg)
     _run_pending(db, rn, out)
+    _sweep_orphans(db, rn, out)
     query = health_query if health_query is not None else _health_query()
     if query is not None:
         _evaluate_health(db, now, query, out)
