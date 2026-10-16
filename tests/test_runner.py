@@ -167,10 +167,10 @@ def test_mock_fail_cleanup_looks_fine_but_leaves_residue():
     sink = Sink()
     result = m.verify_clean(RES, sink)
     assert result.ok is False and result.error == "residue found after cleanup"
-    assert result.residue == ("vm daolab-r7-backend", "ip lease of reservation 7")
+    assert result.residue == ("vm:daolab-r7-backend", "dpu_session:lab")
     assert sink.names == list(VERIFY_CLEAN_STEPS)                       # every check still runs
-    assert [c[1] for c in sink.calls] == ["failed", "ok", "ok", "ok"]
-    assert "daolab-r7-backend" in sink.calls[0][2]
+    assert [c[1] for c in sink.calls] == ["failed", "ok", "failed", "ok"]
+    assert sink.calls[0][2] == "vm:daolab-r7-backend" and sink.calls[2][2] == "dpu_session:lab"
 
 
 def test_residue_is_reported_every_time_so_reconcile_never_clears_it():
@@ -263,30 +263,51 @@ def test_method_for_maps_job_kinds_to_runner_functions():
     assert runner.method_for(m, "deploy") == m.deploy
     assert runner.method_for(m, "cleanup") == m.cleanup
     assert runner.method_for(m, "health_probe") == m.probe
+    assert runner.method_for(m, "reconcile") == m.reconcile           # B-72
 
 
-def test_method_for_rejects_what_does_not_exist_yet():
-    with pytest.raises(RunnerError, match="B-72"):
-        runner.method_for(mock(), "reconcile")
+def test_method_for_rejects_an_unknown_kind():
     with pytest.raises(RunnerError, match="unknown job kind"):
         runner.method_for(mock(), "reboot")
 
 
-@pytest.mark.parametrize("fn", ["deploy", "cleanup", "probe", "verify_clean"])
+@pytest.mark.parametrize("fn", ["deploy", "cleanup", "probe", "verify_clean", "reconcile"])
 def test_the_ansible_backend_says_plainly_that_it_is_not_built_yet(fn):
     with pytest.raises(NotImplementedError, match="B-84.*DAOLAB_RUNNER=mock"):
         getattr(AnsibleRunner(), fn)(RES, Sink())
 
 
-def test_every_job_kind_in_the_model_is_handled_or_explicitly_deferred():
-    handled = 0
+def test_every_job_kind_in_the_model_is_handled():
     for kind in models.JOB_KINDS:
-        try:
-            runner.method_for(mock(), kind)
-            handled += 1
-        except RunnerError as e:
-            assert kind == "reconcile" and "B-72" in str(e)
-    assert handled == 3
+        assert callable(runner.method_for(mock(), kind))
+
+
+# ---- B-72: reconcile ---------------------------------------------------------------
+
+def test_mock_reconcile_walks_its_steps():
+    sink = Sink()
+    assert mock().reconcile(RES, sink) == RunResult(ok=True)
+    assert sink.names == list(runner.RECONCILE_STEPS)
+
+
+def test_mock_reconcile_cannot_clear_stubborn_residue():
+    m = mock(fail={"cleanup"})
+    assert m.reconcile(RES, Sink()).ok
+    assert not m.verify_clean(RES, Sink()).ok                          # still there: quarantine
+
+
+def test_mock_reconcile_stops_the_fake_exporter():
+    stopped = []
+
+    class Exp:
+        def __init__(self, rid): self.rid = rid
+        def start(self): return self
+        def stop(self): stopped.append(self.rid)
+
+    m = MockRunner(exporter_factory=Exp)
+    m.deploy(RES, Sink())
+    m.reconcile(RES, Sink())
+    assert stopped == [RES["id"]]
 
 
 # ---- B-68: mock telemetry (a fake exporter per reservation) ------------------------
@@ -365,3 +386,26 @@ def test_get_runner_only_wires_exporters_when_otel_is_enabled(monkeypatch, tmp_p
     finally:
         exp.stop()
 
+
+
+# ---- B-70: structured residue ----------------------------------------------------------
+
+def test_residue_items_are_kind_colon_ident():
+    assert runner.residue_item("vm", "daolab-r1-a") == "vm:daolab-r1-a"
+    assert runner.parse_residue("vf:0000:5e:01.0") == ("vf", "0000:5e:01.0")   # BDF keeps its colons
+    assert runner.parse_residue("ip:10.30.0.101") == ("ip", "10.30.0.101")
+    assert runner.parse_residue("vf 0000:03:00.2 still bound") == ("other", "vf 0000:03:00.2 still bound")
+    with pytest.raises(ValueError):
+        runner.residue_item("disk", "x")
+
+
+def test_mock_residue_comes_from_the_context_vms_and_leases():
+    ctx = {"id": 9, "vms": [{"role": "vpp", "name": None, "ip": "10.0.0.1"},
+                            {"role": "sink", "name": "daolab-r9-sink", "ip": "10.30.0.101"}],
+           "leases": ["10.30.0.101"]}
+    sink = Sink()
+    result = mock(fail={"cleanup"}).verify_clean(ctx, sink)
+    assert result.residue == ("vm:daolab-r9-sink", "ip:10.30.0.101")
+    states = dict((c[0], c[1]) for c in sink.calls)
+    assert states == {"check_vms": "failed", "check_vfs": "ok", "check_sessions": "ok",
+                      "check_ips": "failed"}

@@ -40,6 +40,9 @@ class Settings:
     max_future_reservations: int
     mock_step_sec: float
     mock_fail: str
+    job_timeout_sec: int
+    prometheus_url: str
+    reconcile_attempts: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -79,6 +82,9 @@ class Settings:
             max_future_reservations=int(env("DAOLAB_MAX_FUTURE_RESERVATIONS", "2")),
             mock_step_sec=float(env("DAOLAB_MOCK_STEP_SEC", "5")),
             mock_fail=env("DAOLAB_MOCK_FAIL", ""),
+            job_timeout_sec=int(env("DAOLAB_JOB_TIMEOUT_SEC", "1800")),
+            prometheus_url=env("DAOLAB_PROMETHEUS_URL", "http://localhost:9090"),
+            reconcile_attempts=int(env("DAOLAB_RECONCILE_ATTEMPTS", "2")),
         )
 
 

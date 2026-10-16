@@ -10,7 +10,7 @@ from service.models import JobError
 from service.runner import (CLEANUP_STEPS, DEPLOY_STEPS, VERIFY_CLEAN_STEPS, MockRunner,
                             RunResult)
 from service.scheduler import SchedConfig
-from tests.conftest import NOW, T, mk_res, mk_setup, mk_usecase
+from tests.conftest import NOW, T, mk_res, mk_setup, mk_usecase, mk_user
 
 CFG = SchedConfig()          # leads 5 / 15, cleanup 10
 
@@ -329,6 +329,184 @@ def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world, m
     assert "B-84" in jobs(db)[0]["error"]
 
 
+# ---- 4. running jobs: redeploy (B-28 creates a deploy job on a live reservation) ------------
+
+@pytest.mark.parametrize("live", ["ready", "active"])
+def test_redeploy_replays_the_deploy_and_leaves_the_reservation_alone(world, live):
+    db, sid, _ = world
+    start = T(8) if live == "active" else T(9, 30)                     # a ready one has not started yet
+    rid = res(world, uc="a", state=live, start=start, end=T(12))
+    models.create_job(db, rid, "deploy", attempt=2)                    # what POST .../redeploy does
+    out = tick(db)
+    assert state(db, rid) == live and out.redeployed == 1
+    assert (out.ready, out.failed) == (0, 0)
+    [job] = jobs(db)
+    assert job["state"] == "succeeded" and job["attempt"] == 2
+    assert [s["name"] for s in models.job_steps(job)] == list(DEPLOY_STEPS)
+    [event] = [e for e in models.list_audit_events(db) if e["action"] == "deploy"]
+    assert models.from_json(event["detail"])["redeploy"] is True
+    assert models.held_by(db, sid)["id"] == rid
+
+
+def test_first_deploy_is_not_marked_as_a_redeploy(world):
+    db = world[0]
+    res(world, uc="a", start=T(9, 5), end=T(10))
+    out = tick(db)
+    assert out.redeployed == 0 and out.ready == 1
+    [event] = [e for e in models.list_audit_events(db) if e["action"] == "deploy"]
+    assert models.from_json(event["detail"])["redeploy"] is False
+
+
+def test_a_failed_redeploy_does_not_take_the_lab_away_from_the_user(world):
+    db, sid, _ = world
+    rid = res(world, uc="a", state="active", start=T(8), end=T(12))
+    models.create_job(db, rid, "deploy", attempt=2)
+    out = tick(db, rn=mock(fail={"deploy"}))
+    row = models.reservation_by_id(db, rid)
+    assert row["state"] == "active" and row["failure_reason"] is None
+    assert (out.failed, out.redeployed) == (0, 0)
+    [job] = jobs(db)
+    assert job["state"] == "failed" and "create_vms" in job["error"]
+    assert models.held_by(db, sid)["id"] == rid
+    [event] = [e for e in models.list_audit_events(db) if e["action"] == "deploy"]
+    detail = models.from_json(event["detail"])
+    assert detail["ok"] is False and detail["redeploy"] is True
+
+
+def test_a_crashing_runner_during_redeploy_fails_only_the_job(world):
+    db = world[0]
+    rid = res(world, uc="a", state="ready", start=T(9, 30), end=T(12))
+    models.create_job(db, rid, "deploy", attempt=2)
+    tick(db, rn=Fake(deploy=RuntimeError("boom")))
+    assert state(db, rid) == "ready" and jobs(db)[0]["error"] == "RuntimeError: boom"
+
+
+def test_redeploy_never_changes_the_dpu_class(world):
+    db, sid, _ = world
+    rid = res(world, uc="b", state="active", start=T(8), end=T(12))     # booked as cls-b
+    models.create_job(db, rid, "deploy", attempt=2)
+    tick(db)
+    assert dpu_class(db, sid) == "cls-a"                                # only a first deploy records it
+
+
+@pytest.mark.parametrize("gone", ["cleaning", "quarantined", "released", "failed", "queued"])
+def test_a_redeploy_that_arrives_after_the_slot_ended_is_refused_without_the_runner(world, gone):
+    db = world[0]
+    rid = res(world, state=gone)
+    models.create_job(db, rid, "deploy", attempt=2)
+    rn = Fake()
+    tick(db, rn=rn)
+    assert rn.calls == [] and state(db, rid) == gone
+    job = jobs(db)[0]
+    assert job["state"] == "failed" and f"reservation is {gone}, expected" in job["error"]
+
+
+def test_end_to_end_redeploy_endpoint_then_engine(api_env):
+    """POST /reservations/{id}/redeploy (B-28) creates the job; the engine (B-23) runs it."""
+    from datetime import datetime, timezone
+    conn = api_env.conn
+    alice = conn.execute("SELECT id FROM users WHERE username = 'alice'").fetchone()["id"]
+    sid = mk_setup(conn, "tb-e2e", ["wire"], dpu_hw_class="cls-a")
+    cid = mk_usecase(conn, "uc-e2e", ["wire"], hw_class="cls-a")
+    now = datetime.now(timezone.utc)
+    rid = mk_res(conn, sid, cid, now - timedelta(minutes=30), now + timedelta(minutes=30),
+                 state="active", user_id=alice)
+    r = api_env.client.post(f"/reservations/{rid}/redeploy",
+                            headers={"Authorization": f"Bearer {api_env.user_token}"})
+    assert r.status_code == 202 and r.json()["job"]["state"] == "pending"
+    job_id = r.json()["job"]["id"]
+    out = engine.tick(conn, now, mock(), CFG)
+    assert out.redeployed == 1
+    body = api_env.client.get(f"/jobs/{job_id}",
+                              headers={"Authorization": f"Bearer {api_env.user_token}"}).json()
+    assert body["state"] == "succeeded" and body["attempt"] == 1
+    assert [s["name"] for s in body["steps"]] == list(DEPLOY_STEPS)
+    assert state(conn, rid) == "active"
+
+
+@pytest.mark.parametrize("attempt", [2, 3, 7])
+def test_a_failed_redeploy_is_never_retried_and_never_queues_a_cleanup(world, attempt):
+    """B-25's retries and automatic cleanup are for a first deploy. A redeploy happens inside a
+    live slot: whatever its attempt number, a failure leaves the reservation and the job queue
+    alone (the user decides what to do)."""
+    db, sid, _ = world
+    rid = res(world, uc="a", state="active", start=T(8), end=T(12))
+    models.create_job(db, rid, "deploy", attempt=attempt)
+    out = tick(db, rn=mock(fail={"deploy"}))
+    assert config.settings.max_retries == 3
+    assert (out.retried, out.failed, out.redeployed) == (0, 0, 0)
+    assert state(db, rid) == "active"
+    assert [(j["kind"], j["state"]) for j in jobs(db, rid)] == [("deploy", "failed")]
+    assert models.held_by(db, sid)["id"] == rid
+
+
+def test_a_first_deploy_with_the_default_settings_is_tried_three_times_then_cleaned_up(world):
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    bad = mock(fail={"deploy"})
+    assert config.settings.max_retries == 3
+    for _ in range(3):                      # each tick runs one attempt and queues the next
+        tick(db, rn=bad)
+    assert state(db, rid) == "failed"
+    assert [(j["kind"], j["attempt"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", 1, "failed"), ("deploy", 2, "failed"), ("deploy", 3, "failed"), ("cleanup", 1, "pending")]
+    out = tick(db)
+    assert state(db, rid) == "released" and out.released == 1
+
+
+def test_retries_and_the_automatic_cleanup_stay_on_the_same_trace(world, monkeypatch):
+    """B-62 will open one trace per job chain: the follow-up jobs inherit the trace id."""
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=2))
+    db = world[0]
+    rid = res(world, uc="a", state="provisioning", start=T(9, 30), end=T(11))
+    models.create_job(db, rid, "deploy", trace_id="trace-abc")
+    bad = mock(fail={"deploy"})
+    tick(db, rn=bad)
+    tick(db, rn=bad)
+    assert [(j["kind"], j["trace_id"]) for j in jobs(db, rid)] == \
+        [("deploy", "trace-abc"), ("deploy", "trace-abc"), ("cleanup", "trace-abc")]
+
+
+def test_a_retry_succeeding_makes_the_reservation_ready_and_queues_no_cleanup(world):
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    tick(db, rn=mock(fail={"deploy"}))                                   # attempt 1 fails
+    out = tick(db)                                                       # attempt 2 succeeds
+    assert state(db, rid) == "ready" and out.ready == 1 and out.retried == 0
+    assert [(j["kind"], j["attempt"], j["state"]) for j in jobs(db, rid)] == \
+        [("deploy", 1, "failed"), ("deploy", 2, "succeeded")]
+
+
+def test_residue_after_the_cleanup_of_a_failed_deploy_leaves_the_reservation_failed(world, monkeypatch):
+    """There is no failed -> quarantined edge (plan/09 s10): the cleanup job fails and says why,
+    the audit row lists the residue, and the reservation stays `failed`; the setup carries the
+    quarantine flag instead (B-71)."""
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    tick(db, rn=mock(fail={"deploy"}))                                   # fails for good, cleanup queued
+    out = tick(db, rn=mock(fail={"cleanup"}))
+    assert state(db, rid) == "failed" and (out.released, out.quarantined) == (0, 0)
+    cleanup = [j for j in jobs(db, rid) if j["kind"] == "cleanup"][0]
+    assert cleanup["state"] == "failed" and cleanup["error"].startswith("residue after cleanup:")
+    [event] = [e for e in models.list_audit_events(db) if e["action"] == "cleanup"]
+    assert len(models.from_json(event["detail"])["residue"]) == 2
+    sid = world[1]
+    assert db.execute("SELECT availability FROM setups WHERE id = ?", (sid,)).fetchone()[0] == \
+        "quarantined"
+
+
+def test_the_automatic_cleanup_is_held_back_by_a_running_job_like_any_other(world, monkeypatch):
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
+    db = world[0]
+    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    tick(db, rn=mock(fail={"deploy"}))                                   # failed + cleanup pending
+    other_engine_is_running_job = models.create_job(db, rid, "reconcile")
+    models.transition_job(db, other_engine_is_running_job, "running")
+    out = tick(db)
+    assert out.deferred == 1 and state(db, rid) == "failed"
+
+
 # ---- 4. running jobs: cleanup --------------------------------------------------------------
 
 def test_cleanup_that_verifies_clean_releases_the_reservation(world):
@@ -471,13 +649,14 @@ def test_health_probe_on_a_queued_reservation_is_refused(world):
     assert jobs(db)[0]["state"] == "failed" and "expected ready or active" in jobs(db)[0]["error"]
 
 
-def test_reconcile_jobs_are_deferred_to_b72(world):
+def test_a_reconcile_job_runs_the_runners_reconcile(world):
     db = world[0]
     rid = res(world, state="quarantined")
     models.create_job(db, rid, "reconcile")
     tick(db)
-    assert jobs(db)[0]["state"] == "failed" and "B-72" in jobs(db)[0]["error"]
-    assert state(db, rid) == "quarantined"
+    assert jobs(db)[0]["state"] == "succeeded"
+    assert [s["name"] for s in models.job_steps(jobs(db)[0])][:len(runner.RECONCILE_STEPS)] == \
+           list(runner.RECONCILE_STEPS)
 
 
 def test_pending_jobs_run_oldest_first(world):
@@ -514,6 +693,208 @@ def test_losing_the_pending_to_running_race_skips_the_job(world, monkeypatch):
                         lambda *a, **k: (_ for _ in ()).throw(JobError("lost the race")))
     rn = Fake()
     assert tick(db, rn=rn).jobs_run == 0 and rn.calls == []
+
+
+# ---- single-flight per setup (B-24) ---------------------------------------------------------
+
+def other_engine_is_running(db, rid, kind="deploy", attempt=1):
+    """A job some other engine process picked up: `running` in the database."""
+    jid = models.create_job(db, rid, kind, attempt=attempt)
+    models.transition_job(db, jid, "running")
+    return jid
+
+
+@pytest.mark.parametrize("busy_kind", ["deploy", "cleanup", "reconcile"])
+@pytest.mark.parametrize("waiting_kind", ["deploy", "cleanup", "reconcile"])
+def test_a_running_mutating_job_holds_back_every_other_mutating_job(world, busy_kind, waiting_kind):
+    db = world[0]
+    rid = res(world, state="cleaning")
+    running = other_engine_is_running(db, rid, busy_kind)
+    waiting = models.create_job(db, rid, waiting_kind, attempt=2)
+    rn = Fake()
+    out = tick(db, rn=rn)
+    assert rn.calls == [] and (out.jobs_run, out.deferred) == (0, 1)
+    row = models.job_by_id(db, waiting)
+    assert row["state"] == "pending" and row["started_at"] is None and row["error"] is None
+    assert models.job_by_id(db, running)["state"] == "running"
+
+
+def test_a_waiting_job_runs_on_the_first_tick_after_the_blocker_finishes(world):
+    db = world[0]
+    rid = res(world, state="cleaning")
+    running = other_engine_is_running(db, rid, "deploy", attempt=2)
+    models.create_job(db, rid, "cleanup")
+    assert tick(db).deferred == 1 and state(db, rid) == "cleaning"
+    models.transition_job(db, running, "succeeded")                      # the other engine finishes
+    out = tick(db)
+    assert (out.deferred, out.released) == (0, 1) and state(db, rid) == "released"
+
+
+def test_a_failed_blocker_also_lets_the_next_job_through(world):
+    db = world[0]
+    rid = res(world, state="cleaning")
+    running = other_engine_is_running(db, rid, "deploy", attempt=2)
+    models.create_job(db, rid, "cleanup")
+    models.transition_job(db, running, "failed", error="playbook died")
+    assert tick(db).released == 1
+
+
+def test_a_job_left_running_by_a_crashed_engine_blocks_its_setup_until_b26(world):
+    db = world[0]
+    rid = res(world, state="cleaning")
+    other_engine_is_running(db, rid, "deploy", attempt=2)                # nobody is working on it
+    models.create_job(db, rid, "cleanup")
+    for _ in range(3):
+        assert tick(db).deferred == 1                                    # stays blocked, tick after tick
+    assert state(db, rid) == "cleaning"
+
+
+def test_probes_are_not_held_back_by_a_running_job(world):
+    db = world[0]
+    rid = res(world, state="active", start=T(8), end=T(12))
+    other_engine_is_running(db, rid, "deploy", attempt=2)
+    probe = models.create_job(db, rid, "health_probe")
+    out = tick(db)
+    assert models.job_by_id(db, probe)["state"] == "succeeded" and out.deferred == 0
+
+
+def test_a_running_probe_does_not_hold_back_a_mutating_job(world):
+    db = world[0]
+    rid = res(world, state="cleaning")
+    other_engine_is_running(db, rid, "health_probe")
+    models.create_job(db, rid, "cleanup")
+    assert tick(db).released == 1
+
+
+def test_another_setups_running_job_does_not_matter(world):
+    db, _, _ = world
+    other = mk_setup(db, "tb2", ["wire"], dpu_hw_class="cls-a")
+    busy = res(world, state="cleaning", sid=other)
+    other_engine_is_running(db, busy, "cleanup")
+    mine = res(world, state="cleaning")
+    models.create_job(db, mine, "cleanup")
+    out = tick(db)
+    assert out.released == 1 and state(db, mine) == "released" and state(db, busy) == "cleaning"
+
+
+def test_a_waiting_job_does_not_stop_the_jobs_behind_it(world):
+    db, _, _ = world
+    other = mk_setup(db, "tb2", ["wire"], dpu_hw_class="cls-a")
+    blocked = res(world, state="cleaning")
+    other_engine_is_running(db, blocked, "deploy", attempt=2)
+    first_in_line = models.create_job(db, blocked, "cleanup")           # oldest pending, but blocked
+    free = res(world, state="cleaning", sid=other)
+    models.create_job(db, free, "cleanup")                               # newer, free setup
+    out = tick(db)
+    assert out.deferred == 1 and out.released == 1
+    assert models.job_by_id(db, first_in_line)["state"] == "pending" and state(db, free) == "released"
+
+
+def test_jobs_on_one_setup_in_a_tick_run_one_after_the_other_never_together(world):
+    """Two pending redeploys (a double click): both run in the same tick, in id order, and while
+    one runs the database shows it as the only running job on the setup."""
+    db, sid, _ = world
+    rid = res(world, uc="a", state="active", start=T(8), end=T(12))
+    first = models.create_job(db, rid, "deploy", attempt=2)
+    second = models.create_job(db, rid, "deploy", attempt=3)
+    seen = []
+
+    class Watching(Fake):
+        def deploy(self, r, step):
+            running = db.execute("SELECT id FROM jobs WHERE state = 'running'").fetchall()
+            seen.append([x["id"] for x in running])
+            return RunResult(ok=True)
+    out = tick(db, rn=Watching())
+    assert seen == [[first], [second]]
+    assert (out.jobs_run, out.deferred, out.redeployed) == (2, 0, 2)
+    assert models.running_mutating_job(db, sid) is None
+
+
+def test_claiming_reports_what_happened(world):
+    db = world[0]
+    rid = res(world, state="cleaning")
+    a = models.create_job(db, rid, "cleanup")
+    b = models.create_job(db, rid, "cleanup", attempt=2)
+    assert engine._claim(db, models.job_by_id(db, a)) == "claimed"
+    assert engine._claim(db, models.job_by_id(db, b)) == "busy"
+    assert engine._claim(db, models.job_by_id(db, a)) == "taken"        # already running
+    assert not db.in_transaction
+
+
+def test_a_job_another_engine_took_is_not_counted_as_waiting(world, monkeypatch):
+    """Our list of pending jobs is a snapshot: by the time we get to a job the other engine may
+    already be running it. That is 'taken', not 'the setup is busy'."""
+    db = world[0]
+    rid = res(world, state="cleaning")
+    jid = models.create_job(db, rid, "cleanup")
+    stale = models.pending_jobs(db)
+    models.transition_job(db, jid, "running")                            # the other engine
+    monkeypatch.setattr(models, "pending_jobs", lambda _db, limit=None: stale)
+    rn = Fake()
+    out = tick(db, rn=rn)
+    assert rn.calls == [] and (out.jobs_run, out.deferred) == (0, 0)
+
+
+def test_two_engines_cannot_both_claim_jobs_on_one_setup(tmp_path):
+    """Two real connections to one file: whoever claims first wins, the other waits."""
+    path = str(tmp_path / "two.db")
+    one = models.connect(path)
+    models.init_db(one)
+    sid = mk_setup(one, "tb", ["wire"])
+    cid = mk_usecase(one, "uc", ["wire"])
+    rid = mk_res(one, sid, cid, T(10), T(11), state="cleaning", user_id=mk_user(one, "u")[0])
+    j1 = models.create_job(one, rid, "cleanup")
+    j2 = models.create_job(one, rid, "deploy", attempt=2)
+    two = models.connect(path)
+    assert engine._claim(one, models.job_by_id(one, j1)) == "claimed"
+    assert engine._claim(two, models.job_by_id(two, j2)) == "busy"
+    models.transition_job(one, j1, "succeeded")
+    assert engine._claim(two, models.job_by_id(two, j2)) == "claimed"
+    one.close()
+    two.close()
+
+
+def test_racing_engines_never_start_two_jobs_on_the_same_setup(tmp_path):
+    """Many rounds of two threads each claiming a different job of one setup at the same moment:
+    exactly one claim wins every round."""
+    import threading
+    path = str(tmp_path / "race.db")
+    boot = models.connect(path)
+    models.init_db(boot)
+    sid = mk_setup(boot, "tb", ["wire"])
+    cid = mk_usecase(boot, "uc", ["wire"])
+    rid = mk_res(boot, sid, cid, T(10), T(11), state="cleaning", user_id=mk_user(boot, "u")[0])
+    conns = [models.connect(path) for _ in range(2)]
+    for round_no in range(40):
+        ids = [models.create_job(boot, rid, "deploy", attempt=round_no * 2 + i + 1) for i in range(2)]
+        gate, results = threading.Barrier(2), [None, None]
+
+        def go(i):
+            row = models.job_by_id(conns[i], ids[i])
+            gate.wait()
+            results[i] = engine._claim(conns[i], row)
+        threads = [threading.Thread(target=go, args=(i,)) for i in range(2)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        assert sorted(results) == ["busy", "claimed"], (round_no, results)
+        for j in ids:                                                    # clear the way for the next round
+            row = models.job_by_id(boot, j)
+            if row["state"] == "running":
+                models.transition_job(boot, j, "succeeded")
+            else:
+                models.transition_job(boot, j, "running")
+                models.transition_job(boot, j, "succeeded")
+    [c.close() for c in conns]
+    boot.close()
+
+
+def test_deferred_is_not_counted_as_work(world):
+    db = world[0]
+    rid = res(world, state="cleaning")
+    other_engine_is_running(db, rid, "deploy", attempt=2)
+    models.create_job(db, rid, "cleanup")
+    out = tick(db)
+    assert out.deferred == 1 and out.total == 0
 
 
 # ---- crash safety --------------------------------------------------------------------------
@@ -685,3 +1066,88 @@ def test_main_loop_passes_the_configured_interval(cli_env, monkeypatch):
     monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, engine_interval_sec=17))
     monkeypatch.setattr(engine, "run_loop", lambda db, interval, rn: seen.update(interval=interval))
     assert engine.main(["--loop"]) == 0 and seen["interval"] == 17
+
+
+# ---- the runner is closed when the engine exits (B-68 exporters) ---------------------------
+
+class Closable(Fake):
+    def __init__(self, boom=False):
+        super().__init__()
+        self.closed, self.boom = 0, boom
+
+    def close(self):
+        self.closed += 1
+        if self.boom:
+            raise RuntimeError("close blew up")
+
+
+def test_a_one_tick_run_closes_the_runner(cli_env, monkeypatch):
+    rn = Closable()
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    assert engine.main([]) == 0 and rn.closed == 1
+
+
+def test_stopping_the_loop_with_ctrl_c_closes_the_runner(cli_env, monkeypatch, capsys):
+    rn = Closable()
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    monkeypatch.setattr(engine, "run_loop", lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()))
+    assert engine.main(["--loop"]) == 0 and rn.closed == 1
+
+
+def test_a_crash_still_closes_the_runner_and_the_crash_is_not_hidden(cli_env, monkeypatch):
+    rn = Closable()
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    monkeypatch.setattr(engine, "tick", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("tick boom")))
+    with pytest.raises(RuntimeError, match="tick boom"):
+        engine.main([])
+    assert rn.closed == 1
+
+
+def test_a_failing_close_is_logged_not_raised(cli_env, monkeypatch, caplog):
+    rn = Closable(boom=True)
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    with caplog.at_level(logging.ERROR, logger="daolab.engine"):
+        assert engine.main([]) == 0
+    assert "runner close failed" in caplog.text
+
+
+def test_a_runner_without_close_is_fine(cli_env, monkeypatch):
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: Fake())
+    assert engine.main([]) == 0
+
+
+def test_a_failing_close_does_not_replace_the_real_error(cli_env, monkeypatch):
+    rn = Closable(boom=True)
+    monkeypatch.setattr(runner, "get_runner", lambda *a, **k: rn)
+    monkeypatch.setattr(engine, "tick", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("tick boom")))
+    with pytest.raises(RuntimeError, match="tick boom"):
+        engine.main([])
+
+
+def test_exporters_started_by_a_deploy_are_stopped_when_the_engine_exits(cli_env, monkeypatch):
+    """The real MockRunner: a deploy starts a (fake) exporter for the reservation; leaving the
+    engine stops it, so no Prometheus target file is left behind for a dead port."""
+    from datetime import datetime, timezone
+    events = []
+
+    class Exporter:
+        def __init__(self, rid):
+            self.rid = rid
+
+        def start(self):
+            events.append(("start", self.rid))
+
+        def stop(self):
+            events.append(("stop", self.rid))
+
+    conn = cli_env
+    uid = mk_user(conn, "u")[0]
+    sid = mk_setup(conn, "tb", ["wire"], dpu_hw_class="cls-a")
+    cid = mk_usecase(conn, "ucA", ["wire"], hw_class="cls-a")
+    now = datetime.now(timezone.utc)
+    rid = mk_res(conn, sid, cid, now + timedelta(minutes=1), now + timedelta(hours=1), user_id=uid)
+    monkeypatch.setattr(runner, "get_runner",
+                        lambda *a, **k: MockRunner(step_sec=0.0, exporter_factory=Exporter))
+    assert engine.main([]) == 0
+    assert state(conn, rid) == "ready"
+    assert events == [("start", rid), ("stop", rid)]

@@ -98,13 +98,58 @@ def main(argv: list[str] | None = None) -> int:
 > DPU's *actual* class at tick time (`scheduler.start_lead_min`), so a late projection never
 > makes the engine start early. A job's result, the reservation move and the audit row commit in
 > one transaction. A deploy that succeeds sets `ready` and records `resources.hw_class`; a
-> deploy that fails sets `failed` immediately (retries arrive with B-25). A cleanup always runs
+> deploy that fails is retried as a fresh `deploy` job (attempt + 1, same trace) until
+> `DAOLAB_MAX_RETRIES` attempts have been observed (B-25); when they run out the reservation is
+> set `failed` and a `cleanup` job is queued automatically, and the cleanup of a `failed`
+> reservation ends in `released` (residue leaves it `failed`: there is no `failed → quarantined`
+> edge, and flagging the setup is B-71). A `deploy` job on a
+> reservation that is already `ready`/`active` is a **redeploy** (`POST .../redeploy`, B-28): the
+> runner replays it, the job records the outcome, and the reservation keeps its state whether the
+> replay succeeds or fails (no retries, no automatic cleanup), so a failed replay never tears
+> down a lab the user is working in.
+> A cleanup always runs
 > `verify_clean` afterwards, whatever the cleanup reported: clean → `released`, residue (or
-> verify unable to run) → `quarantined`. **Because the setup is freed in step (4), the next
-> booking on it starts on the next tick**, not the same one; the lead time absorbs that. Not
-> done yet: single-flight (B-24), retries (B-25), crash recovery (B-26), IP release and the
-> setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67). `vms` rows
-> are not created by the engine yet.
+> verify unable to run) → `quarantined` (when the reservation was `cleaning`). **Because the setup is freed in step (4), the next
+> booking on it starts on the next tick**, not the same one; the lead time absorbs that.
+> **B-24 (single-flight):** a `deploy`, `cleanup` or `reconcile` job is only started when no
+> other such job is `running` on the same setup (a job belongs to a setup through its
+> reservation); health probes are exempt. The check and the `pending → running` move share one
+> `BEGIN IMMEDIATE` transaction, so two engine processes cannot both win. A job that has to wait
+> stays `pending` (it is not failed) and is retried next tick; jobs on one setup in the same tick
+> run one after the other. A job left `running` by a crashed engine therefore blocks its setup
+> until B-26 puts it back. When the engine process exits (end of a one-tick run, Ctrl-C in
+> `--loop`, or a crash) it calls the runner's `close()` if it has one, so the mock runner's fake
+> telemetry exporters (B-68) are stopped and their Prometheus target files removed. Note that
+> exporters live in the engine process: a one-tick run starts and stops them within that run, so
+> the health demo needs `--loop`. This replaces the older "one reservation in `provisioning` or
+> `cleaning`" wording below.
+> **B-26 (crash recovery):** every tick starts by putting `running` jobs that have shown no
+> activity for `DAOLAB_JOB_TIMEOUT_SEC` (default 1800 s) back to `pending`; doing it per tick
+> rather than only at process start also covers the systemd one-tick mode. "Activity" is the
+> job's `updated_at`, which every recorded step bumps, so a slow but healthy deploy is not
+> touched. The attempt number is unchanged, the steps recorded so far are kept, and a `requeued`
+> marker step is added. The update is guarded (still `running`, nothing recorded since it was
+> read), so a job that came back to life is left alone. Recovery runs before jobs are started,
+> so it also frees a setup that B-24 was holding. If the reservation has moved on by then, the
+> replayed job is failed by the usual state check. The timeout must exceed the longest silent
+> stretch of a healthy job; a job that is slow *and* silent for longer could be replayed while
+> still running.
+> **B-71/B-72 (cleanup flow):** a cleanup job runs teardown, then `verify_clean`; while residue
+> remains it runs `reconcile` + `verify_clean` again, up to `DAOLAB_RECONCILE_ATTEMPTS` times.
+> Clean: the IP leases are released, the reservation goes `released`, and a quarantined setup is
+> available again once none of its reservations is dirty (`models.dirty_reservations`).
+> Residue: the reservation's addresses are quarantined, the setup is flagged `quarantined` (an
+> admin's `maintenance` is left alone) and the reservation goes `quarantined` (a `failed` one
+> stays `failed`). A `reconcile` job (queued by force-clean, B-74) runs reconcile + verify once on
+> a `quarantined` or dirty `failed` reservation: clean releases it and all its leases.
+> **B-67:** with the telemetry stack on, step (5) evaluates the health of every `active`
+> reservation, stores the latest verdict in `health_snapshots`, and fires the webhook on a flip
+> to `down`.
+> **B-23 follow-up:** step (3) now creates the reservation's `vms` rows
+> (`models.create_vms`, resolution as in "`vms` row creation in step (d)" below) in the same
+> transaction as `queued → provisioning`, and the runner receives
+> `models.reservation_context()` (the playbook extravars plus `roles`, `verify`, `members`,
+> `vms`, and the job's `job_id`/`attempt`) instead of a DB row.
 
 Tick order is fixed — (a) through (e) exactly as above. Rules:
 
