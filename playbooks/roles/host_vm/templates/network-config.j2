@@ -1,0 +1,19 @@
+# daolab-r{{ reservation_id | int }}-{{ vm.role }} — rendered by playbooks/roles/host_vm (B-80)
+version: 2
+ethernets:
+  mgmt0:
+    match: {driver: vif}
+    set-name: mgmt0
+    addresses: [{{ _ip }}/{{ mgmt_prefix }}]
+{% if mgmt_gateway %}
+    routes: [{to: default, via: {{ mgmt_gateway }}}]
+{% endif %}
+{% if mgmt_dns %}
+    nameservers: {addresses: {{ mgmt_dns | to_json }}}
+{% endif %}
+{% if vm.data_ip and vm.connect %}
+  data0:
+    match: {driver: {{ host_vm_data_drivers[vm.connect] }}}
+    set-name: data0
+    addresses: [{{ vm.data_ip }}]
+{% endif %}

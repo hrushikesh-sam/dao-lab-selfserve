@@ -1,0 +1,3 @@
+# playbooks/roles/ebf_set — the EBF personality of the OCTEON (plan/05 "ebf_set stub contract").
+ebf_target_hw_class: ""                 # kebab-case, e.g. sdp-pf1-vf8
+ebf_marker: /etc/daolab/hw_class        # written after a successful flash (or by hand)

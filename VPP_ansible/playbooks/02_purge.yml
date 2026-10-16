@@ -1,0 +1,60 @@
+---
+- name: Steps 2-3 - Simulate and purge old VPP installation
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Simulate purge exactly as documented
+      become: true
+      shell: "apt-get -s purge {{ vpp_package }}"
+      register: purge_simulation
+      changed_when: false
+
+    - name: Show purge simulation
+      debug:
+        var: purge_simulation.stdout_lines
+
+    - name: Require explicit sign-off before destructive changes
+      assert:
+        that:
+          - allow_destructive_changes | bool
+        fail_msg: "Runbook requires sign-off before purging packages, removing files, or changing device state. Set allow_destructive_changes=true only after sign-off."
+
+    - name: Calculate expected purge count
+      shell: "n=$(apt-get -s purge {{ vpp_package }} python3-ply | grep -c '^Purg'); echo $n"
+      register: purge_count
+      become: true
+      changed_when: false
+
+    - name: Purge only when exactly two packages are selected
+      shell: |
+        n=$(apt-get -s purge {{ vpp_package }} python3-ply | grep -c '^Purg')
+        [ "$n" = 2 ] && apt-get purge -y {{ vpp_package }} python3-ply || echo "ABORT: unexpected package list"
+      become: true
+      register: purge_result
+      changed_when: "'ABORT' not in purge_result.stdout"
+
+    - name: Remove documented VPP leftovers
+      shell: |
+        rm -f {{ vpp_sysctl_disabled }}
+        rm -rf {{ vpp_run_dir }}
+        mv {{ vpp_dir }} {{ vpp_old_dir }}
+      become: true
+      args:
+        executable: /bin/bash
+
+    - name: Verify purge leftovers
+      shell: |
+        dpkg -l | grep -E 'vpp|python3-ply|dpdk|cpt-firmware|oct-ep-target'
+        ls {{ vpp_sysctl_disabled }} 2>&1 || true
+        ls /etc/vpp
+        ls -d {{ vpp_dir }} {{ vpp_run_dir }} 2>&1
+        ls {{ vpp_old_dir }}
+        which vpp vppctl || echo "vpp binaries gone"
+        ps -eo pid,args | grep -E 'smart-nic|secgw|nginx' | grep -v grep | wc -l
+      become: true
+      register: purge_verify
+      changed_when: false
+      failed_when: false
+
+    - debug:
+        var: purge_verify.stdout_lines

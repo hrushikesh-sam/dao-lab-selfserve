@@ -1,0 +1,78 @@
+---
+- name: Step 11 - Save state and stop nginx
+  hosts: dpu
+  gather_facts: false
+
+  tasks:
+    - name: Require explicit sign-off before stopping nginx
+      assert:
+        that:
+          - allow_destructive_changes | bool
+        fail_msg: "Runbook requires owner sign-off before stopping nginx and taking 0002:04:00.0."
+
+    - name: Create restore directory
+      file:
+        path: "{{ vpp_dir }}/restore"
+        state: directory
+        owner: "{{ vpp_user }}"
+        group: "{{ vpp_user }}"
+
+    - name: Save nginx command line
+      become: true
+      shell: |
+        nginx_pid=$(pgrep -o nginx)
+        tr '\0' ' ' < /proc/${nginx_pid}/cmdline > {{ vpp_dir }}/restore/nginx.cmd
+      changed_when: true
+
+    - name: Save nginx working directory
+      become: true
+      shell: |
+        nginx_pid=$(pgrep -o nginx)
+        readlink /proc/${nginx_pid}/cwd | tee {{ vpp_dir }}/restore/nginx.cwd
+      changed_when: true
+
+    - name: Save PCI state
+      become: true
+      shell: |
+        echo "{{ pci_live_port }} driver=$(basename $(readlink /sys/bus/pci/devices/{{ pci_live_port }}/driver)) override=$(cat /sys/bus/pci/devices/{{ pci_live_port }}/driver_override)" | tee {{ vpp_dir }}/restore/pci-04.state
+      changed_when: true
+
+    - name: Record live port state before stopping nginx
+      shell: |
+        cat /sys/bus/pci/devices/{{ pci_live_port }}/sriov_numvfs
+        ip neigh show dev {{ data_interface_live }} | head
+        ip route show dev {{ data_interface_live }}
+        ping -c1 -W1 -I {{ data_interface_live }} 10.65.0.192 | tail -2
+        ls /home/dao-test/marvell-dpdk/usertools/dpdk-devbind.py
+        cat {{ vpp_dir }}/restore/nginx.cmd; echo
+      register: live_port_preparation
+      changed_when: false
+      failed_when: false
+
+    - name: Stop nginx-tls.service
+      become: true
+      systemd:
+        name: "{{ nginx_service }}"
+        state: stopped
+
+    - name: Wait after nginx stop
+      pause:
+        seconds: 3
+
+    - name: Check nginx and dtap state
+      shell: |
+        pgrep -a nginx || echo "nginx gone"
+        ip -br link | grep -E 'dtap' || echo "dtap gone"
+        lsof /dev/vfio/* 2>/dev/null | awk '{print $1,$2,$NF}' | sort -u
+        ps -eo pid,args | grep -E 'smart-nic|secgw|nginx' | grep -v grep | wc -l
+        for s in 2048kB 524288kB; do echo $s $(cat /sys/kernel/mm/hugepages/hugepages-$s/free_hugepages); done
+      become: true
+      register: nginx_stopped_state
+      changed_when: false
+      failed_when: false
+
+    - debug:
+        var: live_port_preparation.stdout_lines
+
+    - debug:
+        var: nginx_stopped_state.stdout_lines

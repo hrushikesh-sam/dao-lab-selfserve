@@ -1,0 +1,76 @@
+---
+- name: Steps 13-14 - Start VPP on live port and verify real traffic
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Create VPP runtime directory
+      become: true
+      file:
+        path: "{{ vpp_run_dir }}"
+        state: directory
+
+    - name: Start VPP on 0002:04:00.0 using documented command
+      become: true
+      shell: "vpp -c {{ vpp_conf_live_port }}"
+      async: 86400
+      poll: 0
+      register: vpp_live_job
+      changed_when: true
+
+    - name: Wait for VPP CLI socket
+      wait_for:
+        path: "{{ vpp_cli_socket }}"
+        state: present
+        timeout: 30
+
+    - name: Bring eth0 up and verify hardware
+      become: true
+      shell: |
+        vppctl -s {{ vpp_cli_socket }} set interface state eth0 up
+        sleep 5
+        vppctl -s {{ vpp_cli_socket }} show hardware-interfaces eth0 | head -8
+      register: live_hardware
+      changed_when: true
+
+    - name: Configure VPP IP address
+      become: true
+      command: "vppctl -s {{ vpp_cli_socket }} set interface ip address eth0 {{ vpp_data_ip }}"
+
+    - name: Ping documented peer
+      become: true
+      command: "vppctl -s {{ vpp_cli_socket }} ping {{ vpp_peer_ip }} repeat 4"
+      register: vpp_ping
+      changed_when: false
+
+    - name: Show interface
+      become: true
+      command: "vppctl -s {{ vpp_cli_socket }} show interface eth0"
+      register: vpp_live_interface
+      changed_when: false
+
+    - name: Show runtime
+      become: true
+      shell: "vppctl -s {{ vpp_cli_socket }} show runtime | grep -E 'eth0|Name|ip4-input' | head"
+      register: vpp_runtime
+      changed_when: false
+
+    - name: Show errors
+      become: true
+      shell: "vppctl -s {{ vpp_cli_socket }} show errors | head -15"
+      register: vpp_live_errors
+      changed_when: false
+
+    - debug:
+        var: live_hardware.stdout_lines
+
+    - debug:
+        var: vpp_ping.stdout_lines
+
+    - debug:
+        var: vpp_live_interface.stdout_lines
+
+    - debug:
+        var: vpp_runtime.stdout_lines
+
+    - debug:
+        var: vpp_live_errors.stdout_lines

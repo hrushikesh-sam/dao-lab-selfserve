@@ -320,13 +320,26 @@ def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog, monkeyp
     assert "reservation %s" % rid in caplog.text or "boom" in caplog.text
 
 
-def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world, monkeypatch):
-    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
+def test_a_failing_ansible_deploy_fails_the_job_with_the_playbooks_error(world, monkeypatch, tmp_path):
+    """B-84: the ansible backend reports the failing task; the engine treats it like any
+    other deploy failure."""
+    import types
+    s = dataclasses.replace(config.settings, max_retries=1, artifacts_dir=str(tmp_path))
+    monkeypatch.setattr(config, "settings", s)
     db = world[0]
     rid = res(world, uc="a", start=T(9, 5), end=T(10))
-    tick(db, rn=runner.AnsibleRunner())
+
+    def fake_run(**kw):
+        kw["event_handler"]({"event": "runner_on_failed", "event_data": {
+            "task": "step: create_vm tgen", "host": "tb-01-xcp", "res": {"msg": "no template"}}})
+        return types.SimpleNamespace(status="failed", rc=2)
+
+    class Quiet(runner.AnsibleRunner):            # no orphan sweep against a real testbed
+        tagged_vms = None
+
+    tick(db, rn=Quiet(s, run=fake_run))
     assert state(db, rid) == "failed"
-    assert "B-84" in jobs(db)[0]["error"]
+    assert jobs(db)[0]["error"] == "step: create_vm tgen on tb-01-xcp: no template"
 
 
 # ---- 4. running jobs: redeploy (B-28 creates a deploy job on a live reservation) ------------

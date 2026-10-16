@@ -1,0 +1,3 @@
+# playbooks/roles/verify — B-80: the use case's YAML `verify` block, from inside the `from` VM.
+verify_service_login: "{{ host_vm_service_login | default('daolab') }}"   # never the owner's login
+daolab_vm_connection: ssh

@@ -514,6 +514,12 @@ def set_job_trace_id(conn, job_id: int, trace_id: str) -> bool:
     return cur.rowcount == 1
 
 
+def set_job_log_path(conn, job_id: int, log_path: str) -> None:
+    """Point the job at its playbook log (B-84); GET /jobs/{id} shows its tail."""
+    conn.execute("UPDATE jobs SET log_path = ?, updated_at = ? WHERE id = ?",
+                 (log_path, utcnow(), job_id))
+
+
 def job_steps(job) -> list[dict]:
     """The parsed `steps` list of a job row."""
     return from_json(job["steps"])

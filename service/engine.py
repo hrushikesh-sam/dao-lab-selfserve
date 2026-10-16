@@ -413,6 +413,9 @@ def _run_job(db, rn, job, out: TickResult) -> None:
         models.transition_job(db, job["id"], "failed", error=str(e))
         return
     ctx = _context(db, job, res)
+    log_for = getattr(rn, "log_path_for", None)     # B-84: the ansible runner's job log
+    if callable(log_for) and not job["log_path"]:
+        models.set_job_log_path(db, job["id"], log_for(job["id"]))
     with otel.job_span(job, ctx) as span:            # B-62: one trace per job (no-op if off)
         if span is not None:
             if models.set_job_trace_id(db, job["id"], span.trace_id):

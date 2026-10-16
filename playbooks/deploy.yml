@@ -1,0 +1,97 @@
+# playbooks/deploy.yml — B-80/B-81: one click -> one playbook (plan/09 §6), so the dashboard sees
+# exactly one job.
+#
+#   play 0   localhost  resolve the setup, plan the VMs, lease their addresses (lease_ip)
+#   play 1   the DPU    ebf_set: the board's personality matches the use case (stub, plan/05)
+#   apps/    the DPU    the use case's DAO app, by the runbook playbooks the board was brought up
+#                       with (apps/<app>/deploy.yml: dao-vpp, dao-smartnic, nginx-tls; `none`
+#                       for diy). The runner passes daolab_app.
+#   play 2   the DPU    telemetry (otel agent, the app's exporter); post its static address
+#   play 3   dom0s      host_vm: the use case's VMs (clone, cloud-init seed, VF, boot, post IP),
+#                       when DAOLAB_DEPLOY_VMS is on (the XCP-ng host must be in the inventory)
+#   play 4   localhost  verify: the use case's YAML verify block, from its `from` VM
+#
+# Idempotent: the app wrappers read the board and only run the steps that move it forward, the
+# VM roles never clone twice, so the engine's retry is "run it again".
+#
+# Extra vars (runner, B-84): reservation_id, usecase, setup, user, ssh_pubkey, hw_class, diy,
+# templates, daolab_app, daolab_members / roles / verify / vms, daolab_api_url,
+# daolab_internal_secret, daolab_otel_collector, daolab_deploy_vms, and the runbooks' sign-off
+# flags (allow_destructive_changes / allow_launch / allow_cleanup = DAOLAB_ALLOW_DESTRUCTIVE).
+# Manual run: reservation_id=0 + manual_ips (if VMs are deployed) + daolab_app=<app>.
+- name: resolve, plan and lease
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: resolve
+      ansible.builtin.import_tasks: tasks/resolve.yml
+    - name: plan
+      ansible.builtin.import_tasks: tasks/plan_vms.yml
+    - name: "step: lease_ips"
+      ansible.builtin.include_role:
+        name: lease_ip
+      when: daolab_deploy_vms | default(true) | bool
+
+- name: the DPU's personality
+  hosts: r_dpu
+  gather_facts: false
+  tasks:
+    - name: personality
+      ansible.builtin.include_role:
+        name: ebf_set
+      vars:
+        ebf_target_hw_class: "{{ hw_class }}"
+      when: not (diy | default(false) | bool) and hw_class | default('', true) | length > 0
+
+- name: the DAO app on the DPU
+  ansible.builtin.import_playbook: "apps/{{ daolab_app | default('none') }}/deploy.yml"
+
+- name: the DPU's telemetry and address
+  hosts: r_dpu
+  gather_facts: false
+  tasks:
+    - name: telemetry
+      ansible.builtin.include_role:
+        name: otel_agent
+      vars:
+        otel_agent_attributes:
+          daolab.reservation: "{{ reservation_id | int }}"
+          daolab.user: "{{ user }}"
+          daolab.role: "{{ hostvars['localhost'].daolab_dpu_role }}"
+          daolab.setup: "{{ setup }}"
+          host: "{{ inventory_hostname }}"
+        otel_agent_scrape_targets: "{{ dpu_app_scrape_targets | default([]) }}"
+      when: hostvars['localhost'].daolab_dpu_role | length > 0
+
+    - name: "step: post_dpu_ip"
+      ansible.builtin.uri:
+        url: "{{ daolab_api_url }}/internal/vm-ip"
+        method: POST
+        headers:
+          X-Daolab-Secret: "{{ daolab_internal_secret }}"
+        body_format: json
+        body:
+          reservation_id: "{{ reservation_id | int }}"
+          role: "{{ hostvars['localhost'].daolab_dpu_role }}"
+          ip: "{{ hostvars['localhost'].daolab_dpu_ip }}"
+      delegate_to: localhost
+      when: reservation_id | int != 0 and hostvars['localhost'].daolab_dpu_role | length > 0
+      no_log: "{{ daolab_no_log | default(true) }}"
+
+- name: create the VMs
+  hosts: r_dom0
+  gather_facts: false
+  tasks:
+    - name: host_vm
+      ansible.builtin.include_role:
+        name: host_vm
+      when: daolab_deploy_vms | default(true) | bool
+
+- name: verify
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: verify
+      ansible.builtin.include_role:
+        name: verify
+      when: daolab_deploy_vms | default(true) | bool

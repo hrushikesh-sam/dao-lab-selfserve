@@ -1,0 +1,27 @@
+#!/bin/sh
+# daolab-seed — baked into tpl-ubuntu2204-dao (B-85), runs at every boot before cloud-init.
+#
+# host_vm (B-80) writes the VM's first-boot data into xenstore as base64 values under
+# vm-data/daolab/: user-data, network-config, meta-data (cloud-init NoCloud) and otel (the
+# agent config, B-83). This turns them into /var/lib/cloud/seed/nocloud/ + the agent config,
+# so cloud-init sets the static leased address, the users and keys, and the packages.
+# Not a daolab VM (no keys, e.g. the template itself): does nothing.
+set -eu
+SEED=${DAOLAB_SEED_DIR:-/var/lib/cloud/seed/nocloud}
+ETC=${DAOLAB_ETC_DIR:-/etc/daolab}
+
+get() { xenstore-read "vm-data/daolab/$1" 2>/dev/null || true; }
+
+[ -n "$(get user-data)" ] || exit 0
+umask 022
+mkdir -p "$SEED" "$ETC"
+for key in user-data network-config meta-data; do
+    get "$key" | base64 -d > "$SEED/$key.tmp"
+    mv "$SEED/$key.tmp" "$SEED/$key"
+done
+chmod 600 "$SEED/user-data"
+otel=$(get otel)
+if [ -n "$otel" ]; then
+    printf '%s' "$otel" | base64 -d > "$ETC/otelcol.yaml.tmp"
+    mv "$ETC/otelcol.yaml.tmp" "$ETC/otelcol.yaml"
+fi

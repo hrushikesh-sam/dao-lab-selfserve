@@ -15,6 +15,8 @@ NEW_DEFAULTS = {
     "prometheus_url": "http://localhost:9090",
     "reconcile_attempts": 2,
     "authz_secret": "",
+    "allow_destructive": False,
+    "deploy_vms": True,
 }
 
 ENV_NAMES = {
@@ -31,6 +33,8 @@ ENV_NAMES = {
     "prometheus_url": "DAOLAB_PROMETHEUS_URL",
     "reconcile_attempts": "DAOLAB_RECONCILE_ATTEMPTS",
     "authz_secret": "DAOLAB_AUTHZ_SECRET",
+    "allow_destructive": "DAOLAB_ALLOW_DESTRUCTIVE",
+    "deploy_vms": "DAOLAB_DEPLOY_VMS",
 }
 
 

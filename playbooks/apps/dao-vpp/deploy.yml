@@ -1,0 +1,90 @@
+# playbooks/apps/dao-vpp/deploy.yml — B-81: VPP on the DPU, run by Akshay's runbook playbooks
+# (VPP_ansible/, tested on xeon3-oct-112) imported unchanged. deploy.yml imports this for a
+# use case whose `on: dpu` role has `app: dao-vpp`.
+#
+# The runbook is a one-shot sequence; this wrapper reads the board first and runs only the
+# steps that move it forward, so a retry or a redeploy is safe:
+#   03_install       only when vpp is not installed
+#   04_configure_02  always (writes the base startup config that 09 derives the live one from)
+#   08_prepare_04    when VPP is not running and the live port is still on rvu_nicpf
+#                    (saves nginx + PCI state, stops nginx-tls)
+#   09_configure_04  same condition (live port -> vfio-pci, live-port config)
+#   10_verify_04     when VPP is not running (start VPP, bring eth0 up, set its IP, ping the peer)
+# Their sign-off guard (allow_destructive_changes) comes from the runner: DAOLAB_ALLOW_DESTRUCTIVE.
+- name: VPP - read the board
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: the runbook values (VPP_ansible/group_vars/all.yml)
+      ansible.builtin.include_vars:
+        file: "{{ hostvars['localhost'].daolab_playbooks }}/../VPP_ansible/group_vars/all.yml"
+
+    - name: is VPP installed
+      ansible.builtin.command: which vpp
+      register: _vpp_bin
+      changed_when: false
+      failed_when: false
+
+    - name: is VPP running
+      ansible.builtin.command: pgrep -x vpp
+      register: _vpp_proc
+      changed_when: false
+      failed_when: false
+
+    - name: which driver holds the live port
+      ansible.builtin.shell: basename "$(readlink {{ daolab_sysfs | default('/sys') }}/bus/pci/devices/{{ pci_live_port }}/driver)" 2>/dev/null || echo none
+      register: _vpp_port
+      changed_when: false
+
+    - name: what this deploy has to do
+      ansible.builtin.set_fact:
+        daolab_vpp_installed: "{{ _vpp_bin.rc == 0 }}"
+        daolab_vpp_running: "{{ _vpp_proc.rc == 0 }}"
+        daolab_vpp_take_port: "{{ _vpp_proc.rc != 0 and (_vpp_port.stdout | trim) == 'rvu_nicpf' }}"
+
+    - name: "step: vpp_board_state"
+      ansible.builtin.debug:
+        msg: >-
+          vpp installed={{ daolab_vpp_installed }} running={{ daolab_vpp_running }}
+          live port {{ pci_live_port }} on {{ _vpp_port.stdout | trim }}
+
+    - name: the board changes need sign-off (DAOLAB_ALLOW_DESTRUCTIVE)
+      ansible.builtin.assert:
+        that: allow_destructive_changes | bool
+        fail_msg: >-
+          deploying VPP stops nginx-tls and moves {{ pci_live_port }} to vfio-pci; the runbook
+          requires owner sign-off. Set DAOLAB_ALLOW_DESTRUCTIVE=true on the daolab server.
+      when: not (daolab_vpp_running | bool)
+
+- name: VPP - install (runbook steps 4-5)
+  ansible.builtin.import_playbook: "{{ daolab_vpp_books | default('../../../VPP_ansible/playbooks') }}/03_install.yml"
+  when: not (daolab_vpp_installed | bool)
+
+- name: VPP - base config (runbook step 6)
+  ansible.builtin.import_playbook: "{{ daolab_vpp_books | default('../../../VPP_ansible/playbooks') }}/04_configure_02.yml"
+
+- name: VPP - save state, stop nginx-tls (runbook step 11)
+  ansible.builtin.import_playbook: "{{ daolab_vpp_books | default('../../../VPP_ansible/playbooks') }}/08_prepare_04.yml"
+  when: daolab_vpp_take_port | bool
+
+- name: VPP - live port to vfio-pci (runbook step 12)
+  ansible.builtin.import_playbook: "{{ daolab_vpp_books | default('../../../VPP_ansible/playbooks') }}/09_configure_04.yml"
+  when: daolab_vpp_take_port | bool
+
+- name: VPP - start and verify on the live port (runbook steps 13-14)
+  ansible.builtin.import_playbook: "{{ daolab_vpp_books | default('../../../VPP_ansible/playbooks') }}/10_verify_04.yml"
+  when: not (daolab_vpp_running | bool)
+
+- name: VPP - running, and its health exported
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: "step: dpu_app"
+      become: true
+      ansible.builtin.command: vppctl -s {{ vpp_cli_socket }} show version
+      changed_when: false
+
+    - name: health exporter
+      ansible.builtin.include_tasks: ../../tasks/app_exporter.yml
+      vars:
+        app_exporter_args: --app vpp --vpp-socket {{ vpp_cli_socket }}

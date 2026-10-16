@@ -1,0 +1,10 @@
+# playbooks/apps/nginx-tls/cleanup.yml — nginx-tls is the board's resting state: it keeps
+# running; only the health exporter of the reservation goes.
+- name: TLS proxy cleanup
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: "step: stop_app"
+      become: true
+      ansible.builtin.shell: systemctl disable --now daolab-app-exporter 2>/dev/null || true
+      changed_when: false
