@@ -215,6 +215,27 @@ def _m8_usecase_health(conn: sqlite3.Connection) -> None:
     add_column(conn, "usecases", "health", "TEXT NOT NULL DEFAULT '[]'")
 
 
+def _m9_health_snapshots(conn: sqlite3.Connection) -> None:
+    """plan/09 §8 / §11 (B-67): the latest health verdict of each reservation, written by the
+    engine every tick for `active` reservations. Only the newest row is needed, so there is
+    one row per reservation, overwritten in place. `checks` is the per-check JSON list;
+    `changed_at` is when the verdict last changed (the webhook fires on a change to down)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS health_snapshots (
+            reservation_id INTEGER PRIMARY KEY REFERENCES reservations(id) ON DELETE CASCADE,
+            verdict        TEXT    NOT NULL
+                           CHECK (verdict IN ('healthy', 'degraded', 'down', 'unknown')),
+            reason         TEXT,
+            checks         TEXT    NOT NULL DEFAULT '[]',
+            last_seen      TEXT,
+            evaluated_at   TEXT    NOT NULL,
+            changed_at     TEXT    NOT NULL,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL
+        )""")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -224,6 +245,7 @@ MIGRATIONS: list[Migration] = [
     Migration(6, "reservation_states", _m6_reservation_states),
     Migration(7, "lease_role_unique_while_leased", _m7_lease_role_unique_while_leased),
     Migration(8, "usecase_health", _m8_usecase_health),
+    Migration(9, "health_snapshots", _m9_health_snapshots),
 ]
 
 

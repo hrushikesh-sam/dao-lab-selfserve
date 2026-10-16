@@ -350,6 +350,39 @@ def list_audit_events(conn, limit: int = 100) -> list:
         "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
 
 
+# ---- health snapshots (B-67) ---------------------------------------------------
+
+def health_snapshot(conn, res_id: int):
+    return conn.execute("SELECT * FROM health_snapshots WHERE reservation_id = ?",
+                        (res_id,)).fetchone()
+
+
+def save_health_snapshot(conn, res_id: int, verdict: dict) -> str | None:
+    """Store `verdict` (health.verdict_object) as the reservation's latest snapshot, replacing
+    the previous one. Returns the previous verdict (None if there was none); `changed_at`
+    only moves when the verdict differs from it."""
+    prev = health_snapshot(conn, res_id)
+    now = utcnow()
+    row = {"verdict": verdict["verdict"], "reason": verdict.get("reason"),
+           "checks": to_json(verdict.get("checks", [])), "last_seen": verdict.get("last_seen"),
+           "evaluated_at": verdict.get("evaluated_at") or now}
+    if prev is None:
+        conn.execute(
+            """INSERT INTO health_snapshots (reservation_id, verdict, reason, checks, last_seen,
+                                             evaluated_at, changed_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (res_id, row["verdict"], row["reason"], row["checks"], row["last_seen"],
+             row["evaluated_at"], now, now, now))
+        return None
+    changed = now if prev["verdict"] != row["verdict"] else prev["changed_at"]
+    conn.execute(
+        """UPDATE health_snapshots SET verdict = ?, reason = ?, checks = ?, last_seen = ?,
+                  evaluated_at = ?, changed_at = ?, updated_at = ? WHERE reservation_id = ?""",
+        (row["verdict"], row["reason"], row["checks"], row["last_seen"], row["evaluated_at"],
+         changed, now, res_id))
+    return prev["verdict"]
+
+
 # ---- jobs (B-20) -------------------------------------------------------------
 
 JOB_KINDS = ("deploy", "cleanup", "health_probe", "reconcile")

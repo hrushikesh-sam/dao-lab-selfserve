@@ -13,6 +13,10 @@ A tick walks the reservations in a fixed order:
                              (and, in the same transaction, creates the reservation's `vms`
                              rows and queues a `deploy` job)
   4. run the pending jobs, oldest first, through the runner (B-22)
+  5. evaluate the health rules of every `active` reservation (B-67), store the verdict as its
+     latest snapshot, and fire DAOLAB_WEBHOOK_URL when it flips to `down` (only then, not on
+     every tick that stays down). Runs only with the telemetry stack switched on
+     (DAOLAB_OTEL_ENDPOINT set); without it health falls back to the probe job (plan/09 §13).
 
 A setup is freed by step 4 (cleanup verified clean -> released), after step 3 has already
 looked at it, so the next booking on that setup starts on the NEXT tick. That costs at most
@@ -60,15 +64,17 @@ What a finished job does to its reservation:
   * health_probe   -> only the job is recorded
 """
 import argparse
+import json
 import logging
 import sqlite3
 import sys
 import time
+import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from . import config, migrations, models, otel, runner as runner_mod, scheduler
+from . import config, health, migrations, models, otel, runner as runner_mod, scheduler
 from .runner import RunResult
 
 log = logging.getLogger("daolab.engine")
@@ -97,6 +103,8 @@ class TickResult:
     failed: int = 0          # deploy failed for the last time
     released: int = 0        # cleanup verified clean
     quarantined: int = 0     # residue after cleanup
+    health_checked: int = 0  # active reservations whose health was evaluated (B-67)
+    went_down: int = 0       # ... of which flipped to `down` (webhook fired)
 
     @property
     def total(self) -> int:
@@ -359,6 +367,49 @@ def _traced(sink, span):
     return step
 
 
+# ---- 5. health of active reservations (B-67) ---------------------------------------------
+
+def post_webhook(payload: dict) -> None:
+    """POST `payload` to DAOLAB_WEBHOOK_URL, at most once: a failure is logged, never retried
+    and never blocks the engine (plan/04 "Webhook on ready" semantics). No-op when unset."""
+    url = (config.settings.webhook_url or "").strip()
+    if not url:
+        return
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            log.info("event=webhook r=%s status=%s", payload.get("reservation_id"), resp.status)
+    except Exception as e:                           # noqa: BLE001 — at-most-once by design
+        log.warning("event=webhook r=%s failed: %s", payload.get("reservation_id"), e)
+
+
+def _health_query():
+    """The Prometheus query function, or None when the telemetry stack is off."""
+    if not (config.settings.otel_endpoint or "").strip():
+        return None
+    return health.prometheus(config.settings.prometheus_url)
+
+
+def _evaluate_health(db, now: datetime, query, out: TickResult) -> None:
+    rows = db.execute("SELECT * FROM reservations WHERE state = 'active' ORDER BY id").fetchall()
+    for r in rows:
+        try:
+            verdict = health.verdict_object(health.evaluate_reservation(db, r["id"], now, query))
+        except Exception:                            # noqa: BLE001 — one bad rule set must not stop the tick
+            log.exception("health evaluation failed for reservation %s", r["id"])
+            continue
+        with _txn(db):
+            prev = models.save_health_snapshot(db, r["id"], verdict)
+        out.health_checked += 1
+        if verdict["verdict"] == "down" and prev != "down":
+            out.went_down += 1
+            ctx = models.reservation_context(db, r["id"])
+            post_webhook({"event": "reservation.health_down", "reservation_id": r["id"],
+                          "usecase": ctx["usecase"], "setup": ctx["setup"], "user": ctx["user"],
+                          "previous": prev, "health": verdict})
+
+
 def _run_pending(db, rn, out: TickResult) -> None:
     for job in models.pending_jobs(db):
         _run_job(db, rn, job, out)
@@ -368,8 +419,9 @@ def _run_pending(db, rn, out: TickResult) -> None:
 
 def tick(db: sqlite3.Connection, now: datetime, rn=None,
          cfg: scheduler.SchedConfig | None = None,
-         job_timeout_sec: float | None = None) -> TickResult:
-    """One pass. `now` is injected (tests freeze it); `rn` defaults to the configured runner."""
+         job_timeout_sec: float | None = None, health_query=None) -> TickResult:
+    """One pass. `now` is injected (tests freeze it); `rn` defaults to the configured runner;
+    `health_query` (a health.Query) defaults to Prometheus when the telemetry stack is on."""
     rn = rn if rn is not None else runner_mod.get_runner()
     cfg = cfg if cfg is not None else scheduler.SchedConfig.from_settings(config.settings)
     if job_timeout_sec is None:
@@ -380,6 +432,9 @@ def tick(db: sqlite3.Connection, now: datetime, rn=None,
     out.expired = _expire_active(db, now)
     out.started = _start_due(db, now, cfg)
     _run_pending(db, rn, out)
+    query = health_query if health_query is not None else _health_query()
+    if query is not None:
+        _evaluate_health(db, now, query, out)
     return out
 
 
