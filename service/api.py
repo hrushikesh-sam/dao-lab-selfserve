@@ -770,15 +770,23 @@ def cancel_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
         raise DaolabError("invalid_state", 409,
                           f"cannot cancel a reservation in state {row['state']}",
                           {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
     try:
-        models.transition_reservation(conn, res_id, new_state, from_state=row["state"])
-    except models.ReservationStateError:   # the engine moved it between our read and write
-        current = models.reservation_by_id(conn, res_id)["state"]
-        raise DaolabError("invalid_state", 409,
-                          f"cannot cancel a reservation in state {current}",
-                          {"state": current})
-    models.audit(conn, user["username"], "cancel", "reservation", res_id,
-                 {"previous_state": row["state"], "state": new_state})
+        try:
+            models.transition_reservation(conn, res_id, new_state, from_state=row["state"])
+        except models.ReservationStateError:   # the engine moved it between our read and write
+            current = models.reservation_by_id(conn, res_id)["state"]
+            raise DaolabError("invalid_state", 409,
+                              f"cannot cancel a reservation in state {current}",
+                              {"state": current})
+        if new_state == "cleaning":            # a live slot needs its teardown run (B-27)
+            models.create_job(conn, res_id, "cleanup")
+        models.audit(conn, user["username"], "cancel", "reservation", res_id,
+                     {"previous_state": row["state"], "state": new_state})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
     return {"id": res_id, "state": new_state}
 
 

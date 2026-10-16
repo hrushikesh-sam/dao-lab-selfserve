@@ -159,3 +159,22 @@ def test_cli_reserve_password_flag(api_env, monkeypatch, capsys):
     assert cli.cmd_reserve(args) == 0
     assert sent["body"]["ssh_pubkey"] == ""
     assert "ssh lab@10.68.0.190  with a generated password" in capsys.readouterr().out
+
+
+def test_cancelling_a_live_slot_queues_its_cleanup_and_the_engine_releases_it(api_env):
+    """DELETE on a ready/active reservation used to leave it `cleaning` with no cleanup job:
+    nothing would ever run its teardown and the testbed stayed held."""
+    rid = deploy(api_env).json()["id"]
+    go_live(api_env, rid)
+    r = api_env.client.delete(f"/reservations/{rid}", headers=H(api_env.tokens["alice"]))
+    assert r.json() == {"id": rid, "state": "cleaning"}
+    [job] = models.jobs_for_reservation(api_env.conn, rid)
+    assert (job["kind"], job["state"]) == ("cleanup", "pending")
+    engine.tick(api_env.conn, datetime.now(timezone.utc), MockRunner(), SchedConfig())
+    assert models.reservation_by_id(api_env.conn, rid)["state"] == "released"
+
+
+def test_cancelling_a_queued_slot_queues_nothing(api_env):
+    rid = deploy(api_env).json()["id"]
+    api_env.client.delete(f"/reservations/{rid}", headers=H(api_env.tokens["alice"]))
+    assert models.jobs_for_reservation(api_env.conn, rid) == []
