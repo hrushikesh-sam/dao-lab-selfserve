@@ -3,6 +3,7 @@ VM-IP callback; serves dashboard/. Views over the DB only — YAML is read by
 `daolab sync` (catalog.py), never by request handlers."""
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -17,7 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from . import config, models, otel, scheduler
+from . import config, ipam, models, otel, scheduler
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
 log = logging.getLogger("daolab.api")
@@ -112,6 +113,17 @@ class VmIpCallback(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reservation_id: int
     role: str
+    ip: str
+
+
+class LeaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reservation_id: int
+    role: str
+
+
+class LeaseConflict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     ip: str
 
 
@@ -701,6 +713,87 @@ def vm_ip_callback(body: VmIpCallback, _: None = Depends(require_internal),
                           {"reservation_id": body.reservation_id, "role": body.role})
     models.set_vm_ip(conn, vm["id"], body.ip)     # idempotent: re-posting is a harmless UPDATE
     return {"ok": True}
+
+
+# ---- IP leases for the deploy playbook (B-42, plan/09 §6) ------------------
+
+_LEASE_STATES = ("provisioning", "ready", "active")     # deploying, or a redeploy in the slot
+
+
+def _lease_target(conn, reservation_id: int, role: str):
+    """The reservation + VM a playbook may lease for; raises the API error otherwise."""
+    res = models.reservation_by_id(conn, reservation_id)
+    if res is None:
+        raise DaolabError("not_found", 404, f"unknown reservation: {reservation_id}",
+                          {"reservation_id": reservation_id})
+    if res["state"] not in _LEASE_STATES:
+        raise DaolabError("invalid_state", 409,
+                          f"reservation {reservation_id} is {res['state']}; addresses are "
+                          f"leased only while {', '.join(_LEASE_STATES)}",
+                          {"reservation_id": reservation_id, "state": res["state"]})
+    vm = models.vm_by_role(conn, reservation_id, role)
+    if vm is None:
+        raise DaolabError("not_found", 404,
+                          f"no vm for reservation {reservation_id} role {role}",
+                          {"reservation_id": reservation_id, "role": role})
+    if vm["name"] is None:
+        raise DaolabError("validation_error", 422,
+                          f"role {role} runs on the DPU and has no VM to lease an address for",
+                          {"reservation_id": reservation_id, "role": role})
+    return res
+
+
+def _lease(conn, reservation_id: int, role: str):
+    try:
+        return ipam.lease(conn, reservation_id, role)
+    except ipam.PoolExhausted as e:
+        raise DaolabError("pool_exhausted", 409, str(e), {"reservation_id": reservation_id})
+    except ipam.IpamError as e:
+        raise DaolabError("no_ip_pool", 409, str(e), {})
+
+
+@app.post("/internal/leases")
+def lease_ip(body: LeaseRequest, _: None = Depends(require_internal),
+             conn: sqlite3.Connection = Depends(db_conn)):
+    """The deploy playbook asks for a VM's address (plan/09 §6). Idempotent per
+    (reservation, role): a replayed playbook gets the same address back. Only while the
+    reservation is deploying or live; only for VM roles (the DPU has its own address)."""
+    conn.execute("BEGIN IMMEDIATE")              # state check and lease see the same row
+    try:
+        _lease_target(conn, body.reservation_id, body.role)
+        lease = _lease(conn, body.reservation_id, body.role)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return ipam.lease_object(lease)
+
+
+@app.post("/internal/leases/conflict")
+def lease_conflict(body: LeaseConflict, _: None = Depends(require_internal),
+                   conn: sqlite3.Connection = Depends(db_conn)):
+    """Something outside daolab answers on a leased address (the playbook pings / arpings it
+    before use). The address is quarantined so it is never issued again, and the same
+    (reservation, role) gets a new one, returned here."""
+    try:
+        ip = str(ipaddress.ip_address(body.ip))
+    except ValueError:
+        raise DaolabError("validation_error", 422, f"ip: not an IP address: {body.ip}")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        try:
+            bad = ipam.mark_conflict(conn, ip)
+        except ipam.IpamError as e:
+            raise DaolabError("not_found", 404, str(e), {"ip": ip})
+        _lease_target(conn, bad["reservation_id"], bad["role"])
+        lease = _lease(conn, bad["reservation_id"], bad["role"])
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    log.warning("ip %s answers outside daolab: quarantined; reservation %s role %s now has %s",
+                ip, bad["reservation_id"], bad["role"], lease["ip"])
+    return {**ipam.lease_object(lease), "replaced": ip}
 
 
 # ---- static dashboards (registered after all API routes) -------------------
