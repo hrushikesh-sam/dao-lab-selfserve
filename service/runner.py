@@ -18,6 +18,8 @@ import json
 import os
 import threading
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Mapping, Protocol
@@ -195,6 +197,43 @@ class MockExporter:
             self._thread = None
 
 
+class InternalApi:
+    """The playbook-side calls of the daolab API (plan/09 §6), for the mock runner (B-44):
+    `POST /internal/leases`, `/internal/leases/conflict` and `/internal/vm-ip`, authenticated
+    with X-Daolab-Secret. Raises RunnerError carrying the API's error message."""
+
+    def __init__(self, api_url: str, secret: str, timeout: float = 10.0):
+        self.base = api_url.rstrip("/")
+        self.secret = secret
+        self.timeout = timeout
+
+    def post(self, path: str, body: dict) -> dict:
+        req = urllib.request.Request(
+            self.base + path, data=json.dumps(body).encode(), method="POST",
+            headers={"Content-Type": "application/json", "X-Daolab-Secret": self.secret})
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            try:
+                err = json.loads(e.read())["error"]
+                raise RunnerError(f"{path}: {e.code} {err['code']}: {err['message']}") from None
+            except (ValueError, KeyError, TypeError):
+                raise RunnerError(f"{path}: HTTP {e.code}") from None
+        except (urllib.error.URLError, OSError) as e:
+            raise RunnerError(f"{path}: api unreachable at {self.base}: "
+                              f"{getattr(e, 'reason', e)}") from None
+
+    def lease(self, reservation_id: int, role: str) -> str:
+        return self.post("/internal/leases", {"reservation_id": reservation_id, "role": role})["ip"]
+
+    def conflict(self, ip: str) -> str:
+        return self.post("/internal/leases/conflict", {"ip": ip})["ip"]
+
+    def vm_ip(self, reservation_id: int, role: str, ip: str) -> None:
+        self.post("/internal/vm-ip", {"reservation_id": reservation_id, "role": role, "ip": ip})
+
+
 class MockRunner:
     """Sleeps `step_sec` through every step and records it.
 
@@ -203,11 +242,17 @@ class MockRunner:
     every time — the way to exercise the quarantine path (plan/09 §13). ``fail={"health"}``
     keeps the per-reservation exporter (B-68) from ever starting, so the health badge stays
     `unknown`. When `exporter_factory` is set, a successful `deploy` starts an exporter and
-    `cleanup` stops it."""
+    `cleanup` stops it.
+
+    With an `api` (an InternalApi; get_runner passes one when DAOLAB_INTERNAL_SECRET is set)
+    the deploy calls the real endpoints like deploy.yml does (B-44): `lease_ips` leases an
+    address for every VM role of the reservation and `post_vm_ips` reports them through
+    `/internal/vm-ip`, so the reservation shows its leased IPs. Without one it only sleeps."""
 
     def __init__(self, step_sec: float = 0.0, fail: frozenset[str] = frozenset(),
                  sleep: Callable[[float], None] = time.sleep,
-                 exporter_factory: Callable[[int], MockExporter] | None = None):
+                 exporter_factory: Callable[[int], MockExporter] | None = None,
+                 api: InternalApi | None = None):
         if step_sec < 0:
             raise RunnerError(f"DAOLAB_MOCK_STEP_SEC must be >= 0, got {step_sec}")
         self.step_sec = step_sec
@@ -215,6 +260,7 @@ class MockRunner:
         self._sleep = sleep
         self._exporter_factory = exporter_factory
         self._exporters: dict[int, MockExporter] = {}
+        self.api = api
 
     def _work(self, name: str, step: StepSink) -> None:
         self._sleep(self.step_sec)
@@ -241,14 +287,38 @@ class MockRunner:
             exporter.stop()
         self._exporters.clear()
 
+    def _api_step(self, name: str, res: Mapping, leased: dict) -> str | None:
+        """The real work behind `lease_ips` / `post_vm_ips` when an api is wired (B-44).
+        Returns the step detail; raises RunnerError when the API refuses."""
+        if self.api is None:
+            return None
+        rid = res["id"]
+        vm_roles = [v["role"] for v in _field(res, "vms", []) or [] if v.get("name")]
+        if name == "lease_ips":
+            for role in vm_roles:
+                leased[role] = self.api.lease(rid, role)
+        elif name == "post_vm_ips":
+            for role, ip in leased.items():
+                self.api.vm_ip(rid, role, ip)
+        else:
+            return None
+        return ", ".join(f"{r}={ip}" for r, ip in leased.items()) or None
+
     def deploy(self, res: Mapping, step: StepSink) -> RunResult:
+        leased: dict[str, str] = {}
         for name in DEPLOY_STEPS:
             if "deploy" in self.fail and name == FAIL_AT_DEPLOY_STEP:
                 self._sleep(self.step_sec)
                 msg = "mock failure injected (DAOLAB_MOCK_FAIL=deploy)"
                 step(name, "failed", msg)
                 return RunResult(ok=False, error=f"{name}: {msg}")
-            self._work(name, step)
+            self._sleep(self.step_sec)
+            try:
+                detail = self._api_step(name, res, leased)
+            except RunnerError as e:
+                step(name, "failed", str(e))
+                return RunResult(ok=False, error=f"{name}: {e}")
+            step(name, "ok", detail)
         self._start_exporter(res)
         return RunResult(ok=True)
 
@@ -332,8 +402,11 @@ def get_runner(settings=None) -> Runner:
         factory = None
         if (s.otel_endpoint or "").strip():
             factory = lambda rid: MockExporter(rid, targets_dir=OTEL_TARGETS_DIR)
+        # B-44: with the internal secret set (dev.sh writes one) the mock deploy leases its
+        # addresses and posts its VM IPs through the real API, like deploy.yml.
+        api = InternalApi(s.api_url, s.internal_secret) if s.internal_secret else None
         return MockRunner(step_sec=s.mock_step_sec, fail=parse_mock_fail(s.mock_fail),
-                          exporter_factory=factory)
+                          exporter_factory=factory, api=api)
     if s.runner == "ansible":
         return AnsibleRunner()
     raise RunnerError(f"unknown DAOLAB_RUNNER {s.runner!r}; expected one of {RUNNER_NAMES}")

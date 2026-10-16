@@ -215,6 +215,9 @@ def reservation_object(conn, row) -> dict:
         "end_at": row["end_at"], "shifted": row["start_at"] != row["requested_start_at"],
         "failure_reason": row["failure_reason"],
         "vms": vms, "diagram": _reservation_diagram(conn, row, user, uc),
+        "leases": [{"role": l["role"], "ip": l["ip"], "state": l["state"]}
+                   for l in models.ip_leases_for_reservation(conn, row["id"])
+                   if l["state"] != "released"],
         "created_at": row["created_at"], "updated_at": row["updated_at"],
     }
 
