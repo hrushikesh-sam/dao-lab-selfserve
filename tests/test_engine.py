@@ -645,13 +645,14 @@ def test_health_probe_on_a_queued_reservation_is_refused(world):
     assert jobs(db)[0]["state"] == "failed" and "expected ready or active" in jobs(db)[0]["error"]
 
 
-def test_reconcile_jobs_are_deferred_to_b72(world):
+def test_a_reconcile_job_runs_the_runners_reconcile(world):
     db = world[0]
     rid = res(world, state="quarantined")
     models.create_job(db, rid, "reconcile")
     tick(db)
-    assert jobs(db)[0]["state"] == "failed" and "B-72" in jobs(db)[0]["error"]
-    assert state(db, rid) == "quarantined"
+    assert jobs(db)[0]["state"] == "succeeded"
+    assert [s["name"] for s in models.job_steps(jobs(db)[0])][:len(runner.RECONCILE_STEPS)] == \
+           list(runner.RECONCILE_STEPS)
 
 
 def test_pending_jobs_run_oldest_first(world):

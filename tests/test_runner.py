@@ -263,30 +263,51 @@ def test_method_for_maps_job_kinds_to_runner_functions():
     assert runner.method_for(m, "deploy") == m.deploy
     assert runner.method_for(m, "cleanup") == m.cleanup
     assert runner.method_for(m, "health_probe") == m.probe
+    assert runner.method_for(m, "reconcile") == m.reconcile           # B-72
 
 
-def test_method_for_rejects_what_does_not_exist_yet():
-    with pytest.raises(RunnerError, match="B-72"):
-        runner.method_for(mock(), "reconcile")
+def test_method_for_rejects_an_unknown_kind():
     with pytest.raises(RunnerError, match="unknown job kind"):
         runner.method_for(mock(), "reboot")
 
 
-@pytest.mark.parametrize("fn", ["deploy", "cleanup", "probe", "verify_clean"])
+@pytest.mark.parametrize("fn", ["deploy", "cleanup", "probe", "verify_clean", "reconcile"])
 def test_the_ansible_backend_says_plainly_that_it_is_not_built_yet(fn):
     with pytest.raises(NotImplementedError, match="B-84.*DAOLAB_RUNNER=mock"):
         getattr(AnsibleRunner(), fn)(RES, Sink())
 
 
-def test_every_job_kind_in_the_model_is_handled_or_explicitly_deferred():
-    handled = 0
+def test_every_job_kind_in_the_model_is_handled():
     for kind in models.JOB_KINDS:
-        try:
-            runner.method_for(mock(), kind)
-            handled += 1
-        except RunnerError as e:
-            assert kind == "reconcile" and "B-72" in str(e)
-    assert handled == 3
+        assert callable(runner.method_for(mock(), kind))
+
+
+# ---- B-72: reconcile ---------------------------------------------------------------
+
+def test_mock_reconcile_walks_its_steps():
+    sink = Sink()
+    assert mock().reconcile(RES, sink) == RunResult(ok=True)
+    assert sink.names == list(runner.RECONCILE_STEPS)
+
+
+def test_mock_reconcile_cannot_clear_stubborn_residue():
+    m = mock(fail={"cleanup"})
+    assert m.reconcile(RES, Sink()).ok
+    assert not m.verify_clean(RES, Sink()).ok                          # still there: quarantine
+
+
+def test_mock_reconcile_stops_the_fake_exporter():
+    stopped = []
+
+    class Exp:
+        def __init__(self, rid): self.rid = rid
+        def start(self): return self
+        def stop(self): stopped.append(self.rid)
+
+    m = MockRunner(exporter_factory=Exp)
+    m.deploy(RES, Sink())
+    m.reconcile(RES, Sink())
+    assert stopped == [RES["id"]]
 
 
 # ---- B-68: mock telemetry (a fake exporter per reservation) ------------------------

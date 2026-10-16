@@ -39,6 +39,7 @@ OTEL_TARGETS_DIR = os.environ.get("DAOLAB_OTEL_TARGETS_DIR", "deploy/otel/target
 DEPLOY_STEPS = ("lease_ips", "dpu_prepare", "create_vms", "post_vm_ips", "start_app", "verify")
 CLEANUP_STEPS = ("terminate-user", "destroy_vms", "unbind_vfs", "stop_app")
 VERIFY_CLEAN_STEPS = ("check_vms", "check_vfs", "check_sessions", "check_ips")
+RECONCILE_STEPS = ("destroy_vms", "rebind_vfs", "stop_app", "kill_sessions")   # B-72
 PROBE_STEPS = ("ping_vms", "check_dpu_app")
 FAIL_AT_DEPLOY_STEP = "create_vms"       # where DAOLAB_MOCK_FAIL=deploy breaks the deploy
 
@@ -96,6 +97,7 @@ class Runner(Protocol):
     def cleanup(self, res: Mapping, step: StepSink) -> RunResult: ...
     def probe(self, res: Mapping, step: StepSink) -> RunResult: ...
     def verify_clean(self, res: Mapping, step: StepSink) -> RunResult: ...
+    def reconcile(self, res: Mapping, step: StepSink) -> RunResult: ...
 
 
 def parse_mock_fail(text: str) -> frozenset[str]:
@@ -275,6 +277,14 @@ class MockRunner:
                      residue_item("dpu_session", "lab")]
         return tuple(items)
 
+    def reconcile(self, res: Mapping, step: StepSink) -> RunResult:
+        """B-72: destroy leftovers directly. With DAOLAB_MOCK_FAIL=cleanup the residue is
+        stubborn and survives it, so the quarantine path stays reachable (plan/09 §13)."""
+        for name in RECONCILE_STEPS:
+            self._work(name, step)
+        self._stop_exporter(res)
+        return RunResult(ok=True)
+
     def verify_clean(self, res: Mapping, step: StepSink) -> RunResult:
         residue = self._residue(res)
         for name in VERIFY_CLEAN_STEPS:
@@ -309,6 +319,9 @@ class AnsibleRunner:
     def verify_clean(self, res, step):
         self._todo("verify_clean")
 
+    def reconcile(self, res, step):
+        self._todo("reconcile")
+
 
 def get_runner(settings=None) -> Runner:
     """The backend named by DAOLAB_RUNNER (`settings` defaults to the live config)."""
@@ -342,5 +355,5 @@ def method_for(runner: Runner, kind: str):
     if kind == "health_probe":
         return runner.probe
     if kind == "reconcile":
-        raise RunnerError("reconcile jobs arrive with B-72")
+        return runner.reconcile
     raise RunnerError(f"unknown job kind {kind!r}")

@@ -149,3 +149,65 @@ def test_verify_clean_is_read_only(lab):
     before = lab.state()
     lab.run("verify_clean.yml", daolab_leases=["10.30.0.101"])
     assert lab.state() == before
+
+
+# ---- B-72: reconcile.yml ---------------------------------------------------------------
+
+def test_reconcile_destroys_every_kind_of_residue_and_verify_then_agrees(lab):
+    lab.set(dirty(clean_state()))
+    assert lab.run("reconcile.yml") == 0, lab.stdout
+    st = lab.state()
+    assert st["vms"] == {}                                            # VM destroyed
+    assert sorted(st["assignable"]) == sorted(E810_VFS + SDP_VFS)     # its VF is back
+    assert st["lab_procs"] == 0                                       # sessions killed
+    assert st["units"] == {"daolab-app-dao-vpp.service": "inactive"}  # app stopped
+    st["pingable"] = []                                               # the VM was what answered
+    lab.set(st)
+    assert lab.run("verify_clean.yml", daolab_leases=["10.30.0.101"]) == 0, lab.stdout
+    assert lab.output() == []
+
+
+def test_reconcile_rebinds_a_vf_that_lost_pciback(lab):
+    st = clean_state()
+    st["assignable"].remove("0000:03:02.0")                           # e.g. a crash rebinding it
+    lab.set(st)
+    assert lab.run("reconcile.yml") == 0, lab.stdout
+    assert "0000:03:02.0" in lab.state()["assignable"]
+    assert ["xl", "pci-assignable-add", "0000:03:02.0"] in lab.calls("xl")
+
+
+def test_reconcile_is_safe_on_a_clean_testbed_and_changes_nothing(lab):
+    before = lab.state()
+    assert lab.run("reconcile.yml") == 0, lab.stdout
+    assert lab.state() == before
+    assert not [c for c in lab.calls("xe") if c[1] in ("vm-shutdown", "vm-uninstall")]
+    assert not lab.calls("loginctl") and not lab.calls("pkill")
+
+
+def test_reconcile_leaves_other_reservations_and_foreign_vms_alone(lab):
+    st = dirty(clean_state())
+    for name in ("daolab-r120-sink", "daolab-r1-tgen", "admin-scratch"):
+        st["vms"][name] = {"uuid": f"u-{name}", "power": "halted", "other_config": {},
+                           "xenstore": {}, "vifs": [], "ip": None}
+    lab.set(st)
+    assert lab.run("reconcile.yml") == 0, lab.stdout
+    assert sorted(lab.state()["vms"]) == ["admin-scratch", "daolab-r1-tgen", "daolab-r120-sink"]
+
+
+def test_reconcile_destroys_exactly_the_named_orphans(lab):
+    st = clean_state()
+    for name in ("daolab-r999-x", "daolab-r998-y", "daolab-r12-keep"):
+        st["vms"][name] = {"uuid": f"u-{name}", "power": "running", "other_config": {},
+                           "xenstore": {}, "vifs": [], "ip": None}
+    lab.set(st)
+    assert lab.run("reconcile.yml", reservation_id=0,
+                   daolab_vm_names=["daolab-r999-x", "daolab-r998-y"]) == 0, lab.stdout
+    assert sorted(lab.state()["vms"]) == ["daolab-r12-keep"]
+
+
+def test_reconcile_twice_in_a_row(lab):
+    lab.set(dirty(clean_state()))
+    assert lab.run("reconcile.yml") == 0, lab.stdout
+    after_first = lab.state()
+    assert lab.run("reconcile.yml") == 0, lab.stdout
+    assert lab.state() == after_first
