@@ -263,6 +263,13 @@ def systemctl(args):
     fail(f"fakelab: unsupported systemctl {args}", 2)
 
 
+def traffic(args):
+    """pktgen / h2load: print what the test says the traffic run answers (state "traffic")."""
+    state = load()
+    name = os.path.basename(sys.argv[0])
+    print(state.get("traffic", {}).get(name, ""))
+
+
 def ping(args):
     state = load()
     ip = args[-1]
@@ -277,7 +284,8 @@ def main():
     name = os.path.basename(sys.argv[0])
     log([name, *sys.argv[1:]])
     handler = {"xe": xe, "xl": xl, "pgrep": pgrep, "pkill": pkill, "loginctl": loginctl,
-               "systemctl": systemctl, "ping": ping, "arping": arping}.get(name)
+               "systemctl": systemctl, "ping": ping, "arping": arping,
+               "pktgen": traffic, "h2load": traffic}.get(name)
     if handler is None:
         fail(f"fakelab: no fake for {name}", 2)
     handler(sys.argv[1:])

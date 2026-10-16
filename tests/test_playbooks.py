@@ -21,7 +21,8 @@ ANSIBLE = os.environ.get("DAOLAB_TEST_ANSIBLE_PLAYBOOK") or shutil.which("ansibl
 pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed "
                                                     "(pip install -e .[ansible])")
 
-FAKES = ("xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping")
+FAKES = ("xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping",
+         "pktgen", "h2load")
 E810_VFS = ["0000:5e:01.0", "0000:5e:01.1"]
 SDP_VFS = ["0000:03:02.0", "0000:03:02.1"]
 TPL_UUID = "11111111-tpl0-0000-0000-000000000000"
@@ -74,7 +75,7 @@ class Lab:
         rows = [json.loads(l) for l in self.log_path.read_text().splitlines() if l]
         return [r for r in rows if name is None or r[0] == name]
 
-    def run(self, playbook, **extravars):
+    def run(self, playbook, roles_path=None, **extravars):
         ev = {"reservation_id": 12, "setup": "tb-01", "usecase": "vpp", "user": "alice",
               "ssh_pubkey": "ssh-ed25519 AAAAalice alice@laptop", "diy": False,
               "daolab_members": MEMBERS, "daolab_output_file": str(self.out_path)}
@@ -86,6 +87,8 @@ class Lab:
                "ANSIBLE_CONFIG": os.path.join(REPO, "playbooks", "ansible.cfg"),
                "ANSIBLE_NOCOLOR": "1", "ANSIBLE_LOCAL_TEMP": str(self.dir / "tmp"),
                "ANSIBLE_HOME": str(self.dir / "ansible-home")}
+        if roles_path:
+            env["ANSIBLE_ROLES_PATH"] = f"{roles_path}:{os.path.join(REPO, 'playbooks', 'roles')}"
         if self.out_path.exists():
             self.out_path.unlink()
         p = subprocess.run([ANSIBLE, "-i", str(self.inventory),
@@ -328,3 +331,218 @@ def test_otel_agent_accepts_a_single_url_for_httpcheck(lab):
     assert run_role(lab, path) == 0, lab.stdout
     cfg = yaml.safe_load((lab.dir / "rendered.yaml").read_text())
     assert [t["endpoint"] for t in cfg["receivers"]["httpcheck"]["targets"]] == ["https://10.30.0.100/"]
+
+
+# ---- B-80: deploy.yml ----------------------------------------------------------------------
+
+import base64                                                     # noqa: E402
+import threading                                                  # noqa: E402
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: E402
+
+import yaml                                                       # noqa: E402
+
+VPP_ROLES = {"vpp": {"on": "dpu", "app": "dao-vpp", "upstream": "sink"},
+             "tgen": {"on": "tg_host", "vm": "tpl-ubuntu2204-dao", "install": ["trex", "pktgen"],
+                      "connect": "e810-vf"},
+             "sink": {"on": "dpu_host", "vm": "tpl-ubuntu2204-dao", "install": ["sink"],
+                      "connect": "e810-vf"}}
+VPP_VERIFY = {"from": "tgen", "cmd": "pktgen -t {sink_ip} --rate 10mpps", "expect": "rx == tx"}
+
+
+@pytest.fixture
+def api():
+    """A fake daolab API for the playbook callbacks: leases (lowest free, idempotent),
+    conflicts, vm-ip. Records every call."""
+    st = {"calls": [], "leases": {}, "blocked": set(), "next": 100}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            st["calls"].append((self.path, self.headers.get("X-Daolab-Secret"), body))
+            if self.path == "/internal/leases":
+                key = (int(body["reservation_id"]), body["role"])
+                if key not in st["leases"]:
+                    st["leases"][key] = f"10.30.0.{st['next']}"
+                    st["next"] += 1
+                reply = {"ip": st["leases"][key], "role": body["role"]}
+            elif self.path == "/internal/leases/conflict":
+                key = next(k for k, v in st["leases"].items() if v == body["ip"])
+                st["blocked"].add(body["ip"])
+                st["leases"][key] = f"10.30.0.{st['next']}"
+                st["next"] += 1
+                reply = {"ip": st["leases"][key], "replaced": body["ip"]}
+            else:
+                reply = {"ok": True}
+            raw = json.dumps(reply).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def log_message(self, *a):
+            pass
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    st["url"] = f"http://127.0.0.1:{httpd.server_address[1]}"
+    yield st
+    httpd.shutdown()
+    httpd.server_close()
+
+
+@pytest.fixture
+def fake_app(tmp_path):
+    """A stand-in DPU app role (the real ones are B-81): runs daolab-app-<app> and exposes a
+    metrics target, idempotently."""
+    root = tmp_path / "test-roles"
+    tasks = root / "fake_app" / "tasks"
+    tasks.mkdir(parents=True)
+    (tasks / "main.yml").write_text(yaml.safe_dump([
+        {"name": "run the app", "ansible.builtin.command": "systemctl is-active {{ dpu_app_unit }}",
+         "register": "_a", "changed_when": False, "failed_when": False},
+        {"name": "start it", "ansible.builtin.command": "systemctl enable --now {{ dpu_app_unit }}",
+         "when": "_a.rc != 0"},
+        {"name": "remember what the app was given", "ansible.builtin.copy": {
+            "content": "{{ {'upstream': dpu_app_upstream_ip, 'addresses': dpu_app_addresses} | to_json }}",
+            "dest": str(tmp_path / "app-args.json")}, "delegate_to": "localhost",
+         "changed_when": False},
+        {"name": "metrics", "ansible.builtin.set_fact": {
+            "dpu_app_scrape_targets": [{"job": "fake", "target": "127.0.0.1:9273"}]}}]))
+    return root
+
+
+def deploy(lab, api, fake_app, **over):
+    marker = lab.dir / "hw_class"
+    if not marker.exists():
+        marker.write_text("sdp-pf1-vf8\n")
+    ev = {"usecase": "vpp", "hw_class": "sdp-pf1-vf8", "daolab_roles": VPP_ROLES,
+          "daolab_verify": VPP_VERIFY, "daolab_api_url": api["url"],
+          "daolab_internal_secret": "s3", "daolab_otel_collector": "",
+          "dpu_app_roles": {"dao-vpp": "fake_app"}, "ebf_marker": str(marker),
+          "host_vm_control_pubkey": "ssh-ed25519 AAAAdaolab daolab@engine",
+          "host_vm_ip_retries": 2, "host_vm_ip_delay": 0, "daolab_vm_connection": "local",
+          "daolab_no_log": False}
+    ev.update(over)
+    return lab.run("deploy.yml", roles_path=str(fake_app), **ev)
+
+
+def with_traffic(lab, **out):
+    st = lab.state()
+    st["traffic"] = out
+    lab.set(st)
+
+
+def seed(vm, key):
+    return base64.b64decode(vm["xenstore"][f"vm-data/daolab/{key}"]).decode()
+
+
+def test_deploy_vpp_end_to_end(lab, api, fake_app):
+    with_traffic(lab, pktgen="tx 1000 rx 1000: rx == tx")
+    assert deploy(lab, api, fake_app) == 0, lab.stdout[-3000:]
+    st = lab.state()
+    # the VMs, on their leased addresses, sink and tgen sorted by role name
+    assert sorted(st["vms"]) == ["daolab-r12-sink", "daolab-r12-tgen"]
+    sink, tgen = st["vms"]["daolab-r12-sink"], st["vms"]["daolab-r12-tgen"]
+    assert (sink["power"], sink["ip"], tgen["ip"]) == ("running", "10.30.0.100", "10.30.0.101")
+    # deterministic VFs: k-th e810-vf role on tb-01-xcp takes e810_vfs[k]
+    assert (sink["other_config"]["pci"], tgen["other_config"]["pci"]) == \
+        ("0/0000:5e:01.0", "0/0000:5e:01.1")
+    assert sorted(st["assignable"]) == sorted(SDP_VFS)
+    assert [v["device"] for v in sink["vifs"]] == ["0"]
+    # the cloud-init seed: owner key on the owner's login only, the service key elsewhere
+    ud = yaml.safe_load(seed(sink, "user-data"))
+    users = {u["name"]: u["ssh_authorized_keys"] for u in ud["users"]}
+    assert users == {"alice": ["ssh-ed25519 AAAAalice alice@laptop"],
+                     "daolab": ["ssh-ed25519 AAAAdaolab daolab@engine"]}
+    assert ud["packages"] == ["iperf3"]
+    net = yaml.safe_load(seed(sink, "network-config"))
+    assert net["ethernets"]["mgmt0"]["addresses"] == ["10.30.0.100/24"]
+    assert net["ethernets"]["data0"] == {"match": {"driver": "iavf"}, "set-name": "data0",
+                                         "addresses": ["10.22.0.2/24"]}
+    assert "pktgen-dpdk" in yaml.safe_load(seed(tgen, "user-data"))["packages"]
+    # the DPU app ran with its data-plane addresses and the upstream's data IP
+    assert st["units"]["daolab-app-dao-vpp.service"] == "active"
+    args = json.loads((lab.dir / "app-args.json").read_text())
+    assert args == {"upstream": "10.22.0.2",
+                    "addresses": {"wire0": "10.20.0.1/24", "wire1": "10.22.0.1/24"}}
+    # the callbacks: leases for the VM roles, vm-ip for all three (the DPU on its wire IP)
+    leases = [b["role"] for p, _, b in api["calls"] if p == "/internal/leases"]
+    assert sorted(leases) == ["sink", "tgen"]
+    posted = {b["role"]: b["ip"] for p, _, b in api["calls"] if p == "/internal/vm-ip"}
+    assert posted == {"vpp": "10.20.0.1", "sink": "10.30.0.100", "tgen": "10.30.0.101"}
+    assert all(secret == "s3" for _, secret, _ in api["calls"])
+    # verify ran pktgen against the sink's DATA address
+    assert ["pktgen", "-t", "10.22.0.2", "--rate", "10mpps"] in lab.calls("pktgen")
+
+
+def test_deploy_twice_changes_nothing(lab, api, fake_app):
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, fake_app) == 0, lab.stdout[-3000:]
+    first = lab.state()
+    assert deploy(lab, api, fake_app) == 0, lab.stdout[-3000:]
+    assert lab.state()["vms"] == first["vms"]
+    recap = [l for l in lab.stdout.splitlines() if " : ok=" in l]
+    assert recap and all("changed=0" in l for l in recap), "\n".join(recap)
+
+
+def test_a_conflicting_address_is_swapped_before_use(lab, api, fake_app):
+    st = clean_state()
+    st["pingable"] = ["10.30.0.100"]                      # something squats on the first lease
+    st["traffic"] = {"pktgen": "rx == tx"}
+    lab.set(st)
+    assert deploy(lab, api, fake_app) == 0, lab.stdout[-3000:]
+    assert api["blocked"] == {"10.30.0.100"}
+    assert {v["ip"] for v in lab.state()["vms"].values()} == {"10.30.0.101", "10.30.0.102"}
+
+
+def test_a_failed_verify_fails_the_deploy_and_says_why(lab, api, fake_app):
+    with_traffic(lab, pktgen="tx 1000 rx 3")
+    assert deploy(lab, api, fake_app) != 0
+    assert "verify failed: 'rx == tx' not in the output" in lab.stdout
+
+
+def test_a_board_on_another_personality_stops_with_the_manual_flash_message(lab, api, fake_app):
+    (lab.dir / "hw_class").write_text("vf-only\n")
+    assert deploy(lab, api, fake_app) != 0
+    assert "ebf_set stub: board is vf-only, use case needs sdp-pf1-vf8" in lab.stdout
+    assert lab.state()["vms"] == {}                       # nothing cloned on a wrong board
+
+
+def test_a_missing_template_is_named(lab, api, fake_app):
+    st = clean_state()
+    st["templates"] = {}
+    lab.set(st)
+    assert deploy(lab, api, fake_app) != 0
+    assert "template tpl-ubuntu2204-dao is not on tb-01-xcp" in lab.stdout
+
+
+def test_running_out_of_vfs_is_named(lab, api, fake_app):
+    assert deploy(lab, api, fake_app, daolab_roles={**VPP_ROLES, "extra": {
+        "on": "tg_host", "vm": "tpl-ubuntu2204-dao", "install": [], "connect": "e810-vf"}}) != 0
+    assert "has no VF #2 in e810_vfs" in lab.stdout
+
+
+def test_an_unknown_install_id_is_refused(lab, api, fake_app):
+    roles = {**VPP_ROLES, "sink": {**VPP_ROLES["sink"], "install": ["nope"]}}
+    assert deploy(lab, api, fake_app, daolab_roles=roles) != 0
+    assert "install id 'nope' has no packages" in lab.stdout
+
+
+def test_deploy_diy_makes_bare_vms_only(lab, api, fake_app):
+    assert deploy(lab, api, fake_app, usecase="diy", diy=True, daolab_roles={},
+                  daolab_verify={}, templates={"tb-01-xcp": "tpl-ubuntu2204-dao"}) == 0, \
+        lab.stdout[-3000:]
+    st = lab.state()
+    [(name, vm)] = st["vms"].items()
+    assert name == "daolab-r12-tb-01-xcp" and vm["other_config"] == {} and vm["ip"] == "10.30.0.100"
+    assert st["units"] == {} and not lab.calls("pktgen")
+    assert "data0" not in yaml.safe_load(seed(vm, "network-config"))["ethernets"]
+
+
+def test_a_manual_run_takes_its_addresses_and_calls_no_api(lab, api, fake_app):
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, fake_app, reservation_id=0,
+                  manual_ips={"sink": "10.30.0.190", "tgen": "10.30.0.191"}) == 0, lab.stdout[-3000:]
+    assert api["calls"] == []
+    assert lab.state()["vms"]["daolab-r0-sink"]["ip"] == "10.30.0.190"

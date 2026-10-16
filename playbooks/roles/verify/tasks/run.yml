@@ -1,0 +1,51 @@
+# The verify run itself (included only when there is something to verify, see main.yml).
+- name: the management addresses (this run's leases, or the reservation's VMs for a probe)
+  ansible.builtin.set_fact:
+    _mgmt: >-
+      {{ daolab_ips if daolab_ips is defined else
+         dict(daolab_vms | selectattr('ip') | map(attribute='role')
+              | zip(daolab_vms | selectattr('ip') | map(attribute='ip'))) }}
+
+- name: the address of every role
+  ansible.builtin.set_fact:
+    _addr: >-
+      {{ (_addr | default({})) | combine({item: (
+           daolab_dpu_ip if item == daolab_dpu_role else
+           (_dp[item].split('/')[0] if (_dp[item] | default(None)) is string
+            else _mgmt[item] | default('')))}) }}
+  loop: "{{ daolab_roles | list }}"
+
+- name: substitute the placeholders
+  ansible.builtin.set_fact:
+    _cmd: "{{ (_cmd | default(daolab_verify.cmd)) | replace('{' ~ item.key ~ '_ip}', item.value) }}"
+  loop: "{{ _addr | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: nothing left unresolved
+  ansible.builtin.assert:
+    that: _cmd is not search('\{[a-z][a-z0-9_]*_ip\}')
+    fail_msg: "verify.cmd still has a placeholder after substitution: {{ _cmd }}"
+
+- name: reach the {{ daolab_verify.from }} VM through the service login
+  ansible.builtin.add_host:
+    name: "daolab-r{{ reservation_id | int }}-{{ daolab_verify.from }}"
+    ansible_host: "{{ _mgmt[daolab_verify.from] }}"
+    ansible_user: "{{ verify_service_login }}"
+    ansible_connection: "{{ daolab_vm_connection }}"
+  changed_when: false
+
+- name: "step: verify"
+  ansible.builtin.shell: "{{ _cmd }}"
+  delegate_to: "daolab-r{{ reservation_id | int }}-{{ daolab_verify.from }}"
+  register: _out
+  changed_when: false
+  failed_when: false
+
+- name: the answer must contain the expected text
+  ansible.builtin.assert:
+    that: daolab_verify.expect in _out.stdout
+    fail_msg: >-
+      verify failed: '{{ daolab_verify.expect }}' not in the output of `{{ _cmd }}`
+      (rc={{ _out.rc }}): {{ (_out.stdout ~ _out.stderr)[-400:] }}
+    success_msg: "verify ok: '{{ daolab_verify.expect }}'"

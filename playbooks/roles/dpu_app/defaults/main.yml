@@ -1,0 +1,10 @@
+# playbooks/roles/dpu_app — B-80: run the use case's `on: dpu` app (B-81 roles do the work).
+#
+# Each app role installs/builds its app idempotently, renders its config from the role spec
+# and the data-plane addresses, runs it as the systemd unit `daolab-app-<app>.service`, and
+# sets `dpu_app_scrape_targets` (its metrics endpoint) for the otel agent. A new app = a new
+# role + one line here (plan/09 §2: adding a use case needs no service code).
+dpu_app_roles:
+  dao-vpp: vpp
+  nginx-tls: tls_proxy_nginx
+  dao-smartnic: smartnic

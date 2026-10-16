@@ -1,0 +1,27 @@
+# playbooks/vars/dataplane.yml — static data-plane addressing per use case (B-80/B-81).
+#
+# The management network is leased per reservation (B-41/B-42). The data plane — the E810
+# wire through the Y cable and the SDP path — is not: the testbed is booked as one exclusive
+# unit, so fixed per-use-case addresses can never collide (plan/07 "Addressing plan").
+#
+#   <usecase>:
+#     <on: dpu role>: {<dpu interface key>: addr/prefix, ...}   keys name host_vars devices
+#     <VM role>:      addr/prefix                               on the role's VF (data0)
+#
+# The DPU role's first `wire*` address is what deploy.yml posts as its vms.ip (plan/07: the
+# client must reach the proxy across the wire), and verify substitutes these addresses for
+# `{<role>_ip}`, so the verify traffic crosses the real datapath. A role with no entry falls
+# back to its management address.
+daolab_dataplane:
+  tls-proxy-nginx:
+    proxy: {wire: 10.20.0.10/24, sdp: 10.21.0.1/24}
+    backend: 10.21.0.2/24
+    client: 10.20.0.30/24
+  vpp:
+    vpp: {wire0: 10.20.0.1/24, wire1: 10.22.0.1/24}
+    tgen: 10.20.0.30/24
+    sink: 10.22.0.2/24
+  smartnic:
+    snapp: {wire: 10.20.0.10/24, sdp: 10.21.0.1/24}
+    tgen: 10.20.0.30/24
+    hostvm: 10.21.0.2/24
