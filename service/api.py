@@ -219,6 +219,7 @@ def _reservation_diagram(conn, row, user, uc) -> str | None:
     if not vms:
         return None
     by_role = {v["role"]: v for v in vms}
+    dpu_addr = _dpu_address(conn, row["setup_id"])
     roles = models.from_json(uc["roles"]) if uc["roles"] else {}
     lines = ["graph LR"]
     if roles:
@@ -227,6 +228,7 @@ def _reservation_diagram(conn, row, user, uc) -> str | None:
             vm = by_role.get(rname)
             ip = vm["ip"] if vm else None
             if spec.get("on") == "dpu":
+                ip = ip or dpu_addr                       # DPUs are static
                 label = _label(f"{rname} · {spec.get('app', 'app')}", "on the OCTEON DPU",
                                ip or "no IP yet")
             else:
@@ -261,13 +263,25 @@ def _reservation_diagram(conn, row, user, uc) -> str | None:
     return "\n".join(lines)
 
 
+def _dpu_address(conn, setup_id: int) -> str | None:
+    """The static management address of the setup's DPU (resources.address, from the
+    inventory), or None."""
+    dpu = conn.execute("SELECT address FROM resources WHERE setup_id = ? AND kind = 'dpu' "
+                       "ORDER BY name LIMIT 1", (setup_id,)).fetchone()
+    return dpu["address"] if dpu else None
+
+
 def reservation_object(conn, row) -> dict:
     user = models.user_by_id(conn, row["user_id"])
     uc = conn.execute("SELECT * FROM usecases WHERE id = ?", (row["usecase_id"],)).fetchone()
     setup = conn.execute("SELECT name FROM setups WHERE id = ?", (row["setup_id"],)).fetchone()
     vms = []
     password_mode = row["access_password"] is not None
+    dpu_addr = _dpu_address(conn, row["setup_id"])
     for vm in models.vms_for_reservation(conn, row["id"]):
+        vm = dict(vm)
+        if not vm["name"] and not vm["ip"]:              # the on: dpu role - DPUs are static
+            vm["ip"] = dpu_addr
         ssh = None
         if vm["ip"] and vm["name"]:                       # on: dpu roles have no VM, no ssh
             ssh = f"ssh {user['username']}@{vm['ip']}"

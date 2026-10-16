@@ -178,3 +178,14 @@ def test_cancelling_a_queued_slot_queues_nothing(api_env):
     rid = deploy(api_env).json()["id"]
     api_env.client.delete(f"/reservations/{rid}", headers=H(api_env.tokens["alice"]))
     assert models.jobs_for_reservation(api_env.conn, rid) == []
+
+
+def test_the_dpu_role_shows_the_dpus_static_address_before_anything_is_posted(api_env):
+    rid = deploy(api_env).json()["id"]
+    models.transition_reservation(api_env.conn, rid, "provisioning", from_state="queued")
+    models.create_vms(api_env.conn, rid)
+    body = get(api_env, rid).json()
+    vms = {v["role"]: v for v in body["vms"]}
+    assert vms["vpp"]["ip"] == "10.68.0.190" and vms["vpp"]["ssh"] is None
+    assert vms["tgen"]["ip"] is None                               # VMs wait for their lease
+    assert "10.68.0.190" in body["diagram"]

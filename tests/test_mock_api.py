@@ -53,7 +53,7 @@ def test_a_mock_deploy_leases_and_posts_every_vm_ip(booked):
     vms = {v["role"]: v for v in got["vms"]}
     assert (vms["sink"]["ip"], vms["tgen"]["ip"]) == ("10.68.1.0", "10.68.1.1")  # role order
     assert vms["tgen"]["ssh"] == "ssh alice@10.68.1.1"
-    assert vms["vpp"]["ip"] is None                                    # the DPU leases nothing
+    assert vms["vpp"]["ip"] == "10.68.0.190"           # the DPU is static: its own address, never leased
     assert sorted((l["role"], l["ip"], l["state"]) for l in got["leases"]) == [
         ("sink", "10.68.1.0", "leased"), ("tgen", "10.68.1.1", "leased")]
     [job] = models.jobs_for_reservation(env.conn, res["id"])
