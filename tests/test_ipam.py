@@ -198,3 +198,76 @@ def test_lease_joins_the_callers_transaction(pool):
     ipam.lease(db, r1, "client")
     db.execute("ROLLBACK")
     assert models.ip_leases_for_reservation(db, r1) == []
+
+
+# ---- B-45: parallel deploys never share an IP ------------------------------------------------
+
+import threading                                                 # noqa: E402
+
+
+def _file_db(path, n_res, pool_size):
+    """A file-backed DB (each thread needs its own connection) with `n_res` reservations."""
+    conn = models.connect(path)
+    models.init_db(conn)
+    models.insert(conn, "users", {"username": "u1", "token_hash": "h1", "ssh_pubkey": "k"})
+    sid = mk_setup(conn, "s1", ["wire"])
+    cid = mk_usecase(conn, "uc1", ["wire"])
+    rids = [mk_res(conn, sid, cid, T(10), T(12)) for _ in range(n_res)]
+    last = 100 + pool_size - 1
+    models.insert(conn, "ip_pools", {"name": ipam.DEFAULT_POOL,
+                                     "range_start": "10.30.0.100", "range_end": f"10.30.0.{last}"})
+    conn.close()
+    return rids
+
+
+def _race(path, calls):
+    """Run every (reservation, role) lease at once, one thread + connection each."""
+    barrier = threading.Barrier(len(calls))
+    got, errors = [None] * len(calls), []
+
+    def worker(i, rid, role):
+        conn = models.connect(path)
+        try:
+            barrier.wait()
+            got[i] = ipam.lease(conn, rid, role)["ip"]
+        except Exception as e:                                    # noqa: BLE001
+            errors.append(repr(e))
+        finally:
+            conn.close()
+
+    threads = [threading.Thread(target=worker, args=(i, rid, role))
+               for i, (rid, role) in enumerate(calls)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return got, errors
+
+
+@pytest.mark.parametrize("round_", range(3))
+def test_twenty_parallel_deploys_never_share_an_ip(tmp_path, round_):
+    rids = _file_db(str(tmp_path / "ipam.db"), n_res=10, pool_size=50)
+    calls = [(rid, role) for rid in rids for role in ("client", "backend")]    # 20 threads
+    got, errors = _race(str(tmp_path / "ipam.db"), calls)
+    assert errors == []
+    assert len(set(got)) == 20                                     # every pair its own address
+    assert sorted(got, key=lambda ip: int(ip.rsplit(".", 1)[1])) == \
+           [f"10.30.0.{n}" for n in range(100, 120)]               # and the lowest 20, no gaps
+
+
+def test_parallel_replays_of_one_role_get_the_same_ip(tmp_path):
+    """A replayed playbook racing itself: 20 threads lease the same pair -> one lease."""
+    [rid] = _file_db(str(tmp_path / "ipam.db"), n_res=1, pool_size=50)
+    got, errors = _race(str(tmp_path / "ipam.db"), [(rid, "client")] * 20)
+    assert errors == [] and set(got) == {"10.30.0.100"}
+    conn = models.connect(str(tmp_path / "ipam.db"))
+    assert len(models.ip_leases_for_reservation(conn, rid)) == 1
+    conn.close()
+
+
+def test_parallel_deploys_on_a_small_pool_fail_cleanly_when_it_runs_out(tmp_path):
+    rids = _file_db(str(tmp_path / "ipam.db"), n_res=20, pool_size=5)
+    got, errors = _race(str(tmp_path / "ipam.db"), [(rid, "client") for rid in rids])
+    leased = [ip for ip in got if ip is not None]
+    assert len(leased) == 5 and len(set(leased)) == 5
+    assert len(errors) == 15 and all("PoolExhausted" in e for e in errors)
