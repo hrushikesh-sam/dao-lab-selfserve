@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Str
 from pydantic import BaseModel, ConfigDict
 
 from . import access, config, ipam, models, otel, scheduler
+from . import health as health_eval     # `health` is the liveness route below
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
 log = logging.getLogger("daolab.api")
@@ -218,8 +219,18 @@ def reservation_object(conn, row) -> dict:
         "leases": [{"role": l["role"], "ip": l["ip"], "state": l["state"]}
                    for l in models.ip_leases_for_reservation(conn, row["id"])
                    if l["state"] != "released"],
+        "health": _health_summary(conn, row["id"]),
         "created_at": row["created_at"], "updated_at": row["updated_at"],
     }
+
+
+def _health_summary(conn, res_id: int) -> dict | None:
+    """The engine's latest verdict (B-67) for the card's badge; None until it has one."""
+    snap = models.health_snapshot(conn, res_id)
+    if snap is None:
+        return None
+    return {"verdict": snap["verdict"], "reason": snap["reason"],
+            "evaluated_at": snap["evaluated_at"], "changed_at": snap["changed_at"]}
 
 
 def reservation_summary(conn, row) -> dict:
@@ -682,6 +693,86 @@ def redeploy_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
         raise
     return {"id": res_id, "state": row["state"],
             "job": job_object(models.job_by_id(conn, job_id))}
+
+
+# ---- health (B-66, plan/09 §8) ----------------------------------------------
+
+_HEALTH_CACHE_SEC = 15.0
+_health_cache: dict[int, tuple[float, dict]] = {}      # reservation id -> (monotonic, verdict)
+_LIVE_STATES = ("ready", "active")
+
+
+def _latest_job(conn, res_id: int, kind: str):
+    jobs = models.jobs_for_reservation(conn, res_id, kind=kind)
+    return jobs[-1] if jobs else None
+
+
+def _probe_summary(job) -> dict | None:
+    if job is None:
+        return None
+    return {"job_id": job["id"], "state": job["state"], "error": job["error"],
+            "steps": models.job_steps(job), "finished_at": job["finished_at"]}
+
+
+def _evaluate_cached(conn, res_id: int) -> tuple[dict, bool]:
+    """The verdict for a live reservation, at most _HEALTH_CACHE_SEC old. Returns (verdict,
+    served_from_cache). A dashboard polling every 30 s per card costs one evaluation per 15 s
+    per reservation, however many tabs are open."""
+    hit = _health_cache.get(res_id)
+    now = time.monotonic()
+    if hit is not None and now - hit[0] < _HEALTH_CACHE_SEC:
+        return hit[1], True
+    verdict = health_eval.verdict_object(
+        health_eval.evaluate_reservation(conn, res_id, datetime.now(timezone.utc)))
+    _health_cache[res_id] = (now, verdict)
+    return verdict, False
+
+
+@app.get("/reservations/{res_id}/health")
+def reservation_health(res_id: int, user: sqlite3.Row = Depends(current_user),
+                       conn: sqlite3.Connection = Depends(db_conn)):
+    """The latest health verdict with every check (owner). Evaluated from Prometheus with a
+    15 s cache when the telemetry stack is on; otherwise `unknown`, and health is whatever
+    the last probe job (POST .../health/probe) found. Always carries the deploy trace id."""
+    row = _owned_reservation(conn, res_id, user)
+    deploy = _latest_job(conn, res_id, "deploy")
+    probe = _probe_summary(_latest_job(conn, res_id, "health_probe"))
+    base = {"reservation_id": res_id, "state": row["state"],
+            "trace_id": deploy["trace_id"] if deploy else None, "probe": probe,
+            "cached": False}
+    if row["state"] not in _LIVE_STATES:
+        return {**base, "verdict": "unknown", "checks": [], "evaluated_at": None,
+                "last_seen": None, "reason": f"reservation is {row['state']}"}
+    if not (config.settings.otel_endpoint or "").strip():
+        return {**base, "verdict": "unknown", "checks": [], "evaluated_at": None,
+                "last_seen": None,
+                "reason": "telemetry stack is off (DAOLAB_OTEL_ENDPOINT unset); "
+                          "see the probe result"}
+    verdict, cached = _evaluate_cached(conn, res_id)
+    return {**base, **verdict, "cached": cached}
+
+
+@app.post("/reservations/{res_id}/health/probe", status_code=202)
+def probe_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
+                      conn: sqlite3.Connection = Depends(db_conn)):
+    """On-demand active check (owner): queues a `health_probe` job, which runs the use case's
+    verify command; the result is recorded on the job. A probe already waiting or running is
+    returned instead of queueing another. 409 unless the reservation is ready or active."""
+    row = _owned_reservation(conn, res_id, user)
+    if row["state"] not in _LIVE_STATES:
+        raise DaolabError("invalid_state", 409,
+                          f"cannot probe a reservation in state {row['state']}",
+                          {"state": row["state"]})
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        waiting = [j for j in models.jobs_for_reservation(conn, res_id, kind="health_probe")
+                   if j["state"] in ("pending", "running")]
+        job_id = waiting[-1]["id"] if waiting else models.create_job(conn, res_id, "health_probe")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return {"id": res_id, "state": row["state"], "job": job_object(models.job_by_id(conn, job_id))}
 
 
 @app.get("/jobs/{job_id}")
