@@ -7,7 +7,7 @@ It does NOT:
 - create `dao-clean`
 - restore PCI drivers
 - stop/restore VPP
-- perform cleanup after the SmartNIC test
+- perform cleanup automatically (run playbooks/03_cleanup.yml separately)
 
 Workflow:
 1. Build/configure existing `dao-clone`
@@ -16,4 +16,4 @@ Workflow:
 
 Run the build playbook first, then the launch/verify playbook.
 
-Restore is intentionally not included yet.
+Cleanup/restore: run playbooks/03_cleanup.yml -e allow_cleanup=true (not part of site.yml).

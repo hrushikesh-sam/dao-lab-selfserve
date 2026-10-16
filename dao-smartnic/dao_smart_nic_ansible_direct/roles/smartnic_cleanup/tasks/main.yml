@@ -1,0 +1,127 @@
+---
+# Steps 13-14 of "Clean reinstall of dao-smart-nic on CN10K DPU (xeon3-oct-112).md"
+
+- name: Require explicit cleanup permission
+  ansible.builtin.assert:
+    that:
+      - (allow_cleanup | default(false)) | bool
+    fail_msg: >-
+      Cleanup stops SmartNIC and rebinds {{ smartnic_pf }} and the SDP VFs.
+      Re-run with -e allow_cleanup=true after confirming nobody is using SmartNIC.
+
+- name: Check whether dao-smart-nic is running
+  ansible.builtin.shell: pgrep -x dao-smart-nic
+  args:
+    executable: /bin/bash
+  register: smartnic_running
+  failed_when: false
+  changed_when: false
+
+- name: Show dao-smart-nic before stopping
+  ansible.builtin.shell: ps -C dao-smart-nic -o pid,args || echo "dao-smart-nic not running"
+  args:
+    executable: /bin/bash
+  register: before_stop
+  changed_when: false
+
+- name: Display dao-smart-nic before stopping
+  ansible.builtin.debug:
+    var: before_stop.stdout_lines
+
+- name: Stop dao-smart-nic (documented fallback, pkill -x)
+  ansible.builtin.shell: pkill -x dao-smart-nic
+  args:
+    executable: /bin/bash
+  when: smartnic_running.rc == 0
+
+- name: Wait until dao-smart-nic has exited
+  ansible.builtin.shell: "! pgrep -x dao-smart-nic"
+  args:
+    executable: /bin/bash
+  register: smartnic_gone
+  retries: 10
+  delay: 2
+  until: smartnic_gone.rc == 0
+  changed_when: false
+
+- name: Return SmartNIC PF to rvu_nicpf
+  ansible.builtin.command:
+    cmd: "dpdk-devbind.py -b rvu_nicpf {{ smartnic_pf }}"
+
+- name: Return SDP VFs to rvu_nicvf
+  ansible.builtin.command:
+    cmd: "dpdk-devbind.py -b rvu_nicvf {{ sdp_vfs | join(' ') }}"
+
+- name: Capture PCI state after cleanup
+  ansible.builtin.shell: |
+    dpdk-devbind.py -s | grep -E '0002:03:00.0|0002:01:0[01]\.' > /tmp/pci-after.txt
+    cat /tmp/pci-after.txt
+  args:
+    executable: /bin/bash
+  register: pci_after
+  changed_when: false
+
+- name: Check for the saved before-state
+  ansible.builtin.stat:
+    path: "{{ restore_before }}"
+  register: before_state
+
+- name: Compare PCI state with the saved before-state
+  ansible.builtin.shell: |
+    diff "{{ restore_before }}" /tmp/pci-after.txt && echo "restored: identical"
+  args:
+    executable: /bin/bash
+  register: pci_diff
+  when: before_state.stat.exists
+  failed_when: false
+  changed_when: false
+
+- name: Remove SmartNIC pcap output files
+  ansible.builtin.shell: rm -f /tmp/output.pcap_*
+  args:
+    executable: /bin/bash
+
+- name: Refuse to remove stale files if something still holds them
+  ansible.builtin.shell: |
+    if [ -e /dev/hugepages/smartnicmap_0 ] && fuser /dev/hugepages/smartnicmap_0 >/dev/null 2>&1; then
+      echo "smartnicmap_0 is still in use"
+      exit 1
+    fi
+    echo "no holder"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Remove stale SmartNIC runtime artifacts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /dev/hugepages/smartnicmap_0
+    - /var/run/dpdk/smartnic
+
+- name: Verify final board state
+  ansible.builtin.shell: |
+    pgrep -x dao-smart-nic || echo "stopped"
+    ls /dev/vfio /dev/hugepages
+    ls /var/run/dpdk
+    grep -E 'HugePages_(Total|Free)' /proc/meminfo
+    ip -br addr show eth5
+  args:
+    executable: /bin/bash
+  register: final_state
+  changed_when: false
+  failed_when: false
+
+- name: Display PCI state after cleanup
+  ansible.builtin.debug:
+    var: pci_after.stdout_lines
+
+- name: Display PCI comparison
+  ansible.builtin.debug:
+    var: pci_diff.stdout_lines
+  when: pci_diff is not skipped
+
+- name: Display final board state
+  ansible.builtin.debug:
+    var: final_state.stdout_lines
