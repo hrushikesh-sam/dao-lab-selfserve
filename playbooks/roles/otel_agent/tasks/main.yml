@@ -1,0 +1,47 @@
+---
+# playbooks/roles/otel_agent/tasks/main.yml — B-83.
+# Idempotent (invariant #3): the version is compared before downloading, the config is a
+# template (write-if-changed), and the service is enabled once. Re-running on a healthy host is
+# a no-op, so an engine retry is safe.
+- name: Require a collector endpoint
+  ansible.builtin.assert:
+    that:
+      - otel_agent_collector_endpoint | length > 0
+    fail_msg: >-
+      otel_agent needs the collector's OTLP gRPC endpoint as host:port. Pass
+      -e daolab_otel_endpoint=<host>:4317 (or leave health to the probe fallback).
+
+- name: Read the installed agent version (if any)
+  ansible.builtin.command: "{{ otel_agent_service }} --version"
+  register: otel_agent_current
+  failed_when: false
+  changed_when: false
+
+- name: Download the agent package (skipped when the target version is installed)
+  ansible.builtin.get_url:
+    url: "{{ otel_agent_deb_url }}"
+    dest: "{{ otel_agent_deb_path }}"
+    mode: "0644"
+  when: otel_agent_version not in (otel_agent_current.stdout | default(''))
+
+- name: Install otelcol-contrib
+  ansible.builtin.apt:
+    deb: "{{ otel_agent_deb_path }}"
+  when: otel_agent_version not in (otel_agent_current.stdout | default(''))
+  notify: Restart otelcol-contrib
+
+- name: Write the agent config
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ otel_agent_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart otelcol-contrib
+
+- name: Enable and start the agent
+  ansible.builtin.systemd:
+    name: "{{ otel_agent_service }}"
+    enabled: true
+    state: started
+  when: otel_agent_collector_endpoint | length > 0
