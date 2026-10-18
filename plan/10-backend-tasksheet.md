@@ -65,7 +65,7 @@ only when its code **and** tests are on the branch; `blocked` means one of its `
 | B-01 | Add config vars: `DAOLAB_RUNNER`, `DAOLAB_SLOT_MIN`, `DAOLAB_CLEANUP_MIN`, `DAOLAB_DEFAULT_HOURS`, `DAOLAB_IP_POOL`, `DAOLAB_EARLY_ACCESS`, `DAOLAB_HEALTH_STALE_SEC`, `DAOLAB_OTEL_ENDPOINT`, user quota caps | `config.py`, `.env.example` | — | settings load with defaults; listed in `.env.example` | Rama | done |
 | B-02 | Seed test users `alice`, `bob`, `dev-admin` with tokens printed at start | `scripts/run/dev.sh`, `cli.py` | — | `dev.sh --fresh` prints 3 tokens; all 3 pass `/whoami` | Rama | done |
 | B-03 | Schema migration path: idempotent `daolab init` that adds the new tables/columns without wiping data | `schema.sql`, `models.py`, `cli.py` | — | running `init` twice on an existing DB is a no-op | Akshay | done |
-| B-04 | Collapse the inventory to one testbed: `tb-01-xcp` + `dpu-01`; rewrite `setups/setup-01.yml` → `tb-01` with the Y-cable links (p0, p1 → DPU) | `inventory/hosts.yml`, `setups/` | — | `daolab sync` shows `tb-01` with capabilities `[e810, octeon-cn106, sdp, wire]` | Rama | done |
+| B-04 | **Reopened** — the lab is two XCP-ng hosts, not one: inventory keeps `tg-01-xcp` (E810 / traffic-gen side) + `dpu-01-xcp` (OCTEON SDP side) + `dpu-01`; `setups/tb-01.yml` members `dpu-01` (host `dpu-01-xcp`) and `tg-01` (host `tg-01-xcp`), links `tg-01.e810p0/p1 → dpu-01.sfp0/sfp1` | `inventory/hosts.yml`, `setups/`, `tests/test_api.py`, `plan/09` | — | `daolab sync` shows `tb-01` with capabilities `[e810, octeon-cn106, sdp, wire]`; no plan doc still says one host | Rama | review |
 | B-05 | Use-case YAMLs for `vpp` and `smartnic` (roles, requires, hw_class, verify) | `usecases/` | B-04 | `GET /usecases` lists all three as `active` | Rama | done |
 | B-06 | Shared test fixtures: frozen clock, temp DB, seeded users/setups | `tests/conftest.py` | B-02 | used by every new test module | Rama | done |
 
@@ -156,7 +156,7 @@ only when its code **and** tests are on the branch; `blocked` means one of its `
 
 | ID | Task | Files | Depends | Done when | Owner | Status |
 |---|---|---|---|---|---|---|
-| B-90 | Fold the design changes back into 02–05 (mode/409, cleaning/quarantined, single deploy.yml, leased IPs, one-host inventory) | `plan/02–05` | P1–P3 | no doc contradicts 09 | Rama | done |
+| B-90 | Fold the design changes back into 02–05 (mode/409, cleaning/quarantined, single deploy.yml, leased IPs, **two-host inventory**: `tb-01` = `tg-01-xcp` + `dpu-01-xcp` + `dpu-01`) | `plan/02–05` | P1–P3 | no doc contradicts 09 | Rama | done |
 | B-91 | Ops runbook: quarantine handling, force-clean, OTel stack ops, rotating the internal secret | `plan/08-cli-config-ops.md` | P6 | reviewed by whoever is on lab duty | Rama | todo |
 
 ---

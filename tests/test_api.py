@@ -166,12 +166,12 @@ def test_8_reserve_error_matrix(env):
     assert_error(reserve(env, env.user_token, usecase="diy", setup="tb-01"), 422, "validation_error")
     err = assert_error(reserve(env, env.user_token, usecase="diy", setup="tb-01",
                                templates={}), 422, "validation_error")
-    assert "tb-01-xcp" in err["message"]
+    assert "dpu-01-xcp" in err["message"]
 
 
 def test_9_reserve_diy(env):
     r = reserve(env, env.user_token, usecase="diy", setup="tb-01",
-                templates={"tb-01-xcp": "tpl-ubuntu2204-dao"})
+                templates={"dpu-01-xcp": "tpl-ubuntu2204-dao", "tg-01-xcp": "tpl-ubuntu2204-dao"})
     assert r.status_code == 201, r.text
     assert r.json()["diy"] is True
 
@@ -204,7 +204,7 @@ def test_11_cancel_matrix(env):
 
 def _mk_vm(env, rid, role="backend"):
     return env.models.insert(env.conn, "vms", {
-        "reservation_id": rid, "role": role, "host": "tb-01-xcp",
+        "reservation_id": rid, "role": role, "host": "dpu-01-xcp",
         "template": "tpl-ubuntu2204-dao", "name": f"daolab-r{rid}-{role}"})
 
 
@@ -283,8 +283,8 @@ def test_18_reservation_diagram_and_credentials(env):
     rid = reserve(env, env.user_token).json()["id"]
     for role, host, tpl, name, ip in [
             ("proxy", "dpu-01", None, None, "10.20.0.10"),
-            ("backend", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21"),
-            ("client", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-client", "10.20.0.31")]:
+            ("backend", "dpu-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21"),
+            ("client", "tg-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-client", "10.20.0.31")]:
         env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": role, "host": host,
                                             "template": tpl, "name": name, "ip": ip})
     obj = env.client.get(f"/reservations/{rid}", headers=H(env.user_token)).json()
@@ -308,7 +308,7 @@ def test_19_owner_only_credentials(env):
     rid = reserve(env, alice).json()["id"]
     for role, host, tpl, name, ip in [
             ("proxy", "dpu-01", None, None, "10.20.0.10"),
-            ("backend", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21")]:
+            ("backend", "dpu-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21")]:
         env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": role, "host": host,
                                             "template": tpl, "name": name, "ip": ip})
     # the owner sees the credentials

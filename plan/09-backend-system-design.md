@@ -40,42 +40,53 @@ billing and quotas beyond a simple per-user cap.
 
 ```mermaid
 graph LR
-    subgraph TB["testbed tb-01 (single exclusive setup)"]
-        subgraph HOST["tb-01-xcp · XCP-ng host"]
-            DOM0["dom0<br/>xe / xl · pciback (one-time)"]
+    subgraph TB["testbed tb-01 (single exclusive setup · two XCP-ng hosts)"]
+        subgraph TG["tg-01-xcp · XCP-ng host (traffic-gen side)"]
+            TGDOM0["dom0<br/>xe / xl · pciback (one-time)"]
             E810["Intel E810<br/>p0 QSFP28 · p1 QSFP28<br/>VFs passed to VMs"]
             VM1["role VM: client / traffic-gen<br/>E810 VF on p0"]
-            VM2["role VM: backend / sink<br/>E810 VF on p1"]
         end
-        DPU["OCTEON DPU<br/>single QSFP port<br/>own mgmt port + console"]
+        subgraph DX["dpu-01-xcp · XCP-ng host (SDP side)"]
+            DXDOM0["dom0<br/>xe / xl · pciback (one-time)"]
+            VM2["role VM: backend / sink<br/>SDP VF (virtio-net)"]
+        end
+        DPU["OCTEON DPU dpu-01<br/>25G QSFP ports + SDP PCIe endpoint"]
     end
-    E810 ===|"Y split cable leg A"| DPU
-    E810 ===|"Y split cable leg B"| DPU
+    E810 ===|"25G wire · tg-01.e810p0 -> dpu-01.sfp0"| DPU
+    DPU ===|"25G wire · dpu-01.sfp1 -> tg-01.e810p1 (loop)"| E810
+    DPU ---|"SDP / virtio-net"| VM2
     MGMT(["lab mgmt network<br/>IP pool 10.30.0.100–199"])
-    MGMT --- DOM0
+    MGMT --- TGDOM0
+    MGMT --- DXDOM0
     MGMT --- VM1
     MGMT --- VM2
     MGMT ---|"DPU reachable on its own"| DPU
 ```
 
-- **One XCP-ng host** with the E810. Its two QSFP28 ports go through the Y cable into the DPU's
-  single port, so traffic can leave on p0, cross the DPU, and come back on p1. That loop is the
-  data path for all three use cases.
+- **Two XCP-ng hosts, one setup.** `tg-01-xcp` holds the Intel E810 (the traffic-gen side, so
+  client / traffic-gen VMs get an E810 VF); `dpu-01-xcp` holds the OCTEON's SDP PCIe endpoint
+  (so backend / sink VMs get an SDP VF). The OCTEON card itself, `dpu-01`, is not a VM host.
+  The setup's members are `dpu-01` (`kind: dpu`, host `dpu-01-xcp`) and `tg-01` (`kind: nic`,
+  host `tg-01-xcp`).
+- **The 25G wire** is the two links `tg-01.e810p0 → dpu-01.sfp0` and `tg-01.e810p1 →
+  dpu-01.sfp1`. Traffic leaves a VM on `tg-01-xcp` via its E810 VF, crosses the DPU, and
+  either returns on the second port (the VPP loop) or continues over the SDP path to a VM on
+  `dpu-01-xcp`.
 - **The DPU has its own management path.** It can be used on its own, for example a user who
   SSHes in to run VPP by hand. This is why DPU access needs its own gate (section 7) rather
   than relying on "the VMs are gone".
 - **Every role VM is independent.** Each has its own mgmt IP from the pool, the owner's SSH
-  key, and its own E810 VF.
-- **All three use cases need the DPU and both E810 ports.** VPP, TLS proxy and SmartNIC are
-  therefore mutually exclusive, and the whole testbed is booked as one unit. Capability
+  key, and its own passthrough VF (E810 on `tg-01-xcp`, SDP on `dpu-01-xcp`).
+- **All three use cases need the DPU, the E810 VF and the wire.** VPP, TLS proxy and SmartNIC
+  are therefore mutually exclusive, and the whole testbed is booked as one unit. Capability
   matching ([03-scheduler.md](03-scheduler.md)) keeps working unchanged when more testbeds are
   added.
 
 | Use case | DPU runs | Host VMs | Datapath |
 |---|---|---|---|
-| `vpp` | DAO VPP (DPDK on OCTEON) | traffic-gen VM (TRex/pktgen on VF p0), sink VM (VF p1) | p0 → DPU VPP → p1 |
-| `tls-proxy-nginx` | NGINX + CPT crypto offload | client VM (h2load, VF p0), backend VM (HTTP, VF p1) | client → DPU TLS terminate → backend |
-| `smartnic` | DAO SmartNIC/virtio offload app | host VM using the offloaded interface, traffic-gen VM | traffic-gen → DPU offload → host VM |
+| `vpp` | DAO VPP (DPDK on OCTEON) | traffic-gen VM (TRex/pktgen, E810 VF on `tg-01-xcp`), sink VM (on `dpu-01-xcp`) | E810 VF → wire → DPU VPP → wire |
+| `tls-proxy-nginx` | NGINX + CPT crypto offload | client VM (h2load, E810 VF on `tg-01-xcp`), backend VM (HTTP, SDP VF on `dpu-01-xcp`) | client → wire → DPU TLS terminate → SDP → backend |
+| `smartnic` | DAO SmartNIC/virtio offload app | traffic-gen VM (E810 VF on `tg-01-xcp`), host VM using the offloaded interface (on `dpu-01-xcp`) | traffic-gen → wire → DPU offload → host VM |
 
 Each use case is still one `usecases/*.yml` file (roles, `requires`, `hw_class`, and the new
 `health:` block from section 8), so adding a use case requires no code change.
@@ -545,8 +556,9 @@ P1–P3 land:
   job rows.
 - **[05-provisioning.md](05-provisioning.md):** the four playbooks become roles under a single
   `deploy.yml` plus `cleanup.yml`. VM IPs are leased and set statically through cloud-init
-  instead of being discovered through guest tools. The inventory collapses to one XCP-ng host
-  (`tb-01-xcp`) plus the DPU.
+  instead of being discovered through guest tools. The inventory stays **two XCP-ng hosts**
+  (`tg-01-xcp` for the E810 / traffic-gen side, `dpu-01-xcp` for the OCTEON SDP side) plus the
+  DPU (`dpu-01`) — the earlier "collapse to one host `tb-01-xcp`" note was wrong for this lab.
 - **Tech stack ([README.md](README.md)):** adds OpenTelemetry (SDK, Collector, Ansible
   callback), with Prometheus and Jaeger as optional dev-time containers. This is the only new
   technology. There is still no message queue: jobs are DB rows.
