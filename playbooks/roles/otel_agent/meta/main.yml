@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: otel_agent
+  author: daolab
+  description: >-
+    Install and configure the otelcol-contrib agent on a role VM or the DPU, stamping
+    every metric with the daolab.* resource attributes (B-83).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions: [jammy]
+dependencies: []

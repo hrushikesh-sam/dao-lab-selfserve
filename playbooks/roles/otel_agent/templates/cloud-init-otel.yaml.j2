@@ -1,0 +1,16 @@
+#cloud-config
+# {{ ansible_managed }}
+# Rendered by playbooks/roles/otel_agent (B-83); host_vm (B-80) merges this into each role VM's
+# cloud-init so the agent is installed and running on first boot, before the deploy verify step.
+# The DPU gets the same agent through tasks/main.yml directly (it is not a VM).
+package_update: true
+write_files:
+  - path: {{ otel_agent_config_path }}
+    owner: root:root
+    permissions: "0644"
+    content: |
+{{ lookup('ansible.builtin.template', 'config.yaml.j2') | indent(6, true) }}
+runcmd:
+  - curl -fsSL -o {{ otel_agent_deb_path }} "{{ otel_agent_deb_url }}"
+  - dpkg -i {{ otel_agent_deb_path }}
+  - systemctl enable --now {{ otel_agent_service }}
