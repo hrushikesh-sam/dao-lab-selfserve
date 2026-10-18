@@ -96,11 +96,7 @@ All bodies JSON. Paths: plural nouns, no version prefix, kebab-case segments.
 | POST | `/reservations` | user | Create — use-case mode or DIY mode. |
 | GET | `/reservations` | user | Own reservations, newest first; `?all=1` admin-only. |
 | GET | `/reservations/{id}` | user (owner) or admin | One reservation, live state + SSH details. |
-| POST | `/reservations/{id}/cleanup` | user (owner) | End a `ready`/`active` slot early → `202` + cleanup job (`cleaning`). |
-| POST | `/reservations/{id}/redeploy` | user (owner) | Re-run `deploy.yml` inside the slot → `202` + deploy job; `409` outside the slot. |
-| DELETE | `/reservations/{id}` | user (owner) or admin | Cancel a `queued` booking → `released`; other states → `409 invalid_state`. |
-| GET | `/reservations/{id}/events` | user (owner) | SSE stream of job steps / state changes. |
-| GET | `/jobs/{id}` | user (owner) | Job state, steps, `trace_id`, log tail. |
+| DELETE | `/reservations/{id}` | user (owner) or admin | Cancel (allowed in `queued`, `ready`, `active`). |
 | POST | `/internal/vm-ip` | internal | VM-IP callback from `host_vm.yml` / `dpu_prepare.yml`. |
 
 **GET /health** → `200 {"status": "ok"}`
@@ -130,12 +126,11 @@ user page can render the testbed without `GET /setups`; `[]` on planned rows:
 reservations not in `released`/`failed`).
 **PATCH /users/{id}** — request `{"enabled": false}` → `200` the user object. Unknown id →
 `404 not_found`; an admin disabling their own account → `409 invalid_state` (lockout guard);
-disabling leaves the user's reservations untouched — cancel a `queued` one with
-`DELETE /reservations/{id}` or end a `ready`/`active` one early with
-`POST /reservations/{id}/cleanup` if the hold must end.
+disabling leaves the user's reservations untouched — cancel them via
+`DELETE /reservations/{id}` if the hold must end.
 
 **GET /setups** → `200`, one row per setup; `held_by` = the reservation currently in
-`provisioning`/`ready`/`active`/`cleaning`/`quarantined` on the setup or `null`; `queue` = `queued`
+`provisioning`/`ready`/`active`/`tearing_down` on the setup or `null`; `queue` = `queued`
 reservations ordered by `start_at`; both use the reservation-summary shape
 `{"id", "user", "usecase", "state", "start_at", "end_at"}`:
 
@@ -181,13 +176,10 @@ the provisioned topology (one node per role with IP/ssh, edges from the roles' `
 stays topology-free; `null` while no `vms` rows exist.
 
 **DELETE /reservations/{id}** → `200 {"id": 12, "state": "released"}` when it was `queued`
-(nothing ran, nothing to tear down) — this is the only state DELETE accepts. Any other state
-(`provisioning`, `ready`, `active`, `cleaning`, `quarantined`, `released`, `failed`) →
-`409 invalid_state` (also when the engine moves the reservation between the API's read and its
-write: the state change is a compare-and-set, `models.transition_reservation`).
-Ending a live `ready`/`active` slot early is a **separate** action, `POST /reservations/{id}/cleanup`
-→ `202` + `{"id", "state": "cleaning"}` (the API changes state only; the engine runs the teardown —
-[04-lifecycle-engine.md](04-lifecycle-engine.md)) — see plan/09 §4/§10, which own these transitions.
+(nothing ran, nothing to tear down), or `{"id": 12, "state": "tearing_down"}` from
+`ready`/`active` (the API changes state only; the engine runs the teardown —
+[04-lifecycle-engine.md](04-lifecycle-engine.md)). Cancel in `provisioning`, `tearing_down`,
+`released`, `failed` → `409 invalid_state`.
 
 **POST /internal/vm-ip** — request `{"reservation_id": 12, "role": "backend", "ip": "10.20.0.21"}`
 → `200 {"ok": true}`. Unknown `(reservation_id, role)` → `404 not_found`.
@@ -217,7 +209,7 @@ def catalog_row(db, uc, setups, now) -> dict:
   slot exists within `DAOLAB_SCHED_HORIZON_HOURS`. Capability match only — never hostnames.
 - `next_free_at` = earliest grantable start for a 1-hour slot on any candidate setup, else
   `null`. Free-slot logic is delegated entirely to `scheduler.next_free_at` so catalog and
-  `POST /reservations` can never disagree: a setup is busy for `[start_at − lead, end_at + DAOLAB_CLEANUP_MIN)` of
+  `POST /reservations` can never disagree: a setup is busy for `[start_at − lead, end_at]` of
   every reservation not in `released`/`failed`, with `lead` = `DAOLAB_HW_CLASS_LEAD_MIN` when
   the use case's `hw_class` differs from the candidate DPU's current `resources.hw_class`,
   else `DAOLAB_PROVISION_LEAD_MIN` ([03-scheduler.md](03-scheduler.md)).
@@ -271,7 +263,7 @@ rid = models.insert_reservation(db, user_id=user["id"], usecase_id=uc["id"],
 `scheduler.place` applies FCFS by `created_at`, capability matching (diy: the explicitly
 named setup only), the hw_class lead window, and **slot-shift**: a conflict is never an error
 — the granted `start_at` is the earliest slot on any candidate setup where the full
-`[start − lead, start + hours + cleanup)` window is free and the start is on the `DAOLAB_SLOT_MIN` grid, searched up to `DAOLAB_SCHED_HORIZON_HOURS`.
+`[start − lead, start + hours]` window is free, searched up to `DAOLAB_SCHED_HORIZON_HOURS`.
 The one exhaustion case — no free window inside the horizon — maps to `409
 usecase_unavailable` with `detail: {"reason": "no_free_slot", "horizon_hours": 168}`
 (reusing the catalog `reason` vocabulary). Response: `201` + the canonical reservation object
@@ -323,7 +315,7 @@ Every non-2xx response has exactly this envelope — a stable machine `code`, a 
 | `validation_error` | 422 | Malformed body/timestamp, `hours` < 1, unknown fields, diy-field presence violations, template map not covering every VM host. |
 | `usecase_unavailable` | 409 | Reserving a `planned` row (`detail.reason: "no_yaml"`); horizon exhausted (`detail.reason: "no_free_slot"`). |
 | `unmet_capability` | 409 | No setup's capabilities ⊇ `requires`; message names the missing list. |
-| `invalid_state` | 409 | Cancel while not `queued` (i.e. `provisioning`/`ready`/`active`/`cleaning`/`quarantined`/`released`/`failed`); also cleanup of a non-`ready`/`active` reservation; `detail: {"state": "..."}`. |
+| `invalid_state` | 409 | Cancel while `provisioning`/`tearing_down`/`released`/`failed`; `detail: {"state": "..."}`. |
 | `internal_error` | 500 | Unhandled exception. |
 
 Further examples (unknown use case, bad token, wrong role):
@@ -390,13 +382,12 @@ Cases (each asserts the error envelope shape on every non-2xx):
 | 3 | `GET /usecases` | `tls-proxy-nginx` `available: true`; a planned row `reason: "no_yaml"`; `diy` row present, `status: "active"` |
 | 4 | Delete `setup-01` rows, `GET /usecases` | tls row `reason: "unmet_capability"`, `missing` non-empty |
 | 5 | Reserve `tls-proxy-nginx` at T | `201`, `state: "queued"`, `shifted: false`, `vms: []` |
-| 6 | Second overlapping reserve (README Phase 2 checkpoint) | `201`, `shifted: true`, `start_at` = first `end_at` + `DAOLAB_CLEANUP_MIN` + `DAOLAB_PROVISION_LEAD_MIN` (same `hw_class`), rounded up to the `DAOLAB_SLOT_MIN` grid |
+| 6 | Second overlapping reserve (README Phase 2 checkpoint) | `201`, `shifted: true`, `start_at` = first `end_at` (same `hw_class` → `DAOLAB_PROVISION_LEAD_MIN` gap honored) |
 | 7 | Reserve a use case whose `requires` no setup meets | `409 unmet_capability`, message names the missing capability |
 | 8 | Reserve unknown name / planned row / `hours: 0` / `setup` on non-diy / diy without `templates` / diy templates missing a host | `404` / `409 usecase_unavailable` / `422` / `422` / `422` / `422` |
 | 9 | Reserve `diy` with `setup: setup-01` + full template map | `201`, `diy: true` |
 | 10 | Owner reads own reservation; other user reads it; admin reads it | `200` / `403` / `200`; list is newest-first |
-| 11 | Cancel matrix (`DELETE`, states set via models helpers) | `queued`→`released`; every other state (`provisioning`/`ready`/`active`/`cleaning`/`quarantined`/`released`/`failed`)→`409 invalid_state` |
-| 11b | Cleanup matrix (`POST /reservations/{id}/cleanup`) | `ready`/`active`→`202` + `cleaning` job; `queued`/`released`→`409 invalid_state`; non-owner→`403` |
+| 11 | Cancel matrix (states set directly via models helpers) | `queued`→`released`; `ready`→`tearing_down`; `provisioning`→`409 invalid_state` |
 | 12 | Callback: wrong secret; secret unset in settings; unknown role; happy path | `401`; `401`; `404`; `{"ok": true}` then reservation object shows `ip` and `ssh: "ssh <user>@<ip>"` |
 | 13 | Callback replay with same body | `200` again (idempotent) |
 | 14 | `GET /` and `/admin.html` | `200`, HTML bodies from `DAOLAB_DASHBOARD_DIR` |
