@@ -176,10 +176,9 @@ is rendered via the same mermaid plumbing as admin.html.
 |---|---|---|---|
 | `queued` | grey | no (`vms` is `[]`) | yes → `released` |
 | `provisioning` | amber | no (ips filling in) | no (API would 409 `invalid_state`) |
-| `ready` | green | yes | yes → `cleaning` |
-| `active` | green | yes | yes → `cleaning` |
-| `cleaning` | amber | no | no |
-| `quarantined` | red | no | no (API would 409 `invalid_state`) |
+| `ready` | green | yes | yes → `tearing_down` |
+| `active` | green | yes | yes → `tearing_down` |
+| `tearing_down` | amber | no | no |
 | `released` | muted | no | no |
 | `failed` | red + `failure_reason` | no | no |
 
