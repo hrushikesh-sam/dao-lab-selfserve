@@ -295,6 +295,41 @@ board-specific flash lands later:
   `resources.hw_class` in the DB after a successful `dpu_prepare.yml`
   ([04-lifecycle-engine.md](04-lifecycle-engine.md)).
 
+## Hardware reality notes — DPU personality and SDP VFs (observed 2026-10-17)
+
+Verified by hand on the live testbed (`dpu-01` @10.68.0.190, `dpu-01-xcp` @10.68.0.53). This
+corrects assumptions in the stub contract above and in the bring-up checklist below.
+
+**The DPU `sdp-pf1-vf8` personality is NOT an `Image_SDP` boot switch.** The board boots
+`/boot/Image-6.1-marvell`; boot is controlled at U-Boot/firmware level (`extlinux.conf`
+`DEFAULT` is ignored, and `fw_printenv` cannot read the SPI env). The OVS personality's kernel
+cmdline blacklists the EP driver: `modprobe.blacklist=pcie_marvell_cnxk_ep`. The SDP personality
+is produced by **loading that driver** — `pcie_marvell_cnxk_ep` ("OcteonTX2 PEM EP Driver") —
+which creates `/dev/uio0` (`PEM0_PERST`) for the platform EP `8e0000000000.pcie-ep`. Only then
+does `octep_cp_agent` (enabled unit `octep-cp-agent.service`; config `/usr/bin/bins/cn106xx.cfg`,
+1 PEM → 1 PF → VFs) get past `CNXK: Get uio dev failed for pem0`. Applied on `dpu-01`:
+
+- `/etc/modules-load.d/sdp-ep.conf` → `pcie_marvell_cnxk_ep` (explicit `modprobe`, which
+  bypasses the cmdline blacklist at boot).
+- drop-in `/etc/systemd/system/octep-cp-agent.service.d/10-load-ep.conf` →
+  `ExecStartPre=-/sbin/modprobe pcie_marvell_cnxk_ep`.
+- marker `/etc/daolab/hw_class` = `sdp-pf1-vf8` (the value `ebf_set` compares against).
+
+Verified across a reboot: module auto-loaded, `/dev/uio0` present, `octep-cp-agent` active. This
+is the concrete work `ebf_set` should eventually automate — today the manual "flash" is exactly
+these three steps.
+
+**Host-side SDP VF creation is BLOCKED on `dpu-01-xcp`.** That dom0 is XCP-ng 8.3 (kernel
+`4.19.0+1`) and has **no SR-IOV-capable PF driver** for the EP's PF `0000:6f:00.0`
+(`177d:b900`): `modinfo octeon_ep` → not found, no `vfio-pci`, and the PF is bound to
+`xen-pciback`. The SR-IOV capability is visible (`sriov_totalvfs=8`, matching the personality's
+8 VFs) but `echo 8 > .../sriov_numvfs` fails with
+`pciback 0000:6f:00.0: Driver doesn't support SRIOV configuration via sysfs`, and a PCI rescan
+produces no VFs. Therefore checklist step 3's SDP half (create `sdp_vfs`, hide them in
+`pciback.conf`) **cannot be completed** until that dom0 has an SR-IOV-capable driver for
+`177d:b900` (e.g. Marvell `octeon_ep`). `inventory/host_vars/dpu-01-xcp.yml` `sdp_vfs:` stays
+empty.
+
 ## Role-driven provisioning — `on:` selectors to plays and hosts
 
 Use-case roles never name hosts (invariant: capability match only). The `on:` selector is
@@ -381,6 +416,7 @@ Use-case specifics — NGINX/DPDK build flags, CPT engine config, payload — ar
    VF lists, `templates`).
 3. One-time dom0 prep on both hosts: E810 VFs on tg-01-xcp and SDP VFs on dpu-01-xcp into
    `/etc/modprobe.d/pciback.conf`; reboot each dom0 once; re-verify with `xl pci-assignable-list`.
+   **Note (2026-10-17): the SDP-VF half is blocked on dpu-01-xcp — see "Hardware reality notes".**
 4. Build `tpl-ubuntu2204-dao` per the recipe above; confirm
    `xe template-list name-label=tpl-ubuntu2204-dao --minimal` returns a uuid on both hosts'
    SRs (or a shared SR).
