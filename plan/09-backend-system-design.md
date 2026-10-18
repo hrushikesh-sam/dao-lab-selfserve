@@ -40,53 +40,42 @@ billing and quotas beyond a simple per-user cap.
 
 ```mermaid
 graph LR
-    subgraph TB["testbed tb-01 (single exclusive setup · two XCP-ng hosts)"]
-        subgraph TG["tg-01-xcp · XCP-ng host (traffic-gen side)"]
-            TGDOM0["dom0<br/>xe / xl · pciback (one-time)"]
+    subgraph TB["testbed tb-01 (single exclusive setup)"]
+        subgraph HOST["tb-01-xcp · XCP-ng host"]
+            DOM0["dom0<br/>xe / xl · pciback (one-time)"]
             E810["Intel E810<br/>p0 QSFP28 · p1 QSFP28<br/>VFs passed to VMs"]
             VM1["role VM: client / traffic-gen<br/>E810 VF on p0"]
+            VM2["role VM: backend / sink<br/>E810 VF on p1"]
         end
-        subgraph DX["dpu-01-xcp · XCP-ng host (SDP side)"]
-            DXDOM0["dom0<br/>xe / xl · pciback (one-time)"]
-            VM2["role VM: backend / sink<br/>SDP VF (virtio-net)"]
-        end
-        DPU["OCTEON DPU dpu-01<br/>25G QSFP ports + SDP PCIe endpoint"]
+        DPU["OCTEON DPU<br/>single QSFP port<br/>own mgmt port + console"]
     end
-    E810 ===|"25G wire · tg-01.e810p0 -> dpu-01.sfp0"| DPU
-    DPU ===|"25G wire · dpu-01.sfp1 -> tg-01.e810p1 (loop)"| E810
-    DPU ---|"SDP / virtio-net"| VM2
+    E810 ===|"Y split cable leg A"| DPU
+    E810 ===|"Y split cable leg B"| DPU
     MGMT(["lab mgmt network<br/>IP pool 10.30.0.100–199"])
-    MGMT --- TGDOM0
-    MGMT --- DXDOM0
+    MGMT --- DOM0
     MGMT --- VM1
     MGMT --- VM2
     MGMT ---|"DPU reachable on its own"| DPU
 ```
 
-- **Two XCP-ng hosts, one setup.** `tg-01-xcp` holds the Intel E810 (the traffic-gen side, so
-  client / traffic-gen VMs get an E810 VF); `dpu-01-xcp` holds the OCTEON's SDP PCIe endpoint
-  (so backend / sink VMs get an SDP VF). The OCTEON card itself, `dpu-01`, is not a VM host.
-  The setup's members are `dpu-01` (`kind: dpu`, host `dpu-01-xcp`) and `tg-01` (`kind: nic`,
-  host `tg-01-xcp`).
-- **The 25G wire** is the two links `tg-01.e810p0 → dpu-01.sfp0` and `tg-01.e810p1 →
-  dpu-01.sfp1`. Traffic leaves a VM on `tg-01-xcp` via its E810 VF, crosses the DPU, and
-  either returns on the second port (the VPP loop) or continues over the SDP path to a VM on
-  `dpu-01-xcp`.
+- **One XCP-ng host** with the E810. Its two QSFP28 ports go through the Y cable into the DPU's
+  single port, so traffic can leave on p0, cross the DPU, and come back on p1. That loop is the
+  data path for all three use cases.
 - **The DPU has its own management path.** It can be used on its own, for example a user who
   SSHes in to run VPP by hand. This is why DPU access needs its own gate (section 7) rather
   than relying on "the VMs are gone".
 - **Every role VM is independent.** Each has its own mgmt IP from the pool, the owner's SSH
-  key, and its own passthrough VF (E810 on `tg-01-xcp`, SDP on `dpu-01-xcp`).
-- **All three use cases need the DPU, the E810 VF and the wire.** VPP, TLS proxy and SmartNIC
-  are therefore mutually exclusive, and the whole testbed is booked as one unit. Capability
+  key, and its own E810 VF.
+- **All three use cases need the DPU and both E810 ports.** VPP, TLS proxy and SmartNIC are
+  therefore mutually exclusive, and the whole testbed is booked as one unit. Capability
   matching ([03-scheduler.md](03-scheduler.md)) keeps working unchanged when more testbeds are
   added.
 
 | Use case | DPU runs | Host VMs | Datapath |
 |---|---|---|---|
-| `vpp` | DAO VPP (DPDK on OCTEON) | traffic-gen VM (TRex/pktgen, E810 VF on `tg-01-xcp`), sink VM (on `dpu-01-xcp`) | E810 VF → wire → DPU VPP → wire |
-| `tls-proxy-nginx` | NGINX + CPT crypto offload | client VM (h2load, E810 VF on `tg-01-xcp`), backend VM (HTTP, SDP VF on `dpu-01-xcp`) | client → wire → DPU TLS terminate → SDP → backend |
-| `smartnic` | DAO SmartNIC/virtio offload app | traffic-gen VM (E810 VF on `tg-01-xcp`), host VM using the offloaded interface (on `dpu-01-xcp`) | traffic-gen → wire → DPU offload → host VM |
+| `vpp` | DAO VPP (DPDK on OCTEON) | traffic-gen VM (TRex/pktgen on VF p0), sink VM (VF p1) | p0 → DPU VPP → p1 |
+| `tls-proxy-nginx` | NGINX + CPT crypto offload | client VM (h2load, VF p0), backend VM (HTTP, VF p1) | client → DPU TLS terminate → backend |
+| `smartnic` | DAO SmartNIC/virtio offload app | host VM using the offloaded interface, traffic-gen VM | traffic-gen → DPU offload → host VM |
 
 Each use case is still one `usecases/*.yml` file (roles, `requires`, `hw_class`, and the new
 `health:` block from section 8), so adding a use case requires no code change.
@@ -196,9 +185,7 @@ admins pass every owner check.
   always succeeds unless the horizon is full.
 - **at:** the scheduler checks exactly that window. If it overlaps anything, it returns
   `409 slot_conflict` with `detail.alternatives` (the next three free starts of the same
-  length), which the dashboard shows as one-click chips. As implemented (B-13): the scheduler
-  returns them on every `NoFit` as `NoFit.alternatives`, searched forward from the requested
-  start (or `now`), on the slot grid, any capable setup ([03-scheduler.md](03-scheduler.md) Step 5c).
+  length), which the dashboard shows as one-click chips.
 - Per-user caps give `409 quota_exceeded`. The prototype allows one live reservation and two
   future reservations per user, which stops one person hoarding the only testbed.
 
@@ -215,12 +202,8 @@ turnaround = cleanup_budget (DAOLAB_CLEANUP_MIN, e.g. 10)
            + reflash_lead   (DAOLAB_HW_CLASS_LEAD_MIN, only if the next booking needs another hw_class)
 ```
 
-As implemented (B-11, [03-scheduler.md](03-scheduler.md) Step 3): the next booking always carries its own lead before its start (`DAOLAB_PROVISION_LEAD_MIN`, or the reflash lead when its `hw_class` differs), and that lead comes **after** the previous booking's cleanup, so the gap between two bookings is `cleanup + lead`: **15 min** for the same `hw_class` (10 + 5) and **25 min** when a reflash is needed (10 + 15). The scheduler takes the cleanup length from `DAOLAB_CLEANUP_MIN`, not from the `reservations.turnaround_min` column.
-
 **Slot grid:** starts snap to `DAOLAB_SLOT_MIN` (e.g. 30 minutes). This keeps the date picker
 simple and packs bookings back-to-back with no unusable gaps.
-
-As implemented (B-12, [03-scheduler.md](03-scheduler.md) Step 5a): the grid is multiples of `DAOLAB_SLOT_MIN` minutes after UTC midnight; `asap` rounds each candidate start up to it, and an `at` start that is off the grid is refused (`NoFit("off_grid")`) because snapping it would be shifting. The scheduler starts `asap` from `max(requested, now)` rounded up to the grid and does **not** add `provision_lead` to `now` as the sentence below says; which of the two is intended is an open question.
 
 **Placement:**
 
@@ -457,18 +440,9 @@ stateDiagram-v2
 ```
 
 Jobs have their own small lifecycle (`pending → running → succeeded | failed`), with an
-`attempt` counter and `trace_id`. A `failed` job is final and is never revived: a retry is a
-**new** job row for the same reservation and kind with `attempt + 1` (B-20; the crash-recovery
-rule of B-26, which puts a stale `running` job back to `pending`, is a separate, explicit
-exception added with that task). **Single-flight per setup:** the engine never runs two
-deploy, cleanup or reconcile jobs against the same setup at once. Health-probe jobs are
-read-only and exempt. *Built (B-24):* the engine checks for a running mutating job on the setup
-and marks its own job `running` in one write transaction; a job that must wait stays `pending`
-and is retried on the next tick, and a job stranded as `running` by a crashed engine blocks its
-setup until B-26 requeues it. *Built (B-26):* each tick first requeues `running` jobs with no
-recorded step for `DAOLAB_JOB_TIMEOUT_SEC` (default 1800 s) through `models.requeue_job`, the
-only path from `running` back to `pending`; the attempt is unchanged and a `requeued` marker
-step is added.
+`attempt` counter and `trace_id`. **Single-flight per setup:** the engine never runs two
+deploy or cleanup jobs against the same setup at once. Health-probe jobs are read-only and
+exempt.
 
 ---
 
@@ -479,7 +453,7 @@ step is added.
 | users | username, role (user/admin), token hash, SSH public key, enabled | token stored hashed |
 | setups / members | testbed, its hosts (XCP host, DPU), capabilities, availability flag (available / quarantined / maintenance) | quarantine blocks placement |
 | reservations | user, use case, setup, window, state, mode (asap/at), turnaround | **no two live reservations on one setup overlap** (txn today, exclusion constraint on Postgres) |
-| jobs | reservation, kind (deploy/cleanup/health_probe/reconcile), state (pending/running/succeeded/failed), attempt, trace_id, log path, steps (JSON list, appended while running), error, started/finished times | one running mutating job per setup (enforced by the engine, B-24); the setup is reached through the reservation |
+| jobs | reservation, kind (deploy/cleanup/health_probe/reconcile), state, attempt, trace_id, log path, steps | one running mutating job per setup |
 | vms | reservation, role, VM name/uuid, host, VF, IP | name `daolab-r<id>-<role>` |
 | ip_pools / ip_leases | range; lease (ip, reservation, role, state leased/released/quarantined) | **(pool, ip) unique among live leases**; `(reservation, role)` unique → idempotent |
 | health_snapshots | reservation, verdict, per-check results, evaluated_at | latest row only is needed |
@@ -513,16 +487,7 @@ class of "forgot to revoke" bugs.
 real `/internal/leases` and `/internal/vm-ip`, emits OTel spans, and writes fake metrics. The
 whole flow (booking, conflicts, IP exclusivity, DPU key window, cleanup, quarantine) can then be
 demonstrated on a laptop with no testbed. `DAOLAB_MOCK_FAIL=cleanup` forces residue so the
-quarantine path can be exercised. *Built so far (B-22):* the sleeping, step-recording mock
-(`DAOLAB_MOCK_STEP_SEC`, default 5 s per step, 6 deploy steps ≈ 30 s) and the two failure
-switches — `deploy` fails the deploy at `create_vms`; `cleanup` makes cleanup report success
-while `verify_clean` keeps reporting residue. The lease/vm-ip calls (B-44), OTel spans (B-62)
-and fake metrics come with their own tasks.
-
-*The engine (B-23):* `python -m service.engine` runs one tick and exits; `--loop` ticks every
-`DAOLAB_ENGINE_INTERVAL_SEC`. It refuses to start (exit 1, "run `daolab init` first") if the
-database schema is not the latest version. See [04-lifecycle-engine.md](04-lifecycle-engine.md)
-for the tick order and what each finished job does to its reservation.
+quarantine path can be exercised.
 
 **Telemetry stack:** `deploy/otel/docker-compose.yml` runs `otelcol-contrib`, `prometheus` and
 `jaeger`. With `DAOLAB_OTEL_ENDPOINT` unset, the backend skips tracing and health falls back to
@@ -551,14 +516,12 @@ P1–P3 land:
   `/health`, `/health/probe`, `/events`, `/jobs/{id}`, `/internal/leases`,
   `/internal/authz/keys`, `/admin/setups/{name}/force-clean`.
 - **[04-lifecycle-engine.md](04-lifecycle-engine.md):** `tearing_down` becomes `cleaning`
-  (teardown + verify + reconcile), and the `quarantined` state is added (both done in B-21:
-  `models.RESERVATION_TRANSITIONS` is this section's diagram edge for edge). Procedures run as
-  job rows.
+  (teardown + verify + reconcile), and the `quarantined` state is added. Procedures run as job
+  rows.
 - **[05-provisioning.md](05-provisioning.md):** the four playbooks become roles under a single
   `deploy.yml` plus `cleanup.yml`. VM IPs are leased and set statically through cloud-init
-  instead of being discovered through guest tools. The inventory stays **two XCP-ng hosts**
-  (`tg-01-xcp` for the E810 / traffic-gen side, `dpu-01-xcp` for the OCTEON SDP side) plus the
-  DPU (`dpu-01`) — the earlier "collapse to one host `tb-01-xcp`" note was wrong for this lab.
+  instead of being discovered through guest tools. The inventory collapses to one XCP-ng host
+  (`tb-01-xcp`) plus the DPU.
 - **Tech stack ([README.md](README.md)):** adds OpenTelemetry (SDK, Collector, Ansible
   callback), with Prometheus and Jaeger as optional dev-time containers. This is the only new
   technology. There is still no message queue: jobs are DB rows.

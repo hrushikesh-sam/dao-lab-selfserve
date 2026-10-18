@@ -10,16 +10,10 @@ the cancel endpoint and the `/internal/vm-ip` handler are [02-backend-api.md](02
 
 ## Reservation state machine
 
-States, exact list: `queued`, `provisioning`, `ready`, `active`, `cleaning`, `quarantined`,
-`released`, plus `failed` — the terminal error state the contract adds for failure handling.
-`released` and `failed` are terminal. **B-21 update:** `tearing_down` was renamed `cleaning`,
-and `quarantined` (cleanup finished but residue persists; leaves only through reconcile or
-force-clean to `released`) was added. The legal moves are exactly the diagram of
-[09-backend-system-design.md](09-backend-system-design.md) §10, enforced by
-`models.transition_reservation`; where the older diagram and table below differ (the
-`cleaning → failed` edge, retry self-loops), plan/09 §10 wins and retries move onto job rows
-(B-20, B-25). There is no `cancelled` state: cancelling a `queued` reservation goes
-straight to `released`; ending a `ready`/`active` slot early (`POST /reservations/{id}/cleanup`) goes through `cleaning` → `released`.
+States, exact list: `queued`, `provisioning`, `ready`, `active`, `tearing_down`, `released`,
+plus `failed` — the terminal error state the contract adds for failure handling. `released` and
+`failed` are terminal. There is no `cancelled` state: cancelling a `queued` reservation goes
+straight to `released`; cancelling `ready`/`active` goes through `tearing_down` → `released`.
 
 ```mermaid
 stateDiagram-v2
@@ -30,12 +24,10 @@ stateDiagram-v2
     provisioning --> ready: all playbooks ok · every vms.ip set
     provisioning --> failed: retries exhausted (best-effort teardown)
     ready --> active: engine · now ≥ start_at
-    ready --> cleaning: POST /cleanup (end early)
-    active --> cleaning: engine · now ≥ end_at · or POST /cleanup
-    cleaning --> released: runner.teardown ok
-    cleaning --> quarantined: residue persists after cleanup (B-21)
-    quarantined --> released: reconcile / force-clean (B-21)
-    failed --> released: cleanup verified (B-21)
+    ready --> tearing_down: DELETE (cancel)
+    active --> tearing_down: engine · now ≥ end_at · or DELETE
+    tearing_down --> released: runner.teardown ok
+    tearing_down --> failed: teardown failed after DAOLAB_MAX_RETRIES
     released --> [*]
     failed --> [*]
 ```
@@ -47,14 +39,13 @@ stateDiagram-v2
 | `provisioning` | engine tick (e): one full attempt | non-diy: `runner.dpu_prepare` (includes `ebf_set` iff `usecase.hw_class` differs from the DPU's `resources.hw_class`) → `runner.host_vm` → `runner.verify`; diy: `runner.host_vm` only | `ready` when all succeed and every VM role has an `ip`; update `resources.hw_class` after a reflash; fire webhook if `DAOLAB_WEBHOOK_URL` set | `retries += 1`, stay `provisioning` while `retries < DAOLAB_MAX_RETRIES` (idempotent replay next tick) |
 | `provisioning` | a failure brings `retries` to `DAOLAB_MAX_RETRIES` | best-effort single `runner.teardown`; set `failure_reason` | `failed` | teardown here is best-effort — its failure is logged, state is `failed` either way |
 | `ready` | engine tick (a): `now >= start_at` | none | `active` | — |
-| `ready` | `POST /reservations/{id}/cleanup` (api) | state change + `retries = 0`; engine drives the teardown | `cleaning` | — |
-| `active` | engine tick (b): `now >= end_at`, or `POST /reservations/{id}/cleanup` | `retries = 0` on entry | `cleaning` | — |
-| `cleaning` | engine tick (c): `runner.teardown` succeeds | setup freed; **`resources.hw_class` is left untouched** | `released` | `retries += 1`; after `DAOLAB_MAX_RETRIES`: `failed`, set `failure_reason`, setup stays held and surfaces under `held_by` on `admin.html` until an admin intervenes manually |
+| `ready` | `DELETE /reservations/{id}` (api) | state change + `retries = 0`; engine drives the teardown | `tearing_down` | — |
+| `active` | engine tick (b): `now >= end_at`, or `DELETE /reservations/{id}` | `retries = 0` on entry | `tearing_down` | — |
+| `tearing_down` | engine tick (c): `runner.teardown` succeeds | setup freed; **`resources.hw_class` is left untouched** | `released` | `retries += 1`; after `DAOLAB_MAX_RETRIES`: `failed`, set `failure_reason`, setup stays held and surfaces under `held_by` on `admin.html` until an admin intervenes manually |
 | `queued` | `DELETE /reservations/{id}` before provisioning began (api) | no playbooks ran; nothing to tear down | `released` | — |
 
-Cancel (`DELETE /reservations/{id}`) is valid only for `queued`; every other state → `409 invalid_state`,
-and cleanup is valid only for `ready`/`active`. The engine therefore never has to interrupt a
-running playbook.
+Cancel while `provisioning` or `tearing_down` → `409 invalid_state` (retry once `ready`) — the
+engine never has to interrupt a running playbook.
 
 ## Engine loop — one tick, every minute
 
@@ -71,7 +62,7 @@ from service import config, models, runner, scheduler
 def tick(db: sqlite3.Connection, now: datetime) -> int:
     """One pass over the reservations table. Returns transitions performed."""
     n  = _promote_ready_to_active(db, now)   # (a) ready -> active, start_at due
-    n += _expire_active(db, now)             # (b) active -> cleaning, end_at passed
+    n += _expire_active(db, now)             # (b) active -> tearing_down, end_at passed
     n += _drive_teardowns(db, now)           # (c) run runner.teardown per due reservation
     n += _start_due_provisioning(db, now)    # (d) queued -> provisioning, create vms rows
     n += _drive_provisioning(db, now)        # (e) one full provisioning attempt per setup
@@ -89,62 +80,14 @@ def main(argv: list[str] | None = None) -> int:
         time.sleep(config.DAOLAB_ENGINE_INTERVAL_SEC)
 ```
 
-> **B-23 update:** `service/engine.py` now exists, with `tick(db, now, rn=None, cfg=None)`,
-> `run_loop(...)` and `main(argv)` (`--loop`). It follows the *job* model of
-> [09-backend-system-design.md](09-backend-system-design.md) rather than the (a)–(e) functions
-> sketched above. The order is: (1) `ready → active` at `start_at`; (2) `active → cleaning` at
-> `end_at`, queueing a `cleanup` job in the same transaction; (3) `queued → provisioning` at
-> `start_at − lead` when the setup is `available` and not held, queueing a `deploy` job in the
-> same transaction; (4) run the pending jobs oldest first through the runner. The lead uses the
-> DPU's *actual* class at tick time (`scheduler.start_lead_min`), so a late projection never
-> makes the engine start early. A job's result, the reservation move and the audit row commit in
-> one transaction. A deploy that succeeds sets `ready` and records `resources.hw_class`; a
-> deploy that fails is retried as a fresh `deploy` job (attempt + 1, same trace) until
-> `DAOLAB_MAX_RETRIES` attempts have been observed (B-25); when they run out the reservation is
-> set `failed` and a `cleanup` job is queued automatically, and the cleanup of a `failed`
-> reservation ends in `released` (residue leaves it `failed`: there is no `failed → quarantined`
-> edge, and flagging the setup is B-71). A `deploy` job on a
-> reservation that is already `ready`/`active` is a **redeploy** (`POST .../redeploy`, B-28): the
-> runner replays it, the job records the outcome, and the reservation keeps its state whether the
-> replay succeeds or fails (no retries, no automatic cleanup), so a failed replay never tears
-> down a lab the user is working in.
-> A cleanup always runs
-> `verify_clean` afterwards, whatever the cleanup reported: clean → `released`, residue (or
-> verify unable to run) → `quarantined` (when the reservation was `cleaning`). **Because the setup is freed in step (4), the next
-> booking on it starts on the next tick**, not the same one; the lead time absorbs that.
-> **B-24 (single-flight):** a `deploy`, `cleanup` or `reconcile` job is only started when no
-> other such job is `running` on the same setup (a job belongs to a setup through its
-> reservation); health probes are exempt. The check and the `pending → running` move share one
-> `BEGIN IMMEDIATE` transaction, so two engine processes cannot both win. A job that has to wait
-> stays `pending` (it is not failed) and is retried next tick; jobs on one setup in the same tick
-> run one after the other. A job left `running` by a crashed engine therefore blocks its setup
-> until B-26 puts it back. When the engine process exits (end of a one-tick run, Ctrl-C in
-> `--loop`, or a crash) it calls the runner's `close()` if it has one, so the mock runner's fake
-> telemetry exporters (B-68) are stopped and their Prometheus target files removed. Note that
-> exporters live in the engine process: a one-tick run starts and stops them within that run, so
-> the health demo needs `--loop`. This replaces the older "one reservation in `provisioning` or
-> `cleaning`" wording below.
-> **B-26 (crash recovery):** every tick starts by putting `running` jobs that have shown no
-> activity for `DAOLAB_JOB_TIMEOUT_SEC` (default 1800 s) back to `pending`; doing it per tick
-> rather than only at process start also covers the systemd one-tick mode. "Activity" is the
-> job's `updated_at`, which every recorded step bumps, so a slow but healthy deploy is not
-> touched. The attempt number is unchanged, the steps recorded so far are kept, and a `requeued`
-> marker step is added. The update is guarded (still `running`, nothing recorded since it was
-> read), so a job that came back to life is left alone. Recovery runs before jobs are started,
-> so it also frees a setup that B-24 was holding. If the reservation has moved on by then, the
-> replayed job is failed by the usual state check. The timeout must exceed the longest silent
-> stretch of a healthy job; a job that is slow *and* silent for longer could be replayed while
-> still running. Not done yet: IP release and the
-> setup quarantine flag (B-71), `reconcile` jobs (B-72), health evaluation (B-67). `vms` rows
-> are not created by the engine yet.
-
-Tick order is fixed — (a) through (e) exactly as above. Rules:
+Tick order is fixed — (a) through (e) exactly as above — so releases and expiries free a setup
+*before* the same tick considers starting the next reservation on it. Rules:
 
 - **Stateless.** Every decision derives from reservation rows, `vms` rows, `resources.hw_class`,
   the clock, and `config.py`. The engine keeps nothing in memory across ticks; killing it at any
   instant loses no information (see the crash walkthrough below).
 - **Single-flight per setup.** At most one reservation per setup is in `provisioning` or
-  `cleaning` at a time; steps (c)/(d)/(e) skip a setup that already has one.
+  `tearing_down` at a time; steps (c)/(d)/(e) skip a setup that already has one.
 - **Compare-and-set transitions.** Every state write is guarded so a duplicate engine process
   cannot double-fire a transition:
 
@@ -172,16 +115,6 @@ Tick order is fixed — (a) through (e) exactly as above. Rules:
   always finds its `(reservation_id, role)` target.
 
 ## runner.py — one function per transition
-
-> **B-22 update:** `service/runner.py` now exists with the interface of
-> [09-backend-system-design.md](09-backend-system-design.md) §6 and §9, which replaces the four
-> playbook functions described below with one function per *job kind*:
-> `deploy(res, step)`, `cleanup(res, step)`, `probe(res, step)` and `verify_clean(res, step)`.
-> `res` is the reservation (a Row or dict with `id`); `step(name, state="ok", detail=None)` is a
-> callback the runner calls as each step finishes (`runner.job_sink` records them on the job);
-> each function returns `RunResult(ok, error, residue)`. `DAOLAB_RUNNER` picks the backend
-> (`get_runner()`): `mock` works today, `ansible` arrives with B-84. The ansible-runner sketch and
-> the playbook table below describe the older design and will be rewritten with B-80/B-84.
 
 `service/runner.py` is a thin ansible-runner wrapper. Each function runs the same-named playbook
 from `DAOLAB_PLAYBOOKS_DIR` against `DAOLAB_INVENTORY` (`inventory/hosts.yml`) and returns
@@ -228,7 +161,7 @@ hand-run playbook and an engine-run playbook are indistinguishable to Ansible.
 | `dpu_prepare(ctx)` | `playbooks/dpu_prepare.yml` | `provisioning`, step 1 — includes `roles/ebf_set` iff `usecase.hw_class` is set and differs from the DPU's `resources.hw_class` | `diy` |
 | `host_vm(ctx)` | `playbooks/host_vm.yml` | `provisioning`, step 2 — clones VMs, installs role software, posts IPs | never |
 | `verify(ctx)` | `playbooks/verify.yml` | `provisioning`, step 3 — runs the use case's `verify` block | `diy` |
-| `teardown(ctx)` | `playbooks/teardown.yml` | `cleaning`; also once, best-effort, on `provisioning` → `failed` | never |
+| `teardown(ctx)` | `playbooks/teardown.yml` | `tearing_down`; also once, best-effort, on `provisioning` → `failed` | never |
 
 Immediately after a `dpu_prepare` success that included a reflash, the engine writes
 `resources.hw_class = usecase.hw_class` — before `host_vm` runs. This keeps the DB truthful even
@@ -246,7 +179,7 @@ re-running the failed playbook — and keeps the engine fully stateless.
   playbook failure does `retries += 1` in the same transaction; a crash mid-run increments
   nothing (no result was observed). Net effect: at most `DAOLAB_MAX_RETRIES` attempts per phase.
 - `retries` is a per-phase budget: it starts at `0` (schema default) for provisioning and is
-  reset to `0` on every entry into `cleaning` — by engine step (b) and by the API cancel
+  reset to `0` on every entry into `tearing_down` — by engine step (b) and by the API cancel
   path ([02-backend-api.md](02-backend-api.md)).
 - A sequence that succeeds but leaves some `vms.ip` NULL counts as a failed attempt (the
   callback should have landed during the playbook run); the replayed `host_vm` re-posts IPs.
@@ -270,7 +203,7 @@ re-running the failed playbook — and keeps the engine fully stateless.
 `teardown.yml` destroys the reservation's VMs (`daolab-r<id>-<role>`), stops the DAO app on the
 DPU, and returns the setup to a reservable state. Three things it deliberately does **not** do:
 
-1. **Never resets `hw_class`.** Transition `cleaning` → `released` leaves
+1. **Never resets `hw_class`.** Transition `tearing_down` → `released` leaves
    `resources.hw_class` untouched. The DPU keeps its last provisioned personality (e.g.
    `sdp-pf1-vf8`) after `released`. Only the *next* use case declaring a **different**
    `hw_class` triggers `ebf_set` — inside its own `dpu_prepare`, with the longer
