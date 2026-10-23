@@ -69,12 +69,13 @@ $ echo $?
 1
 ```
 
-### `daolab add-user USERNAME PUBKEY_PATH [--role {admin,user}]`
+### `daolab add-user USERNAME PUBKEY_PATH [--role {admin,user}] [--rotate]`
 
 Reads the SSH public key file, generates `secrets.token_urlsafe(32)`, stores only
 `sha256(token).hexdigest()` in `users.token_hash`, and prints the plaintext token **exactly
 once** as `token: <token>` — it is unrecoverable afterwards (see Security operations for
-rotation). Duplicate username → exit `1`. Default role is `user`.
+rotation). Duplicate username → exit `1`, unless `--rotate`: then the existing user gets the new
+token (and this key and role) in place, and their reservations stay theirs. Default role is `user`.
 
 ```
 $ daolab add-user hrushi ~/.ssh/id_ed25519.pub
@@ -169,6 +170,9 @@ setting with its default; `cp .env.example .env` is part of Phase 0. Keep lines 
 | `DAOLAB_WEBHOOK_URL` | *(empty)* | engine | If set, the engine POSTs `{event: reservation.health_down, …}` here when an active reservation's health flips to `down` (B-67), at most once per flip. |
 | `DAOLAB_LOG_LEVEL` | `INFO` | api, engine, cli | Log level for api/engine/cli. |
 | `DAOLAB_ALLOW_DESTRUCTIVE` | `false` | engine (runner) | The owner sign-off the VPP / SmartNIC runbook playbooks require (`allow_destructive_changes`, `allow_launch`, `allow_cleanup`): they stop nginx-tls, rebind PCI devices and set hugepages on a shared board. Off: a VPP deploy that would take the live port refuses up front with the runbook's message. Turn on once the board's owner agreed that dashboard deploys may do this. |
+| `DAOLAB_DEPLOYABLE` | (empty) | api | Use cases a deploy may run, comma-separated (e.g. `vpp`); empty = every use case with a YAML. The rest stay in the catalog as "coming soon" and `POST /reservations` refuses them (`409 usecase_unavailable`, `reason: not_enabled`), so a click cannot run an untested runbook on a shared board. |
+| `DAOLAB_BECOME_PASSWORD_FILE` | (empty) | engine (runner) | A file holding only the sudo password of the runbooks' account (`dao-test`), chmod 600; handed to Ansible as `ANSIBLE_BECOME_PASSWORD_FILE`, never logged. Empty: the account needs passwordless sudo. |
+| `DAOLAB_DEFAULT_HOURS` | `1` | api | Length of a booking that names none (the dashboard's one-click deploy). |
 | `DAOLAB_DEPLOY_VMS` | `true` (`.env.example`: `false`) | engine (runner) | Create the use cases' VMs on the XCP-ng host. Off: deploys are DPU-only and no playbook (deploy, cleanup, verify, reconcile, orphan sweep) reaches the XCP-ng host — keep it off until `tb-01-xcp` is in the inventory. |
 | `DAOLAB_IP_POOL` | `10.68.1.0-10.68.2.200` | cli (sync) | The VMs' management addresses, leased per reservation (B-41/B-43). DPUs are static (inventory `ansible_host`) and never leased. Shrinking it never drops a live lease. |
 | `DAOLAB_RECONCILE_ATTEMPTS` | `2` | engine | Reconcile + verify rounds a cleanup job tries when residue is found, before the setup is quarantined (B-71). `0` quarantines on the first residue. |
@@ -300,18 +304,14 @@ failing playbook's task output appears under `daolab-engine`.
 - **Token storage** — `users.token_hash` holds only the SHA-256 hex of the bearer token; the
   plaintext exists once, on `add-user` stdout (`token: <token>`). A lost token cannot be
   recovered, only rotated. Tokens do not expire.
-- **Token rotation** — re-running `add-user` for an existing username is an error; rotate by
-  deleting the row and re-adding:
-  ```
-  sqlite3 "$DAOLAB_DB_PATH" "DELETE FROM users WHERE username='hrushi';"
-  daolab add-user hrushi ~/.ssh/id_ed25519.pub
-  ```
-  With `foreign_keys=ON`, historical `reservations` rows referencing the user block the
-  DELETE — clear that user's reservation history first (admin decision; it is audit data).
+- **Token rotation** — `daolab add-user hrushi ~/.ssh/id_ed25519.pub --rotate` gives the
+  existing user a new token in place (the old one stops working at once); their reservations,
+  live ones included, stay theirs. Without `--rotate`, re-running `add-user` for an existing
+  username is an error. (`scripts/run/dev.sh` rotates its test users this way on every start.)
 - **Disabling vs deleting** — to cut off a user, disable them from `admin.html`
   (`PATCH /users/{id}`, `{"enabled": false}`): the token stops working immediately
-  (`403 user_disabled`) and reservation history stays intact. Deleting the row is only for
-  token rotation (below).
+  (`403 user_disabled`) and reservation history stays intact. Rotation needs no delete
+  (`add-user --rotate`, above).
 - **Internal callback secret** — generate once with
   `python -c 'import secrets; print(secrets.token_urlsafe(32))'`, set as
   `DAOLAB_INTERNAL_SECRET` in `.env`. The API compares `X-Daolab-Secret` with

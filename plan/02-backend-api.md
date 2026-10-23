@@ -55,6 +55,8 @@ class Settings:
     engine_interval_sec: int; max_retries: int; job_timeout_sec: int; reconcile_attempts: int
     runner: str; mock_step_sec: float; mock_fail: str          # DAOLAB_RUNNER = ansible | mock
     allow_destructive: bool; deploy_vms: bool                  # runbook sign-off; create the VMs
+    become_password_file: str                                  # sudo password file for the runbooks' account
+    deployable: tuple[str, ...]                                # DAOLAB_DEPLOYABLE: use cases a deploy may run
     ip_pool: str                                               # 10.68.1.0-10.68.2.200 (VMs only)
     early_access: bool; health_stale_sec: int
     otel_endpoint: str; otel_agent_endpoint: str; prometheus_url: str
@@ -141,6 +143,7 @@ kebab-case segments. Unknown body fields are a `422` everywhere.
 | POST | `/reservations/{id}/health/probe` | owner | On-demand active check: `health_probe` job, `202` (B-66). |
 | GET | `/reservations/{id}/events` | owner | SSE stream of state changes and job steps (B-29). |
 | GET | `/jobs/{id}` | owner | Job state, steps, `trace_id`, log tail (B-29). |
+| GET | `/reservations/{id}/jobs` | owner | Every job of the reservation, oldest first, in the `/jobs/{id}` shape (the admin dashboard's reservation detail). |
 | POST | `/admin/setups/{name}/force-clean` | admin | Reconcile + clear a setup's quarantine; `{skip_verify}`; audit-logged, `202` (B-74). |
 | GET | `/admin/audit?limit=` | admin | Append-only audit log, newest first (B-55). |
 | POST | `/internal/vm-ip` | internal | A deployed role's address, posted by `deploy.yml`. |
@@ -157,8 +160,12 @@ pre-fills the Deploy dialog.
 **GET /usecases** → `200`, array ordered by `usecases.id` (README table order, `diy` included).
 Each row also carries the info-modal payload: `doc_url` + `doc_summary` (seeded verbatim from
 the DAO docs), parsed `requires` / `hw_class` / `roles`, and `setups` — the capability-matching
-setups as `{name, capabilities, members(name,kind,host), links, diagram}` so the (non-admin)
-user page can render the testbed without `GET /setups`; `[]` on planned rows:
+setups as `{name, capabilities, members(name,kind,host,address), links, diagram}` so the
+(non-admin) user page can render the testbed without `GET /setups`; `[]` on planned rows. Also
+`deployable` (false for a use case `DAOLAB_DEPLOYABLE` does not name; such a row has
+`reason: "not_enabled"`, `available: false`, and `POST /reservations` answers it with
+`409 usecase_unavailable`) and `dpu_login` (the DPU username a deploy hands out, `lab`; `null`
+for `diy`), which the Deploy dialog shows before the user deploys:
 
 ```json
 [{"name": "tls-proxy-nginx", "description": "NGINX TLS termination proxy, RSA/ECDSA offloaded to CPT",
@@ -441,6 +448,8 @@ combined playbook log under `DAOLAB_ARTIFACTS_DIR` with the ansible runner (B-84
   pending or running is returned instead of queueing another. `202 {"id", "state", "job"}`.
 - **GET /jobs/{id}** (B-29) → the job object; owner of its reservation or admin (`403`
   otherwise); unknown id → `404`.
+- **GET /reservations/{id}/jobs** → every job of the reservation, oldest first, each in the job
+  object shape; owner or admin.
 - **GET /reservations/{id}/events** (B-29, owner) → `text/event-stream`. It sends the current
   state first, then every job step of the reservation (those already recorded, then each new
   one as it lands) and every state change, polling the DB every second:
