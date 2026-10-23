@@ -49,6 +49,7 @@ class Settings:
     allow_destructive: bool
     deploy_vms: bool
     become_password_file: str
+    deployable: tuple[str, ...]
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -97,6 +98,7 @@ class Settings:
             allow_destructive=flag("DAOLAB_ALLOW_DESTRUCTIVE"),
             deploy_vms=flag("DAOLAB_DEPLOY_VMS", "true"),
             become_password_file=env("DAOLAB_BECOME_PASSWORD_FILE", ""),
+            deployable=tuple(n.strip() for n in env("DAOLAB_DEPLOYABLE", "").split(",") if n.strip()),
         )
 
 

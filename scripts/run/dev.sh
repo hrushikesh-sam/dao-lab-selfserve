@@ -12,20 +12,31 @@
 #   scripts/run/dev.sh --api-only # serve the API only, without the engine
 #
 # Respects DAOLAB_* environment variables; falls back to .env, then defaults.
-# Test users are `alice`, `bob` (role user) and `dev-admin` (admin) — they are rotated
-# (deleted + re-created) on every run so their tokens can always be printed. Real users
-# are untouched.
+# Test users are `alice`, `bob` (role user) and `dev-admin` (admin) — they get new tokens on
+# every run so the tokens can always be printed; their reservations are kept (a live one is
+# still cleaned up at its end). Real users are untouched.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 # --- settings: real env > .env > defaults (same precedence as the app) -------
-_PORT="${DAOLAB_API_PORT:-}"; _HOST="${DAOLAB_API_HOST:-}"; _DB="${DAOLAB_DB_PATH:-}"
-if [ -f .env ]; then set -a; . ./.env; set +a; fi
-export DAOLAB_API_PORT="${_PORT:-${DAOLAB_API_PORT:-8080}}"
-export DAOLAB_API_HOST="${_HOST:-${DAOLAB_API_HOST:-0.0.0.0}}"
-export DAOLAB_DB_PATH="${_DB:-${DAOLAB_DB_PATH:-./daolab.db}}"
+# .env only fills in what the environment leaves unset (python-dotenv's rule), so a wrapper
+# such as scripts/run/showcase.sh can set any DAOLAB_* without .env overriding it.
+load_env_file() {
+    local line key val
+    while IFS= read -r line || [ -n "${line}" ]; do
+        [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+        key="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[2]}"
+        [ -n "${!key+x}" ] && continue
+        val="${val%\"}"; val="${val#\"}"
+        export "${key}=${val}"
+    done < "$1"
+}
+[ -f .env ] && load_env_file .env
+export DAOLAB_API_PORT="${DAOLAB_API_PORT:-8080}"
+export DAOLAB_API_HOST="${DAOLAB_API_HOST:-0.0.0.0}"
+export DAOLAB_DB_PATH="${DAOLAB_DB_PATH:-./daolab.db}"
 
 FRESH=0
 API_ONLY=0

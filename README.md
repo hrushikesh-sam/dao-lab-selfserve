@@ -28,6 +28,13 @@ ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 -e 
 daolab add-user <name> ~/.ssh/<their key>.pub     # one per user; prints their dashboard token
 ```
 
+For a demo on the real board, `scripts/run/showcase.sh` does all of the above in one go: the
+ansible runner, DPU only (`DAOLAB_DEPLOY_VMS=false`), VPP as the only deployable use case
+(`DAOLAB_DEPLOYABLE=vpp`), one-minute slots so a click deploys within seconds, its own DB in
+`var/showcase.db`. It needs SSH as `dao-test` to the board and, for its sudo, a file holding only
+that password (`~/.daolab-become-dao-test`, chmod 600). `scripts/run/xo.sh` runs Xen Orchestra in
+a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its UI).
+
 Then `http://<daolab host>:8080/` (users) and `/admin.html` (admins). What runs where:
 `playbooks/deploy.yml` → `playbooks/apps/<app>/` (Akshay's runbook playbooks in `VPP_ansible/`
 and `dao-smartnic/`, imported unchanged) → `roles/dpu_access` (the `lab` login) → VMs;

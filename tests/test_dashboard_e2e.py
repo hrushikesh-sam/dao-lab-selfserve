@@ -109,6 +109,8 @@ def test_a_user_deploys_with_a_password_logs_in_details_and_ends_it(stack, brows
     row.locator("button:has-text('Deploy')").click()
     assert page.inner_text("#rm-title") == "Deploy vpp"
     assert page.input_value("#rm-key") == KEY                      # pre-filled from the profile
+    login = " ".join(page.inner_text("#rm-login").split())          # the login, before deploying
+    assert "as username lab at 10.68.0.190: ssh lab@10.68.0.190" in login
     page.check('input[name="rm-auth"][value="password"]')
     assert page.is_hidden("#rm-keybox") and page.is_visible("#rm-pwbox")
     page.click("#rm-submit")
@@ -117,6 +119,7 @@ def test_a_user_deploys_with_a_password_logs_in_details_and_ends_it(stack, brows
     _wait_state(page, ["ready", "active"])
     access = " ".join(page.locator(".access").first.inner_text().split())
     assert "ssh lab@10.68.0.190" in access and "••••" in access
+    assert "host 10.68.0.190 copy username lab copy password ••••" in access
     page.locator(".access button:has-text('show')").click()
     pw_text = page.locator("[id^=pw-]").first.inner_text()
     assert len(pw_text) == 16 and pw_text.isalnum()
@@ -136,6 +139,7 @@ def test_a_user_deploys_with_their_key(stack, browser):
     _wait_state(page, ["ready", "active"])
     access = " ".join(page.locator(".access").first.inner_text().split())
     assert "your SSH key ssh-ed25519 …alice@laptop" in access
+    assert "username lab copy login with your SSH key" in access and "(no password)" in access
 
 
 def test_an_admin_sees_the_quarantine_and_clears_it(stack, browser):

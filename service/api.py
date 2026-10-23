@@ -234,7 +234,8 @@ def _reservation_diagram(conn, row, user, uc) -> str | None:
             else:
                 label = _label(f"{rname} VM · {(vm['host'] if vm else spec.get('on'))}",
                                vm["name"] if vm else spec.get("vm"),
-                               f"ssh {user['username']}@{ip}" if ip else "no IP yet")
+                               f"ssh {user['username']}@{ip}" if ip else
+                               ("no IP yet" if config.settings.deploy_vms else "not provisioned"))
             lines.append(f'  {_node_id(rname)}["{label}"]')
         upstream = roles.get(dpu_role, {}).get("upstream") if dpu_role else None
         for rname, spec in roles.items():
@@ -298,6 +299,9 @@ def reservation_object(conn, row) -> dict:
         "end_at": row["end_at"], "shifted": row["start_at"] != row["requested_start_at"],
         "failure_reason": row["failure_reason"],
         "vms": vms, "diagram": _reservation_diagram(conn, row, user, uc),
+        # DAOLAB_DEPLOY_VMS off: only the DPU is deployed; the use case's VMs are listed but
+        # nothing creates them, so the dashboard says so instead of "waiting for IP"
+        "vms_provisioned": bool(config.settings.deploy_vms),
         "leases": [{"role": l["role"], "ip": l["ip"], "state": l["state"]}
                    for l in models.ip_leases_for_reservation(conn, row["id"])
                    if l["state"] != "released"],
@@ -421,13 +425,21 @@ def whoami(user: sqlite3.Row = Depends(current_user)):
             "created_at": user["created_at"], "ssh_pubkey": user["ssh_pubkey"]}
 
 
+def _deployable(uc) -> bool:
+    """A use case the dashboard may deploy: it has a YAML and DAOLAB_DEPLOYABLE (when set)
+    names it. The others stay in the catalog, as "coming soon"."""
+    allowed = config.settings.deployable
+    return uc["yaml_path"] is not None and (not allowed or uc["name"] in allowed)
+
+
 @app.get("/usecases")
 def usecases(user: sqlite3.Row = Depends(current_user),
              conn: sqlite3.Connection = Depends(db_conn)):
     now = datetime.now(timezone.utc)
     setups = [{"id": s["id"], "name": s["name"],
                "capabilities": models.from_json(s["capabilities"]),
-               "members": [{"name": m["name"], "kind": m["kind"], "host": m["host"]}
+               "members": [{"name": m["name"], "kind": m["kind"], "host": m["host"],
+                            "address": m["address"]}
                            for m in models.setup_members(conn, s["id"])],
                "links": models.from_json(s["links"]), "diagram": s["diagram"]}
               for s in models.list_setups(conn)]
@@ -439,9 +451,14 @@ def usecases(user: sqlite3.Row = Depends(current_user),
                "requires": models.from_json(uc["requires"]), "hw_class": uc["hw_class"],
                "roles": models.from_json(uc["roles"]) if uc["roles"] else {},
                "setups": [],
-               "available": False, "reason": None, "missing": [], "next_free_at": None}
+               "available": False, "reason": None, "missing": [], "next_free_at": None,
+               "deployable": _deployable(uc),
+               # the DPU login a deploy hands out (the Deploy dialog says so up front); diy has none
+               "dpu_login": None if uc["name"] == "diy" else models.ACCESS_LOGIN}
         if uc["yaml_path"] is None:
             row["reason"] = "no_yaml"
+        elif not row["deployable"]:
+            row["reason"] = "not_enabled"
         else:
             requires = set(models.from_json(uc["requires"]))
             candidates = [s for s in setups if requires <= set(s["capabilities"])]
@@ -665,6 +682,10 @@ def create_reservation(body: ReservationCreate,
     if uc["yaml_path"] is None:
         raise DaolabError("usecase_unavailable", 409, f"{body.usecase} is planned (no YAML yet)",
                           {"reason": "no_yaml"})
+    if not _deployable(uc):
+        raise DaolabError("usecase_unavailable", 409,
+                          f"{body.usecase} is not enabled on this lab yet",
+                          {"reason": "not_enabled", "deployable": list(config.settings.deployable)})
     if is_diy:
         setup = models.setup_by_name(conn, body.setup)
         if setup is None:
@@ -955,6 +976,15 @@ def get_job(job_id: int, user: sqlite3.Row = Depends(current_user),
         raise DaolabError("not_found", 404, f"unknown job: {job_id}", {"id": job_id})
     _owned_reservation(conn, job["reservation_id"], user)
     return job_object(job)
+
+
+@app.get("/reservations/{res_id}/jobs")
+def reservation_jobs(res_id: int, user: sqlite3.Row = Depends(current_user),
+                     conn: sqlite3.Connection = Depends(db_conn)):
+    """Every job of a reservation, oldest first, in the GET /jobs/{id} shape (owner or admin):
+    what the admin dashboard's reservation detail shows - steps, errors, traces, log tails."""
+    _owned_reservation(conn, res_id, user)
+    return [job_object(j) for j in models.jobs_for_reservation(conn, res_id)]
 
 
 @app.get("/reservations/{res_id}/events")
