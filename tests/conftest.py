@@ -17,9 +17,15 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 
+import dotenv
 import pytest
 
-from service import models
+# The tests run on the settings' defaults, never on a developer's .env (scripts/run/dev.sh writes
+# one; with DAOLAB_DEPLOY_VMS=false in it the VM tests saw no VMs). service.config calls
+# load_dotenv at import, so this has to come before the first `from service import ...`.
+dotenv.load_dotenv = lambda *args, **kwargs: False
+
+from service import models                          # noqa: E402
 
 UTC = timezone.utc
 NOW = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)      # frozen clock
