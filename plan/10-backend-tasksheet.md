@@ -27,7 +27,8 @@ dashboard on the real board; the VMs need B-85). On top of the tasksheet: the DP
 Akshay's runbook playbooks (`VPP_ansible/`, `dao-smartnic/`) through `playbooks/apps/`, the
 dashboard deploys in one click with the user's SSH key or a generated password on the DPU's
 `lab` login, DPUs are static (xeon3-oct-112 at 10.68.0.190) and VMs lease from
-10.68.1.0–10.68.2.200.
+10.68.1.0–10.68.2.200. What is still open is **P7** (B-92…B-101, below); what was finished
+when is in [COMPLETION_LOG.md](../COMPLETION_LOG.md).
 
 ---
 
@@ -168,6 +169,24 @@ dashboard deploys in one click with the user's SSH key or a generated password o
 | B-90 | Fold the design changes back into 02–05 (mode/409, cleaning/quarantined, single deploy.yml, leased IPs, one-host inventory) | `plan/02–05` | P1–P3 | no doc contradicts 09 | Rama | done |
 | B-91 | Ops runbook: quarantine handling, force-clean, OTel stack ops, rotating the internal secret | `plan/08-cli-config-ops.md` | P6 | reviewed by whoever is on lab duty | Rama | done |
 
+## P7 — Pending (from the 2026-10-23 re-check, `mistakes.md`)
+
+Open work found by re-checking the plan audit against the code (`mistakes.md`, sections
+A–P). Owner `—` = not assigned yet.
+
+| ID | Task | Files | Depends | Done when | Owner | Status |
+|---|---|---|---|---|---|---|
+| B-92 | The real lab in the inventory: two XCP-ng hosts (`tg-01-xcp` 10.68.0.52 with the E810 VFs on PF `0000:01:00.1`, `dpu-01-xcp` 10.68.0.53) instead of the placeholder `tb-01-xcp`; host_vars (SR, networks, templates, `e810_vfs`); the setup YAML wired to them; VM prefix, gateway, DNS in `group_vars` | `inventory/`, `setups/`, `plan/05`, `plan/09` | — | `bringup.yml` passes against both hosts; `mistakes.md` A1, A7, F1, F3, D8 closed | — | todo |
+| B-93 | VMs through Xen Orchestra: the two pools added in XO (`scripts/run/xo.sh`), an XO API token in a file (`DAOLAB_XO_TOKEN_FILE`); the VM roles create, start and destroy VMs through XO's API instead of `xe` over SSH | `playbooks/roles/host_vm`, `cleanup.yml`, `orphans.yml`, `service/config.py` | B-92 | a `vpp` deploy with `DAOLAB_DEPLOY_VMS=true` gets `tgen` + `sink` with leased IPs; End now removes them (seen in XO) | — | todo |
+| B-94 | A booking must not start on a setup whose failed reservation still has its cleanup pending (`mistakes.md` P1) | `service/engine.py`, `service/scheduler.py`, tests | — | test: a deploy fails out → a due booking on the same setup waits until that cleanup is verified | — | todo |
+| B-95 | TLS use case gates: `expect` that `h2load` really prints (`"1000 succeeded"`); `verify` checks the rc and a parsed field, not a substring; an httpcheck target for the proxy VM and a rule filtered on `http_status_class="2xx"` | `usecases/tls-proxy-nginx.yml`, `roles/verify`, `roles/host_vm`, `roles/otel_agent` | B-93 | `mistakes.md` B1, B2, I9, P2 closed | — | todo |
+| B-96 | A functional gate for DPU-only deploys (VPP: `eth0` up with its address, not only `show version`); a wall-clock limit per playbook (`DAOLAB_JOB_TIMEOUT_SEC` handed to ansible-runner) | `playbooks/apps/dao-vpp`, `service/runner.py` | — | `mistakes.md` I10, P3, P4 closed; a hung fake playbook fails its job within the timeout | — | todo |
+| B-97 | `POST /internal/vm-ip` accepts only the reservation's own leased address while it is deploying or live; the IP conflict check uses arping, not ICMP ping | `service/api.py`, `roles/lease_ip` | B-93 | `mistakes.md` J10, K4, P5, P6 closed | — | todo |
+| B-98 | Fold plan/09 into the rest of the doc set: `README.md`, `plan/README.md`, `plan/01`, `plan/06`, `plan/07`, `plan/08` (topology, playbooks, IP model, counts, the endpoint map, dangling "contract §" references) | docs | B-92 | `mistakes.md` A2, A8, B8, B10, B13, C9, C14, I19, M4 closed | — | todo |
+| B-99 | SmartNIC on the real board: in Akshay's runbook `smartnic_build` / `smartnic_launch` check `pgrep -x vpp` (misses `vpp_main`), and the build prefix (`dao-clone/install`) does not match `smartnic_binary` (`dao-clean/install`) | `dao-smartnic/` | — | SmartNIC deploys and cleans up from the dashboard on xeon3-oct-112; then add it to `DAOLAB_DEPLOYABLE` | Akshay | todo |
+| B-100 | Password-mode deploy verified on the real board: log in as `lab` with the generated password, refused after End now | — | — | recorded run | — | todo |
+| B-101 | Operations: CI running the tests on every push; a DB backup timer; token expiry | `.github/workflows/`, `deploy/`, `service/models.py` | — | `mistakes.md` K6, J15, J13 closed | — | todo |
+
 ---
 
 ## Critical path and totals
@@ -189,3 +208,5 @@ graph LR
 - **Can run in parallel:** P1 alongside P2; B-60/B-61 (OTel stack) from the start; B-85
   (testbed bring-up) any time.
 - **Mock-demo milestone (end of P5):** the whole flow works on a laptop with test users.
+- **After P6 (P7):** B-92 → B-93 → (B-95, B-97, B-98) is the path to VMs on hardware; B-94,
+  B-96, B-99, B-100 and B-101 can start now.

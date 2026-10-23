@@ -35,6 +35,23 @@ ansible runner, DPU only (`DAOLAB_DEPLOY_VMS=false`), VPP as the only deployable
 that password (`~/.daolab-become-dao-test`, chmod 600). `scripts/run/xo.sh` runs Xen Orchestra in
 a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its UI).
 
+## Status and pending work
+
+Done: the backend tasksheet (59 of 61 tasks, [plan/10](plan/10-backend-tasksheet.md)), and VPP on
+the real DPU end to end from the dashboard. History: [COMPLETION_LOG.md](COMPLETION_LOG.md).
+Pending (tasksheet **P7**, B-92…B-101, from the re-check in [mistakes.md](mistakes.md)):
+
+- **The VMs.** Put the lab's two XCP-ng hosts (10.68.0.52 / .53) in the inventory (B-92), then
+  create the use cases' VMs through Xen Orchestra (B-93). Until then deploys are DPU-only.
+- **Correctness.**
+  - A booking can start over a failed reservation whose cleanup is pending (B-94).
+  - DPU-only deploys have no functional gate, and a hung playbook blocks the engine (B-96).
+  - `/internal/vm-ip` trusts any IP (B-97).
+- **Use cases.** The TLS proxy's verify string and health rule (B-95); SmartNIC on the board
+  (B-99); a password-mode deploy recorded on the board (B-100).
+- **Docs and operations.** Fold plan/09 into the rest of the docs (B-98); CI, backups and token
+  expiry (B-101).
+
 Then `http://<daolab host>:8080/` (users) and `/admin.html` (admins). What runs where:
 `playbooks/deploy.yml` → `playbooks/apps/<app>/` (Akshay's runbook playbooks in `VPP_ansible/`
 and `dao-smartnic/`, imported unchanged) → `roles/dpu_access` (the `lab` login) → VMs;

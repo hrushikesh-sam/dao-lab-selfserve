@@ -113,7 +113,7 @@ back into those docs when P1–P3 land" — i.e. `plan/09` is an unmerged propos
 | A2 | PARTIAL | `playbooks/{deploy,cleanup,probe,verify_clean,reconcile,orphans,bringup}.yml`; role mapping `plan/05:159-181`; manual path `plan/05:132-135,577-583` | Decided and specified in `plan/05`; `README.md:62,179-186`, `plan/README.md:51,78,107`, `plan/01:304-313`, `plan/07:56-229` still say four playbooks. |
 | A3 | FIXED | `service/models.py:13`; `service/migrations.py:167-195` (v6 rewrites the CHECK, renames rows); `README.md:55,70`; `plan/04:18` | `schema.sql` stays the v0 baseline the migrations upgrade. |
 | A4 | PARTIAL | `plan/03:17-18,35,47`; `service/api.py:741` (`at` → 409, `asap` shifts) | Option B as a superset; `plan/README.md:26-28,181` and `plan/06:135-147` still say "never rejected"; no client sends `mode: at`. |
-| A5 | OBSOLETE | `service/api.py:797-826` (DELETE), `:829` (POST …/cleanup), `:859` (…/redeploy) | Both kept with one meaning; only `plan/06`'s map lacks `/cleanup` (C5). |
+| A5 | OBSOLETE | `service/api.py` `cancel_reservation` (DELETE), `cleanup_reservation` (POST …/cleanup), `redeploy` | Reconciled (merge of `origin/rama`, `21961c6`): DELETE cancels a `queued` booking only (409 otherwise), POST …/cleanup ends a live slot; only `plan/06`'s map lacks `/cleanup` (C5). |
 | A6 | PARTIAL | `service/ipam.py`; `service/api.py:1050,1067`; `roles/lease_ip`; `plan/05:88-106` | Lease + cloud-init in code; `plan/07:48-54,149-153,170-173` still DHCP / netplan. Not run on hardware. |
 | A7 | OPEN | `inventory/hosts.yml:13-21`; `setups/tb-01.yml` (setup-01.yml deleted) | B-04 landed, but `README.md:141-153`, `plan/README.md:32-40`, `plan/01`, `plan/06` still name `setup-01`; the inventory does not match the lab (F1). |
 | A8 | OPEN | `plan/10:163` (B-90 still scoped to `plan/02–05`) | As predicted: 02–05 folded; 01, 06, 07, `plan/README.md`, `README.md` still contradict 09. |
@@ -408,7 +408,7 @@ be updated and the other forgotten.
 | ID | Status on `rama` | Evidence (current `file:line`) | Note |
 |---|---|---|---|
 | I1 | PARTIAL | `service/scheduler.py:3-7,332-343`; `api.py:739-750` | `asap` default, `at` opt-in; no client sends `at`; `plan/README.md:26-28,181` stale. |
-| I2 | FIXED | `service/api.py:797-826,829-856` | Both kept, same live-slot effect. |
+| I2 | FIXED | `service/api.py` `cancel_reservation`, `cleanup_reservation` | One meaning each: DELETE = cancel a queued booking, POST …/cleanup = end a live slot (`21961c6`). |
 | I3 | FIXED | `service/models.py:13-17`; `migrations.py:167-196` | |
 | I4 | PARTIAL | `playbooks/deploy.yml:23-103`; `plan/05:161-172` | Four playbooks remain in `plan/07`, `plan/01`, `plan/README.md`, `README.md`, `plan/08`. |
 | I5 | PARTIAL | `network-config.j2:4-7`; `plan/05:100-106` | `plan/07` keeps the old model. |
