@@ -3,6 +3,7 @@ a per-job artifact dir, real job logs linked from GET /jobs/{id})."""
 import dataclasses
 import json
 import os
+import signal
 import types
 
 import pytest
@@ -175,6 +176,21 @@ def test_all_playbook_output_of_a_job_goes_to_one_log(settings, ctx):
     assert open(path).read() == "TASK [x] ok\nTASK [x] ok\n"
 
 
+def test_a_fresh_db_job_does_not_append_to_an_old_jobs_log(settings, ctx):
+    """Job ids start at 1 again on a fresh DB: the old job-7/ is set aside, not appended to."""
+    run = FakeRun(events=[ev("runner_on_ok", "x", stdout="TASK [x] ok")])
+    rn = AnsibleRunner(settings, run=run)
+    rn.deploy({**ctx, "job_created_at": "2026-10-01T09:00:00Z"}, Steps())    # the old DB's job 7
+    new = {**ctx, "job_created_at": "2026-10-16T09:00:00Z"}
+    rn.deploy(new, Steps())
+    rn.deploy(new, Steps())                                 # its retry appends to its own log
+    assert open(rn.log_path_for(7)).read() == "TASK [x] ok\nTASK [x] ok\n"
+    assert sorted(d for d in os.listdir(rn.job_dir(7)) if d.startswith("run-")) == \
+        ["run-1-deploy", "run-2-deploy"]
+    stale = os.path.join(settings.artifacts_dir, "job-7.stale-1")
+    assert open(os.path.join(stale, "job.log")).read() == "TASK [x] ok\n"
+
+
 def test_the_job_span_is_handed_to_ansible_as_traceparent(settings, ctx):
     from opentelemetry.sdk.trace import TracerProvider
     otel.use_provider(TracerProvider())
@@ -235,6 +251,7 @@ def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
     from tests.test_playbooks import MEMBERS, clean_state, dirty
     lab.set(dirty(clean_state()))
     rn = real_runner(lab, tmp_path)
+    handlers = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
     ctx = {"id": 12, "job_id": 1, "setup": "tb-01", "usecase": "vpp", "members": MEMBERS,
            "leases": ["10.30.0.101"]}
     steps = Steps()
@@ -251,6 +268,8 @@ def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
     assert rn.verify_clean(ctx, Steps()).ok
     log = open(rn.log_path_for(1)).read()
     assert "PLAY RECAP" in log and log.count("PLAY RECAP") == 3
+    # ansible-runner left the process's handlers alone: the engine still stops on SIGTERM / ^C
+    assert (signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)) == handlers
 
 
 def test_real_orphan_sweep(lab, tmp_path):

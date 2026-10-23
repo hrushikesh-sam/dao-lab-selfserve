@@ -81,6 +81,7 @@ import json
 import logging
 import re
 import sqlite3
+import signal
 import sys
 import time
 import urllib.request
@@ -232,7 +233,8 @@ def _call(fn, ctx, sink, what: str) -> RunResult:
 def _context(db, job, res) -> dict:
     """What the runner gets instead of a DB row: the reservation context (models) plus the job."""
     return {**models.reservation_context(db, res["id"]),
-            "job_id": job["id"], "job_kind": job["kind"], "attempt": job["attempt"]}
+            "job_id": job["id"], "job_kind": job["kind"], "attempt": job["attempt"],
+            "job_created_at": job["created_at"]}
 
 
 def _audit(db, job, action: str, detail: dict) -> None:
@@ -591,6 +593,12 @@ def run_loop(db, interval_sec: float, rn=None, sleep=time.sleep, max_ticks: int 
     return ticks
 
 
+def stop_on_sigterm() -> None:
+    """SIGTERM (systemctl stop) ends the loop like ^C does. A job cut off mid-playbook stays
+    `running` and crash recovery takes it on the next start, as after a kill."""
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m service.engine",
                                      description="Run one engine tick, or tick forever with --loop.")
@@ -619,6 +627,7 @@ def main(argv: list[str] | None = None) -> int:
             result = tick(db, datetime.now(timezone.utc), rn)
             print(f"tick done: {result}")
             return 0
+        stop_on_sigterm()
         try:
             run_loop(db, config.settings.engine_interval_sec, rn)
         except KeyboardInterrupt:

@@ -1,6 +1,8 @@
 """B-23: the engine tick — bookings become running reservations (plan/09 §6, §9, §10)."""
 import dataclasses
 import logging
+import os
+import signal
 from datetime import timedelta
 
 import pytest
@@ -1069,9 +1071,25 @@ def test_main_rejects_a_bad_runner_setting(cli_env, monkeypatch, capsys):
     assert engine.main([]) == 1 and "DAOLAB_RUNNER" in capsys.readouterr().err
 
 
-def test_main_loop_stops_cleanly_on_ctrl_c(cli_env, monkeypatch, capsys):
+@pytest.fixture
+def sigterm():
+    """Puts pytest's own SIGTERM handler back after a test that lets the engine take it."""
+    old = signal.getsignal(signal.SIGTERM)
+    yield
+    signal.signal(signal.SIGTERM, old)
+
+
+def test_main_loop_stops_cleanly_on_ctrl_c(cli_env, monkeypatch, capsys, sigterm):
     monkeypatch.setattr(engine, "run_loop", lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()))
     assert engine.main(["--loop"]) == 0 and "engine stopped" in capsys.readouterr().out
+    assert signal.getsignal(signal.SIGTERM) is signal.default_int_handler
+
+
+def test_sigterm_stops_the_loop_like_ctrl_c(world, sigterm):
+    engine.stop_on_sigterm()
+    with pytest.raises(KeyboardInterrupt):
+        engine.run_loop(world[0], 0, mock(), sleep=lambda s: os.kill(os.getpid(), signal.SIGTERM),
+                        max_ticks=3, clock=lambda: NOW)
 
 
 def test_main_loop_passes_the_configured_interval(cli_env, monkeypatch):

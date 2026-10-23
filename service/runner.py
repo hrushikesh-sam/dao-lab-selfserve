@@ -454,6 +454,28 @@ class AnsibleRunner:
         """Where the job's combined playbook output goes (the engine stores it on the job)."""
         return os.path.join(self.job_dir(job_id), "job.log")
 
+    def _claim(self, root: str, res: Mapping) -> None:
+        """job-<id>/ belongs to one job. A DB started afresh numbers its jobs from 1 again, so a
+        directory another job of the same id left behind is moved aside (job-<id>.stale-<n>),
+        never appended to; the job's retries find their own stamp and keep appending."""
+        stamp = {"job_id": _field(res, "job_id"), "created_at": _field(res, "job_created_at")}
+        marker = os.path.join(root, "job.json")
+        if os.path.isdir(root):
+            try:
+                with open(marker, encoding="utf-8") as fh:
+                    if json.load(fh) == stamp:
+                        return
+            except (OSError, ValueError):
+                pass
+            if os.listdir(root):
+                n = 1
+                while os.path.exists(f"{root}.stale-{n}"):
+                    n += 1
+                os.rename(root, f"{root}.stale-{n}")
+        os.makedirs(root, exist_ok=True)
+        with open(marker, "w", encoding="utf-8") as fh:
+            json.dump(stamp, fh)
+
     # ---- the contract ------------------------------------------------------------------
     def extravars(self, res: Mapping) -> dict:
         get = lambda key, default=None: _field(res, key, default)            # noqa: E731
@@ -485,6 +507,8 @@ class AnsibleRunner:
         from . import otel
         job_id = _field(res, "job_id") if res is not None else None
         root = self.job_dir(job_id if job_id is not None else "sweep")
+        if job_id is not None:
+            self._claim(root, res)
         os.makedirs(root, exist_ok=True)
         n = len([d for d in os.listdir(root) if d.startswith("run-")]) + 1
         pdd = os.path.join(root, f"run-{n}-{playbook_key}")
@@ -531,7 +555,10 @@ class AnsibleRunner:
             r = run(private_data_dir=pdd, project_dir=os.path.abspath(self.s.playbooks_dir),
                     playbook=self.PLAYBOOKS[playbook_key],
                     inventory=os.path.abspath(self.s.inventory), extravars=ev,
-                    envvars=envvars, event_handler=on_event, quiet=True, ident=kind)
+                    envvars=envvars, event_handler=on_event, quiet=True, ident=kind,
+                    # without a callback ansible-runner installs its own SIGTERM/SIGINT handlers
+                    # for good, and the engine could no longer be stopped (systemctl stop, ^C)
+                    cancel_callback=lambda: False)
         finally:
             log.close()
         ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
