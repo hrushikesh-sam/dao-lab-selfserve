@@ -24,11 +24,13 @@
       WantedBy=multi-user.target
   register: _exporter_unit
 
+# An expression, not {% if %}: Ansible's trim_blocks eats the newline after {% endif %} and glues
+# the next command onto this line (`restart daolab-app-exportersystemctl enable ...`, rc 5).
 - name: start it (restart when its arguments changed)
   become: true
   ansible.builtin.shell: |
     systemctl daemon-reload
-    {% if _exporter_unit.changed %}systemctl restart daolab-app-exporter{% endif %}
+    {{ 'systemctl restart daolab-app-exporter' if _exporter_unit.changed else 'true' }}
     systemctl enable --now daolab-app-exporter
   changed_when: _exporter_unit.changed
 

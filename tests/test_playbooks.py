@@ -88,6 +88,7 @@ class Lab:
         evfile.write_text(json.dumps(ev))
         env = {**os.environ, "PATH": f"{self.bindir}:{os.environ['PATH']}",
                "FAKELAB_STATE": str(self.state_path), "FAKELAB_LOG": str(self.log_path),
+               "FAKELAB_UNIT_DIR": str(self.dir),
                "ANSIBLE_CONFIG": os.path.join(REPO, "playbooks", "ansible.cfg"),
                "ANSIBLE_NOCOLOR": "1", "ANSIBLE_LOCAL_TEMP": str(self.dir / "tmp"),
                "ANSIBLE_HOME": str(self.dir / "ansible-home")}
@@ -618,8 +619,11 @@ def app_run(lab, books, playbook, **over):
 
 
 def board(lab, installed=(), procs=()):
+    """The DPU: what is installed and running. Its resting state, nginx-tls.service, is always
+    installed - running unless an app holds the port."""
     st = lab.state()
     st["installed"], st["procs"] = list(installed), list(procs)
+    st["units"].setdefault("nginx-tls.service", "inactive" if procs else "active")
     lab.set(st)
 
 
@@ -715,6 +719,7 @@ def test_smartnic_cleanup_runs_the_runbook_cleanup(lab, books):
 
 
 def test_tls_proxy_deploy_keeps_nginx_tls_running(lab, books):
+    board(lab)
     assert vpp_deploy(lab, books, daolab_app="nginx-tls", usecase="tls-proxy-nginx",
                       daolab_roles={"proxy": {"on": "dpu", "app": "nginx-tls"}}) == 0, \
         lab.stdout[-2000:]

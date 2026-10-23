@@ -248,11 +248,15 @@ def systemctl(args):
         for n in names:
             hits = [u for u in units if _match(n, u)]
             if not hits and verb in ("start", "enable", "restart"):
-                # starting a unit the playbook just installed (any non-glob name)
-                if any(c in n for c in "*?["):
-                    fail(f"Failed to {verb} {n}: Unit {n} not found.", 5)
-                hits = [n if n.endswith(".service") else n + ".service"]
-                units[hits[0]] = "inactive"
+                # a unit the playbook just installed: like systemd, only one whose file exists
+                # (in $FAKELAB_UNIT_DIR, when the test says where the playbooks put them)
+                unit = n if n.endswith(".service") else n + ".service"
+                unit_dir = os.environ.get("FAKELAB_UNIT_DIR")
+                if any(c in n for c in "*?[") or (
+                        unit_dir and not os.path.exists(os.path.join(unit_dir, unit))):
+                    fail(f"Failed to {verb} {unit}: Unit {unit} not found.", 5)
+                hits = [unit]
+                units[unit] = "inactive"
             for u in hits:
                 if verb == "stop" or (verb == "disable" and now):
                     units[u] = "inactive"
