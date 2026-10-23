@@ -77,15 +77,15 @@ def cmd_add_user(args) -> int:
     token = secrets.token_urlsafe(32)
     conn = models.connect(config.settings.db_path)
     try:
-        if args.rotate:
-            row = conn.execute("SELECT id FROM users WHERE username = ?", (args.username,)).fetchone()
-            if row:  # reservations first (users FK has no cascade); their vms cascade
-                conn.execute("DELETE FROM reservations WHERE user_id = ?", (row["id"],))
-                conn.execute("DELETE FROM users WHERE id = ?", (row["id"],))
-        models.insert(conn, "users", {
-            "username": args.username, "role": args.role,
-            "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-            "ssh_pubkey": pubkey})
+        fields = {"role": args.role, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+                  "ssh_pubkey": pubkey}
+        row = conn.execute("SELECT id FROM users WHERE username = ?", (args.username,)).fetchone()
+        if args.rotate and row:
+            # same user, new token (and key, role): the old token stops working, but the user's
+            # reservations stay - deleting them would orphan a live one, its app still on the board
+            models.update(conn, "users", row["id"], fields)
+        else:
+            models.insert(conn, "users", {"username": args.username, **fields})
     except sqlite3.IntegrityError:
         _die(f"duplicate user: {args.username} (pass --rotate to replace it)")
     print(f"token: {token}")
@@ -155,7 +155,8 @@ def main() -> None:
     p.add_argument("pubkey_path")
     p.add_argument("--role", choices=("admin", "user"), default="user")
     p.add_argument("--rotate", action="store_true",
-                   help="delete and re-create the user first (dev seeding)")
+                   help="if the user exists, give them a new token (and this key and role); "
+                        "their reservations are kept (dev seeding)")
 
     p = sub.add_parser("reserve", help="reserve a use case (or diy) via the API")
     p.add_argument("usecase")
