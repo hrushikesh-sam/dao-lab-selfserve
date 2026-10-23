@@ -94,6 +94,12 @@ def _field(res: Mapping, key: str, default=None):
 StepSink = Callable[..., None]           # step(name, state="ok", detail=None)
 
 
+def _prom_label(value) -> str:
+    """Escape a Prometheus label value for the text exposition format: backslash, double
+    quote and newline are the three characters that must be escaped."""
+    return str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
 class Runner(Protocol):
     def deploy(self, res: Mapping, step: StepSink) -> RunResult: ...
     def cleanup(self, res: Mapping, step: StepSink) -> RunResult: ...
@@ -106,7 +112,8 @@ class Runner(Protocol):
 
 
 def parse_mock_fail(text: str) -> frozenset[str]:
-    """``DAOLAB_MOCK_FAIL`` is empty or a comma-separated subset of deploy / cleanup."""
+    """``DAOLAB_MOCK_FAIL`` is empty or a comma-separated subset of ``MOCK_FAIL_TARGETS``
+    (``deploy`` / ``cleanup`` / ``health``)."""
     names = [n.strip() for n in (text or "").split(",") if n.strip()]
     unknown = [n for n in names if n not in MOCK_FAIL_TARGETS]
     if unknown:
@@ -138,9 +145,9 @@ class MockExporter:
         self.labels = {"daolab_reservation": str(reservation_id)}
         if labels:
             self.labels.update({str(k): str(v) for k, v in labels.items()})
-        self._httpd = None
-        self._thread = None
-        self._target_file = None
+        self._httpd: ThreadingHTTPServer | None = None
+        self._thread: threading.Thread | None = None
+        self._target_file: str | None = None
         self._started = time.time()
 
     @property
@@ -159,7 +166,7 @@ class MockExporter:
     def _metrics_text(self) -> str:
         def series(name, extra, value):
             labels = {**self.labels, **extra}
-            label_str = ",".join(f'{k}="{v}"' for k, v in sorted(labels.items()))
+            label_str = ",".join(f'{k}="{_prom_label(v)}"' for k, v in sorted(labels.items()))
             return f"{name}{{{label_str}}} {value}\n"
 
         elapsed = max(0.0, time.time() - self._started)
@@ -665,9 +672,12 @@ def get_runner(settings=None) -> Runner:
     if s.runner == "mock":
         # B-68: only run the fake exporters when the telemetry stack is switched on, so a
         # plain `DAOLAB_RUNNER=mock` (and the tests) stay side-effect free (plan/09 §13).
-        factory = None
+        def exporter_factory(rid: int) -> MockExporter:
+            return MockExporter(rid, targets_dir=OTEL_TARGETS_DIR)
+
+        factory: Callable[[int], MockExporter] | None = None
         if (s.otel_endpoint or "").strip():
-            factory = lambda rid: MockExporter(rid, targets_dir=OTEL_TARGETS_DIR)
+            factory = exporter_factory
         # B-44: with the internal secret set (dev.sh writes one) the mock deploy leases its
         # addresses and posts its VM IPs through the real API, like deploy.yml.
         api = InternalApi(s.api_url, s.internal_secret) if s.internal_secret else None

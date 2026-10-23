@@ -160,7 +160,7 @@ admins pass every owner check.
 | `GET /reservations` · `/{id}` | owner | state, VMs, IPs, ssh lines, DPU access line, health summary | `?all=1` admin |
 | `POST /reservations/{id}/redeploy` | owner | re-run `deploy.yml` (idempotent) inside the slot | `409` outside the slot |
 | `POST /reservations/{id}/cleanup` | owner | end early: teardown + verify + release | `202` + cleanup job |
-| `DELETE /reservations/{id}` | owner | cancel a `queued` booking; on `ready`/`active` it ends the slot like `/cleanup` | queues the cleanup job |
+| `DELETE /reservations/{id}` | owner | cancel a `queued` booking | any other state `409` (a live slot ends with `/cleanup`) |
 | `GET /reservations/{id}/health` | owner | latest health verdict + per-check detail | read-only, from Prometheus (section 8) |
 | `POST /reservations/{id}/health/probe` | owner | on-demand active check | `202` + health-probe job |
 | `GET /reservations/{id}/events` | owner | SSE stream of job steps and state changes | the dashboard progress bar; falls back to polling |

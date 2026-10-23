@@ -124,19 +124,22 @@ cat <<BANNER
 BANNER
 
 # --- run the stack: API, plus the engine unless --api-only -------------------
-# Both run in the foreground under one trap, so Ctrl-C (or either process
-# exiting) tears the whole stack down (B-30).
+# Both run in the foreground under one trap, so Ctrl-C *or either process
+# exiting* tears the whole stack down (B-30).
 PIDS=()
 cleanup() {
-    trap - INT TERM EXIT
+    trap - INT TERM HUP EXIT
     echo
     echo "==> shutting down daolab (stopping pids: ${PIDS[*]:-none})..."
     for pid in "${PIDS[@]:-}"; do
         kill "${pid}" 2>/dev/null || true
     done
-    wait 2>/dev/null || true
+    # Reap each child we started; waiting on an already-finished pid returns at once.
+    for pid in "${PIDS[@]:-}"; do
+        wait "${pid}" 2>/dev/null || true
+    done
 }
-trap cleanup INT TERM EXIT
+trap cleanup INT TERM HUP EXIT
 
 .venv/bin/python -m uvicorn service.api:app \
     --host "${DAOLAB_API_HOST}" --port "${DAOLAB_API_PORT}" &
@@ -147,5 +150,11 @@ if [ "${API_ONLY}" = 0 ]; then
     PIDS+=("$!")
 fi
 
-# Block until the first process exits; the EXIT trap then stops the rest.
-wait -n 2>/dev/null || wait 2>/dev/null || true
+# Block until the *first* child exits (needs bash >= 4.3), then let the EXIT trap stop
+# and reap the other. Do NOT fall back to a bare `wait`: that waits for *every* child, so
+# if one crashes the survivor keeps running and the stack never tears down (the B-30 bug).
+# `set +e` is needed only so we can capture and propagate the exiting child's status.
+set +e
+wait -n
+status=$?
+exit "$status"

@@ -50,7 +50,8 @@ tick run one after the other. Health probes are read-only and exempt. A job left
 crashed engine blocks its setup until crash recovery (B-26) puts it back.
 
 What a finished job does to its reservation:
-  * deploy ok      -> ready, and the DPU's hw_class is recorded (plan/01 invariant 6)
+  * deploy ok      -> ready (first deploy), and the DPU's hw_class is recorded (plan/01
+                      invariant 6); a redeploy of a `ready`/`active` slot leaves it as it was
   * deploy failed  -> retried as a fresh deploy job (attempt + 1) until DAOLAB_MAX_RETRIES
                       observed failures (B-25); once exhausted -> failed, with the job error as
                       failure_reason, plus an automatic `cleanup` job to tear down whatever the
@@ -95,7 +96,9 @@ from .runner import RunResult
 log = logging.getLogger("daolab.engine")
 
 # The reservation state a job of each kind needs when it starts. If the reservation moved on
-# (cancelled, admin override...) the job fails without calling the runner.
+# (cancelled, admin override...) the job fails without calling the runner. A `deploy` job is
+# either a first deploy (reservation `provisioning`, from `_start_due`) or a redeploy of a live
+# slot (`ready`/`active`, from `POST /reservations/{id}/redeploy`, plan/09 §4).
 EXPECTED_STATES = {
     "deploy": ("provisioning", "ready", "active"),     # ready/active = redeploy
     "cleanup": ("cleaning", "failed"),

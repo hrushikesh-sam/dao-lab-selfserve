@@ -1,5 +1,6 @@
 """B-26: crash recovery - a `running` job whose engine died goes back to `pending` (plan/09 §10)."""
 import dataclasses
+import os
 from datetime import timedelta
 
 import pytest
@@ -281,5 +282,6 @@ def test_main_refuses_a_non_positive_timeout(tmp_path, monkeypatch, capsys):
 
 
 def test_env_example_lists_the_timeout():
-    text = open(config.__file__.replace("service/config.py", ".env.example")).read()
+    root = os.path.dirname(os.path.dirname(os.path.abspath(config.__file__)))
+    text = open(os.path.join(root, ".env.example")).read()
     assert "DAOLAB_JOB_TIMEOUT_SEC=1800" in text

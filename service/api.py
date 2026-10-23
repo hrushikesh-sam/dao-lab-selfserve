@@ -209,7 +209,7 @@ def _node_id(name: str) -> str:
 
 
 def _label(*lines) -> str:
-    return "<br/>".join(str(l) for l in lines if l).replace('"', "'")
+    return "<br/>".join(str(line) for line in lines if line).replace('"', "'")
 
 
 def _reservation_diagram(conn, row, user, uc) -> str | None:
@@ -249,7 +249,7 @@ def _reservation_diagram(conn, row, user, uc) -> str | None:
     else:                                                 # diy: nodes per VM, edges from setup links
         setup = conn.execute("SELECT * FROM setups WHERE id = ?", (row["setup_id"],)).fetchone()
         host_of = {m["name"]: m["host"] for m in models.setup_members(conn, row["setup_id"])}
-        vm_on_host = {}
+        vm_on_host: dict = {}
         for v in vms:
             vm_on_host.setdefault(v["host"], v)
         for v in vms:
@@ -687,6 +687,7 @@ def create_reservation(body: ReservationCreate,
                           f"{body.usecase} is not enabled on this lab yet",
                           {"reason": "not_enabled", "deployable": list(config.settings.deployable)})
     if is_diy:
+        assert body.setup is not None and body.templates is not None   # enforced by the check above
         setup = models.setup_by_name(conn, body.setup)
         if setup is None:
             raise DaolabError("not_found", 404, f"unknown setup: {body.setup}",
@@ -797,33 +798,31 @@ def get_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
 @app.delete("/reservations/{res_id}")
 def cancel_reservation(res_id: int, user: sqlite3.Row = Depends(current_user),
                        conn: sqlite3.Connection = Depends(db_conn)):
+    """Cancel a `queued` booking (plan/09 §4/§10): `queued -> released`, nothing ran so there
+    is nothing to clean. A live slot is *not* cancelled here: end it early with
+    `POST /reservations/{id}/cleanup`, which runs teardown + verify. Any other state is
+    `409 invalid_state`."""
     row = _owned_reservation(conn, res_id, user)
-    if row["state"] == "queued":
-        new_state = "released"        # nothing ran, nothing to clean
-    elif row["state"] in ("ready", "active"):
-        new_state = "cleaning"        # the engine runs the cleanup
-    else:
+    if row["state"] != "queued":
         raise DaolabError("invalid_state", 409,
                           f"cannot cancel a reservation in state {row['state']}",
                           {"state": row["state"]})
     conn.execute("BEGIN IMMEDIATE")
     try:
         try:
-            models.transition_reservation(conn, res_id, new_state, from_state=row["state"])
+            models.transition_reservation(conn, res_id, "released", from_state="queued")
         except models.ReservationStateError:   # the engine moved it between our read and write
             current = models.reservation_by_id(conn, res_id)["state"]
             raise DaolabError("invalid_state", 409,
                               f"cannot cancel a reservation in state {current}",
                               {"state": current})
-        if new_state == "cleaning":            # a live slot needs its teardown run (B-27)
-            models.create_job(conn, res_id, "cleanup")
         models.audit(conn, user["username"], "cancel", "reservation", res_id,
-                     {"previous_state": row["state"], "state": new_state})
+                     {"previous_state": "queued", "state": "released"})
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
         raise
-    return {"id": res_id, "state": new_state}
+    return {"id": res_id, "state": "released"}
 
 
 @app.post("/reservations/{res_id}/cleanup", status_code=202)

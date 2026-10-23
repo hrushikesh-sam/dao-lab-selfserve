@@ -310,19 +310,21 @@ def _delete(api_env, rid):
                                  headers={"Authorization": f"Bearer {api_env.user_token}"})
 
 
-@pytest.mark.parametrize("state,expected", [("queued", "released"), ("ready", "cleaning"),
-                                            ("active", "cleaning")])
-def test_cancel_moves_through_the_state_machine(api_env, state, expected):
-    rid = _api_res(api_env, state)
-    assert _delete(api_env, rid).json() == {"id": rid, "state": expected}
-    assert _state(api_env.conn, rid) == expected
+def test_cancel_releases_a_queued_booking(api_env):
+    """DELETE cancels a `queued` booking -> `released` (plan/09 §4/§10)."""
+    rid = _api_res(api_env, "queued")
+    assert _delete(api_env, rid).json() == {"id": rid, "state": "released"}
+    assert _state(api_env.conn, rid) == "released"
     assert api_env.conn.execute(
         "SELECT detail FROM audit_events WHERE action = 'cancel' AND object_id = ?",
         (rid,)).fetchone() is not None
 
 
-@pytest.mark.parametrize("state", ["provisioning", "cleaning", "quarantined", "released", "failed"])
+@pytest.mark.parametrize("state", ["provisioning", "ready", "active", "cleaning",
+                                   "quarantined", "released", "failed"])
 def test_cancel_in_any_other_state_is_a_409(api_env, state):
+    """A live or finished slot is never cancelled with DELETE — `ready`/`active` are ended
+    with POST /cleanup instead (plan/09 §4/§10)."""
     rid = _api_res(api_env, state)
     r = _delete(api_env, rid)
     assert r.status_code == 409
@@ -332,20 +334,20 @@ def test_cancel_in_any_other_state_is_a_409(api_env, state):
 
 
 def test_cancel_loses_a_race_with_the_engine_cleanly(api_env, monkeypatch):
-    """The engine moves the reservation between the API's read and write: 409, not an overwrite."""
+    """The engine claims the booking between the API's read and write: 409, not an overwrite.
+    The engine's move is committed on its own before the API's transaction starts."""
     from service import api
-    rid = _api_res(api_env, "active")
+    rid = _api_res(api_env, "queued")
     real_owned = api._owned_reservation
 
-    def read_then_the_engine_moves(conn, res_id, user):
-        row = real_owned(conn, res_id, user)                        # the API's read: active
-        models.transition_reservation(conn, res_id, "cleaning")     # the engine's move, committed
+    def read_then_the_engine_claims(conn, res_id, user):
+        row = real_owned(conn, res_id, user)                         # the API's read: queued
+        models.transition_reservation(conn, res_id, "provisioning")  # the engine's move, committed
         return row
-    monkeypatch.setattr(api, "_owned_reservation", read_then_the_engine_moves)
+    monkeypatch.setattr(api, "_owned_reservation", read_then_the_engine_claims)
     r = _delete(api_env, rid)
     assert r.status_code == 409
     assert r.json()["error"] == {"code": "invalid_state",
-                                 "message": "cannot cancel a reservation in state cleaning",
-                                 "detail": {"state": "cleaning"}}
-    assert _state(api_env.conn, rid) == "cleaning"
-    assert models.jobs_for_reservation(api_env.conn, rid) == []    # ours rolled back whole
+                                 "message": "cannot cancel a reservation in state provisioning",
+                                 "detail": {"state": "provisioning"}}
+    assert _state(api_env.conn, rid) == "provisioning"

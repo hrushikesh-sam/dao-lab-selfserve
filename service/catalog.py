@@ -4,7 +4,6 @@ Validation is all-or-nothing: any error -> SyncError listing one
 'file: field: problem' line per issue, nothing written.
 """
 import ipaddress
-import json
 import os
 import re
 import sqlite3
@@ -400,12 +399,12 @@ def load_setups(dir_path: str, known_hosts: set[str]) -> tuple[list[dict], list[
         diagram = doc.get("diagram")
         if not (isinstance(diagram, str) and diagram.strip()):
             errors.append(f"{fname}: diagram: required non-empty mermaid source")
-        union = set()
+        union: set = set()
         for spec in members.values():
             if isinstance(spec, dict) and isinstance(spec.get("capabilities"), list):
                 union.update(c for c in spec["capabilities"] if isinstance(c, str))
-        union.update(l.get("capability") for l in links
-                     if isinstance(l, dict) and isinstance(l.get("capability"), str))
+        union.update(lk.get("capability") for lk in links
+                     if isinstance(lk, dict) and isinstance(lk.get("capability"), str))
         out.append({
             "name": stem, "pool": doc.get("pool"), "members": members, "links": links,
             "capabilities": sorted(union), "diagram": diagram or "", "yaml_path": fname,

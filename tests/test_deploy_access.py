@@ -161,13 +161,16 @@ def test_cli_reserve_password_flag(api_env, monkeypatch, capsys):
     assert "ssh lab@10.68.0.190  with a generated password" in capsys.readouterr().out
 
 
-def test_cancelling_a_live_slot_queues_its_cleanup_and_the_engine_releases_it(api_env):
-    """DELETE on a ready/active reservation used to leave it `cleaning` with no cleanup job:
-    nothing would ever run its teardown and the testbed stayed held."""
+def test_ending_a_live_slot_queues_its_cleanup_and_the_engine_releases_it(api_env):
+    """A live slot is ended with POST …/cleanup: `cleaning` plus a cleanup job the engine runs
+    to `released` (a live slot left `cleaning` with no job would keep the testbed held for
+    ever). DELETE only cancels a queued booking: on a live slot it is a 409 and queues nothing."""
     rid = deploy(api_env).json()["id"]
     go_live(api_env, rid)
     r = api_env.client.delete(f"/reservations/{rid}", headers=H(api_env.tokens["alice"]))
-    assert r.json() == {"id": rid, "state": "cleaning"}
+    assert r.status_code == 409 and models.jobs_for_reservation(api_env.conn, rid) == []
+    r = api_env.client.post(f"/reservations/{rid}/cleanup", headers=H(api_env.tokens["alice"]))
+    assert r.status_code == 202 and r.json()["state"] == "cleaning"
     [job] = models.jobs_for_reservation(api_env.conn, rid)
     assert (job["kind"], job["state"]) == ("cleanup", "pending")
     engine.tick(api_env.conn, datetime.now(timezone.utc), MockRunner(), SchedConfig())

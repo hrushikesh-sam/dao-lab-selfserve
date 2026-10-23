@@ -19,7 +19,8 @@ to `released`, once its cleanup (or a later reconcile / force-clean) proves the 
 teardown + verify + reconcile;
 `quarantined` means cleanup finished but residue persists, and leaves only through reconcile or
 force-clean. There is no `cancelled` state: cancelling a `queued` reservation goes straight to
-`released`; cancelling `ready`/`active` goes through `cleaning`.
+`released`; ending a `ready`/`active` slot early (`POST /reservations/{id}/cleanup`) goes
+through `cleaning`.
 
 The legal moves are exactly the diagram of plan/09 §10, enforced by
 `models.transition_reservation` (`RESERVATION_TRANSITIONS`): every state write is a
@@ -34,8 +35,8 @@ stateDiagram-v2
     provisioning --> ready: deploy job succeeded
     provisioning --> failed: deploy failed DAOLAB_MAX_RETRIES times (cleanup job queued)
     ready --> active: engine · now ≥ start_at
-    ready --> cleaning: DELETE · POST …/cleanup
-    active --> cleaning: engine · now ≥ end_at · DELETE · POST …/cleanup
+    ready --> cleaning: POST …/cleanup (end early)
+    active --> cleaning: engine · now ≥ end_at · POST …/cleanup
     cleaning --> released: verify clean (after up to N reconciles)
     cleaning --> quarantined: residue persists
     quarantined --> released: reconcile job verified clean · force-clean skip_verify
@@ -52,7 +53,7 @@ stateDiagram-v2
 | `provisioning` | `deploy` job failed, `attempt < DAOLAB_MAX_RETRIES` | a new `deploy` job, `attempt + 1`, same trace | `provisioning` | — |
 | `provisioning` | `deploy` job failed, `attempt = DAOLAB_MAX_RETRIES` | `failure_reason` = the job's error; a `cleanup` job (same trace) | `failed` | — |
 | `ready` | engine step 1: `now ≥ start_at` | none | `active` | — |
-| `ready`/`active` | `DELETE` or `POST …/cleanup` (api) | CAS + a pending `cleanup` job + audit row, one transaction | `cleaning` | — |
+| `ready`/`active` | `POST …/cleanup` (api) | CAS + a pending `cleanup` job + audit row, one transaction | `cleaning` | — |
 | `active` | engine step 2: `now ≥ end_at` | CAS + a pending `cleanup` job, one transaction | `cleaning` | — |
 | `ready`/`active` | `POST …/redeploy` (api), inside `[start_at, end_at)` | a new `deploy` job; the reservation keeps its state | (unchanged) | a failed replay is recorded on the job only |
 | `cleaning` | `cleanup` job: teardown, verify, reconcile ×N — clean | release the IP leases; free the setup if nothing else is dirty | `released` | — |
@@ -61,8 +62,8 @@ stateDiagram-v2
 | `quarantined`, dirty `failed` | `reconcile` job (force-clean) — clean / residue | release every lease, free the setup / setup stays quarantined | `released` / unchanged | — |
 | `quarantined`, dirty `failed` | force-clean `skip_verify` (api) | release every lease; a quarantined setup → `available` | `released` | — |
 
-Cancel while `provisioning`, `cleaning` or `quarantined` → `409 invalid_state` — the engine
-never has to interrupt a running playbook. Retries live on job rows: the `reservations.retries`
+Cancel (`DELETE`) is valid only for `queued`; every other state → `409 invalid_state`, and
+cleanup only for `ready`/`active` — the engine never has to interrupt a running playbook. Retries live on job rows: the `reservations.retries`
 column of the baseline schema is no longer read or written.
 
 ## Jobs
@@ -73,7 +74,7 @@ queue service. The engine is the only thing that executes jobs.
 | Kind | Created by | Runs | Reservation must be |
 |---|---|---|---|
 | `deploy` | engine step 3 (first attempt); engine after a failed attempt (B-25); `POST …/redeploy` (B-28) | `runner.deploy` | `provisioning`, or `ready`/`active` for a redeploy |
-| `cleanup` | engine step 2 at `end_at`; `DELETE` / `POST …/cleanup` on a live slot (B-27); engine after the last deploy attempt failed | `runner.cleanup`, `runner.verify_clean`, `runner.reconcile` ×N | `cleaning` or `failed` |
+| `cleanup` | engine step 2 at `end_at`; `POST …/cleanup` on a live slot (B-27); engine after the last deploy attempt failed | `runner.cleanup`, `runner.verify_clean`, `runner.reconcile` ×N | `cleaning` or `failed` |
 | `reconcile` | `POST /admin/setups/{name}/force-clean` (B-74), one per dirty reservation | `runner.reconcile`, `runner.verify_clean` | `quarantined` or `failed` |
 | `health_probe` | `POST …/health/probe` (B-66) | `runner.probe` | `ready` or `active` |
 

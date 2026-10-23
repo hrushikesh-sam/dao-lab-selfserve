@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import pytest
 
-from service import config, engine, migrations, models, runner, scheduler
+from service import config, engine, models, runner, scheduler
 from service.models import JobError
 from service.runner import (CLEANUP_STEPS, DEPLOY_STEPS, VERIFY_CLEAN_STEPS, MockRunner,
                             RunResult)
@@ -221,7 +221,7 @@ def test_a_second_engine_with_a_stale_view_cannot_start_it_twice(world, monkeypa
 def test_the_stale_view_is_refused_even_if_the_hold_check_passes(world, monkeypatch):
     """Belt and braces: with the held-by guard blinded, the state compare-and-set still refuses."""
     db = world[0]
-    rid = res(world, uc="a", start=T(9, 5), end=T(10))
+    res(world, uc="a", start=T(9, 5), end=T(10))
     stale = scheduler.startable_queued(db)
     engine._start_due(db, NOW, CFG)
     monkeypatch.setattr(scheduler, "startable_queued", lambda _db: stale)
@@ -643,7 +643,7 @@ def test_a_job_whose_reservation_moved_on_fails_without_calling_the_runner(world
     out = tick(db, rn=rn)
     assert rn.calls == [] and out.jobs_run == 1
     job = jobs(db)[0]
-    assert job["state"] == "failed" and "reservation is released, expected provisioning" in job["error"]
+    assert job["state"] == "failed" and "reservation is released, expected provisioning or ready or active" in job["error"]
 
 
 def test_health_probe_records_the_job_and_leaves_the_reservation_alone(world):
@@ -943,7 +943,10 @@ def test_full_lifecycle_across_ticks_and_back_to_back_bookings(world):
     first = res(world, uc="a", start=T(10), end=T(11))
     second = res(world, uc="a", start=T(11, 15), end=T(12))             # gap = cleanup 10 + lead 5
     rn = mock()
-    at = lambda h, m=0: engine.tick(db, T(h, m), rn, CFG)
+
+    def at(h, m=0):
+        return engine.tick(db, T(h, m), rn, CFG)
+
 
     at(9, 50)
     assert (state(db, first), state(db, second)) == ("queued", "queued")      # 09:55 is the first due moment

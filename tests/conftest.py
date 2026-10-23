@@ -15,7 +15,7 @@ The ``mk_setup`` / ``mk_usecase`` / ``mk_res`` / ``mk_user`` helpers insert rows
 import hashlib
 import os
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import dotenv
 import pytest

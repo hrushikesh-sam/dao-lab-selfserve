@@ -1,5 +1,15 @@
-"""B-01 config vars — plan/09 sections 4-8, plan/08 configuration reference."""
+"""Config surface: B-01 defaults (plan/08, plan/09 §4-8) and the `.env.example` ↔ `Settings` lockstep.
+
+The `.env.example` checks enforce plan/08's "`.env.example` lists every setting with its default",
+so a new `Settings` field cannot land without its env-var line (and vice versa).
+"""
+import dataclasses
+import os
+
+from service import config
 from service.config import Settings
+
+# --- B-01: new settings load the plan defaults, and real env vars take precedence -----------
 
 NEW_DEFAULTS = {
     "runner": "ansible",
@@ -58,3 +68,35 @@ def test_overridden_values_take_precedence(monkeypatch):
     assert s.slot_min == 45
     assert s.early_access is True
     assert s.max_future_reservations == 5
+
+
+# ---------------------------------------------------------------------------
+# plan/08: `.env.example` lists every setting with its default (and no strays)
+# ---------------------------------------------------------------------------
+
+ENV_EXAMPLE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(config.__file__))), ".env.example")
+
+
+def _env_example_keys() -> dict:
+    keys = {}
+    with open(ENV_EXAMPLE) as fh:
+        for line in fh:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, _value = line.split("=", 1)
+                keys[key] = True
+    return keys
+
+
+def test_env_example_lists_every_setting():
+    keys = _env_example_keys()
+    missing = sorted("DAOLAB_" + f.name.upper() for f in dataclasses.fields(config.Settings)
+                     if "DAOLAB_" + f.name.upper() not in keys)
+    assert not missing, f".env.example is missing settings: {missing}"
+
+
+def test_env_example_has_no_unknown_keys():
+    known = {"DAOLAB_" + f.name.upper() for f in dataclasses.fields(config.Settings)}
+    unknown = sorted(k for k in _env_example_keys() if k not in known)
+    assert not unknown, f".env.example lists keys with no Settings field: {unknown}"

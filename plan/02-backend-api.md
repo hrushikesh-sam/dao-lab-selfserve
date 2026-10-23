@@ -136,9 +136,9 @@ kebab-case segments. Unknown body fields are a `422` everywhere.
 | POST | `/reservations` | user | One-click deploy (`mode: asap`) or a customised booking (`mode: at`), or DIY. `201`. |
 | GET | `/reservations` | user | Own reservations, newest first; `?all=1` admin-only. |
 | GET | `/reservations/{id}` | owner | One reservation: state, VMs, IPs, leases, access, health, latest job. |
-| DELETE | `/reservations/{id}` | owner | Cancel: `queued` → `released`; `ready`/`active` → `cleaning` + cleanup job. |
+| DELETE | `/reservations/{id}` | owner | Cancel a `queued` booking → `released`; any other state → `409 invalid_state` (a live slot ends with `POST …/cleanup`). |
 | POST | `/reservations/{id}/cleanup` | owner | End a live slot early: `ready`/`active` → `cleaning` + cleanup job, `202` (B-27). |
-| POST | `/reservations/{id}/redeploy` | owner | Re-run `deploy.yml` inside the slot: new deploy job, `202` (B-28). |
+| POST | `/reservations/{id}/redeploy` | owner | Re-run `deploy.yml` inside the slot: new deploy job, `202` (B-28); `409` outside the slot. |
 | GET | `/reservations/{id}/health` | owner | Latest health verdict with every check, 15 s cache (B-66). |
 | POST | `/reservations/{id}/health/probe` | owner | On-demand active check: `health_probe` job, `202` (B-66). |
 | GET | `/reservations/{id}/events` | owner | SSE stream of state changes and job steps (B-29). |
@@ -187,9 +187,10 @@ for `diy`), which the Deploy dialog shows before the user deploys:
 reservations not in `released`/`failed`).
 **PATCH /users/{id}** — request `{"enabled": false}` → `200` the user object. Unknown id →
 `404 not_found`; an admin disabling their own account → `409 invalid_state` (lockout guard);
-disabling leaves the user's reservations untouched — cancel them via
-`DELETE /reservations/{id}` if the hold must end. `GET /internal/authz/keys` stops answering
-a disabled owner's keys at once (`access.keys_for` skips disabled users).
+disabling leaves the user's reservations untouched — cancel a `queued` one with
+`DELETE /reservations/{id}` or end a `ready`/`active` one early with
+`POST /reservations/{id}/cleanup` if the hold must end. `GET /internal/authz/keys` stops
+answering a disabled owner's keys at once (`access.keys_for` skips disabled users).
 
 **GET /setups** → `200`, one row per setup. `availability` is the B-18 flag
 (`available` | `quarantined` | `maintenance`); `held_by` = the reservation currently in
@@ -272,12 +273,14 @@ Serialization rules:
   card's progress line; `null` before the engine has queued anything.
 
 **DELETE /reservations/{id}** → `200 {"id": 12, "state": "released"}` when it was `queued`
-(nothing ran, nothing to tear down, no job), or `{"id": 12, "state": "cleaning"}` from
-`ready`/`active`: the state change, a pending `cleanup` job and the `cancel` audit row commit in
-one transaction, and the engine runs the teardown ([04-lifecycle-engine.md](04-lifecycle-engine.md)).
-Cancel in `provisioning`, `cleaning`, `quarantined`, `released`, `failed` → `409 invalid_state`
-(also when the engine moves the reservation between the API's read and its write: the state
-change is a compare-and-set, `models.transition_reservation`).
+(nothing ran, nothing to tear down) — this is the only state DELETE accepts; the state change
+and the `cancel` audit row commit in one transaction. Any other state (`provisioning`,
+`ready`, `active`, `cleaning`, `quarantined`, `released`, `failed`) → `409 invalid_state` (also
+when the engine moves the reservation between the API's read and its write: the state change
+is a compare-and-set, `models.transition_reservation`). Ending a live `ready`/`active` slot
+early is a **separate** action, `POST /reservations/{id}/cleanup` → `202` +
+`{"id", "state": "cleaning"}` and a pending `cleanup` job (the engine runs the teardown —
+[04-lifecycle-engine.md](04-lifecycle-engine.md)); plan/09 §4/§10 own these transitions.
 
 ## Use-case catalog availability
 
@@ -594,7 +597,7 @@ sshd in plain text:
 | `unmet_capability` | 409 | No setup's capabilities ⊇ `requires`; message names the missing list. |
 | `slot_conflict` | 409 | Mode `at` window not grantable: `detail.reason` `overlap` / `in_the_past` / `off_grid`, plus `start_at`, `end_at` and `alternatives`. |
 | `quota_exceeded` | 409 | The user already has 1 live or 2 future reservations; `detail: {reason, limit, current}`. |
-| `invalid_state` | 409 | Cancel, cleanup, redeploy or probe in a state that does not allow it (`detail.state`); redeploy outside the slot; a lease for a reservation that is not deploying or live; an admin disabling their own account. |
+| `invalid_state` | 409 | Cancel (`DELETE`) of anything but a `queued` booking; cleanup, redeploy or probe in a state that does not allow it (`detail.state`); redeploy outside the slot; a lease for a reservation that is not deploying or live; an admin disabling their own account. |
 | `pool_exhausted` | 409 | Every address of the IP pool has a live lease. |
 | `no_ip_pool` | 409 | No IP pool in the DB (`DAOLAB_IP_POOL` not synced with `daolab sync`). |
 | `internal_error` | 500 | Unhandled exception. |
@@ -678,8 +681,10 @@ Cases (each asserts the error envelope shape on every non-2xx):
 | 8 | Reserve unknown name / planned row / `hours: 0` / `setup` on non-diy / diy without `templates` / diy templates missing a host | `404` / `409 usecase_unavailable` / `422` / `422` / `422` / `422` |
 | 9 | Reserve `diy` with `setup: tb-01` + full template map | `201`, `diy: true` |
 | 10 | Owner reads own reservation; other user reads it; admin reads it | `200` / `403` / `200`; list is newest-first |
-| 11 | Cancel matrix | `queued`→`released`; `ready`→`cleaning`; `provisioning`→`409 invalid_state` |
-| 12–13 | Callback: wrong secret; secret unset; unknown role; happy path; replay | `401`; `401`; `404`; `{"ok": true}` and the VM shows `ip` + `ssh`; replay `200` |
+| 11 | Cancel matrix (`DELETE`, states set via models helpers) | `queued`→`released`; every other state (`provisioning`/`ready`/`active`/`cleaning`/`quarantined`/`released`/`failed`)→`409 invalid_state` |
+| 11b | Cleanup matrix (`POST /reservations/{id}/cleanup`) | `ready`/`active`→`202` + `cleaning` job; `queued`/`released`→`409 invalid_state`; non-owner→`403` |
+| 12 | Callback: wrong secret; secret unset in settings; unknown role; happy path | `401`; `401`; `404`; `{"ok": true}` then reservation object shows `ip` and `ssh: "ssh <user>@<ip>"` |
+| 13 | Callback replay with same body | `200` again (idempotent) |
 | 14 | `GET /` and `/admin.html` | `200`, HTML bodies from `DAOLAB_DASHBOARD_DIR` |
 | 15–17 | Users list, disable, guards | `active_reservations` counts; a disabled user gets `403` with `user_disabled`, re-enabled works again; self-disable `409`, unknown id `404`, user token `403` |
 | 18–19 | Reservation diagram and credentials; owner-only credentials | mermaid `diagram`; another user never sees IPs or ssh lines |
