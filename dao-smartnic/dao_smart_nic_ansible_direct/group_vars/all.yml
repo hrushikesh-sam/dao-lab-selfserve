@@ -1,0 +1,35 @@
+---
+# Use the EXISTING DAO repository directly.
+# No git clone is performed by Ansible.
+dao_clone: "/home/dao-test/dao-clean"
+
+clean_prefix: "/home/dao-test/dao-clean/install"
+smartnic_binary: "/home/dao-test/dao-clean/install/bin/dao-smart-nic"
+
+base_cli: "/home/dao-test/dao-clean/app/smart-nic/smart-nic-crb106.cli"
+runtime_cli: "/home/dao-test/dao-clean/app/smart-nic/smart-nic-crb106-p03.cli"
+smartnic_pf: "0002:03:00.0"
+
+sdp_vfs:
+  - "0002:01:00.1"
+  - "0002:01:00.2"
+  - "0002:01:00.3"
+  - "0002:01:00.4"
+  - "0002:01:00.5"
+  - "0002:01:00.6"
+  - "0002:01:00.7"
+  - "0002:01:01.0"
+  - "0002:01:01.1"
+
+smartnic_devices: "{{ [smartnic_pf] + sdp_vfs }}"
+
+hugepage_size_kb: 524288
+hugepage_count: 6
+huge_dir: "/dev/hugepages"
+file_prefix: "smartnic"
+
+telnet_host: "127.0.0.1"
+telnet_port: 50000
+
+# Must be explicitly enabled for the launch step.
+allow_launch: false

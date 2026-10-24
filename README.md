@@ -8,6 +8,56 @@ an Intel E810 (traffic-generator side). Tomorrow there will be many, mixing DPUs
 pure compute. Everything that describes hardware or a use case is **data** (YAML), so scale-out =
 more files, zero code changes.
 
+## Running it — one click on the dashboard deploys on the lab board
+
+The lab today: **tb-01** = the CN10K DPU **xeon3-oct-112** (static, `10.68.0.190`, operated as
+`dao-test`) plus an XCP-ng host for the use cases' VMs, which get addresses from
+**`10.68.1.0`–`10.68.2.200`**. A user opens the dashboard, clicks **Deploy** on a use case,
+gives their SSH public key (pre-filled) or asks for a generated password, and gets
+`ssh lab@10.68.0.190` once the slot is live; at the end of the slot the login is revoked and the
+board is given back.
+
+```
+scripts/run/dev.sh --fresh          # venv + deps (incl. ansible), .env, DB, catalog, API + engine
+                                    # prints tokens for alice / bob / dev-admin
+# in .env, for the real board:
+#   DAOLAB_RUNNER=ansible            the real playbooks (DAOLAB_RUNNER=mock: no hardware)
+#   DAOLAB_ALLOW_DESTRUCTIVE=true    after the board owner's sign-off (VPP stops nginx-tls, rebinds PCI)
+#   DAOLAB_DEPLOY_VMS=false          until the XCP-ng host is in inventory/hosts.yml
+ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 -e daolab_deploy_vms=false
+daolab add-user <name> ~/.ssh/<their key>.pub     # one per user; prints their dashboard token
+```
+
+For a demo on the real board, `scripts/run/showcase.sh` does all of the above in one go: the
+ansible runner, DPU only (`DAOLAB_DEPLOY_VMS=false`), VPP as the only deployable use case
+(`DAOLAB_DEPLOYABLE=vpp`), one-minute slots so a click deploys within seconds, its own DB in
+`var/showcase.db`. It needs SSH as `dao-test` to the board and, for its sudo, a file holding only
+that password (`~/.daolab-become-dao-test`, chmod 600). `scripts/run/xo.sh` runs Xen Orchestra in
+a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its UI).
+
+## Status and pending work
+
+Done: the backend tasksheet (59 of 61 tasks, [plan/10](plan/10-backend-tasksheet.md)), and VPP on
+the real DPU end to end from the dashboard. History: [COMPLETION_LOG.md](COMPLETION_LOG.md).
+Pending (tasksheet **P7**, B-92…B-101, from the re-check in [mistakes.md](mistakes.md)):
+
+- **The VMs.** Put the lab's two XCP-ng hosts (10.68.0.52 / .53) in the inventory (B-92), then
+  create the use cases' VMs through Xen Orchestra (B-93). Until then deploys are DPU-only.
+- **Correctness.**
+  - A booking can start over a failed reservation whose cleanup is pending (B-94).
+  - DPU-only deploys have no functional gate, and a hung playbook blocks the engine (B-96).
+  - `/internal/vm-ip` trusts any IP (B-97).
+- **Use cases.** The TLS proxy's verify string and health rule (B-95); SmartNIC on the board
+  (B-99); a password-mode deploy recorded on the board (B-100).
+- **Docs and operations.** Fold plan/09 into the rest of the docs (B-98); CI, backups and token
+  expiry (B-101).
+
+Then `http://<daolab host>:8080/` (users) and `/admin.html` (admins). What runs where:
+`playbooks/deploy.yml` → `playbooks/apps/<app>/` (Akshay's runbook playbooks in `VPP_ansible/`
+and `dao-smartnic/`, imported unchanged) → `roles/dpu_access` (the `lab` login) → VMs;
+`playbooks/cleanup.yml` undoes it. Operations (quarantine, force-clean, telemetry, secrets):
+[plan/08-cli-config-ops.md](plan/08-cli-config-ops.md#operations-runbook-b-91).
+
 ## Domain model (the decoupling that matters)
 
 - **Pool** — an XCP-ng resource pool. Admin-level grouping of hosts.
@@ -19,7 +69,7 @@ more files, zero code changes.
   must offer) and `roles` (what to provision where: a DAO app on the DPU, VMs from templates on
   the hosts). Scheduler matches `usecase.requires` ↔ `setup.capabilities`; nothing else couples them.
 - **Reservation** — user + use case (or DIY) + matched setup + time slot.
-  Lifecycle: queued→provisioning→ready→active→tearing_down→released.
+  Lifecycle: queued→provisioning→ready→active→cleaning→released (quarantined if cleanup leaves residue).
 
 ```
 daolab/
@@ -34,7 +84,7 @@ daolab/
 │   ├── catalog.py       load usecases/ + setups/ YAML, mirror into DB (`daolab sync`)
 │   ├── scheduler.py     pure placement (FCFS, slot-shift, capability match, hw_class lead time)
 │   ├── runner.py        ansible-runner wrapper, one fn per transition
-│   ├── engine.py        lifecycle loop: queued→provisioning→ready→active→tearing_down→released
+│   ├── engine.py        lifecycle loop: queued→provisioning→ready→active→cleaning→released
 │   ├── api.py           FastAPI: catalog / setups / reservations + internal IP callback; serves dashboard/
 │   └── cli.py           `daolab init | sync | add-user | reserve | status`
 ├── scripts/run/dev.sh   one-shot dev runner: venv + init + sync + dev users (prints tokens) + serve
@@ -131,6 +181,11 @@ daolab init && make test            # scheduler tests pass, no hardware needed
 ```
 
 ### Phase 1 — hardware truth (the only risky phase)
+> Built since: the four playbooks below became roles of one `playbooks/deploy.yml` (+
+> `cleanup.yml`), and on the real board the DPU apps are run by Akshay's runbook playbooks
+> (`VPP_ansible/`, `dao-smartnic/`); `playbooks/bringup.yml` checks a board is ready. See
+> [plan/05](plan/05-provisioning.md). The steps below are the original manual bring-up.
+
 Goal: run every playbook by hand, once, successfully, for tls-proxy-nginx.
 1. On the DPU: `lspci -D`, `ls /sys/bus/platform/devices` → fill `inventory/host_vars/dpu-01.yml:bdf`.
 2. On each XCP-ng host: `xl pci-assignable-list`, `xe sr-list` → fill `*_xcp.yml`.

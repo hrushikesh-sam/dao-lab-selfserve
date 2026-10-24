@@ -1,0 +1,11 @@
+---
+- import_playbook: playbooks/01_baseline.yml
+- import_playbook: playbooks/02_purge.yml
+- import_playbook: playbooks/03_install.yml
+- import_playbook: playbooks/04_configure_02.yml
+- import_playbook: playbooks/05_test_02.yml
+- import_playbook: playbooks/06_kernel_crosscheck.yml
+- import_playbook: playbooks/07_restore_02.yml
+- import_playbook: playbooks/08_prepare_04.yml
+- import_playbook: playbooks/09_configure_04.yml
+- import_playbook: playbooks/10_verify_04.yml

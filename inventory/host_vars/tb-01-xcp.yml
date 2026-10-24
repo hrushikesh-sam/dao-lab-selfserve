@@ -1,0 +1,11 @@
+# inventory/host_vars/tb-01-xcp.yml — the XCP-ng host of tb-01 (B-85 bring-up).
+#
+# Needed only with DAOLAB_DEPLOY_VMS=true (the use cases' VMs). Fill from the host per
+# plan/05 "Manual Phase 1 bring-up checklist", then run playbooks/bringup.yml.
+# TODO(B-85): every value below is a placeholder until the host is known.
+ansible_user: root
+sr_uuid: ""                                     # xe sr-list params=uuid,name-label,type
+mgmt_network: "Pool-wide network associated with eth0"   # xe network-list
+templates: [tpl-ubuntu2204-dao]                 # built per plan/05, with playbooks/files/daolab-seed
+e810_vfs: []                                    # xl pci-assignable-list; alternate p0 / p1
+sdp_vfs: []                                     # the SDP VFs the OCTEON exposes to this host

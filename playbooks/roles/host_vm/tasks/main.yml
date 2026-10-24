@@ -1,0 +1,8 @@
+# Every VM of the plan that lives on this XCP-ng host.
+- name: create this host's VMs
+  ansible.builtin.include_tasks: vm.yml
+  loop: >-
+    {{ hostvars['localhost'].daolab_vm_plan | selectattr('host', 'equalto', inventory_hostname) | list }}
+  loop_control:
+    loop_var: vm
+    label: "{{ vm.name }}"

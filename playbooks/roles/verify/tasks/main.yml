@@ -1,0 +1,6 @@
+# On localhost after tasks/plan_vms.yml. `{<role>_ip}` placeholders get the data-plane address
+# of the role (vars/dataplane.yml; the DPU role's wire address) so the traffic crosses the real
+# datapath, else its management address. Diy reservations have nothing to verify.
+- name: verify the use case
+  ansible.builtin.include_tasks: run.yml
+  when: not (diy | default(false) | bool) and (daolab_verify.from | default('')) | length > 0

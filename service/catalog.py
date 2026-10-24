@@ -3,20 +3,23 @@
 Validation is all-or-nothing: any error -> SyncError listing one
 'file: field: problem' line per issue, nothing written.
 """
-import json
+import ipaddress
 import os
 import re
 import sqlite3
 
 import yaml
 
-from . import models
+from . import ipam, models
 
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ROLE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)_ip\}")
+EXPECT = re.compile(r"^(==|!=|>=|<=|>|<)\s*-?\d+(\.\d+)?$")
 KINDS = ("dpu", "gpu", "nic", "compute")
 ON_VALUES = ("dpu", "dpu_host", "tg_host")
+SEVERITIES = ("critical", "degraded")
+DEFAULT_IP_POOL = ipam.DEFAULT_POOL   # the single DAOLAB_IP_POOL-backed pool (B-43)
 
 # Seeded by `daolab init` from the root README use-case table; doc_url/doc_summary
 # carry the verbatim intro text and page link from the DAO application docs.
@@ -182,6 +185,29 @@ def inventory_hosts(inventory_path: str) -> set[str]:
     return hosts
 
 
+def inventory_addresses(inventory_path: str) -> dict[str, str]:
+    """{host: ansible_host} for every inventory host that has one (any nesting)."""
+    if not os.path.exists(inventory_path):
+        return {}
+    with open(inventory_path) as f:
+        data = _load_yaml(f) or {}
+    out: dict[str, str] = {}
+
+    def walk(node):
+        if not isinstance(node, dict):
+            return
+        for key, value in node.items():
+            if key == "hosts" and isinstance(value, dict):
+                for host, hv in value.items():
+                    if isinstance(hv, dict) and hv.get("ansible_host"):
+                        out[host] = str(hv["ansible_host"])
+            else:
+                walk(value)
+
+    walk(data)
+    return out
+
+
 def _yaml_files(dir_path: str) -> list[str]:
     if not os.path.isdir(dir_path):
         return []
@@ -210,7 +236,7 @@ def load_usecases(dir_path: str) -> tuple[list[dict], list[str]]:
         if not isinstance(doc, dict):
             errors.append(f"{fname}: document: must be a mapping")
             continue
-        _check_keys(doc, {"name", "variant", "requires", "hw_class", "roles", "verify"},
+        _check_keys(doc, {"name", "variant", "requires", "hw_class", "roles", "verify", "health"},
                     fname, "", errors)
         name = doc.get("name")
         if name != stem or not (isinstance(name, str) and KEBAB.match(name)):
@@ -267,10 +293,45 @@ def load_usecases(dir_path: str) -> tuple[list[dict], list[str]]:
             for ref in PLACEHOLDER.findall(str(verify.get("cmd", ""))):
                 if ref not in roles:
                     errors.append(f"{fname}: verify.cmd: placeholder {{{ref}_ip}} names no role")
+        health = doc.get("health")
+        if health is None:
+            health = []
+        elif not (isinstance(health, list) and health):
+            errors.append(f"{fname}: health: must be a non-empty list of rules")
+            health = []
+        else:
+            seen_rules: set[str] = set()
+            for i, rule in enumerate(health):
+                if not isinstance(rule, dict):
+                    errors.append(f"{fname}: health[{i}]: must be a map")
+                    continue
+                rname = rule.get("name")
+                if not (isinstance(rname, str) and ROLE_NAME.match(rname)):
+                    errors.append(f"{fname}: health[{i}].name: required snake_case string")
+                    rname = f"[{i}]"
+                elif rname in seen_rules:
+                    errors.append(f"{fname}: health.{rname}.name: duplicate rule name")
+                else:
+                    seen_rules.add(rname)
+                _check_keys(rule, {"name", "promql", "expect", "severity"},
+                            fname, f"health.{rname}.", errors)
+                promql = rule.get("promql")
+                if not (isinstance(promql, str) and promql.strip()):
+                    errors.append(f"{fname}: health.{rname}.promql: required non-empty string")
+                elif "$RID" not in promql:
+                    errors.append(f"{fname}: health.{rname}.promql: must reference $RID")
+                expect = rule.get("expect")
+                if not (isinstance(expect, str) and EXPECT.match(expect.strip())):
+                    errors.append(f"{fname}: health.{rname}.expect: must be "
+                                  "'<op> <number>' (==, !=, <, <=, >, >=)")
+                sev = rule.get("severity")
+                if sev is not None and sev not in SEVERITIES:
+                    errors.append(f"{fname}: health.{rname}.severity: must be one of "
+                                  f"{'|'.join(SEVERITIES)}")
         out.append({
             "name": stem, "variant": doc.get("variant"), "requires": requires or [],
             "hw_class": hw_class, "roles": roles, "verify": verify if isinstance(verify, dict) else {},
-            "yaml_path": fname,
+            "health": health, "yaml_path": fname,
         })
     return out, errors
 
@@ -338,17 +399,45 @@ def load_setups(dir_path: str, known_hosts: set[str]) -> tuple[list[dict], list[
         diagram = doc.get("diagram")
         if not (isinstance(diagram, str) and diagram.strip()):
             errors.append(f"{fname}: diagram: required non-empty mermaid source")
-        union = set()
+        union: set = set()
         for spec in members.values():
             if isinstance(spec, dict) and isinstance(spec.get("capabilities"), list):
                 union.update(c for c in spec["capabilities"] if isinstance(c, str))
-        union.update(l.get("capability") for l in links
-                     if isinstance(l, dict) and isinstance(l.get("capability"), str))
+        union.update(lk.get("capability") for lk in links
+                     if isinstance(lk, dict) and isinstance(lk.get("capability"), str))
         out.append({
             "name": stem, "pool": doc.get("pool"), "members": members, "links": links,
             "capabilities": sorted(union), "diagram": diagram or "", "yaml_path": fname,
         })
     return out, errors
+
+
+def _parse_ip_range(span: str) -> tuple[str, str]:
+    """Parse DAOLAB_IP_POOL (``START-END``) into two IPv4 strings."""
+    start, _, end = span.partition("-")
+    start, end = start.strip(), end.strip()
+    try:
+        a, b = ipaddress.ip_address(start), ipaddress.ip_address(end)
+    except ValueError:
+        raise SyncError([f"DAOLAB_IP_POOL={span!r}: expected START-END of IPv4 "
+                         "addresses, e.g. 10.30.0.100-10.30.0.199"])
+    if int(a) > int(b):
+        raise SyncError([f"DAOLAB_IP_POOL={span!r}: start {start} is after end {end}"])
+    return start, end
+
+
+def _sync_ip_pool(conn: sqlite3.Connection) -> None:
+    """Load the IP pool from DAOLAB_IP_POOL (B-43). Idempotent: it updates the single
+    pool row in place and never touches ip_leases, so shrinking the range cannot drop a
+    live (leased or quarantined) lease."""
+    from . import config
+    start, end = _parse_ip_range(config.settings.ip_pool)
+    fields = {"range_start": start, "range_end": end}
+    row = models.ip_pool_by_name(conn, DEFAULT_IP_POOL)
+    if row is None:
+        models.insert(conn, "ip_pools", {"name": DEFAULT_IP_POOL, **fields})
+    else:
+        models.update(conn, "ip_pools", row["id"], fields)
 
 
 def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
@@ -364,12 +453,15 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
     if errors:
         raise SyncError(errors)
 
+    addresses = inventory_addresses(inventory_path)
     conn.execute("BEGIN IMMEDIATE")
     try:
         # pools
         for s in sts:
             if conn.execute("SELECT id FROM pools WHERE name = ?", (s["pool"],)).fetchone() is None:
                 models.insert(conn, "pools", {"name": s["pool"]})
+        # ip pool (DAOLAB_IP_POOL)
+        _sync_ip_pool(conn)
         # setups + resources
         for s in sts:
             pool_id = conn.execute("SELECT id FROM pools WHERE name = ?", (s["pool"],)).fetchone()["id"]
@@ -385,7 +477,8 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
                     "SELECT id FROM resources WHERE setup_id = ? AND name = ?",
                     (setup_id, mname)).fetchone()
                 fields = {"kind": spec["kind"], "capabilities": models.to_json(sorted(spec["capabilities"])),
-                          "host": spec["host"]}      # hw_class never written by sync
+                          "host": spec["host"],      # hw_class never written by sync
+                          "address": addresses.get(mname)}   # a static DPU's mgmt address
                 if existing:
                     models.update(conn, "resources", existing["id"], fields)
                 else:
@@ -399,7 +492,8 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
             row = models.usecase_by_name(conn, u["name"])
             fields = {"variant": u["variant"], "requires": models.to_json(u["requires"]),
                       "hw_class": u["hw_class"], "roles": models.to_json(u["roles"]),
-                      "verify": models.to_json(u["verify"]), "yaml_path": u["yaml_path"]}
+                      "verify": models.to_json(u["verify"]), "health": models.to_json(u["health"]),
+                      "yaml_path": u["yaml_path"]}
             if row:
                 models.update(conn, "usecases", row["id"], fields)   # description preserved
             else:

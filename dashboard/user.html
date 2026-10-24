@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230969da'/%3E%3C/svg%3E">
 <title>daolab</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <style>
@@ -56,6 +57,8 @@
   .modal .actions .secondary { background:#fff; color:var(--text); border:1px solid var(--line); }
   .shift { background:#fff8c5; color:var(--amber); border-radius:6px; padding:2px 8px; font-size:12px; }
   .vms td { border-bottom:0; padding:3px 16px; font-size:13px; }
+  #catalog tr.ready td { background:#f0f8ff; }
+  #catalog tr.ready td:first-child { box-shadow:inset 3px 0 0 var(--accent); }
   button.info { width:22px; height:22px; border-radius:50%; border:1px solid var(--line); background:#fff;
                 color:var(--accent); font-weight:700; font-style:italic; font-family:Georgia,serif;
                 cursor:pointer; margin-right:6px; }
@@ -72,6 +75,27 @@
   table.creds th, table.creds td { padding:4px 10px; font-size:13px; }
   .modal h4 { margin:16px 0 4px; font-size:13px; letter-spacing:.05em; text-transform:uppercase;
               color:var(--muted); }
+  .modal textarea { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px;
+                    font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; resize:vertical; }
+  .modal .pick { display:flex; gap:18px; margin:4px 0 6px; }
+  .modal .pick label { display:flex; gap:6px; align-items:center; margin:0; color:var(--text); font-size:13px; }
+  .modal .pick input { width:auto; }
+  .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+  .access { margin:6px 0 2px; padding:8px 10px; border:1px solid var(--line); border-radius:8px;
+            background:#f6f8fa; font-size:13px; }
+  .access.live { border-color:#a6e9b6; background:#f0fff4; }
+  .access .cred-head { margin-bottom:4px; }
+  .access table.cred { width:auto; }
+  .access table.cred th { font-size:12px; color:var(--muted); font-weight:600; padding:2px 14px 2px 0;
+                          border:0; white-space:nowrap; }
+  .access table.cred td { padding:2px 0; border:0; }
+  .modal .login-line { margin:2px 0 10px; padding:8px 10px; border-radius:6px; background:#f0f8ff;
+                       border:1px solid #b6e3ff; font-size:13px; }
+  .access button, .actions-cell button { border:1px solid var(--line); background:#fff; border-radius:6px;
+            padding:1px 8px; cursor:pointer; font-size:12px; margin-left:4px; }
+  .progress { font-size:12px; margin-top:2px; }
+  button.end { background:#fff; color:var(--amber); border:1px solid var(--line); border-radius:6px;
+               padding:3px 10px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -124,11 +148,24 @@
 
 <div class="overlay" id="reserve-modal">
   <div class="modal">
-    <h3 id="rm-title">Reserve</h3>
-    <label>start (blank = now)</label>
+    <h3 id="rm-title">Deploy</h3>
+    <label>start (blank = as soon as the testbed is free)</label>
     <input type="datetime-local" id="rm-start">
     <label>hours</label>
     <input type="number" id="rm-hours" min="1" value="1">
+    <div class="login-line" id="rm-login" hidden></div>
+    <label>how will you log in?</label>
+    <div class="pick">
+      <label><input type="radio" name="rm-auth" value="key" checked onchange="authPick()"> my SSH key</label>
+      <label><input type="radio" name="rm-auth" value="password" onchange="authPick()"> a generated password</label>
+    </div>
+    <div id="rm-keybox">
+      <textarea id="rm-key" rows="3" placeholder="ssh-ed25519 AAAA... you@laptop"></textarea>
+      <div class="hint">Your <b>public</b> key (e.g. <code>~/.ssh/id_ed25519.pub</code>), pre-filled with the one
+        registered for you. Leave it empty to get a password instead.</div>
+    </div>
+    <div id="rm-pwbox" class="hint" hidden>A password is generated for this reservation and shown on its card
+      once your slot is live. It stops working when the slot ends.</div>
     <div id="rm-diy" hidden>
       <label>setup</label>
       <input type="text" id="rm-setup" placeholder="setup-01" list="rm-setup-list">
@@ -139,7 +176,7 @@
     </div>
     <div class="actions">
       <button class="act secondary" onclick="closeReserve()">Cancel</button>
-      <button class="act" onclick="submitReserve()">Reserve</button>
+      <button class="act" id="rm-submit" onclick="submitReserve()">Deploy</button>
     </div>
   </div>
 </div>
@@ -147,7 +184,7 @@
 <script>
 const TOKEN_KEY = "daolab_token";
 const getToken  = () => localStorage.getItem(TOKEN_KEY);
-let ME = null, SETUPS = null, POLL_MS = 15000;
+let ME = null, SETUPS = null, POLL_MS = 15000, FAST_MS = 4000, FAST = false;
 
 class ApiError extends Error {
   constructor(status, err) {            // err = {code, message, detail} per the API error model
@@ -208,8 +245,12 @@ async function saveToken() {
 }
 
 const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
-                     tearing_down:"b-amber", released:"b-muted", failed:"b-red"};
-const CANCELABLE = ["queued", "ready", "active"];
+                     cleaning:"b-amber", quarantined:"b-red", released:"b-muted", failed:"b-red"};
+const CANCELABLE = ["queued"];                      // not started yet: cancel (DELETE)
+const ENDABLE = ["ready", "active"];                 // running: end now (POST .../cleanup)
+const BUSY = ["provisioning", "cleaning"];           // poll faster while these move
+const HEALTH_BADGE = {healthy:"b-green", degraded:"b-amber", down:"b-red", unknown:"b-grey"};
+const PW = {};                                       // reservation id -> password (never in the DOM until shown)
 
 if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
 let MERMAID_N = 0;
@@ -223,6 +264,9 @@ async function renderMermaidInto(elId, source) {       // falls back to the raw 
   } catch (e) { el.innerHTML = `<pre>${esc(source)}</pre>`; }
 }
 
+// a start moved by a minute or more (taken slot, maintenance); not the rounding of "now" to a slot
+const movedSlot = r => r.shifted && new Date(r.start_at) - new Date(r.requested_start_at) >= 60000;
+
 function availabilityCell(r) {
   if (r.available) {
     let txt = "available";
@@ -230,6 +274,7 @@ function availabilityCell(r) {
     return `<span class="badge b-green">available</span>${r.next_free_at && new Date(r.next_free_at) > new Date() ? ` <span class="muted">next free ${esc(r.next_free_at)}</span>` : ""}`;
   }
   if (r.reason === "no_yaml") return `<span class="muted">planned — no YAML yet</span>`;
+  if (r.reason === "not_enabled") return `<span class="muted">not enabled on this lab yet</span>`;
   if (r.reason === "unmet_capability") return `<span class="badge b-red">missing: ${esc(r.missing.join(", "))}</span>`;
   if (r.reason === "no_free_slot") return `<span class="badge b-amber">no free slot within horizon</span>`;
   return "";
@@ -237,54 +282,149 @@ function availabilityCell(r) {
 
 let CATALOG = [];
 async function loadCatalog() {
-  const rows = await api("/usecases");
+  // ready-to-deploy first, then the rest of the active ones ("coming soon"), then the planned
+  const rank = r => r.deployable ? 0 : r.status === "active" ? 1 : 2;
+  const rows = (await api("/usecases")).map((r, i) => ({...r, i}))
+                                       .sort((a, b) => rank(a) - rank(b) || a.i - b.i);
   CATALOG = rows;
   const tbody = document.querySelector("#catalog tbody");
   document.getElementById("catalog-empty").hidden = rows.length > 0;
   tbody.innerHTML = rows.map(r => `
-    <tr>
+    <tr class="${r.deployable ? "ready" : ""}">
       <td><code>${esc(r.name)}</code>${r.variant ? `<span class="variant">${esc(r.variant)}</span>` : ""}</td>
       <td>${esc(r.description)}</td>
-      <td><span class="badge ${r.status === "active" ? "b-green" : "b-grey"}">${esc(r.status)}</span></td>
+      <td>${r.deployable ? '<span class="badge b-green">ready to deploy</span>'
+            : r.status === "active" ? '<span class="badge b-grey">coming soon</span>'
+            : `<span class="badge b-grey">${esc(r.status)}</span>`}</td>
       <td>${availabilityCell(r)}</td>
-      <td style="white-space:nowrap"><button class="info" title="about this use case" onclick="openInfo('${esc(r.name)}')">i</button>${r.available ? `<button class="act" onclick="openReserve('${esc(r.name)}')">Reserve</button>` : ""}</td>
+      <td style="white-space:nowrap"><button class="info" title="about this use case" onclick="openInfo('${esc(r.name)}')">i</button>${r.available ? `<button class="act" onclick="openReserve('${esc(r.name)}')">Deploy</button>` : ""}</td>
     </tr>`).join("");
+}
+
+function accessBlock(r) {
+  // the DPU login, spelled out: every reservation logs in as the same username (`lab`)
+  const a = r.access;
+  if (!a) return "";
+  let secret;
+  if (a.auth === "password") {
+    if (a.password) {
+      PW[r.id] = a.password;
+      secret = `<code id="pw-${r.id}">••••••••••••</code>
+                <button onclick="togglePw(${r.id})">show</button><button onclick="copyPw(${r.id})">copy</button>`;
+    } else secret = `<span class="muted">generated for you, shown here once your slot is live</span>`;
+  } else {
+    secret = `your SSH key${a.key ? ` <code>${esc(a.key)}</code>` : ""} <span class="muted">(no password)</span>`;
+  }
+  const status = a.live
+    ? `<span class="badge b-green">login open</span> <span class="muted">until ${esc(r.end_at)}</span>`
+    : `<span class="badge b-grey">login opens ${esc(r.start_at)}</span>`;
+  const copy = v => `<button onclick="copyText('${esc(v)}')">copy</button>`;
+  return `<div class="access ${a.live ? "live" : ""}">
+    <div class="cred-head"><b>DPU credentials</b> ${status}</div>
+    <table class="cred">
+      <tr><th>host</th><td><code>${esc(a.host)}</code> ${copy(a.host)}</td></tr>
+      <tr><th>username</th><td><code>${esc(a.login)}</code> ${copy(a.login)}</td></tr>
+      <tr><th>${a.auth === "password" ? "password" : "login with"}</th><td>${secret}</td></tr>
+      <tr><th>connect</th><td><code>${esc(a.ssh)}</code> ${copy(a.ssh)}</td></tr>
+    </table>
+  </div>`;
+}
+
+function progressLine(r) {
+  const j = r.job;
+  if (!j) return "";
+  const last = j.last_step ? `${esc(j.last_step.name)}${j.last_step.state === "failed" ? " ✗" : ""}` : "starting";
+  if (j.state === "pending" || j.state === "running")
+    return `<div class="progress"><span class="badge b-amber">${esc(j.kind)} · ${esc(j.state)}</span>
+            <span class="muted">step ${j.steps}: ${last}</span></div>`;
+  if (j.state === "failed")
+    return `<div class="progress"><span class="badge b-red">${esc(j.kind)} failed</span>
+            <span class="muted">${esc(j.error || "")}</span></div>`;
+  return "";
+}
+
+function healthBadge(r) {
+  if (!r.health || !ENDABLE.includes(r.state)) return "";
+  return ` <span class="badge ${HEALTH_BADGE[r.health.verdict] || "b-grey"}" title="${esc(r.health.reason || "")}">${esc(r.health.verdict)}</span>`;
+}
+
+function actionsCell(r) {
+  if (CANCELABLE.includes(r.state))
+    return `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>`;
+  if (ENDABLE.includes(r.state))
+    return `<span class="actions-cell"><button class="end" onclick="endReservation(${r.id})">End now</button>
+            <button onclick="probe(${r.id})" title="run the use case's check now">Re-check</button></span>`;
+  return "";
 }
 
 async function loadReservations() {
   const rows = await api("/reservations");
   const tbody = document.querySelector("#reservations tbody");
   document.getElementById("res-empty").hidden = rows.length > 0;
+  FAST = rows.some(r => BUSY.includes(r.state) || (r.state === "queued" && r.job));
   tbody.innerHTML = rows.map(r => {
-    const cancel = CANCELABLE.includes(r.state)
-      ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>` : "";
-    const shifted = r.shifted ? ` <span class="shift">shifted from ${esc(r.requested_start_at)}</span>` : "";
+    const shifted = movedSlot(r) ? ` <span class="shift">shifted from ${esc(r.requested_start_at)}</span>` : "";
     const fail = r.state === "failed" && r.failure_reason
       ? `<tr class="vms"><td></td><td colspan="5"><span class="badge b-red">${esc(r.failure_reason)}</span></td></tr>` : "";
-    const vms = r.vms.length ? `
+    const live = !["released", "failed"].includes(r.state);
+    const extra = live && (r.access || r.job) ? `
+      <tr class="vms"><td></td><td colspan="5">${accessBlock(r)}${progressLine(r)}</td></tr>` : "";
+    const vmsWithName = r.vms.filter(vm => vm.name);
+    const vms = live && vmsWithName.length ? `
       <tr class="vms"><td></td><td colspan="5">
         <table class="creds">
-          <thead><tr><th>role</th><th>where</th><th>vm</th><th>ip</th><th>login</th><th>credentials</th></tr></thead>
-          <tbody>${r.vms.map(vm => `
-            <tr><td><code>${esc(vm.role)}</code></td><td>${esc(vm.host)}</td>
-                <td>${vm.name ? `<code>${esc(vm.name)}</code>` : '<span class="muted">on the DPU (no VM)</span>'}</td>
-                <td>${vm.ip ? `<code>${esc(vm.ip)}</code>` : '<span class="muted">waiting for IP</span>'}</td>
-                <td>${vm.ssh ? `<code>${esc(vm.ssh)}</code>` : (vm.ip ? '<span class="muted">service endpoint</span>' : '<span class="muted">—</span>')}</td>
-                <td>${vm.username ? `user <b>${esc(vm.username)}</b> · your registered SSH key` : '<span class="muted">—</span>'}</td></tr>`).join("")}
+          <thead><tr><th>VM</th><th>where</th><th>ip</th><th>login</th></tr></thead>
+          <tbody>${vmsWithName.map(vm => `
+            <tr><td><code>${esc(vm.role)}</code> <span class="muted">${esc(vm.name)}</span></td><td>${esc(vm.host)}</td>
+                <td>${vm.ip ? `<code>${esc(vm.ip)}</code>` : r.vms_provisioned === false
+                      ? '<span class="badge b-grey">not provisioned</span>' : '<span class="muted">waiting for IP</span>'}</td>
+                <td>${vm.ssh ? `<code>${esc(vm.ssh)}</code> · ${vm.auth === "password" ? "the password above" : "your SSH key"}` : '<span class="muted">—</span>'}</td></tr>`).join("")}
           </tbody>
         </table>
+        ${r.vms_provisioned === false ? `<div class="muted" style="font-size:12px;margin:2px 0 0 16px">This lab
+          deploys the DPU only for now; the use case's VMs come with the Xen Orchestra pools.</div>` : ""}
         ${r.diagram ? `<div class="topo" id="res-diagram-${r.id}"></div>` : ""}
       </td></tr>` : "";
     return `
       <tr>
         <td>${r.id}</td><td><code>${esc(r.usecase)}</code>${r.diy ? ' <span class="badge b-grey">diy</span>' : ""}</td>
         <td>${esc(r.setup)}</td>
-        <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span></td>
+        <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span>${healthBadge(r)}</td>
         <td>${esc(r.start_at)} → ${esc(r.end_at)}${shifted}</td>
-        <td>${cancel}</td>
-      </tr>${fail}${vms}`;
+        <td>${actionsCell(r)}</td>
+      </tr>${fail}${extra}${vms}`;
   }).join("");
-  rows.filter(r => r.diagram).forEach(r => renderMermaidInto("res-diagram-" + r.id, r.diagram));
+  rows.filter(r => r.diagram && document.getElementById("res-diagram-" + r.id))
+      .forEach(r => renderMermaidInto("res-diagram-" + r.id, r.diagram));
+}
+
+function togglePw(id) {
+  const el = document.getElementById("pw-" + id);
+  const shown = el.dataset.shown === "1";
+  el.textContent = shown ? "••••••••••••" : PW[id];
+  el.dataset.shown = shown ? "0" : "1";
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); showBanner("copied", null, true); }
+  catch (e) { prompt("copy:", text); }
+}
+function copyPw(id) { copyText(PW[id]); }
+
+async function endReservation(id) {
+  if (!confirm(`End reservation #${id} now? Your access stops and the testbed is cleaned up.`)) return;
+  try {
+    const r = await api(`/reservations/${id}/cleanup`, {method: "POST"});
+    showBanner(`reservation #${r.id} → ${r.state}`, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
+}
+
+async function probe(id) {
+  try {
+    const r = await api(`/reservations/${id}/health/probe`, {method: "POST"});
+    showBanner(`check queued (job #${r.job.id})`, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
 }
 
 async function cancelReservation(id) {
@@ -356,11 +496,27 @@ function addTemplateRow(host, template) {
   document.getElementById("rm-templates").appendChild(div);
 }
 
+function authPick() {
+  const pw = document.querySelector('input[name="rm-auth"]:checked').value === "password";
+  document.getElementById("rm-keybox").hidden = pw;
+  document.getElementById("rm-pwbox").hidden = !pw;
+}
+
 async function openReserve(name) {
   RM_USECASE = name;
-  document.getElementById("rm-title").textContent = `Reserve ${name}`;
+  document.getElementById("rm-title").textContent = `Deploy ${name}`;
+  const uc = CATALOG.find(c => c.name === name);
+  const dpu = uc && (uc.setups || []).flatMap(st => st.members).find(m => m.kind === "dpu" && m.address);
+  const line = document.getElementById("rm-login");
+  line.hidden = !(uc && uc.dpu_login);
+  if (uc && uc.dpu_login)
+    line.innerHTML = `You will log in to the DPU as username <b><code>${esc(uc.dpu_login)}</code></b>`
+      + (dpu ? ` at <code>${esc(dpu.address)}</code>: <code>ssh ${esc(uc.dpu_login)}@${esc(dpu.address)}</code>` : "");
   document.getElementById("rm-start").value = "";
   document.getElementById("rm-hours").value = "1";
+  document.getElementById("rm-key").value = (ME && ME.ssh_pubkey) || "";
+  document.querySelector('input[name="rm-auth"][value="key"]').checked = true;
+  authPick();
   const diy = name === "diy";
   document.getElementById("rm-diy").hidden = !diy;
   if (diy) {
@@ -389,6 +545,8 @@ async function submitReserve() {
   const body = {usecase: RM_USECASE,
                 start_at: toUtc(document.getElementById("rm-start").value),
                 hours: parseInt(document.getElementById("rm-hours").value, 10) || 1};
+  const usePassword = document.querySelector('input[name="rm-auth"]:checked').value === "password";
+  body.ssh_pubkey = usePassword ? "" : document.getElementById("rm-key").value.trim();
   if (RM_USECASE === "diy") {
     body.setup = document.getElementById("rm-setup").value.trim();
     body.templates = {};
@@ -398,10 +556,15 @@ async function submitReserve() {
     }
   }
   try {
-    const r = await api("/reservations", {method: "POST", body});
+    const btn = document.getElementById("rm-submit");
+    btn.disabled = true;
+    let r;
+    try { r = await api("/reservations", {method: "POST", body}); } finally { btn.disabled = false; }
     closeReserve();
-    let msg = `reserved #${r.id} on ${r.setup} · ${r.start_at} → ${r.end_at} · ${r.state}`;
-    if (r.shifted) msg += ` · slot shifted from ${r.requested_start_at}`;
+    let msg = `deploying ${r.usecase} as #${r.id} on ${r.setup} · ${r.start_at} → ${r.end_at}`;
+    if (movedSlot(r)) msg += ` · slot shifted from ${r.requested_start_at}`;
+    if (r.access) msg += ` · username ${r.access.login} · log in with ${r.access.ssh} (${r.access.auth === "password"
+      ? "the password shown on the card once it is live" : "your SSH key"})`;
     showBanner(msg, null, true);
     await refresh();
   } catch (e) { reportError(e); }
@@ -431,6 +594,7 @@ function poll(fn, ms) {
 
 boot();
 poll(refresh, POLL_MS);
+setInterval(() => { if (FAST && !document.hidden && getToken()) loadReservations().catch(reportError); }, FAST_MS);
 </script>
 </body>
 </html>

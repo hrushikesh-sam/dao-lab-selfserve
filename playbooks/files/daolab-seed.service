@@ -1,0 +1,13 @@
+# /etc/systemd/system/daolab-seed.service — baked into tpl-ubuntu2204-dao (B-85)
+[Unit]
+Description=daolab first-boot seed (xenstore vm-data/daolab -> cloud-init NoCloud)
+DefaultDependencies=no
+After=local-fs.target proc-xen.mount
+Before=cloud-init-local.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/daolab-seed
+
+[Install]
+WantedBy=cloud-init-local.service

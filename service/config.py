@@ -28,10 +28,36 @@ class Settings:
     sched_horizon_hours: int
     webhook_url: str
     log_level: str
+    runner: str
+    slot_min: int
+    cleanup_min: int
+    default_hours: int
+    ip_pool: str
+    early_access: bool
+    health_stale_sec: int
+    otel_endpoint: str
+    max_live_reservations: int
+    max_future_reservations: int
+    mock_step_sec: float
+    mock_fail: str
+    job_timeout_sec: int
+    prometheus_url: str
+    reconcile_attempts: int
+    authz_secret: str
+    artifacts_dir: str
+    otel_agent_endpoint: str
+    allow_destructive: bool
+    deploy_vms: bool
+    become_password_file: str
+    deployable: tuple[str, ...]
 
     @classmethod
     def from_env(cls) -> "Settings":
         env = os.environ.get
+
+        def flag(name: str, default: str = "false") -> bool:
+            return env(name, default).strip().lower() in ("1", "true", "yes", "on")
+
         return cls(
             db_path=env("DAOLAB_DB_PATH", "./daolab.db"),
             api_host=env("DAOLAB_API_HOST", "0.0.0.0"),
@@ -51,6 +77,28 @@ class Settings:
             sched_horizon_hours=int(env("DAOLAB_SCHED_HORIZON_HOURS", "168")),
             webhook_url=env("DAOLAB_WEBHOOK_URL", ""),
             log_level=env("DAOLAB_LOG_LEVEL", "INFO"),
+            runner=env("DAOLAB_RUNNER", "ansible"),
+            slot_min=int(env("DAOLAB_SLOT_MIN", "30")),
+            cleanup_min=int(env("DAOLAB_CLEANUP_MIN", "10")),
+            default_hours=int(env("DAOLAB_DEFAULT_HOURS", "1")),
+            ip_pool=env("DAOLAB_IP_POOL", "10.68.1.0-10.68.2.200"),
+            early_access=flag("DAOLAB_EARLY_ACCESS"),
+            health_stale_sec=int(env("DAOLAB_HEALTH_STALE_SEC", "120")),
+            otel_endpoint=env("DAOLAB_OTEL_ENDPOINT", ""),
+            max_live_reservations=int(env("DAOLAB_MAX_LIVE_RESERVATIONS", "1")),
+            max_future_reservations=int(env("DAOLAB_MAX_FUTURE_RESERVATIONS", "2")),
+            mock_step_sec=float(env("DAOLAB_MOCK_STEP_SEC", "5")),
+            mock_fail=env("DAOLAB_MOCK_FAIL", ""),
+            job_timeout_sec=int(env("DAOLAB_JOB_TIMEOUT_SEC", "1800")),
+            prometheus_url=env("DAOLAB_PROMETHEUS_URL", "http://localhost:9090"),
+            reconcile_attempts=int(env("DAOLAB_RECONCILE_ATTEMPTS", "2")),
+            authz_secret=env("DAOLAB_AUTHZ_SECRET", ""),
+            artifacts_dir=env("DAOLAB_ARTIFACTS_DIR", "./var/jobs"),
+            otel_agent_endpoint=env("DAOLAB_OTEL_AGENT_ENDPOINT", ""),
+            allow_destructive=flag("DAOLAB_ALLOW_DESTRUCTIVE"),
+            deploy_vms=flag("DAOLAB_DEPLOY_VMS", "true"),
+            become_password_file=env("DAOLAB_BECOME_PASSWORD_FILE", ""),
+            deployable=tuple(n.strip() for n in env("DAOLAB_DEPLOYABLE", "").split(",") if n.strip()),
         )
 
 

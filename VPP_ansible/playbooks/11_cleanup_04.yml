@@ -1,0 +1,119 @@
+---
+- name: Step 15 - Stop VPP, return 0002:04:00.0 to the kernel and restart nginx
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: Require explicit sign-off before changing PCI binding and starting nginx
+      assert:
+        that:
+          - allow_destructive_changes | bool
+        fail_msg: "Cleanup changes PCI binding and restarts nginx. Set allow_destructive_changes=true only after sign-off."
+
+    - name: Check the state saved by 08_prepare_04.yml exists
+      stat:
+        path: "{{ vpp_dir }}/restore/pci-04.state"
+      register: pci_state_file
+
+    - name: Stop if the saved PCI state is missing
+      assert:
+        that:
+          - pci_state_file.stat.exists
+        fail_msg: "{{ vpp_dir }}/restore/pci-04.state not found. 08_prepare_04.yml did not run, so the original driver is unknown. Stop here."
+
+    - name: Read saved PCI state
+      slurp:
+        src: "{{ vpp_dir }}/restore/pci-04.state"
+      register: pci_state_raw
+
+    - name: Show saved PCI state
+      debug:
+        msg: "{{ pci_state_raw.content | b64decode }}"
+
+    - name: Stop if the saved original driver is not rvu_nicpf
+      assert:
+        that:
+          - "'driver=rvu_nicpf override=rvu_nicpf' in (pci_state_raw.content | b64decode)"
+        fail_msg: "Saved original driver is not rvu_nicpf. Do not guess; check the saved state manually."
+
+    - name: Stop VPP
+      become: true
+      shell: "pkill vpp || true"
+      changed_when: true
+
+    - name: Wait for VPP to stop
+      pause:
+        seconds: 2
+
+    - name: Confirm VPP stopped
+      shell: "pgrep -a vpp || echo 'vpp gone'"
+      register: vpp_stopped
+      changed_when: false
+
+    - name: Check current driver of live port
+      become: true
+      shell: |
+        basename "$(readlink /sys/bus/pci/devices/{{ pci_live_port }}/driver)"
+      register: live_current_driver
+      changed_when: false
+
+    - name: Unbind live port from vfio-pci
+      become: true
+      shell: "echo {{ pci_live_port }} | tee /sys/bus/pci/drivers/vfio-pci/unbind"
+      when: live_current_driver.stdout == "vfio-pci"
+      changed_when: true
+
+    - name: Restore saved driver override on live port
+      become: true
+      shell: "echo rvu_nicpf | tee /sys/bus/pci/devices/{{ pci_live_port }}/driver_override"
+      when: live_current_driver.stdout == "vfio-pci"
+      changed_when: true
+
+    - name: Bind live port to rvu_nicpf
+      become: true
+      shell: "echo {{ pci_live_port }} | tee /sys/bus/pci/drivers/rvu_nicpf/bind"
+      when: live_current_driver.stdout != "rvu_nicpf"
+      changed_when: true
+
+    - name: Wait for kernel network interface
+      pause:
+        seconds: 2
+
+    - name: Verify live port is back on rvu_nicpf
+      shell: |
+        ls -l /sys/bus/pci/devices/{{ pci_live_port }}/driver | awk '{print $NF}'
+        ls /sys/class/net | grep {{ data_interface_live }}
+        ip -br addr show dev {{ data_interface_live }}
+      register: live_port_back
+      changed_when: false
+
+    - name: Start nginx-tls.service
+      become: true
+      systemd:
+        name: "{{ nginx_service }}"
+        state: started
+
+    - name: Wait after nginx start
+      pause:
+        seconds: 3
+
+    - name: Verify final state
+      become: true
+      shell: |
+        pgrep -a nginx | cut -c1-120 || echo "nginx NOT running"
+        ip -br link | grep -E 'dtap' || echo "no dtap"
+        for d in {{ pci_no_carrier }} {{ pci_live_port }}; do echo "$d $(basename $(readlink /sys/bus/pci/devices/$d/driver))"; done
+        pgrep -a vpp || echo "vpp gone"
+        ps -eo pid,args | grep -E 'smart-nic|secgw|nginx' | grep -v grep | wc -l
+        for s in 2048kB 524288kB; do echo $s $(cat /sys/kernel/mm/hugepages/hugepages-$s/free_hugepages); done
+        ip route show default
+        ip -br addr show dev {{ management_interface }}
+      register: final_state
+      changed_when: false
+      failed_when: false
+
+    - debug:
+        var: vpp_stopped.stdout_lines
+    - debug:
+        var: live_port_back.stdout_lines
+    - debug:
+        var: final_state.stdout_lines

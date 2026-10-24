@@ -1,0 +1,131 @@
+---
+- name: Check existing dao-clone exists
+  ansible.builtin.stat:
+    path: "{{ dao_clone }}"
+  register: dao_clone_stat
+
+- name: Stop if dao-clone does not exist
+  ansible.builtin.assert:
+    that:
+      - dao_clone_stat.stat.exists
+      - dao_clone_stat.stat.isdir
+    fail_msg: >-
+      {{ dao_clone }} does not exist on the DPU.
+      This playbook does not clone or create the DAO source directory.
+
+- name: Check VPP is not running
+  ansible.builtin.shell: |
+    if pgrep -x vpp >/dev/null; then
+      echo "VPP RUNNING"
+      exit 1
+    fi
+    echo "VPP NOT RUNNING"
+  args:
+    executable: /bin/bash
+  changed_when: false
+
+- name: Show DAO git state
+  become: false
+  ansible.builtin.shell: |
+    export GIT_PAGER=cat PAGER=cat
+    cd "{{ dao_clone }}"
+    echo "Branch:"
+    git branch --show-current
+    echo "Commit:"
+    git log -1 --oneline
+    echo "Status:"
+    git status -s
+  args:
+    executable: /bin/bash
+  register: git_state
+  changed_when: false
+
+- name: Display DAO git state
+  ansible.builtin.debug:
+    var: git_state.stdout_lines
+
+- name: Check SmartNIC CLI exists
+  ansible.builtin.stat:
+    path: "{{ base_cli }}"
+  register: cli_stat
+
+- name: Verify SmartNIC CLI exists
+  ansible.builtin.assert:
+    that:
+      - cli_stat.stat.exists
+    fail_msg: "{{ base_cli }} was not found."
+
+- name: Check whether build directory exists
+  ansible.builtin.stat:
+    path: "{{ dao_clone }}/build"
+  register: build_dir
+
+- name: Configure Meson in existing dao-clone
+  become: false
+  ansible.builtin.command:
+    cmd: >-
+      meson setup build
+      -Denable_apps=smart-nic
+      -Dplatform=cn10k
+      -Dprefix=/home/dao-test/dao-clone/install
+      -Denable_kmods=false
+      -Dprefer_static_build=true
+      -Dprefer_static=true
+  args:
+    chdir: "{{ dao_clone }}"
+  when: not build_dir.stat.exists
+
+- name: Reconfigure existing Meson build
+  become: false
+  ansible.builtin.command:
+    cmd: >-
+      meson setup build --reconfigure
+      -Denable_apps=smart-nic
+      -Dplatform=cn10k
+      -Dprefix=/home/dao-test/dao-clone/install
+      -Denable_kmods=false
+      -Dprefer_static_build=true
+      -Dprefer_static=true
+  args:
+    chdir: "{{ dao_clone }}"
+  when: build_dir.stat.exists
+
+- name: Build DAO SmartNIC
+  become: false
+  ansible.builtin.command:
+    cmd: ninja -C build -j 8
+  args:
+    chdir: "{{ dao_clone }}"
+
+- name: Install DAO SmartNIC
+  become: false
+  ansible.builtin.command:
+    cmd: ninja -C build install
+  args:
+    chdir: "{{ dao_clone }}"
+
+- name: Create SmartNIC runtime CLI for PF 0002:03:00.0
+  ansible.builtin.shell: |
+    sed 's/0002:04:00.0/0002:03:00.0/g'       "{{ base_cli }}" > "{{ runtime_cli }}"
+  args:
+    executable: /bin/bash
+
+- name: Check SmartNIC binary
+  ansible.builtin.stat:
+    path: "{{ smartnic_binary }}"
+  register: smartnic_stat
+
+- name: Verify SmartNIC binary exists
+  ansible.builtin.assert:
+    that:
+      - smartnic_stat.stat.exists
+      - smartnic_stat.stat.executable
+    fail_msg: "{{ smartnic_binary }} was not created."
+
+- name: Build summary
+  ansible.builtin.debug:
+    msg:
+      - "Using existing DAO tree: {{ dao_clone }}"
+      - "No git clone was performed."
+      - "SmartNIC binary: {{ smartnic_binary }}"
+      - "Runtime CLI: {{ runtime_cli }}"

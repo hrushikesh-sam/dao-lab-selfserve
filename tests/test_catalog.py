@@ -26,7 +26,7 @@ def conn():
 
 def test_sync_happy_path(conn):
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
-    setup = models.setup_by_name(conn, "setup-01")
+    setup = models.setup_by_name(conn, "tb-01")
     assert models.from_json(setup["capabilities"]) == ["e810", "octeon-cn106", "sdp", "wire"]
     uc = models.usecase_by_name(conn, "tls-proxy-nginx")
     assert uc["yaml_path"] and uc["variant"] == "separate-backend"
@@ -38,7 +38,7 @@ def test_sync_happy_path(conn):
 
 def test_sync_idempotent_preserves_hw_class(conn):
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
-    setup = models.setup_by_name(conn, "setup-01")
+    setup = models.setup_by_name(conn, "tb-01")
     dpu = conn.execute("SELECT id FROM resources WHERE setup_id=? AND name='dpu-01'",
                        (setup["id"],)).fetchone()
     models.update(conn, "resources", dpu["id"], {"hw_class": "sdp-pf1-vf8"})
@@ -57,7 +57,7 @@ def test_validation_errors_all_or_nothing(conn, tmp_path):
         catalog.sync(conn, str(bad), ST_DIR, INV)
     text = "\n".join(e.value.errors)
     assert "requires" in text and "surprise" in text and "roles" in text
-    assert models.setup_by_name(conn, "setup-01") is None  # nothing written
+    assert models.setup_by_name(conn, "tb-01") is None  # nothing written
 
 
 def test_unknown_host_rejected(conn, tmp_path):
@@ -75,7 +75,7 @@ def test_unknown_host_rejected(conn, tmp_path):
 def test_removal_blocked_by_active_reservation(conn, tmp_path):
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
     models.insert(conn, "users", {"username": "u1", "token_hash": "h", "ssh_pubkey": "k"})
-    setup = models.setup_by_name(conn, "setup-01")
+    setup = models.setup_by_name(conn, "tb-01")
     uc = models.usecase_by_name(conn, "tls-proxy-nginx")
     mk_res(conn, setup["id"], uc["id"], T(10), T(12))
     empty = tmp_path / "none"
@@ -83,4 +83,92 @@ def test_removal_blocked_by_active_reservation(conn, tmp_path):
     with pytest.raises(catalog.SyncError) as e:
         catalog.sync(conn, str(empty), str(empty), INV)
     assert "removal blocked" in "\n".join(e.value.errors)
-    assert models.setup_by_name(conn, "setup-01") is not None   # rolled back
+    assert models.setup_by_name(conn, "tb-01") is not None   # rolled back
+
+
+def test_health_rules_loaded():
+    ucs, errors = catalog.load_usecases(UC_DIR)
+    assert errors == []
+    vpp = next(u for u in ucs if u["name"] == "vpp")
+    names = [r["name"] for r in vpp["health"]]
+    assert names == ["vms_up", "ssh_reachable", "dpu_app", "datapath"]
+    assert all("$RID" in r["promql"] for r in vpp["health"])
+    assert [r.get("severity") for r in vpp["health"]] == [None, None, None, "degraded"]
+
+
+def test_sync_stores_health_rules_on_the_usecase(conn):
+    """B-64 follow-up (migration v8): the validated rules are persisted, so the API and the
+    engine evaluate them without reading YAML."""
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    rules = models.from_json(models.usecase_by_name(conn, "vpp")["health"])
+    assert [r["name"] for r in rules] == ["vms_up", "ssh_reachable", "dpu_app", "datapath"]
+    assert rules[-1]["severity"] == "degraded"
+    assert models.from_json(models.usecase_by_name(conn, "diy")["health"]) == []
+
+
+def test_malformed_health_rule_rejected(conn, tmp_path):
+    bad = tmp_path / "usecases"
+    bad.mkdir()
+    (bad / "hbroken.yml").write_text(
+        "name: hbroken\nvariant: v1\nrequires: [wire]\n"
+        "roles: {r1: {on: dpu, app: a}}\n"
+        "verify: {from: r1, cmd: c, expect: e}\n"
+        "health:\n"
+        "  - {name: nolid, promql: 'up', expect: '== 1'}\n"
+        "  - {name: badop, promql: 'up{$RID}', expect: 'maybe'}\n"
+        "  - {name: badsev, promql: 'up{$RID}', expect: '> 0', severity: warn}\n")
+    with pytest.raises(catalog.SyncError) as e:
+        catalog.sync(conn, str(bad), ST_DIR, INV)
+    text = "\n".join(e.value.errors)
+    assert "hbroken.yml" in text                    # file
+    assert "health.nolid.promql" in text and "$RID" in text   # rule name + problem
+    assert "health.badop.expect" in text
+    assert "health.badsev.severity" in text
+
+
+# ---- B-43: IP pool from DAOLAB_IP_POOL --------------------------------------
+
+def test_sync_loads_ip_pool(conn):
+    from service import config
+    assert config.settings.ip_pool == "10.68.1.0-10.68.2.200"     # the lab's VM range
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    pool = models.ip_pool_by_name(conn, catalog.DEFAULT_IP_POOL)
+    assert pool["range_start"] == "10.68.1.0" and pool["range_end"] == "10.68.2.200"
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)                        # idempotent
+    assert len(models.list_ip_pools(conn)) == 1
+
+
+def test_sync_shrinks_range_but_keeps_live_leases(conn, monkeypatch):
+    import dataclasses
+    from service import config
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    models.insert(conn, "users", {"username": "u1", "token_hash": "h", "ssh_pubkey": "k"})
+    setup = models.setup_by_name(conn, "tb-01")
+    uc = models.usecase_by_name(conn, "tls-proxy-nginx")
+    rid = mk_res(conn, setup["id"], uc["id"], T(10), T(12))
+    pool = models.ip_pool_by_name(conn, catalog.DEFAULT_IP_POOL)
+    models.insert(conn, "ip_leases", {"pool_id": pool["id"], "ip": "10.30.0.199",
+                                      "reservation_id": rid, "role": "backend",
+                                      "state": "leased"})
+    monkeypatch.setattr(config, "settings", dataclasses.replace(
+        config.settings, ip_pool="10.30.0.100-10.30.0.150"))     # shrink past the lease
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    pool = models.ip_pool_by_name(conn, catalog.DEFAULT_IP_POOL)
+    assert pool["range_end"] == "10.30.0.150"                    # range updated
+    assert [lease["ip"] for lease in models.live_leases(conn, pool["id"])] == ["10.30.0.199"]
+
+
+def test_bad_ip_pool_rejected(conn, monkeypatch):
+    import dataclasses
+    from service import config
+    monkeypatch.setattr(config, "settings",
+                        dataclasses.replace(config.settings, ip_pool="not-a-range"))
+    with pytest.raises(catalog.SyncError) as e:
+        catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    assert "DAOLAB_IP_POOL" in "\n".join(e.value.errors)
+    assert models.list_ip_pools(conn) == []                      # rolled back
+    monkeypatch.setattr(config, "settings", dataclasses.replace(
+        config.settings, ip_pool="10.30.0.199-10.30.0.100"))     # reversed
+    with pytest.raises(catalog.SyncError) as e:
+        catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    assert "after end" in "\n".join(e.value.errors)

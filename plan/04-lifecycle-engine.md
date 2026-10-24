@@ -3,287 +3,485 @@
 Part of the daolab implementation plan — see [README.md](README.md) for the doc map.
 
 This document specifies `service/engine.py` and `service/runner.py`. It draws on contract §8
-(state machine, engine mechanics, runner contract). Placement itself — capability matching,
-FCFS, slot-shift, the lead-time computation — is the scheduler's job
+(state machine, engine mechanics, runner contract) as refined by
+[09-backend-system-design.md](09-backend-system-design.md) §6, §9, §10 (procedures run as job
+rows; `cleaning` + `quarantined`; verify and reconcile after every cleanup). Placement itself —
+capability matching, FCFS, slot-shift, the lead-time computation — is the scheduler's job
 ([03-scheduler.md](03-scheduler.md)); playbook internals are [05-provisioning.md](05-provisioning.md);
-the cancel endpoint and the `/internal/vm-ip` handler are [02-backend-api.md](02-backend-api.md).
+the endpoints that create jobs and the `/internal/*` callbacks are [02-backend-api.md](02-backend-api.md).
 
 ## Reservation state machine
 
-States, exact list: `queued`, `provisioning`, `ready`, `active`, `tearing_down`, `released`,
-plus `failed` — the terminal error state the contract adds for failure handling. `released` and
-`failed` are terminal. There is no `cancelled` state: cancelling a `queued` reservation goes
-straight to `released`; cancelling `ready`/`active` goes through `tearing_down` → `released`.
+States, exact list: `queued`, `provisioning`, `ready`, `active`, `cleaning`, `quarantined`,
+`released`, plus `failed` — the terminal error state. `released` is final; `failed` leaves only
+to `released`, once its cleanup (or a later reconcile / force-clean) proves the testbed clean.
+`cleaning` replaced the older `tearing_down` (B-21, migration v6 rewrote the CHECK) and covers
+teardown + verify + reconcile;
+`quarantined` means cleanup finished but residue persists, and leaves only through reconcile or
+force-clean. There is no `cancelled` state: cancelling a `queued` reservation goes straight to
+`released`; ending a `ready`/`active` slot early (`POST /reservations/{id}/cleanup`) goes
+through `cleaning`.
+
+The legal moves are exactly the diagram of plan/09 §10, enforced by
+`models.transition_reservation` (`RESERVATION_TRANSITIONS`): every state write is a
+compare-and-set (`UPDATE … WHERE id = ? AND state = <the state it validated>`), so an illegal
+move or a concurrent change raises `ReservationStateError` instead of overwriting.
 
 ```mermaid
 stateDiagram-v2
     [*] --> queued: POST /reservations (scheduler places)
-    queued --> provisioning: engine · now ≥ start_at − lead · setup free
+    queued --> provisioning: engine · now ≥ start_at − lead · setup available and not held
     queued --> released: DELETE (cancel before provisioning)
-    provisioning --> provisioning: playbook failed · retries < DAOLAB_MAX_RETRIES
-    provisioning --> ready: all playbooks ok · every vms.ip set
-    provisioning --> failed: retries exhausted (best-effort teardown)
+    provisioning --> ready: deploy job succeeded
+    provisioning --> failed: deploy failed DAOLAB_MAX_RETRIES times (cleanup job queued)
     ready --> active: engine · now ≥ start_at
-    ready --> tearing_down: DELETE (cancel)
-    active --> tearing_down: engine · now ≥ end_at · or DELETE
-    tearing_down --> released: runner.teardown ok
-    tearing_down --> failed: teardown failed after DAOLAB_MAX_RETRIES
+    ready --> cleaning: POST …/cleanup (end early)
+    active --> cleaning: engine · now ≥ end_at · POST …/cleanup
+    cleaning --> released: verify clean (after up to N reconciles)
+    cleaning --> quarantined: residue persists
+    quarantined --> released: reconcile job verified clean · force-clean skip_verify
+    failed --> released: cleanup / reconcile verified clean · force-clean skip_verify
     released --> [*]
-    failed --> [*]
 ```
 
 | From | Trigger | Action | Next state | On failure |
 |---|---|---|---|---|
-| *(create)* | `POST /reservations` / `daolab reserve` (api) | `scheduler.py` matches capabilities, applies FCFS + slot-shift + lead time, fixes `setup_id`, `start_at`, `end_at` | `queued` | API-side errors only ([02-backend-api.md](02-backend-api.md)) — slot conflicts are never errors |
-| `queued` | engine tick (d): `now >= start_at − lead` and the setup is free | one transaction: create `vms` rows for every role, CAS state update | `provisioning` | crash before commit = nothing happened; next tick redoes it |
-| `provisioning` | engine tick (e): one full attempt | non-diy: `runner.dpu_prepare` (includes `ebf_set` iff `usecase.hw_class` differs from the DPU's `resources.hw_class`) → `runner.host_vm` → `runner.verify`; diy: `runner.host_vm` only | `ready` when all succeed and every VM role has an `ip`; update `resources.hw_class` after a reflash; fire webhook if `DAOLAB_WEBHOOK_URL` set | `retries += 1`, stay `provisioning` while `retries < DAOLAB_MAX_RETRIES` (idempotent replay next tick) |
-| `provisioning` | a failure brings `retries` to `DAOLAB_MAX_RETRIES` | best-effort single `runner.teardown`; set `failure_reason` | `failed` | teardown here is best-effort — its failure is logged, state is `failed` either way |
-| `ready` | engine tick (a): `now >= start_at` | none | `active` | — |
-| `ready` | `DELETE /reservations/{id}` (api) | state change + `retries = 0`; engine drives the teardown | `tearing_down` | — |
-| `active` | engine tick (b): `now >= end_at`, or `DELETE /reservations/{id}` | `retries = 0` on entry | `tearing_down` | — |
-| `tearing_down` | engine tick (c): `runner.teardown` succeeds | setup freed; **`resources.hw_class` is left untouched** | `released` | `retries += 1`; after `DAOLAB_MAX_RETRIES`: `failed`, set `failure_reason`, setup stays held and surfaces under `held_by` on `admin.html` until an admin intervenes manually |
-| `queued` | `DELETE /reservations/{id}` before provisioning began (api) | no playbooks ran; nothing to tear down | `released` | — |
+| *(create)* | `POST /reservations` / `daolab reserve` (api) | quota check, then `scheduler.place` (capability match, FCFS, mode `asap`/`at`, lead, turnaround, grid) fixes `setup_id`, `start_at`, `end_at` | `queued` | API-side errors only ([02-backend-api.md](02-backend-api.md)); in mode `asap` a slot conflict is never an error |
+| `queued` | `DELETE` (api) | nothing ran; no job | `released` | — |
+| `queued` | engine step 3: setup `available` and not held, `now ≥ start_at − lead` | one transaction: CAS, the `vms` rows, a pending `deploy` job | `provisioning` | crash before commit = nothing happened; next tick redoes it |
+| `provisioning` | `deploy` job succeeded | record `resources.hw_class` = the use case's class | `ready` | — |
+| `provisioning` | `deploy` job failed, `attempt < DAOLAB_MAX_RETRIES` | a new `deploy` job, `attempt + 1`, same trace | `provisioning` | — |
+| `provisioning` | `deploy` job failed, `attempt = DAOLAB_MAX_RETRIES` | `failure_reason` = the job's error; a `cleanup` job (same trace) | `failed` | — |
+| `ready` | engine step 1: `now ≥ start_at` | none | `active` | — |
+| `ready`/`active` | `POST …/cleanup` (api) | CAS + a pending `cleanup` job + audit row, one transaction | `cleaning` | — |
+| `active` | engine step 2: `now ≥ end_at` | CAS + a pending `cleanup` job, one transaction | `cleaning` | — |
+| `ready`/`active` | `POST …/redeploy` (api), inside `[start_at, end_at)` | a new `deploy` job; the reservation keeps its state | (unchanged) | a failed replay is recorded on the job only |
+| `cleaning` | `cleanup` job: teardown, verify, reconcile ×N — clean | release the IP leases; free the setup if nothing else is dirty | `released` | — |
+| `cleaning` | `cleanup` job: residue survives | quarantine the IP leases and the setup | `quarantined` | — |
+| `failed` | its `cleanup` job — clean / residue | release the leases / quarantine the leases and the setup | `released` / stays `failed` | — |
+| `quarantined`, dirty `failed` | `reconcile` job (force-clean) — clean / residue | release every lease, free the setup / setup stays quarantined | `released` / unchanged | — |
+| `quarantined`, dirty `failed` | force-clean `skip_verify` (api) | release every lease; a quarantined setup → `available` | `released` | — |
 
-Cancel while `provisioning` or `tearing_down` → `409 invalid_state` (retry once `ready`) — the
-engine never has to interrupt a running playbook.
+Cancel (`DELETE`) is valid only for `queued`; every other state → `409 invalid_state`, and
+cleanup only for `ready`/`active` — the engine never has to interrupt a running playbook. Retries live on job rows: the `reservations.retries`
+column of the baseline schema is no longer read or written.
+
+## Jobs
+
+A **job** is a DB row (migration v5, `models.py`) and the only way a procedure runs; there is no
+queue service. The engine is the only thing that executes jobs.
+
+| Kind | Created by | Runs | Reservation must be |
+|---|---|---|---|
+| `deploy` | engine step 3 (first attempt); engine after a failed attempt (B-25); `POST …/redeploy` (B-28) | `runner.deploy` | `provisioning`, or `ready`/`active` for a redeploy |
+| `cleanup` | engine step 2 at `end_at`; `POST …/cleanup` on a live slot (B-27); engine after the last deploy attempt failed | `runner.cleanup`, `runner.verify_clean`, `runner.reconcile` ×N | `cleaning` or `failed` |
+| `reconcile` | `POST /admin/setups/{name}/force-clean` (B-74), one per dirty reservation | `runner.reconcile`, `runner.verify_clean` | `quarantined` or `failed` |
+| `health_probe` | `POST …/health/probe` (B-66) | `runner.probe` | `ready` or `active` |
+
+- **Lifecycle:** `pending → running → succeeded | failed` (`models.transition_job`, a CAS like
+  the reservation's). A `failed` job is final and never revived: a retry is a *new* row for the
+  same reservation and kind with `attempt + 1`. The one exception is crash recovery (B-26):
+  `models.requeue_job` puts a stale `running` job back to `pending` with the same attempt.
+- **Columns:** `kind`, `state`, `attempt`, `trace_id` (B-62), `log_path` (B-84), `steps` (a JSON
+  list the runner appends to while the job runs: `{name, state: ok|failed|skipped, at,
+  detail?}`; each append is a CAS on the list and bumps `updated_at`), `error` (failed only),
+  `started_at`, `finished_at`.
+- **Stale reservation:** when a job starts, the engine checks the reservation is in the state its
+  kind needs (table above). If it moved on — cancelled, cleaned up, an admin override — the job
+  fails with `reservation is <state>, expected …` without calling the runner.
+- A job belongs to a setup through its reservation; the setup is not duplicated on the row.
 
 ## Engine loop — one tick, every minute
 
 `service/engine.py` is a plain script, not a daemon framework. `python -m service.engine` runs
-**one tick and exits** (systemd-timer friendly); `make engine` runs
-`python -m service.engine --loop`, ticking every `DAOLAB_ENGINE_INTERVAL_SEC` (default `60`).
+**one tick and exits** (systemd-timer friendly, prints `tick done: TickResult(...)`);
+`python -m service.engine --loop` ticks every `DAOLAB_ENGINE_INTERVAL_SEC` (default `60`), and a
+crash inside one tick is logged and the loop carries on. It refuses to start (exit 1) when the
+database schema is not the latest version ("run `daolab init` first"), when
+`DAOLAB_JOB_TIMEOUT_SEC` is not positive, or when `DAOLAB_RUNNER` / `DAOLAB_MOCK_FAIL` is
+invalid. On exit it calls the runner's `close()` if it has one.
 
 ```python
 # service/engine.py — no state outside the DB
-import argparse, sqlite3, time
-from datetime import datetime, timezone
-from service import config, models, runner, scheduler
-
-def tick(db: sqlite3.Connection, now: datetime) -> int:
-    """One pass over the reservations table. Returns transitions performed."""
-    n  = _promote_ready_to_active(db, now)   # (a) ready -> active, start_at due
-    n += _expire_active(db, now)             # (b) active -> tearing_down, end_at passed
-    n += _drive_teardowns(db, now)           # (c) run runner.teardown per due reservation
-    n += _start_due_provisioning(db, now)    # (d) queued -> provisioning, create vms rows
-    n += _drive_provisioning(db, now)        # (e) one full provisioning attempt per setup
-    return n
-
-def main(argv: list[str] | None = None) -> int:
-    args = argparse.ArgumentParser(prog="python -m service.engine")
-    args.add_argument("--loop", action="store_true")
-    opts = args.parse_args(argv)
-    db = models.connect(config.DAOLAB_DB_PATH)   # applies WAL + foreign_keys pragmas
-    if not opts.loop:
-        tick(db, datetime.now(timezone.utc)); return 0
-    while True:
-        tick(db, datetime.now(timezone.utc))
-        time.sleep(config.DAOLAB_ENGINE_INTERVAL_SEC)
+def tick(db, now, rn=None, cfg=None, job_timeout_sec=None, health_query=None) -> TickResult:
+    rn = rn or runner.get_runner()                          # DAOLAB_RUNNER
+    cfg = cfg or scheduler.SchedConfig.from_settings(config.settings)
+    out = TickResult()
+    out.recovered = _recover_stale_jobs(db, now, timeout)   # 0. running, silent > DAOLAB_JOB_TIMEOUT_SEC -> pending (B-26)
+    out.activated = _promote_ready_to_active(db, now)       # 1. ready -> active at start_at
+    out.expired   = _expire_active(db, now)                 # 2. active -> cleaning at end_at + cleanup job
+    out.started   = _start_due(db, now, cfg)                # 3. queued -> provisioning + vms rows + deploy job
+    _run_pending(db, rn, out)                               # 4. pending jobs, oldest first
+    _sweep_orphans(db, rn, out)                             # 5. orphan VMs / leases (B-73), finished passwords
+    if (query := health_query or _health_query()):          # 6. only with DAOLAB_OTEL_ENDPOINT set
+        _evaluate_health(db, now, query, out)               #    active reservations (B-67)
+    return out
 ```
 
-Tick order is fixed — (a) through (e) exactly as above — so releases and expiries free a setup
-*before* the same tick considers starting the next reservation on it. Rules:
+Tick order is fixed — 0 through 6 exactly as above. Rules:
 
-- **Stateless.** Every decision derives from reservation rows, `vms` rows, `resources.hw_class`,
-  the clock, and `config.py`. The engine keeps nothing in memory across ticks; killing it at any
-  instant loses no information (see the crash walkthrough below).
-- **Single-flight per setup.** At most one reservation per setup is in `provisioning` or
-  `tearing_down` at a time; steps (c)/(d)/(e) skip a setup that already has one.
-- **Compare-and-set transitions.** Every state write is guarded so a duplicate engine process
-  cannot double-fire a transition:
+- **Stateless.** Every decision derives from reservation, job, `vms` and `ip_leases` rows,
+  `resources.hw_class`, the setup's `availability`, the clock, and `config.py`. The engine keeps
+  nothing in memory across ticks; killing it at any instant loses no information (see the crash
+  walkthrough below).
+- **Compare-and-set transitions.** Every state write goes through
+  `models.transition_reservation` / `models.transition_job`; a write that loses a race raises
+  and is skipped, so a duplicate engine process cannot double-fire a transition. Because every
+  timestamp is `YYYY-MM-DDTHH:MM:SSZ`, lexicographic string comparison equals time comparison —
+  plain SQL `<=` works.
+- **One transaction per decision.** Step 2's CAS and its cleanup job, step 3's CAS, `vms` rows
+  and deploy job, and a finished job's result, reservation move, lease changes and audit row
+  each commit together (`BEGIN IMMEDIATE`) or not at all.
+- **Starting a booking (step 3).** Candidates come from `scheduler.startable_queued` — `queued`
+  reservations whose setup is `available` (B-18: a `quarantined` or `maintenance` setup keeps
+  its queue waiting; placement still books it). A candidate starts only when no reservation
+  holds its setup (`provisioning`/`ready`/`active`/`cleaning`/`quarantined`, re-checked under
+  the write lock) and `now ≥ start_at − lead`, where `lead` comes from
+  `scheduler.start_lead_min`: the same `lead_min` the scheduler uses
+  ([03-scheduler.md](03-scheduler.md)), but against the DPU's *actual* `resources.hw_class` at
+  tick time, so the long reflash lead is used exactly when the board really needs a reflash.
+- **Single-flight per setup (B-24).** A `deploy`, `cleanup` or `reconcile` job is only moved
+  `pending → running` when no other such job is `running` on the same setup; the check and the
+  move share one `BEGIN IMMEDIATE` transaction (`_claim`), so two engine processes cannot both
+  win. A job that has to wait stays `pending` (it is not failed) and is retried next tick; jobs
+  on one setup in the same tick run one after the other. Health probes are read-only and exempt.
+- **Jobs run oldest first** from a snapshot taken at the start of step 4, so the cleanup and
+  deploy jobs queued by steps 2 and 3 run in the same tick, while a retry or an automatic
+  cleanup created during step 4 runs on the next one.
+- **The next booking starts on the next tick.** A setup is freed in step 4 (cleanup verified →
+  `released`), after step 3 has looked at it; that costs at most one
+  `DAOLAB_ENGINE_INTERVAL_SEC`, which the lead time absorbs.
+- **Blocking is fine.** Runner calls are synchronous; a deploy tick can take minutes. Ticks are
+  serialized (one process), so a long tick simply delays the next. A runner exception becomes a
+  failed result (`RunResult(ok=False, error="<Type>: <msg>")`) instead of killing the tick.
+- **Crash recovery (B-26).** Step 0 puts `running` jobs whose `updated_at` is older than
+  `DAOLAB_JOB_TIMEOUT_SEC` (default 1800 s) back to `pending`. Every recorded step bumps
+  `updated_at`, so a slow but healthy deploy is not touched. The attempt is unchanged, the steps
+  recorded so far are kept and a `requeued` marker step is added; the update is guarded (still
+  `running`, nothing recorded since it was read), so a job that came back to life is left
+  alone. Doing it every tick, not only at process start, also covers the systemd one-tick mode.
+  Recovery runs before jobs are claimed, so it also frees a setup that single-flight was
+  holding. The timeout must exceed the longest silent stretch of a healthy job.
+- **`vms` rows in step 3**, inside the same transaction as the state CAS (`models.create_vms`,
+  idempotent): one row per use-case role, resolved against the setup members
+  (`models.planned_vms`). `on: dpu` → `host` = the DPU member name (`dpu-01`), `template` and
+  `name` NULL; `on: dpu_host` / `on: tg_host` → `host` = the XCP-ng host of the DPU / NIC member
+  (`tb-01-xcp`), `template` = the role's `vm`, `name` = `daolab-r<reservation_id>-<role>`. DIY
+  → one row per host of `diy_templates`, the host name as `role`. Rows exist *before* any
+  playbook runs, so the `/internal/vm-ip` and `/internal/leases` callbacks always find their
+  `(reservation_id, role)`. They are created whatever `DAOLAB_DEPLOY_VMS` says; with VMs off
+  the VM rows simply never get an IP.
 
-  ```sql
-  UPDATE reservations SET state = 'active', updated_at = :now
-   WHERE id = :id AND state = 'ready' AND start_at <= :now;
-  -- rowcount 0 => someone else already moved it; skip silently
-  ```
+## What a finished job does
 
-  Because every timestamp is `YYYY-MM-DDTHH:MM:SSZ`, lexicographic string comparison equals time
-  comparison — plain SQL `<=` works.
-- **Lead time.** Step (d) starts a reservation at `start_at − lead`, where `lead` is
-  `DAOLAB_HW_CLASS_LEAD_MIN` minutes if the use case declares an `hw_class` different from the
-  DPU's current `resources.hw_class`, else `DAOLAB_PROVISION_LEAD_MIN` minutes. The engine calls
-  the same pure lead helper the scheduler uses (defined in [03-scheduler.md](03-scheduler.md)),
-  so scheduler and engine can never disagree — the contract requires the lead be "used twice,
-  identically". `resources.hw_class` in the DB is the single source of truth at tick time.
-- **Blocking is fine.** Steps (c) and (e) run ansible-runner synchronously; a provisioning tick
-  can take minutes. Ticks are serialized (one process), so a long tick simply delays the next.
-- **`vms` row creation in step (d)**, inside the same transaction as the state CAS: one row per
-  role. `on: dpu` roles → `host` = the DPU member name (e.g. `dpu-01`), `template` and `name`
-  NULL. `dpu_host`/`tg_host` roles → resolved XCP-ng `host`, `template` = the role's `vm`,
-  `name` = `daolab-r<reservation_id>-<role>`. DIY → one row per VM host from `diy_templates`,
-  with the host name as `role`. Rows exist *before* any playbook runs, so the VM-IP callback
-  always finds its `(reservation_id, role)` target.
+Each job runs inside its own OTel span when tracing is on (§Observability), and its result, the
+reservation move, the lease changes and an engine audit row (`deploy`, `cleanup` or `reconcile`,
+carrying the job's `trace_id`) commit in one transaction.
 
-## runner.py — one function per transition
+**`deploy`**
 
-`service/runner.py` is a thin ansible-runner wrapper. Each function runs the same-named playbook
-from `DAOLAB_PLAYBOOKS_DIR` against `DAOLAB_INVENTORY` (`inventory/hosts.yml`) and returns
-success/failure plus the runner event stream for logging.
+- ok → `ready`; `resources.hw_class` of the DPU member = the use case's `hw_class` (when it has
+  one), the DB's record of the board's personality. The engine does not inspect `vms.ip`: the
+  playbook itself fails the job when a VM never comes up on its leased address
+  ([05-provisioning.md](05-provisioning.md)).
+- failed, `attempt < DAOLAB_MAX_RETRIES` (default 3) → a fresh `deploy` job with `attempt + 1`
+  and the same `trace_id`; the reservation stays `provisioning` (B-25). Playbooks are
+  idempotent, so the retry is "run it again".
+- failed for the last time → `failed` with the job's error as `failure_reason`, plus a `cleanup`
+  job on the same trace to tear down whatever the partial deploy left behind (plan/09 §10).
+- **Redeploy** (a `deploy` job on a `ready`/`active` reservation, B-28): the runner replays the
+  deploy and the job records the outcome; the reservation keeps its state either way — no
+  retries, no automatic cleanup — so a failed replay never tears down a lab the user is working
+  in. They can redeploy again or clean up.
+
+**`cleanup`** (B-71, plan/09 §9) — Ansible teardown is best effort; correctness comes from
+verify and reconcile:
+
+```mermaid
+flowchart TD
+    C["runner.cleanup (cleanup.yml)<br/>result only audited"] --> V["runner.verify_clean<br/>(verify_clean.yml)"]
+    V -->|"clean: ok and empty residue"| R["release the reservation's leased IPs<br/>cleaning/failed → released<br/>setup quarantined → available if nothing else is dirty"]
+    V -->|"residue, or verify could not run"| N{"reconcile attempts < DAOLAB_RECONCILE_ATTEMPTS?"}
+    N -->|yes| RC["runner.reconcile (reconcile.yml)"] --> V
+    N -->|no| Q["quarantine the reservation's leased IPs<br/>setup available → quarantined (maintenance left alone)<br/>cleaning → quarantined · failed stays failed<br/>job failed: 'residue after cleanup: …'"]
+```
+
+- `verify_clean` runs whatever the cleanup reported. "Clean" means the verify run succeeded
+  *and* listed no residue: a verify that could not run, or that reports ok while listing
+  residue, is not clean.
+- `DAOLAB_RECONCILE_ATTEMPTS` defaults to 2; a runner without `reconcile` goes straight from
+  residue to quarantine.
+- There is no `failed → quarantined` edge: residue after the cleanup of a failed deploy leaves
+  the reservation `failed` and flags the setup; `models.dirty_reservations` counts such a
+  reservation (its last cleanup/reconcile job failed) as dirty, so the setup stays quarantined
+  until it is reconciled.
+
+**`reconcile`** (B-72, queued by force-clean B-74) — `runner.reconcile`, then
+`runner.verify_clean`, once. Clean → every live lease of the reservation is released
+(quarantined ones too, `ipam.clear`), the reservation goes `released`, and the setup is
+`available` again if nothing else on it is dirty. Residue → the job fails and the setup stays
+(or goes back to) `quarantined`.
+
+**`health_probe`** — `runner.probe` (the use case's verify command, `probe.yml`); only the job
+is recorded. `GET /reservations/{id}/health` shows its result next to the verdict.
+
+## Orphan sweep (B-73)
+
+Step 5 cleans up what no job owns — residue of crashes, manual runs and VMs made by hand:
+
+1. Generated passwords of reservations that are `released`/`failed` are wiped
+   (`models.wipe_access_passwords`); the DPU account is locked by then anyway.
+2. If the runner can list and destroy VMs (`tagged_vms()` / `destroy_vms(names, step)`; both
+   optional), every `daolab-r<id>-*` VM whose reservation is missing, or terminal with no
+   pending/running job, is destroyed in one call; audit row `orphan_sweep`. A listing failure is
+   logged and the sweep goes on.
+3. `leased` addresses still held by a terminal reservation with no job waiting are released
+   (audit row per reservation) — unless that reservation's VMs just failed to be destroyed.
+   Quarantined addresses are never swept; only a reconcile or force-clean clears them.
+
+With `DAOLAB_DEPLOY_VMS` off the ansible runner reports no VMs without contacting the XCP-ng
+host, so the sweep never reaches it.
+
+## Health evaluation and the webhook (B-67)
+
+Step 6 runs only with the telemetry stack on (`DAOLAB_OTEL_ENDPOINT` set); the query function
+is Prometheus at `DAOLAB_PROMETHEUS_URL`. For every `active` reservation it evaluates the use
+case's `health:` rules (`health.evaluate_reservation`, plan/09 §8: `healthy` / `degraded` /
+`down` / `unknown`, stale after `DAOLAB_HEALTH_STALE_SEC`) and stores the verdict as the
+reservation's single `health_snapshots` row (`changed_at` moves only when the verdict changes).
+One reservation's broken rules are logged and skipped; the tick goes on.
+
+When the verdict flips **to `down`** (and only then — not on every tick that stays down), the
+engine posts to `DAOLAB_WEBHOOK_URL`:
+
+```json
+{"event": "reservation.health_down", "reservation_id": 12, "usecase": "vpp", "setup": "tb-01",
+ "user": "alice", "previous": "healthy",
+ "health": {"verdict": "down", "reason": "failing: dpu_app", "evaluated_at": "…", "last_seen": "…", "checks": []}}
+```
+
+(`health` is the full verdict object of `GET /reservations/{id}/health`, every check included.)
+
+Semantics are **at-most-once**: the snapshot commits first, then the post (10 s timeout). A
+non-2xx response or network error is logged at WARNING and never retried, never blocks the
+tick, and a crash between commit and post loses that one webhook. Unset `DAOLAB_WEBHOOK_URL`
+(the default) skips the call entirely. No webhook fires on `ready`; external automation that
+wants SSH targets reads `GET /reservations/{id}` or the SSE stream.
+
+## runner.py — one function per job kind
+
+`service/runner.py` never touches the database. `DAOLAB_RUNNER` picks the backend
+(`get_runner()`): `ansible` (the default, B-84) or `mock` (B-22).
 
 ```python
-# service/runner.py
-from dataclasses import dataclass, field
-import ansible_runner
-from service import config
-
-@dataclass
+@dataclass(frozen=True)
 class RunResult:
-    ok: bool                 # status == "successful" and rc == 0
-    rc: int
-    playbook: str            # "dpu_prepare" | "host_vm" | "verify" | "teardown"
-    duration_s: float
-    events: list[dict] = field(default_factory=list)   # ansible-runner event stream
+    ok: bool                         # verify_clean: ok means *clean*
+    error: str | None = None         # what failed, becomes the job error
+    residue: tuple[str, ...] = ()    # verify_clean: "kind:ident" items (B-70)
 
-def dpu_prepare(ctx: dict) -> RunResult: return _run("dpu_prepare", ctx)
-def host_vm(ctx: dict)     -> RunResult: return _run("host_vm", ctx)
-def verify(ctx: dict)      -> RunResult: return _run("verify", ctx)
-def teardown(ctx: dict)    -> RunResult: return _run("teardown", ctx)
-
-def _run(playbook: str, ctx: dict) -> RunResult:
-    r = ansible_runner.run(
-        private_data_dir=...,                       # per-run tmp dir under the scratch area
-        playbook=f"{config.DAOLAB_PLAYBOOKS_DIR}/{playbook}.yml",
-        inventory=config.DAOLAB_INVENTORY,
-        extravars=ctx)
-    return RunResult(ok=(r.status == "successful"), rc=r.rc, playbook=playbook, ...)
+class Runner(Protocol):
+    def deploy(self, res, step) -> RunResult: ...        # deploy job
+    def cleanup(self, res, step) -> RunResult: ...       # cleanup job, best effort
+    def verify_clean(self, res, step) -> RunResult: ...  # after every cleanup / reconcile
+    def reconcile(self, res, step) -> RunResult: ...     # cleanup residue, reconcile jobs
+    def probe(self, res, step) -> RunResult: ...         # health_probe job
+    # optional: tagged_vms() / destroy_vms(names, step) (orphan sweep), close(), log_path_for(job_id)
 ```
 
-`ctx` is assembled once per attempt by `models.reservation_context(db, reservation_id) -> dict`
-(a join of `reservations` × `users` × `usecases` × `setups`), with exactly the contract's
-extravar names: `reservation_id`, `usecase`, `setup`, `user`, `ssh_pubkey`, `hw_class`, `diy`
-(bool), `templates` (JSON object, DIY only), `daolab_api_url`, `daolab_internal_secret`. The
-last two carry `DAOLAB_API_URL` and `DAOLAB_INTERNAL_SECRET` so playbooks can post VM IPs. This
-is the same variable set as the README's manual Phase-1 run (`-e reservation_id=0 …`), so a
-hand-run playbook and an engine-run playbook are indistinguishable to Ansible.
+- `res` is the **reservation context** the engine builds once per job:
+  `models.reservation_context()` plus `job_id`, `job_kind`, `attempt`. Keys: `id` /
+  `reservation_id`, `state`, `start_at`, `end_at`, `usecase`, `setup`, `user`, `hw_class`,
+  `diy`, `templates`, the use case's `roles` and `verify`, the setup `members`
+  (`{name, kind, host}`), the reservation's `vms` (`{role, host, template, name, ip}`), its live
+  `leases` (IPs), and the access fields `ssh_pubkey` (the deployed key, empty in password mode),
+  `access_password`, `access_login` (`lab`) and `access_expires` (the day after `end_at`).
+- `step(name, state="ok", detail=None)` is called as each step finishes (`runner.job_sink`
+  records it on the job row; with tracing on it also becomes a child span), so progress is
+  visible while the job is still running.
+- `method_for(runner, kind)` maps job kinds to functions (`health_probe` → `probe`);
+  `verify_clean` is called by the engine itself.
+- **Residue** is a structured list, one `kind:ident` string per item:
+  `vm:daolab-r12-sink` (a VM still exists), `vf:<bdf>` (a VF is not back in pciback),
+  `dpu_session:lab` (processes of the lab login), `dpu_app:<unit or process>` (an app still
+  running on the DPU), `ip:<address>` (a leased address still answers ping).
 
-| Runner function | Playbook | Runs during | Skipped when |
-|---|---|---|---|
-| `dpu_prepare(ctx)` | `playbooks/dpu_prepare.yml` | `provisioning`, step 1 — includes `roles/ebf_set` iff `usecase.hw_class` is set and differs from the DPU's `resources.hw_class` | `diy` |
-| `host_vm(ctx)` | `playbooks/host_vm.yml` | `provisioning`, step 2 — clones VMs, installs role software, posts IPs | never |
-| `verify(ctx)` | `playbooks/verify.yml` | `provisioning`, step 3 — runs the use case's `verify` block | `diy` |
-| `teardown(ctx)` | `playbooks/teardown.yml` | `tearing_down`; also once, best-effort, on `provisioning` → `failed` | never |
+### The ansible runner (B-84)
 
-Immediately after a `dpu_prepare` success that included a reflash, the engine writes
-`resources.hw_class = usecase.hw_class` — before `host_vm` runs. This keeps the DB truthful even
-if the engine dies mid-sequence, and makes the replayed `ebf_set` a no-op (values now equal).
+Every procedure is a playbook under `DAOLAB_PLAYBOOKS_DIR`, run with `ansible-runner` against
+`DAOLAB_INVENTORY` ([05-provisioning.md](05-provisioning.md)):
+
+| Runner function | Playbook | What it does |
+|---|---|---|
+| `deploy` | `deploy.yml` | resolve + lease, ebf_set, the DPU app, DPU access + telemetry, the VMs, verify |
+| `cleanup` | `cleanup.yml` | revoke DPU access first (B-53), stop telemetry, the app's cleanup, destroy the VMs |
+| `verify_clean` | `verify_clean.yml` | read-only checks → residue list (B-70) |
+| `reconcile` | `reconcile.yml` | destroy / rebind / stop / kill directly, whatever is found (B-72) |
+| `probe` | `probe.yml` | the use case's verify, against the recorded addresses |
+| `tagged_vms` / `destroy_vms` | `orphans.yml` | list every `daolab-r*` VM / destroy exactly the named ones (B-73) |
+
+- **Extra vars** (the playbook contract): `reservation_id`, `usecase`, `setup`, `user`,
+  `ssh_pubkey`, `hw_class`, `diy`, `templates`; the structured facts `daolab_members`,
+  `daolab_roles`, `daolab_verify`, `daolab_vms`, `daolab_leases`; `daolab_app` (the `app:` of
+  the use case's `on: dpu` role, `none` for diy); `daolab_access_login` / `_password` /
+  `_expires`; `daolab_api_url` + `daolab_internal_secret` for the callbacks;
+  `daolab_otel_collector` (`DAOLAB_OTEL_AGENT_ENDPOINT`, the lab-reachable collector for the
+  agents); `daolab_deploy_vms` (`DAOLAB_DEPLOY_VMS`); `daolab_output_file`; and the runbook
+  playbooks' sign-off flags `allow_destructive_changes`, `allow_launch`, `allow_cleanup`, all
+  equal to `DAOLAB_ALLOW_DESTRUCTIVE`.
+- **`DAOLAB_ALLOW_DESTRUCTIVE`** (default false) is the owner sign-off Akshay's VPP and SmartNIC
+  runbooks require before they stop nginx-tls, rebind PCI devices or set hugepages on the shared
+  board; without it a VPP deploy that would change the board stops with that message.
+- **`DAOLAB_DEPLOY_VMS`** (config default true; `.env.example` ships `false` for the real lab
+  until the XCP-ng host is in the inventory): off → no leases, no VMs, no verify, and no
+  playbook reaches the XCP-ng host (`r_dom0` is empty; `tagged_vms` returns `[]`). The DPU part
+  of every playbook still runs.
+- **Artifacts:** each job gets `<DAOLAB_ARTIFACTS_DIR>/job-<id>/` (default `./var/jobs`); each
+  playbook run is its own ansible-runner private data dir `run-<n>-<playbook>/`, and
+  `job.log` collects every playbook's output of the job in order. The engine records `job.log`
+  as the job's `log_path` before the run, so `GET /jobs/{id}` shows its tail while it runs.
+- **Steps and errors:** a task named `step: <name>` becomes a job step when it finishes
+  (`ok` / `skipped` / `failed`); any failed task that is not `ignore_errors` becomes a failed
+  step too, and the result's error is `<task> on <host>: <message>` (last 500 characters). A
+  run is ok when ansible-runner reports `successful` with rc 0. Playbooks that report data
+  (`verify_clean.yml`, `orphans.yml`) write JSON to `daolab_output_file`; a verify run that
+  failed without a residue list is *not* clean.
+- **Environment** (`ansible_env`, B-63): `ANSIBLE_CONFIG=playbooks/ansible.cfg`, no colour, no
+  retry files; with `DAOLAB_OTEL_ENDPOINT` set also `DAOLAB_ANSIBLE_OTEL=true` (switches on the
+  `community.general.opentelemetry` callback), the OTLP endpoint, `OTEL_SERVICE_NAME=daolab-ansible`
+  and the job span's `TRACEPARENT`, so every Ansible task is a child span of the job.
+- `ansible-runner` is imported only when a playbook actually runs
+  (`pip install -e .[ansible]`; `dev.sh` and `make setup` install it).
+
+### The mock runner (B-22, B-44, B-68)
+
+A fake that sleeps `DAOLAB_MOCK_STEP_SEC` (default 5 s) through each step and records it, so
+the whole flow — booking, deploy, cleanup, quarantine, health — runs on a laptop:
+
+| Function | Steps |
+|---|---|
+| `deploy` | `lease_ips`, `dpu_prepare`, `create_vms`, `post_vm_ips`, `start_app`, `verify` |
+| `cleanup` | `terminate-user` (first, B-53), `destroy_vms`, `unbind_vfs`, `stop_app` |
+| `verify_clean` | `check_vms`, `check_vfs`, `check_sessions`, `check_ips` |
+| `reconcile` | `destroy_vms`, `rebind_vfs`, `stop_app`, `kill_sessions` |
+| `probe` | `ping_vms`, `check_dpu_app` |
+
+- With `DAOLAB_INTERNAL_SECRET` set (dev.sh writes one) `lease_ips` and `post_vm_ips` call the
+  real `/internal/leases` and `/internal/vm-ip` (B-44), so the reservation shows leased IPs.
+- With `DAOLAB_OTEL_ENDPOINT` set, a successful deploy starts a fake per-reservation exporter
+  registered through Prometheus file_sd (B-68) serving the series the use-case rules read;
+  cleanup and `close()` stop it. Exporters live in the engine process, so the health demo needs
+  `--loop`.
+- It keeps a fake set of `daolab-r*` VM names, so the orphan sweep can be exercised.
+- `DAOLAB_MOCK_FAIL` (comma-separated): `deploy` fails the deploy at `create_vms`; `cleanup`
+  makes cleanup look fine while verify keeps reporting the reservation's VMs and leases as
+  residue, so reconcile cannot fix it and the quarantine path is reachable; `health` never
+  starts the exporter, so health stays `unknown`.
 
 ## Retry and failure policy
 
-**The retry mechanism is idempotent replay.** Every playbook is idempotent (design invariant),
-so retry = run again. There is no per-playbook progress column: each provisioning attempt
-replays the full ordered sequence (`dpu_prepare` → `host_vm` → `verify`; `host_vm` only for
-DIY). Already-converged playbooks are fast no-ops, so replay-from-start is equivalent to
-re-running the failed playbook — and keeps the engine fully stateless.
+- **Deploy:** idempotent replay. Every playbook converges (the app wrappers read the board and
+  run only the steps that move it forward; VMs are never cloned twice; leases are idempotent),
+  so a retry replays the whole `deploy.yml`. At most `DAOLAB_MAX_RETRIES` attempts per
+  reservation (each a job row with its own steps and log, one trace); a crash is not an observed
+  failure and does not use an attempt.
+- **Deploy exhausted** → `failed` + an automatic cleanup job. The scheduler ignores `failed`
+  reservations, so the slot is free again; `POST …/redeploy` is not possible from `failed` — the
+  user books again (the failed row stays as history).
+- **Cleanup never "fails" into a stuck setup.** A cleanup that cannot prove the testbed clean
+  after `DAOLAB_RECONCILE_ATTEMPTS` reconciles quarantines the reservation's addresses and the
+  setup: the scheduler keeps booking, the engine starts nothing new on it, and `admin.html`
+  shows the residue. Access was already revoked as the first cleanup step, and the DPU account
+  expires the day after `end_at` on its own, so a stuck cleanup never extends anyone's access.
+- **Operator recovery:** `POST /admin/setups/{name}/force-clean` (reconcile + verify per dirty
+  reservation), or `{"skip_verify": true}` after checking by hand. A playbook can also be run by
+  hand exactly as the engine runs it (idempotency makes this safe however far the engine got),
+  e.g. `ansible-playbook -i inventory/hosts.yml playbooks/cleanup.yml -e reservation_id=12
+  -e setup=tb-01 -e daolab_app=dao-vpp -e allow_destructive_changes=true` (the VPP runbook's
+  cleanup guard; SmartNIC's is `allow_cleanup`) followed by
+  `playbooks/verify_clean.yml` with the same `-e` set (add `-e daolab_deploy_vms=false` while the
+  lab runs DPU-only).
 
-- An attempt runs only while `retries < DAOLAB_MAX_RETRIES` (default `3`). Each *observed*
-  playbook failure does `retries += 1` in the same transaction; a crash mid-run increments
-  nothing (no result was observed). Net effect: at most `DAOLAB_MAX_RETRIES` attempts per phase.
-- `retries` is a per-phase budget: it starts at `0` (schema default) for provisioning and is
-  reset to `0` on every entry into `tearing_down` — by engine step (b) and by the API cancel
-  path ([02-backend-api.md](02-backend-api.md)).
-- A sequence that succeeds but leaves some `vms.ip` NULL counts as a failed attempt (the
-  callback should have landed during the playbook run); the replayed `host_vm` re-posts IPs.
-- **Provisioning exhausted** → `failed`: the engine runs one best-effort `runner.teardown` (so
-  half-built VMs don't squat the hosts), sets `failure_reason` to the failed playbook name plus
-  the last error event summary, and stops. Because the scheduler treats a setup as busy only for
-  reservations *not* in `released`/`failed`, the setup is schedulable again.
-- **Teardown exhausted** → `failed` with `failure_reason`; hardware state is unknown, so this is
-  the one case where the setup stays held and surfaces under `held_by` on `admin.html` until an
-  admin intervenes manually.
-- **Operator recovery path** (no special CLI verb — `failed` is terminal): read
-  `failure_reason` via `GET /reservations/{id}` or `admin.html`, fix the hardware, then run the
-  playbook by hand exactly as in README Phase 1 but with the real id, e.g.
-  `ansible-playbook -i inventory/hosts.yml playbooks/teardown.yml -e reservation_id=12
-  -e usecase=tls-proxy-nginx -e setup=setup-01 -e user=hrushi -e ssh_pubkey="$(cat …)"`.
-  Idempotency makes the manual run safe regardless of how far the engine got. The user
-  re-reserves; the failed row remains as history.
+## Cleanup semantics — the DPU keeps its hw_class
 
-## Teardown semantics — the DPU keeps its hw_class
+`cleanup.yml` revokes the owner's DPU access first (sessions killed, key emptied, password
+scrambled, account locked and expired), stops the reservation's telemetry agent, runs the app's
+own cleanup (`apps/<app>/cleanup.yml`: VPP stopped and its port given back, SmartNIC stopped
+and its devices rebound, nginx-tls left running as the board's resting state), then destroys
+the reservation's `daolab-r<id>-*` VMs ([05-provisioning.md](05-provisioning.md)). Three things
+it deliberately does **not** do:
 
-`teardown.yml` destroys the reservation's VMs (`daolab-r<id>-<role>`), stops the DAO app on the
-DPU, and returns the setup to a reservable state. Three things it deliberately does **not** do:
-
-1. **Never resets `hw_class`.** Transition `tearing_down` → `released` leaves
-   `resources.hw_class` untouched. The DPU keeps its last provisioned personality (e.g.
-   `sdp-pf1-vf8`) after `released`. Only the *next* use case declaring a **different**
-   `hw_class` triggers `ebf_set` — inside its own `dpu_prepare`, with the longer
-   `DAOLAB_HW_CLASS_LEAD_MIN` lead. A next use case with the same `hw_class`, or with
-   `hw_class: null`, provisions with the short `DAOLAB_PROVISION_LEAD_MIN` lead and no reflash.
-   Back-to-back runs of the same use case therefore never touch EBF.
-2. **Never touches pciback.** Passthrough prep lives in `/etc/modprobe.d/pciback.conf`, done
-   once in dom0 (design invariant) — teardown releases VFs by destroying VMs, nothing more.
+1. **Never resets `hw_class`.** `cleaning → released` leaves `resources.hw_class` and the
+   board's `/etc/daolab/hw_class` marker untouched. The DPU keeps its last personality; only the
+   next use case declaring a **different** `hw_class` needs a reflash, with the longer
+   `DAOLAB_HW_CLASS_LEAD_MIN` lead. Back-to-back runs of the same class never touch EBF.
+2. **Never edits the pciback configuration.** Passthrough prep lives in
+   `/etc/modprobe.d/pciback.conf`, done once in dom0 (design invariant); destroying a VM returns
+   its VF. (Reconcile may re-add a listed VF that fell out of `xl pci-assignable-list`, with
+   `xl pci-assignable-add`; it never changes the list.)
 3. **Never deletes `vms` rows.** They remain as history under the released reservation
    (`ON DELETE CASCADE` applies only if the reservation row itself is deleted).
 
-DIY reservations provision with `host_vm` only, so they can never change `hw_class`; their
-teardown is the same `teardown.yml` (there are VMs to destroy).
+DIY reservations have no DPU app (`daolab_app=none`) and no DPU access block; their cleanup is
+the same `cleanup.yml` (there are VMs to destroy).
 
-## Webhook on ready
-
-If `DAOLAB_WEBHOOK_URL` is set, entering `ready` fires exactly one call from the engine:
-
-```python
-httpx.post(config.DAOLAB_WEBHOOK_URL, json=reservation_object, timeout=10)
-```
-
-The payload is the **canonical reservation object** of the contract — byte-for-byte the shape
-`GET /reservations/{id}` returns: `id`, `user`, `usecase`, `setup`, `state` (`"ready"`), `diy`,
-`requested_start_at`, `start_at`, `end_at`, `shifted`, `failure_reason`, the full `vms` array
-with `role`/`host`/`template`/`name`/`ip`/`ssh`, `created_at`, `updated_at`. External automation
-gets SSH targets without polling.
-
-Semantics are **at-most-once**: the engine commits the `ready` transition first, then posts. A
-non-2xx response or network error is logged at WARNING and never retried, never blocks the
-state machine, and a crash between commit and post loses that one webhook. Anything stronger
-would need a delivery column the contract does not define. Unset `DAOLAB_WEBHOOK_URL` (the
-default) skips the call entirely.
-
-## The VM-IP callback during provisioning
+## Addresses during a deploy
 
 The engine never learns IPs directly — the loop is closed through the API and the DB:
 
-1. Step (d) creates the `vms` rows (ip NULL) before any playbook runs.
-2. The engine passes `daolab_api_url` and `daolab_internal_secret` as extravars.
-3. `host_vm.yml` (and `dpu_prepare.yml` for `on: dpu` roles) POSTs
-   `{"reservation_id": …, "role": …, "ip": …}` to `POST /internal/vm-ip` with header
-   `X-Daolab-Secret`; the API validates the secret and sets `vms.ip`
-   ([02-backend-api.md](02-backend-api.md)). Unknown `(reservation_id, role)` → `404 not_found`,
-   which fails that playbook task — surfacing a role-mismatch bug immediately.
-4. After the sequence succeeds, step (e) reads `vms` back: every row must have `ip` before the
-   `ready` CAS fires. Re-posted IPs (idempotent replay) simply overwrite.
+1. Step 3 creates the `vms` rows (ip NULL) before any playbook runs.
+2. The runner passes `daolab_api_url` and `daolab_internal_secret` as extravars.
+3. `deploy.yml` leases each VM role's management address (`POST /internal/leases`, idempotent
+   per `(reservation, role)`; a conflicting address is swapped through
+   `/internal/leases/conflict`), sets it statically through cloud-init, and once the guest
+   reports it posts `{reservation_id, role, ip}` to `POST /internal/vm-ip`. The DPU role's
+   address is its static inventory address, posted the same way.
+4. Unknown `(reservation_id, role)` → `404`, which fails that playbook task — surfacing a
+   role-mismatch bug immediately. Re-posted IPs (idempotent replay) simply overwrite.
+5. When the cleanup is verified clean the reservation's leases are released; when it is not,
+   they are quarantined and never re-issued until reconcile or force-clean clears them.
 
-Operationally this means the **API process must be up while the engine provisions** — they are
-separate processes sharing the sqlite file via WAL — and `DAOLAB_INTERNAL_SECRET` must be set
-(the API refuses the callback while it is empty).
+Operationally the **API process must be up while the engine deploys** — separate processes
+sharing the sqlite file via WAL — and `DAOLAB_INTERNAL_SECRET` must be set (the API refuses the
+callbacks while it is empty).
 
 ## Crash recovery walkthrough
 
-Reservation 12, `tls-proxy-nginx` on `setup-01`, `start_at` 10:00Z, 2 h, DPU currently on a
-different `hw_class` → lead = 15 min.
+Reservation 12, `vpp` on `tb-01`, `start_at` 10:00Z, 2 h, DPU currently on a different
+`hw_class` → lead = 15 min. `DAOLAB_JOB_TIMEOUT_SEC` = 1800.
 
-1. **09:45 tick, step (d):** `queued` → `provisioning`; `vms` rows created for `proxy`,
-   `backend`, `client` in the same transaction. Step (e) starts the attempt: `dpu_prepare`
-   succeeds (EBF reflashed, proxy IP posted); the engine writes
-   `resources.hw_class = 'sdp-pf1-vf8'`. `host_vm.yml` is mid-clone of `daolab-r12-backend`
-   when the engine host reboots.
-2. **DB at crash:** `state = 'provisioning'`, `retries = 0`, `hw_class` updated, `vms.ip` set
-   for `proxy`, NULL for `backend`/`client`. Nothing else exists — no in-memory state was lost.
-3. **09:52, next timer tick:** steps (a)–(d) find nothing due; step (e) finds r12 in
-   `provisioning` with `retries 0 < 3` and replays the full sequence. `dpu_prepare` is a fast
-   no-op (`ebf_set` skips — `hw_class` values now equal). `host_vm` converges: the half-created
-   backend VM is finished, `daolab-r12-client` is created, both IPs are posted. `verify` passes.
-   All three `vms.ip` set → CAS to `ready`, webhook fires. `retries` is still 0 — a crash is not
-   an observed failure.
-4. **Same story in every phase:** a crash mid-`teardown` replays `runner.teardown` next tick
-   (destroying an absent VM is a no-op); a crash between the `ready` commit and the webhook
-   loses only the webhook; a crash between two ticks loses nothing at all. The two rules doing
-   all the work: playbooks are idempotent, and each transition is one atomic DB transaction.
+1. **09:45 tick, step 3:** `queued` → `provisioning`; `vms` rows for `sink`, `tgen`, `vpp` and
+   deploy job 31 (`pending`, attempt 1) in one transaction. Step 4 claims job 31 (`running`),
+   opens its span, and the ansible runner starts `deploy.yml`. Steps land on the job:
+   `lease_ip sink`, `lease_ip tgen`, `ebf_set`, `vpp_board_state`, `dpu_app`, `dpu_access`,
+   `post_dpu_ip`, `create_vm sink`, … `create_vm tgen` — when the engine host reboots.
+2. **DB at the crash:** reservation `provisioning`; job 31 `running`, its steps so far, its
+   `updated_at` = the last step; leases `leased` for `sink` and `tgen`; `vms.ip` set for `vpp`
+   and `sink`.
+   No in-memory state was lost, and the half-created `daolab-r12-tgen` exists on the host.
+3. **Next ticks:** steps 1–3 find nothing due on tb-01, and single-flight keeps any other
+   mutating job off the setup, because job 31 still looks `running`.
+4. **Once job 31 has been silent for 30 min**, step 0 puts it back to `pending` (attempt still
+   1, a `requeued` step added) and step 4 claims it again on the same trace. `deploy.yml`
+   replays: the leases return the same addresses; `ebf_set` finds the marker matching; the VPP
+   wrapper finds VPP installed and running and skips every runbook step but the base config;
+   `sink` exists and runs, so it is not re-seeded;
+   `daolab-r12-tgen` exists, so it is not cloned again — it is seeded, wired, started, and its
+   address posted; verify passes. The job succeeds → `ready`, `resources.hw_class` recorded;
+   step 1 of the next tick makes it `active` (start_at has passed). The cost of the crash is
+   the timeout: a stranded job holds its setup for up to `DAOLAB_JOB_TIMEOUT_SEC`.
+5. **Same story in every kind:** a crash mid-cleanup replays `cleanup.yml` (safe on a clean
+   testbed) and then verify; a crash between a job's result and the reservation move cannot
+   happen, because they commit together; a crash between two ticks loses nothing at all. The
+   two rules doing all the work: playbooks are idempotent, and each decision is one atomic DB
+   transaction.
 
 ## Deployment — make engine or a systemd timer
 
-Development: `make engine` = `python -m service.engine --loop` in the foreground, one tick per
-`DAOLAB_ENGINE_INTERVAL_SEC`. Production: a systemd timer running the single-tick form every
-minute (README Phase 3):
+Development: `make engine` (or `make dev`) runs `scripts/run/dev.sh`, which starts the API and
+`python -m service.engine --loop` together (Ctrl-C stops both, B-30); `make engine-loop` runs
+the engine loop alone. Production: a systemd timer running the single-tick form every minute
+(README Phase 3):
 
 ```ini
 # /etc/systemd/system/daolab-engine.service
@@ -305,34 +503,31 @@ WantedBy=timers.target
 ```
 
 `Type=oneshot` gives overlap protection for free: systemd will not re-activate the service
-while a long provisioning tick is still running, so ticks stay serialized. Run **either**
-`make engine` **or** the timer, never both — the CAS guards make a duplicate engine harmless,
-but every playbook would contend for the same hosts. `GET /health` on the API plus
-`systemctl list-timers daolab-engine.timer` is the whole liveness story. Ops runbook details
-live in [08-cli-config-ops.md](08-cli-config-ops.md).
+while a long deploy tick is still running, so ticks stay serialized. Run **either** the loop
+**or** the timer, never both — the CAS transitions and the single-flight claim make a duplicate
+engine harmless to the state, but it would only contend for the same jobs. `GET /health` on the
+API plus `systemctl list-timers daolab-engine.timer` is the whole liveness story. Ops runbook
+details live in [08-cli-config-ops.md](08-cli-config-ops.md).
 
-## Observability — one structured line per transition
+## Observability — jobs, audit rows, one trace per job
 
-Stdlib `logging`, logger `daolab.engine`, level `DAOLAB_LOG_LEVEL` (default `INFO`), stderr.
-Every line is `key=value` pairs after a fixed prefix, grep-first design:
-
-```
-2026-09-01T09:45:02Z INFO  event=tick_start
-2026-09-01T09:45:02Z INFO  event=transition r=12 usecase=tls-proxy-nginx setup=setup-01 from=queued to=provisioning lead_min=15
-2026-09-01T09:45:41Z INFO  event=playbook   r=12 playbook=dpu_prepare rc=0 ok=true duration_s=39.2 retries=0
-2026-09-01T09:45:41Z INFO  event=hw_class   r=12 resource=dpu-01 old=null new=sdp-pf1-vf8
-2026-09-01T09:48:02Z INFO  event=playbook   r=12 playbook=host_vm rc=0 ok=true duration_s=141.0 retries=0
-2026-09-01T09:48:20Z INFO  event=playbook   r=12 playbook=verify rc=0 ok=true duration_s=18.1 retries=0
-2026-09-01T09:48:20Z INFO  event=transition r=12 usecase=tls-proxy-nginx setup=setup-01 from=provisioning to=ready
-2026-09-01T09:48:21Z INFO  event=webhook    r=12 url=… status=200
-2026-09-01T09:48:21Z INFO  event=tick_end   transitions=2
-2026-09-01T11:02:03Z ERROR event=playbook   r=13 playbook=verify rc=2 ok=false duration_s=64.7 retries=3 reason="expect '200: 1000' not in stdout"
-2026-09-01T11:02:03Z ERROR event=transition r=13 from=provisioning to=failed reason="verify: expect '200: 1000' not in stdout"
-```
-
-Fixed vocabulary: `event` ∈ `tick_start` | `tick_end` | `transition` | `playbook` | `hw_class` |
-`webhook`; `r` = reservation id; `from`/`to` = exact state names; `playbook` = the four runner
-names; `reason` mirrors what lands in `failure_reason`. The full ansible-runner event stream
-from `RunResult.events` is emitted at DEBUG only. `grep 'to=failed'` finds every terminal
-failure; `grep 'r=12 '` reconstructs one reservation's life; timestamps are the same UTC
-ISO-8601 format as the DB, so log lines and `updated_at` correlate directly.
+- **Job rows** are the primary record of what happened: kind, attempt, every step with its
+  state, time and detail, the error, and `log_path` (the combined playbook log). The dashboard
+  shows them through the reservation's `job` summary, `GET /jobs/{id}` (with the log tail) and
+  the SSE stream.
+- **Audit rows** (`audit_events`, append-only): the engine writes `deploy`, `cleanup`,
+  `reconcile` (each with ok/error, residue, reconcile attempts and the job's `trace_id`) and
+  `orphan_sweep`; `GET /admin/audit` lists them with the API's own rows.
+- **Traces** (B-62, with `DAOLAB_OTEL_ENDPOINT` set): every job runs inside a `job <kind>` span
+  (attributes `daolab.job`, `daolab.job.kind`, `daolab.attempt`, `daolab.reservation`,
+  `daolab.usecase`, `daolab.setup`, `daolab.user`); its trace id is stored on the job. Retries
+  and the automatic cleanup of a failed deploy inherit the trace id, and a requeued job
+  continues its trace, so one booking's deploy story is one trace. Every recorded step becomes a
+  child span; with the ansible runner each Ansible task does too (TRACEPARENT, B-63). Off by
+  default; a no-op then.
+- **Engine log** — stdlib `logging`, logger `daolab.engine`, level `DAOLAB_LOG_LEVEL`
+  (default `INFO`), stderr: one `tick: TickResult(activated=…, expired=…, started=…, jobs_run=…,
+  ready=…, failed=…, released=…, quarantined=…, …)` line for every tick that changed something;
+  WARNING for a requeued job, a refused state move, a failed redeploy or webhook; INFO for a job
+  waiting on its setup, `event=orphan_sweep step=… state=…` and `event=webhook r=… status=…`;
+  a runner crash or failed health evaluation with its stack trace.

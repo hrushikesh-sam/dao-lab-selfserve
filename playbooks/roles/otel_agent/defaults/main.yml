@@ -1,0 +1,27 @@
+# playbooks/roles/otel_agent — B-83: an otelcol-contrib agent with daolab.* resource attributes.
+#
+# On the DPU this role installs and runs the agent (deploy.yml, B-80). On role VMs the same
+# config is rendered by `tasks_from: render` and handed to cloud-init by host_vm (the template
+# ships otelcol-contrib, B-85), so both report identically.
+#
+# Resource attributes become Prometheus labels through the collector's remote-write
+# (resource_to_telemetry_conversion): daolab.reservation -> daolab_reservation, which every
+# use-case health rule selects on (plan/09 §8).
+otel_agent_version: "0.160.0"      # has linux amd64 + arm64 (DPU) tarballs on GitHub
+otel_agent_collector: "{{ daolab_otel_collector | default('') }}"   # host:port, OTLP gRPC
+otel_agent_insecure: true                                            # the lab collector is plaintext
+otel_agent_attributes: {}             # e.g. {daolab.reservation: "12", daolab.user: alice, ...}
+otel_agent_scrape_targets: []         # app exporters on this host: [{job: vpp, target: 127.0.0.1:9273}]
+otel_agent_ssh_check: true            # tcpcheck 127.0.0.1:22 -> tcpcheck_status{port="22"}
+otel_agent_httpcheck: []              # URLs to probe, e.g. the TLS proxy from the client VM
+otel_agent_self_port: 8888            # the agent's own metrics; self-scraped -> `up` per host
+otel_agent_interval: 15s
+
+# where things go on the host (overridable for tests)
+otel_agent_home: /usr/local/lib/daolab
+otel_agent_bin: /usr/local/bin/otelcol-contrib
+otel_agent_config: /etc/daolab/otelcol.yaml
+otel_agent_unit: daolab-otel
+otel_agent_unit_dir: /etc/systemd/system
+otel_agent_download_url: >-
+  https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v{{ otel_agent_version }}/otelcol-contrib_{{ otel_agent_version }}_linux_{{ _otel_arch | default('amd64') }}.tar.gz

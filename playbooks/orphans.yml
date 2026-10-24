@@ -1,0 +1,51 @@
+# playbooks/orphans.yml — B-73: the orphan sweep's two halves, on every XCP-ng host.
+#
+# The engine sweeps every tick (plan/09 §9): it lists the daolab-tagged VMs, decides in the DB
+# which ones belong to no live reservation, and destroys exactly those. An orphan's setup may
+# be unknown (a VM made by hand as daolab-r999-x), so this runs over the whole `xcp_hosts`
+# inventory group rather than one resolved setup.
+#
+#   without daolab_vm_names: write every daolab-r<id>-* VM name (JSON list) to
+#                            {{ daolab_output_file }} on the control node
+#   with daolab_vm_names:    force-shutdown + uninstall each named VM wherever it lives
+#
+# Read-only in list mode; destroying a name that is not there is a no-op.
+- name: orphan sweep on the XCP-ng hosts
+  hosts: xcp_hosts
+  gather_facts: false
+  tasks:
+    - name: "step: list_vms"
+      ansible.builtin.shell: |
+        set -o pipefail
+        xe vm-list is-control-domain=false params=name-label --minimal \
+          | tr ',' '\n' | grep -E '^daolab-r[0-9]+-' || true
+      args:
+        executable: /bin/bash
+      register: _tagged
+      changed_when: false
+
+    - name: "step: destroy_vms"
+      ansible.builtin.shell: |
+        set -o pipefail
+        for uuid in $(xe vm-list name-label='{{ item }}' --minimal | tr ',' ' '); do
+          xe vm-shutdown uuid="$uuid" force=true 2>/dev/null || true
+          xe vm-uninstall uuid="$uuid" force=true
+        done
+      args:
+        executable: /bin/bash
+      loop: "{{ _tagged.stdout_lines | select('in', daolab_vm_names) | list }}"
+      when: daolab_vm_names is defined
+      changed_when: true
+
+- name: report
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: write the tagged VM names for the runner
+      ansible.builtin.copy:
+        content: >-
+          {{ groups['xcp_hosts'] | map('extract', hostvars, ['_tagged', 'stdout_lines'])
+             | flatten | select | unique | list | to_json }}
+        dest: "{{ daolab_output_file }}"
+        mode: "0600"
+      when: daolab_output_file is defined and daolab_vm_names is not defined

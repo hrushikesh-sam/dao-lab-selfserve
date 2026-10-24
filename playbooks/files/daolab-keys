@@ -1,0 +1,47 @@
+#!/bin/sh
+# daolab-keys — sshd AuthorizedKeysCommand for the DPU (B-52, plan/09 §7).
+#
+#   sshd_config:  AuthorizedKeysCommand /usr/local/bin/daolab-keys %u
+#                 AuthorizedKeysCommandUser daolab-keys
+#
+# Prints the authorized_keys lines the daolab backend allows for login "$1" on this host *right
+# now* (GET /internal/authz/keys). It is fail-closed: a missing config, an unreachable or slow
+# backend (2 s budget), an HTTP error or a malformed answer all print nothing, so sshd refuses
+# the key. Admins keep console access as break-glass.
+#
+# /etc/daolab/keys.conf (KEY=value lines, root-owned, never sourced):
+#   DAOLAB_API_URL=http://10.30.0.2:8080
+#   DAOLAB_HOST=dpu-01                     # the setup member name; default: hostname -s
+#   DAOLAB_HEADER_FILE=/etc/daolab/authz-header
+# The header file holds one line, "X-Daolab-Secret: <DAOLAB_AUTHZ_SECRET>", and is readable
+# only by the AuthorizedKeysCommandUser: the secret never appears on a command line, where the
+# lab user could read it with ps. (sshd's %h is the user's home directory, not the hostname,
+# which is why the host comes from this file.)
+CONF=${DAOLAB_KEYS_CONF:-/etc/daolab/keys.conf}
+TIMEOUT=${DAOLAB_KEYS_TIMEOUT:-2}
+login=$1
+
+[ -n "$login" ] || exit 0
+case $login in *[!A-Za-z0-9._-]*) exit 0 ;; esac         # a plain unix name or nothing
+[ -r "$CONF" ] || exit 0
+
+api= host= header_file=
+while IFS='=' read -r key value; do
+    case $key in
+        DAOLAB_API_URL) api=$value ;;
+        DAOLAB_HOST) host=$value ;;
+        DAOLAB_HEADER_FILE) header_file=$value ;;
+    esac
+done < "$CONF"
+[ -n "$host" ] || host=$(hostname -s 2>/dev/null)
+[ -n "$api" ] && [ -n "$host" ] && [ -r "$header_file" ] || exit 0
+
+out=$(curl -fsS --max-time "$TIMEOUT" --connect-timeout "$TIMEOUT" -H "@$header_file" -G \
+          --data-urlencode "host=$host" --data-urlencode "login=$login" \
+          "${api%/}/internal/authz/keys" 2>/dev/null) || exit 0
+
+# Pass through public-key lines only (no options such as command= or from=).
+printf '%s\n' "$out" | grep -E \
+    '^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521)|sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) [A-Za-z0-9+/]+={0,3}( [^[:cntrl:]]*)?$' \
+    || true
+exit 0

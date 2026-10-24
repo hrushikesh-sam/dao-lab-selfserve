@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).
+
+Installed on the DPU by the app roles and scraped by the otel agent (B-83), which adds the
+reservation's labels (daolab_reservation, host, ...). It serves exactly the series the use-case
+YAML `health:` rules read, so health means the same thing on the testbed as in the mock:
+
+  --app vpp       vpp_up                            1 when `vppctl show version` answers
+                  vpp_interface_{rx,tx}_{packets,bytes}{interface}   from `vppctl show interface`
+  --app nginx     nginx_up                          1 when nginx accepts TCP on --nginx-addr
+                                                    (the DAO NGINX build has no stub_status)
+                  nginx_connections_active, nginx_http_requests_total   with --stub-status only
+  --app smartnic  smartnic_up                       1 when the dao-smart-nic process runs
+                  smartnic_offload_pps{interface}   packets through --netdev, if one is given (a
+                                                    counter: the rule takes rate() of it). The
+                                                    app's ports are DPDK, so by default there
+                                                    is none and the degraded-only rule says so.
+
+Every value is read when Prometheus scrapes, never cached; a probe that fails reports 0 / no
+series rather than an error page. Standard library only (the DPU image has python3).
+"""
+import argparse
+import re
+import socket
+import subprocess
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+_COUNTER = re.compile(r"(rx packets|tx packets|rx bytes|tx bytes)\s+(\d+)\s*$")
+
+
+def _run(cmd: list[str], timeout: float = 3.0) -> tuple[int, str]:
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return p.returncode, p.stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return 1, ""
+
+
+def parse_vpp_interfaces(text: str) -> dict[str, dict[str, int]]:
+    """`vppctl show interface` -> {interface: {"rx_packets": n, ...}}. A line that starts
+    without indentation names an interface; its counters follow, one per line."""
+    out: dict[str, dict[str, int]] = {}
+    current = None
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("Name "):
+            continue
+        if not line[0].isspace():
+            current = line.split()[0]
+            out.setdefault(current, {})
+        m = _COUNTER.search(line)
+        if m and current is not None:
+            out[current][m.group(1).replace(" ", "_")] = int(m.group(2))
+    return out
+
+
+def _vppctl(args) -> list[str]:
+    return [args.vppctl] + (["-s", args.vpp_socket] if args.vpp_socket else [])
+
+
+def vpp_metrics(args) -> list[str]:
+    rc, _ = _run(_vppctl(args) + ["show", "version"])
+    lines = ["# TYPE vpp_up gauge", f"vpp_up {1 if rc == 0 else 0}"]
+    if rc != 0:
+        return lines
+    rc, text = _run(_vppctl(args) + ["show", "interface"])
+    counters = parse_vpp_interfaces(text) if rc == 0 else {}
+    for name in ("rx_packets", "tx_packets", "rx_bytes", "tx_bytes"):
+        lines.append(f"# TYPE vpp_interface_{name} counter")
+        for iface, c in sorted(counters.items()):
+            if iface != "local0":
+                lines.append(f'vpp_interface_{name}{{interface="{iface}"}} {c.get(name, 0)}')
+    return lines
+
+
+def parse_stub_status(text: str) -> dict[str, int]:
+    out = {}
+    m = re.search(r"Active connections:\s*(\d+)", text)
+    if m:
+        out["active"] = int(m.group(1))
+    m = re.search(r"\n\s*(\d+)\s+(\d+)\s+(\d+)\s*\n", text)
+    if m:
+        out["requests"] = int(m.group(3))
+    return out
+
+
+def _tcp_open(addr: str) -> bool:
+    host, _, port = addr.rpartition(":")
+    try:
+        with socket.create_connection((host or "127.0.0.1", int(port)), timeout=3):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def nginx_metrics(args) -> list[str]:
+    up, stats = (1 if _tcp_open(args.nginx_addr) else 0), {}
+    if args.stub_status:
+        try:
+            with urllib.request.urlopen(args.stub_status, timeout=3) as resp:
+                stats = parse_stub_status(resp.read().decode("utf-8", "replace"))
+        except Exception:                                  # noqa: BLE001 — down is an answer
+            up = 0
+    lines = ["# TYPE nginx_up gauge", f"nginx_up {up}"]
+    if "active" in stats:
+        lines += ["# TYPE nginx_connections_active gauge",
+                  f"nginx_connections_active {stats['active']}"]
+    if "requests" in stats:
+        lines += ["# TYPE nginx_http_requests_total counter",
+                  f"nginx_http_requests_total {stats['requests']}"]
+    return lines
+
+
+def smartnic_metrics(args) -> list[str]:
+    rc, _ = _run(["pgrep", "-x", args.process])
+    lines = ["# TYPE smartnic_up gauge", f"smartnic_up {1 if rc == 0 else 0}"]
+    if not args.netdev:
+        return lines
+    try:
+        with open(f"{args.sysfs}/{args.netdev}/statistics/rx_packets") as fh:
+            rx = int(fh.read().strip())
+        lines += ["# TYPE smartnic_offload_pps counter",
+                  f'smartnic_offload_pps{{interface="{args.netdev}"}} {rx}']
+    except (OSError, ValueError):
+        pass
+    return lines
+
+
+APPS = {"vpp": vpp_metrics, "nginx": nginx_metrics, "smartnic": smartnic_metrics}
+
+
+def render(args) -> str:
+    return "\n".join(APPS[args.app](args)) + "\n"
+
+
+def main(argv=None) -> None:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--app", choices=sorted(APPS), required=True)
+    p.add_argument("--listen", default="127.0.0.1:9273")
+    p.add_argument("--vppctl", default="vppctl")
+    p.add_argument("--vpp-socket", default="", help="VPP CLI socket, e.g. /run/vpp/cli.sock")
+    p.add_argument("--nginx-addr", default="127.0.0.1:443")
+    p.add_argument("--stub-status", default="", help="optional stub_status URL")
+    p.add_argument("--process", default="dao-smart-nic")
+    p.add_argument("--pci", default="", help="informational: the app's PF")
+    p.add_argument("--netdev", default="", help="kernel netdev whose rx_packets to export")
+    p.add_argument("--sysfs", default="/sys/class/net")
+    p.add_argument("--once", action="store_true", help="print the metrics once and exit")
+    args = p.parse_args(argv)
+    if args.once:
+        print(render(args), end="")
+        return
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path != "/metrics":
+                self.send_error(404)
+                return
+            body = render(args).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; version=0.0.4")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    host, _, port = args.listen.rpartition(":")
+    ThreadingHTTPServer((host or "127.0.0.1", int(port)), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

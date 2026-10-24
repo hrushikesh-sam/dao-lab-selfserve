@@ -1,0 +1,28 @@
+# Stub (B-80): only the compare-and-no-op path. On a mismatch it fails with the manual-flash
+# fallback. A board without the marker is not tracked yet (e.g. configured by hand before
+# daolab): it is assumed to match until the marker is written (B-85 bring-up does); the engine's retry then sails through once the board is flashed and the marker
+# written. The real flash + reboot + wait_for_connection lands when the board procedure is
+# known (plan/05). The interface is fixed: input ebf_target_hw_class, postcondition the board
+# runs it.
+- name: read the board's personality
+  ansible.builtin.command: cat {{ ebf_marker }}
+  register: _ebf
+  changed_when: false
+  failed_when: false
+
+- name: "step: ebf_set"
+  ansible.builtin.debug:
+    msg: >-
+      {{ ebf_marker }} is missing: this board's personality is not tracked yet, assuming it
+      runs {{ ebf_target_hw_class }} (write the marker to have mismatches enforced)
+  when: _ebf.rc != 0
+
+- name: the board runs the use case's personality
+  when: _ebf.rc == 0
+  ansible.builtin.assert:
+    that: (_ebf.stdout | trim) == ebf_target_hw_class
+    success_msg: "board already runs {{ ebf_target_hw_class }}"
+    fail_msg: >-
+      ebf_set stub: board is {{ _ebf.stdout | trim }}, use case
+      needs {{ ebf_target_hw_class }}; flash manually per board docs, then:
+      echo {{ ebf_target_hw_class }} > {{ ebf_marker }} and re-run

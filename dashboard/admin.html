@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230969da'/%3E%3C/svg%3E">
 <title>daolab admin</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <style>
@@ -66,6 +67,27 @@
   .modal button.act { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:5px 14px; cursor:pointer; }
   .kv { margin:2px 0; } .kv b { font-weight:600; }
   .held-star { color:var(--red); font-weight:700; }
+  .quarantine { margin:10px 0; padding:10px 12px; border:1px solid #ffb1b1; border-radius:8px;
+                background:#ffebe9; color:var(--red); font-size:13px; }
+  .quarantine .residue { color:var(--text); margin:4px 0 0 12px; font-family:ui-monospace,Menlo,monospace;
+                         font-size:12px; }
+  .quarantine button, button.endnow { border:1px solid var(--line); background:#fff; border-radius:6px;
+                padding:2px 10px; cursor:pointer; margin:8px 6px 0 0; }
+  button.endnow { margin:0; color:var(--amber); }
+  .progress { font-size:12px; color:var(--muted); }
+  button.details { border:1px solid var(--line); background:#fff; border-radius:6px; padding:2px 10px;
+                   cursor:pointer; margin-right:6px; color:var(--accent); }
+  #all-res tr.sel td { background:#f0f8ff; }
+  #res-detail .grid { display:grid; grid-template-columns:140px 1fr; gap:4px 12px; margin-bottom:12px; }
+  #res-detail .grid > b { font-weight:600; color:var(--muted); font-size:13px; }
+  #res-detail details.job { border:1px solid var(--line); border-radius:8px; margin:8px 0; }
+  #res-detail details.job > summary { padding:8px 12px; cursor:pointer; background:#f6f8fa; border-radius:8px; }
+  #res-detail details.job[open] > summary { border-bottom:1px solid var(--line); border-radius:8px 8px 0 0; }
+  #res-detail .jobbody { padding:8px 12px; }
+  #res-detail .jobbody table td, #res-detail .jobbody table th { padding:3px 10px; font-size:13px; }
+  #res-detail pre.log { max-height:320px; overflow:auto; background:#1a1f24; color:#d0d7de; padding:10px;
+                        border-radius:6px; font-size:12px; white-space:pre-wrap; margin:8px 0 0; }
+  #res-detail .err { color:var(--red); margin:4px 0; }
 </style>
 </head>
 <body>
@@ -110,6 +132,11 @@
     <div class="empty" id="all-res-empty" hidden>no reservations yet</div>
   </section>
 
+  <section id="res-detail" hidden>
+    <h2 id="res-detail-title">Reservation</h2>
+    <div class="body" id="res-detail-body"></div>
+  </section>
+
   <section>
     <h2>Users</h2>
     <table id="users">
@@ -131,7 +158,8 @@
 <script>
 const TOKEN_KEY = "daolab_token";
 const getToken  = () => localStorage.getItem(TOKEN_KEY);
-let ME = null, SETUPS = [], SELECTED = null, POLL_MS = 15000;
+let ME = null, SETUPS = [], SELECTED = null, POLL_MS = 15000, FAST_MS = 4000;
+let SEL_RES = null, BUSY = false;               // the reservation whose detail is open; any job running
 
 class ApiError extends Error {
   constructor(status, err) {
@@ -187,8 +215,10 @@ async function saveToken() {
 }
 
 const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
-                     tearing_down:"b-amber", released:"b-muted", failed:"b-red"};
-const CANCELABLE = ["queued", "ready", "active"];
+                     cleaning:"b-amber", quarantined:"b-red", released:"b-muted", failed:"b-red"};
+const CANCELABLE = ["queued"];                     // not started: cancel (DELETE)
+const ENDABLE = ["ready", "active"];                // running: end now (POST .../cleanup)
+const AVAIL_BADGE = {available:"b-green", quarantined:"b-red", maintenance:"b-amber"};
 
 if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
 
@@ -203,6 +233,9 @@ async function renderDiagram(setup) {                  // setup = one GET /setup
     el.innerHTML = `<pre>${esc(setup.diagram)}</pre>`;
   }
 }
+
+// a start moved by a minute or more (taken slot, maintenance); not the rounding of "now" to a slot
+const movedSlot = r => r.shifted && new Date(r.start_at) - new Date(r.requested_start_at) >= 60000;
 
 function resSummaryLine(r) {
   if (!r) return `<span class="badge b-green">free</span>`;
@@ -232,7 +265,18 @@ function renderDetail() {
     return;
   }
   document.getElementById("detail-title").textContent = `Setup ${s.name} — pool ${s.pool}`;
+  const dirty = s.dirty || [];
+  const banner = (s.availability === "quarantined" || dirty.length) ? `
+    <div class="quarantine"><b>quarantined</b> — cleanup could not prove the testbed clean; new deploys
+      wait until it is.${dirty.map(d => `
+      <div class="residue">#${d.id} ${esc(d.user)} <code>${esc(d.usecase)}</code> (${esc(d.state)}):
+        ${esc(d.residue || "no residue recorded")}</div>`).join("")}
+      <div><button onclick="forceClean('${esc(s.name)}', false)">Force clean (reconcile, then verify)</button>
+           <button onclick="forceClean('${esc(s.name)}', true)">Mark clean without verifying</button></div>
+    </div>` : "";
   body.innerHTML = `
+    <div class="kv"><b>availability:</b> <span class="badge ${AVAIL_BADGE[s.availability] || "b-grey"}">${esc(s.availability || "available")}</span></div>
+    ${banner}
     <div class="kv"><b>capabilities:</b> ${s.capabilities.map(c => `<span class="cap">${esc(c)}</span>`).join("")}</div>
     <table style="margin:8px 0">
       <thead><tr><th>member</th><th>kind</th><th>host</th><th>hw_class</th><th>capabilities</th></tr></thead>
@@ -269,16 +313,137 @@ async function loadAllReservations() {
   const rows = await api("/reservations?all=1");
   const tbody = document.querySelector("#all-res tbody");
   document.getElementById("all-res-empty").hidden = rows.length > 0;
+  BUSY = rows.some(r => r.job && ["pending", "running"].includes(r.job.state));
   tbody.innerHTML = rows.map(r => `
-    <tr>
+    <tr class="${SEL_RES === r.id ? "sel" : ""}">
       <td>${r.id}</td><td>${esc(r.user)}</td>
       <td><code>${esc(r.usecase)}</code>${r.diy ? ' <span class="badge b-grey">diy</span>' : ""}</td>
       <td>${esc(r.setup)}</td>
       <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span></td>
-      <td>${esc(r.start_at)} → ${esc(r.end_at)}${r.shifted ? ' <span class="badge b-amber">shifted</span>' : ""}</td>
-      <td>${CANCELABLE.includes(r.state)
-        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>` : ""}</td>
+      <td>${esc(r.start_at)} → ${esc(r.end_at)}${movedSlot(r) ? ' <span class="badge b-amber">shifted</span>' : ""}
+          ${progressLine(r)}</td>
+      <td style="white-space:nowrap"><button class="details" onclick="openResDetail(${r.id})">details</button>${CANCELABLE.includes(r.state)
+        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>`
+        : ENDABLE.includes(r.state)
+          ? `<button class="endnow" onclick="endReservation(${r.id})">End now</button>` : ""}</td>
     </tr>`).join("");
+}
+
+function progressLine(r) {
+  const j = r.job;
+  if (!j || !["pending", "running", "failed"].includes(j.state) || ["released"].includes(r.state)) return "";
+  if (j.state === "failed") return `<div class="progress">${esc(j.kind)} failed: ${esc(j.error || "")}</div>`;
+  const last = j.last_step ? esc(j.last_step.name) : "starting";
+  return `<div class="progress">${esc(j.kind)} ${esc(j.state)} · step ${j.steps}: ${last}</div>`;
+}
+
+function openResDetail(id) {
+  SEL_RES = SEL_RES === id ? null : id;            // the button toggles
+  loadAllReservations().catch(reportError);
+  loadResDetail().then(() => {
+    if (SEL_RES) document.getElementById("res-detail").scrollIntoView({behavior: "smooth"});
+  });
+}
+
+const fmtTime = ts => ts ? esc(String(ts).replace("T", " ").replace(/\.\d+/, "").replace("Z", " UTC")) : "—";
+function duration(a, b) {
+  if (!a) return "";
+  const s = Math.max(0, Math.round(((b ? new Date(b) : new Date()) - new Date(a)) / 1000));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+}
+const JOB_BADGE = {pending:"b-grey", running:"b-amber", succeeded:"b-green", failed:"b-red"};
+const STEP_BADGE = {ok:"b-green", skipped:"b-muted", failed:"b-red"};
+
+function jobBlock(j, open) {
+  const steps = j.steps || [];
+  return `
+    <details class="job" data-id="${j.id}" ${open ? "open" : ""}>
+      <summary><b>${esc(j.kind)}</b> #${j.id}
+        <span class="badge ${JOB_BADGE[j.state] || "b-grey"}">${esc(j.state)}</span>
+        <span class="muted">attempt ${j.attempt} · ${fmtTime(j.started_at || j.created_at)}
+        ${j.started_at ? `· ${duration(j.started_at, j.finished_at)}${j.finished_at ? "" : " so far"}` : ""}</span></summary>
+      <div class="jobbody">
+        ${j.error ? `<div class="err">${esc(j.error)}</div>` : ""}
+        ${steps.length ? `<table><thead><tr><th>step</th><th>result</th><th>at</th><th>detail</th></tr></thead>
+          <tbody>${steps.map(st => `<tr><td><code>${esc(st.name)}</code></td>
+            <td><span class="badge ${STEP_BADGE[st.state] || "b-grey"}">${esc(st.state)}</span></td>
+            <td class="muted">${fmtTime(st.at)}</td><td class="muted">${esc(st.detail || "")}</td></tr>`).join("")}
+          </tbody></table>` : '<span class="muted">no steps yet</span>'}
+        ${j.trace_id ? `<div class="muted" style="font-size:12px;margin-top:6px">trace <code>${esc(j.trace_id)}</code></div>` : ""}
+        ${j.log_tail ? `<pre class="log">${esc(j.log_tail)}</pre>`
+                     : '<div class="muted" style="font-size:12px;margin-top:6px">no playbook log (mock runner, or not started)</div>'}
+      </div>
+    </details>`;
+}
+
+async function loadResDetail() {
+  const sec = document.getElementById("res-detail");
+  if (!SEL_RES) { sec.hidden = true; return; }
+  let r, jobs;
+  try {
+    [r, jobs] = await Promise.all([api(`/reservations/${SEL_RES}`), api(`/reservations/${SEL_RES}/jobs`)]);
+  } catch (e) { reportError(e); return; }
+  // keep open/closed job panels and log scroll positions across refreshes
+  const openIds = new Set([...sec.querySelectorAll("details.job")].filter(d => d.open)
+                          .map(d => d.dataset.id));
+  const firstRender = sec.hidden || sec.dataset.res !== String(r.id);
+  sec.hidden = false; sec.dataset.res = r.id;
+  document.getElementById("res-detail-title").textContent = `Reservation #${r.id} — ${r.usecase} on ${r.setup}`;
+  const a = r.access;
+  const access = !a ? '<span class="muted">none (diy)</span>'
+    : `username <b><code>${esc(a.login)}</code></b> on <code>${esc(a.host)}</code> · <code>${esc(a.ssh)}</code> · ${a.auth === "password"
+        ? "generated password <span class='muted'>(shown to the owner on their dashboard)</span>"
+        : `SSH key ${a.key ? `<code>${esc(a.key)}</code>` : ""}`}
+       · <span class="badge ${a.live ? "b-green" : "b-grey"}">${a.live ? "login open" : "login closed"}</span>`;
+  const dpu = r.vms.filter(v => !v.name);
+  const vms = r.vms.filter(v => v.name);
+  const h = r.health;
+  const ordered = [...jobs].reverse();               // newest first
+  document.getElementById("res-detail-body").innerHTML = `
+    <div class="grid">
+      <b>owner</b><span>${esc(r.user)}</span>
+      <b>state</b><span><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span>
+        ${r.failure_reason ? `<span class="err">${esc(r.failure_reason)}</span>` : ""}</span>
+      <b>slot</b><span>${fmtTime(r.start_at)} → ${fmtTime(r.end_at)}</span>
+      <b>DPU access</b><span>${access}</span>
+      <b>DPU app</b><span>${dpu.length ? dpu.map(v => `<code>${esc(v.role)}</code> on the OCTEON at <code>${esc(v.ip || "—")}</code>`).join(", ") : '<span class="muted">—</span>'}</span>
+      <b>VMs</b><span>${!vms.length ? '<span class="muted">none</span>'
+        : r.vms_provisioned === false
+          ? `${vms.map(v => `<code>${esc(v.role)}</code>`).join(" ")} <span class="badge b-grey">not provisioned</span>
+             <span class="muted">— DPU-only lab until the Xen Orchestra pools are connected</span>`
+          : vms.map(v => `<code>${esc(v.role)}</code> ${esc(v.name)} ${v.ip ? `<code>${esc(v.ip)}</code>` : '<span class="muted">no IP yet</span>'}`).join("<br>")}</span>
+      <b>health</b><span>${h ? `<span class="badge ${h.verdict === "healthy" ? "b-green" : h.verdict === "degraded" ? "b-amber" : "b-red"}">${esc(h.verdict)}</span>
+        <span class="muted">${esc(h.reason || "")} · ${fmtTime(h.evaluated_at)}</span>` : '<span class="muted">no verdict yet</span>'}</span>
+      <b>requested</b><span>${fmtTime(r.created_at)}${movedSlot(r) ? ` <span class="badge b-amber">slot shifted from ${fmtTime(r.requested_start_at)}</span>` : ""}</span>
+    </div>
+    <div style="margin:4px 0 6px"><b>Jobs</b> <span class="muted">(newest first${BUSY ? " · refreshing every 4 s" : ""})</span>
+      ${ENDABLE.includes(r.state) ? `<button class="endnow" style="float:right" onclick="endReservation(${r.id})">End now</button>` : ""}</div>
+    ${ordered.length ? ordered.map((j, i) => jobBlock(j, firstRender ? i === 0 : openIds.has(String(j.id)))).join("")
+                     : '<span class="muted">no jobs yet — the engine starts the deploy shortly before the slot</span>'}`;
+  sec.querySelectorAll("pre.log").forEach(pre => { pre.scrollTop = pre.scrollHeight; });
+}
+
+async function endReservation(id) {
+  if (!confirm(`End reservation #${id} now? The owner loses access and the testbed is cleaned up.`)) return;
+  try {
+    const r = await api(`/reservations/${id}/cleanup`, {method: "POST"});
+    showBanner(`reservation #${r.id} → ${r.state}`, null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
+}
+
+async function forceClean(name, skipVerify) {
+  const msg = skipVerify
+    ? `Mark ${name} clean WITHOUT verifying? Only do this after checking the testbed by hand.`
+    : `Force-clean ${name}? The reconciler runs again and the setup is freed once it verifies clean.`;
+  if (!confirm(msg)) return;
+  try {
+    const r = await api(`/admin/setups/${encodeURIComponent(name)}/force-clean`,
+                        {method: "POST", body: skipVerify ? {skip_verify: true} : {}});
+    showBanner(`${r.setup}: ${r.availability}` + (r.jobs.length ? ` · ${r.jobs.length} reconcile job(s) queued` : ""),
+               null, true);
+    await refresh();
+  } catch (e) { reportError(e); }
 }
 
 async function cancelReservation(id) {
@@ -321,7 +486,7 @@ async function setEnabled(id, username, enabled) {
 
 // ---- boot + polling --------------------------------------------------------
 async function refresh() {
-  try { await Promise.all([loadPoolsAndSetups(), loadAllReservations(), loadUsers()]); }
+  try { await Promise.all([loadPoolsAndSetups(), loadAllReservations(), loadUsers()]); await loadResDetail(); }
   catch (e) { reportError(e); }
 }
 
@@ -353,6 +518,9 @@ function poll(fn, ms) {
 
 boot();
 poll(refresh, POLL_MS);
+setInterval(() => {                                 // a deploy / cleanup in flight: follow it closely
+  if (BUSY && !document.hidden && getToken() && ME && ME.role === "admin") refresh();
+}, FAST_MS);
 </script>
 </body>
 </html>

@@ -1,0 +1,71 @@
+# Install and run the agent on this host (the DPU). A no-op without a collector address.
+- name: the agent needs a collector
+  ansible.builtin.meta: end_role
+  when: otel_agent_collector | length == 0
+
+- name: is the agent installed
+  ansible.builtin.stat:
+    path: "{{ otel_agent_bin }}"
+  register: _otel_bin
+
+- name: install otelcol-contrib {{ otel_agent_version }}
+  when: not _otel_bin.stat.exists
+  block:
+    - name: find the architecture
+      ansible.builtin.command: uname -m
+      register: _uname
+      changed_when: false
+
+    - name: pick the release archive
+      ansible.builtin.set_fact:
+        _otel_arch: "{{ {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64'}[_uname.stdout | trim] | default('amd64') }}"
+
+    - name: make the install directory
+      ansible.builtin.file:
+        path: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}"
+        state: directory
+        mode: "0755"
+
+    - name: download and unpack the release
+      ansible.builtin.unarchive:
+        src: "{{ otel_agent_download_url }}"
+        dest: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}"
+        remote_src: true
+        creates: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}/otelcol-contrib"
+
+    - name: link the binary
+      ansible.builtin.file:
+        src: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}/otelcol-contrib"
+        dest: "{{ otel_agent_bin }}"
+        state: link
+
+- name: make the config directory
+  ansible.builtin.file:
+    path: "{{ otel_agent_config | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: "step: otel_agent"
+  ansible.builtin.template:
+    src: otelcol.yaml.j2
+    dest: "{{ otel_agent_config }}"
+    mode: "0644"
+  notify: restart the agent
+
+- name: install the unit
+  ansible.builtin.template:
+    src: daolab-otel.service.j2
+    dest: "{{ otel_agent_unit_dir }}/{{ otel_agent_unit }}.service"
+    mode: "0644"
+  register: _otel_unit
+  notify: restart the agent
+
+- name: reload systemd
+  ansible.builtin.command: systemctl daemon-reload
+  when: _otel_unit.changed
+  changed_when: true
+
+- name: the agent runs and starts at boot
+  ansible.builtin.command: systemctl enable --now {{ otel_agent_unit }}
+  register: _otel_enable
+  changed_when: "'Created symlink' in _otel_enable.stderr"

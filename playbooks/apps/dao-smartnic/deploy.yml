@@ -1,0 +1,63 @@
+# playbooks/apps/dao-smartnic/deploy.yml — B-81: DAO SmartNIC on the DPU, run by Akshay's
+# roles (dao-smartnic/dao_smart_nic_ansible_direct/, tested on xeon3-oct-112) unchanged.
+#   01_build          only when the dao-smart-nic binary is missing (a build takes minutes)
+#   pci-before.txt    the runbook's step 10 restore point, saved before every launch
+#   02_launch_verify  when dao-smart-nic is not running (hugepages, vfio, launch, telnet check)
+# Their launch guard (allow_launch) comes from the runner: DAOLAB_ALLOW_DESTRUCTIVE.
+- name: SmartNIC - read the board
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: the runbook values (dao_smart_nic_ansible_direct/group_vars/all.yml)
+      ansible.builtin.include_vars:
+        file: "{{ hostvars['localhost'].daolab_playbooks }}/../dao-smartnic/dao_smart_nic_ansible_direct/group_vars/all.yml"
+
+    - name: is the binary built
+      ansible.builtin.stat:
+        path: "{{ smartnic_binary }}"
+      register: _snic_bin
+
+    - name: is dao-smart-nic running
+      ansible.builtin.command: pgrep -x dao-smart-nic
+      register: _snic_proc
+      changed_when: false
+      failed_when: false
+
+    - name: what this deploy has to do
+      ansible.builtin.set_fact:
+        daolab_snic_built: "{{ _snic_bin.stat.exists }}"
+        daolab_snic_running: "{{ _snic_proc.rc == 0 }}"
+
+    - name: "step: smartnic_board_state"
+      ansible.builtin.debug:
+        msg: "built={{ daolab_snic_built }} running={{ daolab_snic_running }}"
+
+    - name: save the PCI restore point (runbook step 10)
+      become: true
+      ansible.builtin.shell: |
+        mkdir -p {{ restore_before | default('/home/dao-test/smartnic-restore/pci-before.txt') | dirname }}
+        { dpdk-devbind.py -s | grep -E '{{ smartnic_pf }}|0002:01:0[01]\.' || true; } \
+          > {{ restore_before | default('/home/dao-test/smartnic-restore/pci-before.txt') }}
+      when: not (daolab_snic_running | bool)
+      changed_when: false
+
+- name: SmartNIC - build
+  ansible.builtin.import_playbook: "{{ daolab_smartnic_books | default('../../../dao-smartnic/dao_smart_nic_ansible_direct/playbooks') }}/01_build.yml"
+  when: not (daolab_snic_built | bool)
+
+- name: SmartNIC - launch and verify
+  ansible.builtin.import_playbook: "{{ daolab_smartnic_books | default('../../../dao-smartnic/dao_smart_nic_ansible_direct/playbooks') }}/02_launch_verify.yml"
+  when: not (daolab_snic_running | bool)
+
+- name: SmartNIC - running, and its health exported
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: "step: dpu_app"
+      ansible.builtin.command: pgrep -x dao-smart-nic
+      changed_when: false
+
+    - name: health exporter
+      ansible.builtin.include_tasks: ../../tasks/app_exporter.yml
+      vars:
+        app_exporter_args: --app smartnic --process dao-smart-nic --pci {{ smartnic_pf }}

@@ -1,0 +1,38 @@
+# playbooks/roles/host_vm — B-80: one VM per role on its XCP-ng host (plan/05 host_vm, plan/09 §6).
+#
+# The VM gets everything at first boot through cloud-init (NoCloud), seeded via xenstore:
+# the template's daolab-seed unit (playbooks/files/daolab-seed, baked in at bring-up, B-85)
+# turns the vm-data/daolab/* keys into /var/lib/cloud/seed/nocloud/ before cloud-init runs.
+#   - a static management address leased for this reservation (no DHCP race, plan/09 §6)
+#   - the owner's login with ONLY the owner's key (plan/09 §7)
+#   - a separate `daolab` service login with the backend's key, used by verify / probe
+#   - the role's packages, its data-plane address on its VF, the otel agent config (B-83)
+
+# management network (inventory/group_vars, filled at bring-up)
+mgmt_prefix: 24
+mgmt_gateway: ""
+mgmt_dns: []
+
+# the backend's key, for the `daolab` service login (verify / probe run as it)
+host_vm_control_pubkey: "{{ lookup('ansible.builtin.file', '~/.ssh/id_ed25519.pub', errors='ignore') | default('', true) }}"
+host_vm_service_login: daolab
+
+# install ids (use-case YAML `install:`) -> apt packages. A new id extends this map; an unknown
+# id fails the deploy, so a typo never boots a VM without its software (plan/05).
+host_vm_install_map:
+  http-server: [apache2]
+  ab: [apache2-utils]
+  h2load: [nghttp2-client]
+  pktgen: [pktgen-dpdk]
+  trex: []                 # TRex is not packaged; it ships in tpl-ubuntu2204-dao (B-85)
+  sink: [iperf3]
+  offload-client: [ethtool]
+
+# guest driver of each passthrough family, matched by netplan to name the data NIC data0
+host_vm_data_drivers:
+  e810-vf: iavf
+  sdp: octeon_ep_vf
+
+# waiting for the guest to come up on its address (5 min by default)
+host_vm_ip_retries: 60
+host_vm_ip_delay: 5

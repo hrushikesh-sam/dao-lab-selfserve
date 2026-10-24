@@ -1,0 +1,14 @@
+# inventory/host_vars/dpu-01.yml — the CN10K board xeon3-oct-112 (B-85 bring-up).
+#
+# The VPP / SmartNIC specifics (PCI addresses, ports, paths) are the runbooks' own values in
+# VPP_ansible/group_vars/all.yml and dao-smartnic/.../group_vars/all.yml; they are not repeated
+# here. This file holds what daolab itself needs about the board.
+
+# The EBF personality the board runs. playbooks/bringup.yml writes it to /etc/daolab/hw_class
+# once; from then on a deploy whose use case needs another personality stops with the manual
+# flash message (roles/ebf_set) instead of running on the wrong one.
+hw_class: sdp-pf1-vf8
+
+# The operator account the runbooks run as must sudo without a password (their become: true
+# steps run unattended from the dashboard). If it cannot, set ansible_become_password here
+# through ansible-vault, never in plain text.

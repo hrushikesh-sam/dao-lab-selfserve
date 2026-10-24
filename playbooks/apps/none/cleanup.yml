@@ -1,0 +1,9 @@
+# playbooks/apps/none/cleanup.yml — diy reservations (and use cases without an `on: dpu` role):
+# nothing runs on the DPU.
+- name: no DPU app
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: nothing to cleanup on the DPU
+      ansible.builtin.debug:
+        msg: "no DPU app for this reservation"

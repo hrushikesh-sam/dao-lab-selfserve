@@ -51,7 +51,7 @@ graph LR
     end
     E810 ===|"Y split cable leg A"| DPU
     E810 ===|"Y split cable leg B"| DPU
-    MGMT(["lab mgmt network<br/>IP pool 10.30.0.100–199"])
+    MGMT(["lab mgmt network<br/>VM pool 10.68.1.0–10.68.2.200<br/>DPU static 10.68.0.190"])
     MGMT --- DOM0
     MGMT --- VM1
     MGMT --- VM2
@@ -155,12 +155,12 @@ admins pass every owner check.
 |---|---|---|---|
 | `GET /whoami` | any | identity + role | unchanged |
 | `GET /usecases` | any | catalog cards with `next_free_at` | unchanged; feeds the **Deploy now** label ("starts at 14:00") |
-| `GET /availability?usecase=&from=&to=` | any | free and busy windows for the date picker | busy windows show the owner only to admins |
-| `POST /reservations` | any | **one-click deploy** or customised booking | body below → `201` with reservation + deploy job |
+| `GET /availability?usecase=&from=&to=` | any | busy windows for the date picker (the gaps are the free ones) | busy windows show the owner only to admins |
+| `POST /reservations` | any | **one-click deploy** or customised booking | body below → `201` with the reservation (its deploy job appears in `job` once the engine starts it) |
 | `GET /reservations` · `/{id}` | owner | state, VMs, IPs, ssh lines, DPU access line, health summary | `?all=1` admin |
 | `POST /reservations/{id}/redeploy` | owner | re-run `deploy.yml` (idempotent) inside the slot | `409` outside the slot |
 | `POST /reservations/{id}/cleanup` | owner | end early: teardown + verify + release | `202` + cleanup job |
-| `DELETE /reservations/{id}` | owner | cancel a `queued` booking | same as today |
+| `DELETE /reservations/{id}` | owner | cancel a `queued` booking | any other state `409` (a live slot ends with `/cleanup`) |
 | `GET /reservations/{id}/health` | owner | latest health verdict + per-check detail | read-only, from Prometheus (section 8) |
 | `POST /reservations/{id}/health/probe` | owner | on-demand active check | `202` + health-probe job |
 | `GET /reservations/{id}/events` | owner | SSE stream of job steps and state changes | the dashboard progress bar; falls back to polling |
@@ -178,14 +178,23 @@ admins pass every owner check.
 
 // customised booking
 { "usecase": "tls-proxy-nginx", "mode": "at", "start_at": "2026-10-20T09:00:00Z", "hours": 3 }
+
+// how the owner logs in (the Deploy dialog): their SSH key, or "" for a generated password
+{ "usecase": "vpp", "ssh_pubkey": "ssh-ed25519 AAAA… alice@laptop" }
 ```
+
+*As built:* `ssh_pubkey` absent = the user's registered key; empty = a random 16-character
+password. The reservation then carries `access`: `ssh lab@<the DPU's static address>` and the
+key's type / comment or the password (shown to the owner only, only while the slot is live).
 
 - `mode` defaults to `asap` and `hours` defaults to `DAOLAB_DEFAULT_HOURS`.
 - **asap:** the scheduler returns the earliest free slot on a capable setup, and the booking
   always succeeds unless the horizon is full.
 - **at:** the scheduler checks exactly that window. If it overlaps anything, it returns
   `409 slot_conflict` with `detail.alternatives` (the next three free starts of the same
-  length), which the dashboard shows as one-click chips.
+  length), which the dashboard shows as one-click chips. As implemented (B-13): the scheduler
+  returns them on every `NoFit` as `NoFit.alternatives`, searched forward from the requested
+  start (or `now`), on the slot grid, any capable setup ([03-scheduler.md](03-scheduler.md) Step 5c).
 - Per-user caps give `409 quota_exceeded`. The prototype allows one live reservation and two
   future reservations per user, which stops one person hoarding the only testbed.
 
@@ -202,8 +211,12 @@ turnaround = cleanup_budget (DAOLAB_CLEANUP_MIN, e.g. 10)
            + reflash_lead   (DAOLAB_HW_CLASS_LEAD_MIN, only if the next booking needs another hw_class)
 ```
 
+As implemented (B-11, [03-scheduler.md](03-scheduler.md) Step 3): the next booking always carries its own lead before its start (`DAOLAB_PROVISION_LEAD_MIN`, or the reflash lead when its `hw_class` differs), and that lead comes **after** the previous booking's cleanup, so the gap between two bookings is `cleanup + lead`: **15 min** for the same `hw_class` (10 + 5) and **25 min** when a reflash is needed (10 + 15). The scheduler takes the cleanup length from `DAOLAB_CLEANUP_MIN`, not from the `reservations.turnaround_min` column.
+
 **Slot grid:** starts snap to `DAOLAB_SLOT_MIN` (e.g. 30 minutes). This keeps the date picker
 simple and packs bookings back-to-back with no unusable gaps.
+
+As implemented (B-12, [03-scheduler.md](03-scheduler.md) Step 5a): the grid is multiples of `DAOLAB_SLOT_MIN` minutes after UTC midnight; `asap` rounds each candidate start up to it, and an `at` start that is off the grid is refused (`NoFit("off_grid")`) because snapping it would be shifting. The scheduler starts `asap` from `max(requested, now)` rounded up to the grid and does **not** add `provision_lead` to `now` as the sentence below says; which of the two is intended is an open question.
 
 **Placement:**
 
@@ -262,7 +275,7 @@ sequenceDiagram
     PB->>API: POST /internal/leases {res, role} per role
     API->>IP: lease (atomic, idempotent)
     IP-->>PB: 10.30.0.1xx per role
-    PB->>PB: arping/ping the IP: if something answers, mark it conflict and lease another
+    PB->>PB: ping the IP from the VM's dom0: if something answers, mark it conflict and lease another
     PB->>DPU: set hw_class if different (EBF) · start DPU app · install otel agent
     PB->>XCP: clone tpl → daolab-r<id>-<role>, VF passthrough, cloud-init(static IP, owner key, otel agent)
     PB->>API: POST /internal/vm-ip per role
@@ -279,8 +292,9 @@ which ones run. The dashboard sees exactly one job.
 
 **IP leasing (the playbook requests it; the backend owns it):**
 
-- The pool comes from config (`DAOLAB_IP_POOL=10.30.0.100-10.30.0.199`) or, later, from each
-  setup's YAML.
+- The pool comes from config (`DAOLAB_IP_POOL=10.68.1.0-10.68.2.200`, the lab's VM range) or,
+  later, from each setup's YAML. DPUs are static (their inventory address, e.g. xeon3-oct-112 at
+  10.68.0.190) and never leased.
 - `POST /internal/leases {reservation_id, role}` returns the **same** IP when called again for
   the same pair, so playbook retries are safe. Otherwise it allocates the lowest IP with no
   live lease.
@@ -294,8 +308,8 @@ which ones run. The dashboard sees exactly one job.
 
 **Retries and idempotency:** unchanged from [04-lifecycle-engine.md](04-lifecycle-engine.md).
 A failed deploy is re-run up to `DAOLAB_MAX_RETRIES`, and every role is skip-if-exists. If
-deploy finally fails, the engine runs cleanup and marks the reservation `failed`, and the slot
-stays the user's for a manual `redeploy`.
+deploy finally fails, the engine runs cleanup and marks the reservation `failed`. *As built:*
+`redeploy` only replays a `ready`/`active` reservation; after `failed` the user books again.
 
 ---
 
@@ -307,8 +321,8 @@ enforced in four layers, so a missed cleanup step never leaks access.
 | Layer | Mechanism | Takes effect |
 |---|---|---|
 | API | owner checks on every `/reservations/{id}/*` route; credentials (IPs, ssh lines) returned only to the owner | always |
-| Role VMs | each VM is created for one reservation, with **only** the owner's public key via cloud-init; destroyed at cleanup | VM lifetime |
-| **DPU** | sshd `AuthorizedKeysCommand /usr/local/bin/daolab-keys %u %h` calls `GET /internal/authz/keys?host=dpu-01&login=lab`. The backend returns the owner's key **only while** `start_at ≤ now < end_at` for a `ready`/`active` reservation on the setup holding that host, and nothing otherwise | checked at every login, so it is time-bounded even if cleanup fails |
+| Role VMs | each VM is created for one reservation; the owner's login gets **only** the owner's key (or the generated password) via cloud-init; a separate `daolab` service login holds the backend's key for verify / probe; destroyed at cleanup | VM lifetime |
+| **DPU** | *As built (dashboard Deploy):* the deploy opens the shared `lab` login (`playbooks/roles/dpu_access`) with the owner's key in a root-owned key file sshd reads for `lab` only — every key carries `expiry-time=<end_at>` — or with the generated password; the cleanup revokes both first thing, and the account expires the day after the slot. *Strict alternative (built, not installed by default):* sshd `AuthorizedKeysCommand /usr/local/bin/daolab-keys %u` calls `GET /internal/authz/keys?host=dpu-01&login=lab`, which returns the owner's key **only while** `start_at ≤ now < end_at` (sshd's `%h` is the home directory, so the host comes from the script's config) | keys: until `end_at` exactly even if cleanup fails; password: until the cleanup (or the next-day expiry) |
 | Session kill | `cleanup.yml` and the engine's `end_at` transition run `loginctl terminate-user lab` / `pkill -u lab` on the DPU | at the end of the slot |
 | dom0 | users never get dom0 credentials; only the backend's service key | always |
 
@@ -440,9 +454,18 @@ stateDiagram-v2
 ```
 
 Jobs have their own small lifecycle (`pending → running → succeeded | failed`), with an
-`attempt` counter and `trace_id`. **Single-flight per setup:** the engine never runs two
-deploy or cleanup jobs against the same setup at once. Health-probe jobs are read-only and
-exempt.
+`attempt` counter and `trace_id`. A `failed` job is final and is never revived: a retry is a
+**new** job row for the same reservation and kind with `attempt + 1` (B-20; the crash-recovery
+rule of B-26, which puts a stale `running` job back to `pending`, is a separate, explicit
+exception added with that task). **Single-flight per setup:** the engine never runs two
+deploy, cleanup or reconcile jobs against the same setup at once. Health-probe jobs are
+read-only and exempt. *Built (B-24):* the engine checks for a running mutating job on the setup
+and marks its own job `running` in one write transaction; a job that must wait stays `pending`
+and is retried on the next tick, and a job stranded as `running` by a crashed engine blocks its
+setup until B-26 requeues it. *Built (B-26):* each tick first requeues `running` jobs with no
+recorded step for `DAOLAB_JOB_TIMEOUT_SEC` (default 1800 s) through `models.requeue_job`, the
+only path from `running` back to `pending`; the attempt is unchanged and a `requeued` marker
+step is added.
 
 ---
 
@@ -453,7 +476,7 @@ exempt.
 | users | username, role (user/admin), token hash, SSH public key, enabled | token stored hashed |
 | setups / members | testbed, its hosts (XCP host, DPU), capabilities, availability flag (available / quarantined / maintenance) | quarantine blocks placement |
 | reservations | user, use case, setup, window, state, mode (asap/at), turnaround | **no two live reservations on one setup overlap** (txn today, exclusion constraint on Postgres) |
-| jobs | reservation, kind (deploy/cleanup/health_probe/reconcile), state, attempt, trace_id, log path, steps | one running mutating job per setup |
+| jobs | reservation, kind (deploy/cleanup/health_probe/reconcile), state (pending/running/succeeded/failed), attempt, trace_id, log path, steps (JSON list, appended while running), error, started/finished times | one running mutating job per setup (enforced by the engine, B-24); the setup is reached through the reservation |
 | vms | reservation, role, VM name/uuid, host, VF, IP | name `daolab-r<id>-<role>` |
 | ip_pools / ip_leases | range; lease (ip, reservation, role, state leased/released/quarantined) | **(pool, ip) unique among live leases**; `(reservation, role)` unique → idempotent |
 | health_snapshots | reservation, verdict, per-check results, evaluated_at | latest row only is needed |
@@ -487,7 +510,16 @@ class of "forgot to revoke" bugs.
 real `/internal/leases` and `/internal/vm-ip`, emits OTel spans, and writes fake metrics. The
 whole flow (booking, conflicts, IP exclusivity, DPU key window, cleanup, quarantine) can then be
 demonstrated on a laptop with no testbed. `DAOLAB_MOCK_FAIL=cleanup` forces residue so the
-quarantine path can be exercised.
+quarantine path can be exercised. *Built so far (B-22):* the sleeping, step-recording mock
+(`DAOLAB_MOCK_STEP_SEC`, default 5 s per step, 6 deploy steps ≈ 30 s) and the two failure
+switches — `deploy` fails the deploy at `create_vms`; `cleanup` makes cleanup report success
+while `verify_clean` keeps reporting residue. The lease/vm-ip calls (B-44), OTel spans (B-62)
+and fake metrics come with their own tasks.
+
+*The engine (B-23):* `python -m service.engine` runs one tick and exits; `--loop` ticks every
+`DAOLAB_ENGINE_INTERVAL_SEC`. It refuses to start (exit 1, "run `daolab init` first") if the
+database schema is not the latest version. See [04-lifecycle-engine.md](04-lifecycle-engine.md)
+for the tick order and what each finished job does to its reservation.
 
 **Telemetry stack:** `deploy/otel/docker-compose.yml` runs `otelcol-contrib`, `prometheus` and
 `jaeger`. With `DAOLAB_OTEL_ENDPOINT` unset, the backend skips tracing and health falls back to
@@ -516,8 +548,9 @@ P1–P3 land:
   `/health`, `/health/probe`, `/events`, `/jobs/{id}`, `/internal/leases`,
   `/internal/authz/keys`, `/admin/setups/{name}/force-clean`.
 - **[04-lifecycle-engine.md](04-lifecycle-engine.md):** `tearing_down` becomes `cleaning`
-  (teardown + verify + reconcile), and the `quarantined` state is added. Procedures run as job
-  rows.
+  (teardown + verify + reconcile), and the `quarantined` state is added (both done in B-21:
+  `models.RESERVATION_TRANSITIONS` is this section's diagram edge for edge). Procedures run as
+  job rows.
 - **[05-provisioning.md](05-provisioning.md):** the four playbooks become roles under a single
   `deploy.yml` plus `cleanup.yml`. VM IPs are leased and set statically through cloud-init
   instead of being discovered through guest tools. The inventory collapses to one XCP-ng host

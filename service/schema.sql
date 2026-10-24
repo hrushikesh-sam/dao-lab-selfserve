@@ -1,4 +1,6 @@
--- service/schema.sql — daolab canonical schema (sqlite, WAL set at connect time)
+-- service/schema.sql — daolab BASELINE schema (v0; sqlite, WAL set at connect time)
+-- Frozen: do not edit existing tables here. Schema changes after this baseline are
+-- numbered migrations in service/migrations.py, applied by `daolab init` (idempotent).
 
 CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -40,7 +40,7 @@ erDiagram
         text yaml_path "NULL=planned, builtin=diy"
     }
     reservations {
-        text state "7-state CHECK"
+        text state "8-state CHECK"
         text requested_start_at "user ask"
         text start_at "granted (slot-shift)"
         int diy "0|1"
@@ -61,7 +61,7 @@ surface:
 ```python
 # service/models.py — sqlite helpers; the only code touching JSON columns and timestamps
 def connect(db_path: str | None = None) -> sqlite3.Connection  # WAL + foreign_keys=ON + Row factory; default DAOLAB_DB_PATH
-def init_db(conn: sqlite3.Connection) -> None                  # executescript(service/schema.sql)
+def init_db(conn: sqlite3.Connection) -> list[int]             # schema.sql baseline, then pending migrations; returns versions applied ([] = no-op)
 def utcnow() -> str                                            # 'YYYY-MM-DDTHH:MM:SSZ'
 def insert(conn, table: str, row: dict) -> int                 # fills created_at/updated_at, returns id
 def update(conn, table: str, row_id: int, changes: dict) -> None  # refreshes updated_at
@@ -109,7 +109,7 @@ rows whose YAML exists; those columns are exact JSON mirrors of the YAML fields.
 
 **reservations** — user + use case (or DIY) + matched setup + time slot. `requested_start_at` =
 user ask; `start_at` = scheduler grant after slot-shift (the API's `shifted` is the derived
-inequality, not a column). `state` follows the 7-state CHECK; `released`/`failed` terminal;
+inequality, not a column). `state` follows the 8-state CHECK (`queued`, `provisioning`, `ready`, `active`, `cleaning`, `quarantined`, `released`, `failed`; migration 6); `released`/`failed` terminal;
 `failure_reason` set only in `failed`. `diy = 1` marks DIY mode and `diy_templates` (JSON
 host → template) is non-NULL only then. `retries` counts playbook retries per phase (cap
 `DAOLAB_MAX_RETRIES`).
@@ -119,6 +119,18 @@ use case's `roles` map (for DIY: the host name). `on: dpu` roles have NULL `temp
 the DAO app runs on the OCTEON itself, not in a VM; host roles get the XCP-ng VM name
 `daolab-r<reservation_id>-<role>` (e.g. `daolab-r12-backend`). `ip` stays NULL until the
 playbook posts it via `POST /internal/vm-ip`.
+
+**jobs** — one unit of engine work for a reservation (migration 5, B-20; not in the baseline
+DDL below). `kind` ∈ `deploy` | `cleanup` | `health_probe` | `reconcile`. `state` follows
+`pending → running → succeeded | failed` and nothing else (`models.transition_job` is a
+compare-and-set that raises `JobError` on any other move); `succeeded`/`failed` are final.
+`attempt` is fixed at creation (1 for the first try) — a retry is a **new** job row with
+`attempt + 1`, never a revived one. `steps` is canonical JSON, a list of
+`{name, state: ok|failed|skipped, at, detail?}` appended with `models.append_job_step` while
+the job is `running`; `trace_id` and `log_path` link to the OpenTelemetry trace and the
+playbook log; `error` is set only in `failed`; `started_at` / `finished_at` are stamped by the
+state change. The setup a job runs on is `reservations.setup_id` (not duplicated). Deleting a
+reservation deletes its jobs (`ON DELETE CASCADE`).
 
 ## Capability matching — how use cases find setups
 
@@ -148,8 +160,21 @@ name the missing capability list ([02-backend-api.md](02-backend-api.md)).
 Applied by `daolab init` (idempotent — `IF NOT EXISTS` throughout; WAL is set at connect time
 by `models.py`, not in the schema).
 
+**This DDL is the frozen v0 baseline.** Schema changes after it are numbered, append-only
+migrations in `service/migrations.py`, tracked by SQLite's `PRAGMA user_version`; `daolab init`
+runs the baseline and then every pending migration, each in its own `BEGIN IMMEDIATE`
+transaction with the version bump, so an existing DB is upgraded in place without losing rows
+and a second `init` changes nothing. A DB whose `user_version` is newer than the checkout is
+refused (`SchemaTooNew`, exit 1). Migration 1 (`reservation_mode`, plan/09 §4–5) adds
+`reservations.mode` (`'asap'|'at'`, default `'asap'`) and `reservations.turnaround_min`
+(default `0`; the scheduler does not read it yet — the buffer comes from `DAOLAB_CLEANUP_MIN`, see [03-scheduler.md](03-scheduler.md)) — these columns are **not** in the baseline DDL below. Migration 5 (`jobs`, B-20) adds the `jobs` table (see Entity reference). Migration 6 (`reservation_states`, B-21) rewrites the `reservations.state` CHECK in place — `tearing_down` becomes `cleaning`, `quarantined` is added, existing `tearing_down` rows are renamed — so the CHECK in the baseline DDL below is **not** what a migrated DB enforces. To change the schema:
+append `Migration(N, name, fn)` with `fn` idempotent (`add_column` / `IF NOT EXISTS`); never
+edit or reorder a released migration; add a test in `tests/test_migrations.py`.
+
 ```sql
--- service/schema.sql — daolab canonical schema (sqlite, WAL set at connect time)
+-- service/schema.sql — daolab BASELINE schema (v0; sqlite, WAL set at connect time)
+-- Frozen: do not edit existing tables here. Schema changes after this baseline are
+-- numbered migrations in service/migrations.py, applied by `daolab init` (idempotent).
 
 CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -384,7 +409,7 @@ engine when `dpu_prepare.yml` succeeds. Ownership of writes to `resources.hw_cla
 |---|---|
 | `daolab sync` | Never written (preserved on upsert, NULL on new rows). |
 | `provisioning` → `ready` | Set to `usecase.hw_class` if `dpu_prepare` reflashed. |
-| `tearing_down` → `released` | **Left untouched** — the DPU keeps its last personality. |
+| `cleaning` → `released` | **Left untouched** — the DPU keeps its last personality. |
 | DIY reservation | Never touched (DIY runs `host_vm.yml` only — no `dpu_prepare.yml`, no `verify.yml`). |
 
 Consequences (both consumers detailed in [03-scheduler.md](03-scheduler.md) and
@@ -396,8 +421,9 @@ Consequences (both consumers detailed in [03-scheduler.md](03-scheduler.md) and
 - Lead time: `lead = DAOLAB_HW_CLASS_LEAD_MIN` (default 15) minutes when the declared
   `hw_class` differs from the DPU's current one at placement time, else
   `lead = DAOLAB_PROVISION_LEAD_MIN` (default 5). Scheduler and engine use the identical rule:
-  the setup must be free for `[start_at − lead, end_at]`, and provisioning begins at
-  `start_at − lead`.
+  the setup must be free for `[start_at − lead, end_at + DAOLAB_CLEANUP_MIN)`, and
+  provisioning begins at `start_at − lead`. Starts are on the `DAOLAB_SLOT_MIN` grid
+  ([03-scheduler.md](03-scheduler.md)).
 
 ## Data invariants
 
@@ -409,7 +435,7 @@ Consequences (both consumers detailed in [03-scheduler.md](03-scheduler.md) and
    ISO-8601 `YYYY-MM-DDTHH:MM:SSZ`; every connection runs WAL + `foreign_keys=ON`.
 4. Kebab-case natural names are the external identifiers (YAML, API bodies, CLI); integer ids
    are internal (API paths/responses only); `reservation_id=0` is never issued.
-5. `reservations.state` is CHECK-constrained to the seven states; `released`/`failed` are
+5. `reservations.state` is CHECK-constrained to the eight states (`models.RESERVATION_STATES`; the baseline DDL below lists the pre-B-21 names and migration 6 rewrites it); `released`/`failed` are
    terminal; `failure_reason` only in `failed`; `diy_templates` non-NULL only when `diy = 1`.
 6. `resources.hw_class` is written only by the engine on successful `dpu_prepare`; sync
    preserves it and teardown never resets it — only a differing next use case triggers `ebf_set`.

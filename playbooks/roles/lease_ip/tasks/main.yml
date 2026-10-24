@@ -1,0 +1,26 @@
+# playbooks/roles/lease_ip — B-80: one management address per VM role, from the backend
+# (POST /internal/leases, B-42), checked before use (plan/09 §6). Runs on localhost after
+# tasks/plan_vms.yml; leaves `daolab_ips` = {role: address}.
+#
+# A manual run (reservation_id=0) has no API: it passes `manual_ips` ({role: address}) itself.
+- name: "manual run: take the addresses given"
+  ansible.builtin.set_fact:
+    daolab_ips: "{{ manual_ips | default({}) }}"
+  when: reservation_id | int == 0
+
+- name: "manual run: every VM role needs an address"
+  ansible.builtin.assert:
+    that: item.role in daolab_ips
+    fail_msg: "manual run: pass -e '{\"manual_ips\": {\"{{ item.role }}\": \"<address>\"}}'"
+  loop: "{{ daolab_vm_plan }}"
+  loop_control:
+    label: "{{ item.role }}"
+  when: reservation_id | int == 0
+
+- name: lease each VM role's address
+  ansible.builtin.include_tasks: lease_one.yml
+  loop: "{{ daolab_vm_plan }}"
+  loop_control:
+    loop_var: vm
+    label: "{{ vm.role }}"
+  when: reservation_id | int != 0
