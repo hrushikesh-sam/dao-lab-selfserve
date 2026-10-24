@@ -30,7 +30,7 @@ move or a concurrent change raises `ReservationStateError` instead of overwritin
 ```mermaid
 stateDiagram-v2
     [*] --> queued: POST /reservations (scheduler places)
-    queued --> provisioning: engine · now ≥ start_at − lead · setup available and not held
+    queued --> provisioning: engine · now ≥ start_at − lead · setup available, not held, no cleanup pending
     queued --> released: DELETE (cancel before provisioning)
     provisioning --> ready: deploy job succeeded
     provisioning --> failed: deploy failed DAOLAB_MAX_RETRIES times (cleanup job queued)
@@ -48,7 +48,7 @@ stateDiagram-v2
 |---|---|---|---|---|
 | *(create)* | `POST /reservations` / `daolab reserve` (api) | quota check, then `scheduler.place` (capability match, FCFS, mode `asap`/`at`, lead, turnaround, grid) fixes `setup_id`, `start_at`, `end_at` | `queued` | API-side errors only ([02-backend-api.md](02-backend-api.md)); in mode `asap` a slot conflict is never an error |
 | `queued` | `DELETE` (api) | nothing ran; no job | `released` | — |
-| `queued` | engine step 3: setup `available` and not held, `now ≥ start_at − lead` | one transaction: CAS, the `vms` rows, a pending `deploy` job | `provisioning` | crash before commit = nothing happened; next tick redoes it |
+| `queued` | engine step 3: setup `available`, not held and with no outstanding cleanup / reconcile job (B-94), `now ≥ start_at − lead` | one transaction: CAS, the `vms` rows, a pending `deploy` job | `provisioning` | crash before commit = nothing happened; next tick redoes it |
 | `provisioning` | `deploy` job succeeded | record `resources.hw_class` = the use case's class | `ready` | — |
 | `provisioning` | `deploy` job failed, `attempt < DAOLAB_MAX_RETRIES` | a new `deploy` job, `attempt + 1`, same trace | `provisioning` | — |
 | `provisioning` | `deploy` job failed, `attempt = DAOLAB_MAX_RETRIES` | `failure_reason` = the job's error; a `cleanup` job (same trace) | `failed` | — |

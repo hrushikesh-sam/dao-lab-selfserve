@@ -505,6 +505,22 @@ def running_mutating_job(conn, setup_id: int):
         (setup_id, *MUTATING_JOB_KINDS)).fetchone()
 
 
+def unfinished_cleanup_job(conn, setup_id: int):
+    """A pending or running cleanup / reconcile job on `setup_id`, or None (B-94).
+
+    Between a deploy's last failed attempt and the end of its cleanup chain the reservation
+    is `failed` — terminal, so `held_by` ignores it — while the setup may still carry the
+    residue of the half-finished deploy. `dirty_reservations` only sees the chain's result
+    (a cleanup/reconcile that already failed), so it is blind to this window. A job belongs
+    to a setup through its reservation; non-terminal reservations are caught by `held_by`
+    anyway, so the rule is simply: no new deploy while a cleanup is outstanding."""
+    return conn.execute(
+        """SELECT j.* FROM jobs j JOIN reservations r ON r.id = j.reservation_id
+           WHERE r.setup_id = ? AND j.state IN ('pending', 'running')
+           AND j.kind IN ('cleanup', 'reconcile')
+           ORDER BY j.id LIMIT 1""", (setup_id,)).fetchone()
+
+
 def stale_running_jobs(conn, idle_before: str):
     """`running` jobs with no sign of life since before `idle_before` (a timestamp string), oldest
     first (B-26). Every step a runner records bumps `updated_at`, so a deploy that is slow but

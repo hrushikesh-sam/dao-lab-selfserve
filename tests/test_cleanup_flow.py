@@ -159,6 +159,31 @@ def test_residue_after_a_failed_deploy_flags_the_setup_and_blocks_the_next_start
     assert st(lab, nxt) == "queued"
 
 
+def test_a_due_booking_waits_while_a_failed_deploys_cleanup_is_pending(lab, monkeypatch):
+    """B-94 (mistakes.md P1): between a deploy's last failed attempt and the end of its cleanup
+    chain the reservation is `failed` — terminal, so `held_by` ignores it — and the setup is
+    still `available`, because quarantine only happens once cleanup has found residue. A
+    booking that comes due in that window must wait, not start on a possibly dirty setup."""
+    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
+    rid = book(lab, state="provisioning", start=T(9, 5), end=T(10))
+    models.create_job(lab["db"], rid, "deploy")
+    tick(lab, MockRunner(fail={"deploy"}))           # fails for good -> failed + cleanup queued
+    assert st(lab, rid) == "failed" and availability(lab) == "available"
+    assert models.held_by(lab["db"], lab["sid"]) is None          # terminal: nothing holds it
+    assert [(j["kind"], j["state"]) for j in jobs(lab, rid)] == [
+        ("deploy", "failed"), ("cleanup", "pending")]
+
+    nxt = mk_res(lab["db"], lab["sid"], lab["uc"], T(10), T(11))
+    tick(lab, MockRunner(), now=T(10))               # due, setup free - but cleanup is pending
+    assert st(lab, nxt) == "queued"
+    assert [j["kind"] for j in jobs(lab, nxt)] == []               # no deploy job was created
+    assert st(lab, rid) == "released"                # that same tick ran the cleanup
+
+    tick(lab, MockRunner(), now=T(10))               # cleanup done -> the booking may start
+    assert st(lab, nxt) != "queued"
+    assert [j["kind"] for j in jobs(lab, nxt)] == ["deploy"]
+
+
 # ---- reconcile jobs ------------------------------------------------------------------------
 
 def quarantined(lab):
