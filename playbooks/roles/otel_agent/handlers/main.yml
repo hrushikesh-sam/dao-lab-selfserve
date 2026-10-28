@@ -1,0 +1,5 @@
+---
+- name: Restart otelcol-contrib
+  ansible.builtin.systemd:
+    name: "{{ otel_agent_service }}"
+    state: restarted

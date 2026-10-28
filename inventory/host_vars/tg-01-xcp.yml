@@ -1,0 +1,17 @@
+# inventory/host_vars/tg-01-xcp.yml — E810 / traffic-gen host (B-85).
+# Dom0 `xcp-ng-fxbqndvl`, XCP-ng, root@10.68.0.52. Single-host pool 6769f0a6-7f4e-88ae-801e-648d0f5d0650.
+# The client VM's E810 VF comes from this host (connect: e810-vf).
+ansible_user: root
+ansible_python_interpreter: /usr/bin/python3
+mgmt_network: "Pool-wide network 0"                      # bridge xenbr0, PIF eth0 (10.68.0.52)
+sr_uuid: "73946000-676f-3f7d-a117-50e7aecc7009"          # "Local storage" (ext, 427 GB)
+templates: ["Ubuntu-22.04-HWE-6.8-Octeon-VF-Ready-v2_COPY"]
+e810_pf: "0000:01:00.1"                                  # E810-C for QSFP; 128 VFs total (numvfs=128)
+e810_vfs:                                                # from `xl pci-assignable-list` (in pciback)
+  - "0000:01:11.0"
+  - "0000:01:11.1"
+  - "0000:01:11.2"
+  - "0000:01:11.3"
+  - "0000:01:11.4"
+  - "0000:01:11.5"
+  - "0000:01:11.6"

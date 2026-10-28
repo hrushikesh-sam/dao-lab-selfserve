@@ -2,12 +2,12 @@
 name: tb-01
 pool: lab-1
 members:
-  dpu-01: {kind: dpu, capabilities: [octeon-cn106, sdp], host: tb-01-xcp}
-  tg-01:  {kind: nic, capabilities: [e810],              host: tb-01-xcp}
+  dpu-01: {kind: dpu, capabilities: [octeon-cn106, sdp], host: dpu-01-xcp}
+  tg-01:  {kind: nic, capabilities: [e810],              host: tg-01-xcp}
 links:
   - {a: tg-01.e810p0, b: dpu-01.sfp0, capability: wire}
   - {a: tg-01.e810p1, b: dpu-01.sfp1, capability: wire}
 diagram: |
   graph LR
-    C[client VM · tb-01-xcp] -- HTTPS 443 / 25G p0 --> P[DPU · OCTEON CN106]
-    P -- 25G p1 --> B[backend VM · tb-01-xcp]
+    C[client VM · tg-01-xcp] -- HTTPS 443 / 25G p0 --> P[DPU · OCTEON CN106]
+    P -- 25G p1 --> B[backend VM · dpu-01-xcp]

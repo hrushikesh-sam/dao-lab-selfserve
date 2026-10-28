@@ -1,0 +1,8 @@
+﻿[Unit]
+Description=DAO Lab DB backup
+
+[Service]
+Type=oneshot
+Environment=DAOLAB_DB_PATH=/var/lib/daolab/daolab.db
+Environment=DAOLAB_BACKUP_DIR=/var/backups/daolab
+ExecStart=/usr/local/bin/daolab-backup.sh
