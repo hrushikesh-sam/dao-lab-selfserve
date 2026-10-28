@@ -3,10 +3,7 @@
 Reserve a **setup** — a wired group of lab nodes — pre-provisioned for a Marvell
 [DAO](https://marvellembeddedprocessors.github.io/dao/) use case. FCFS with time-share on conflict.
 
-Today there is exactly one setup: an XCP-ng host with an OCTEON CN106 DPU + an XCP-ng host with
-an Intel E810 (traffic-generator side). Tomorrow there will be many, mixing DPUs, GPUs, NICs and
-pure compute. Everything that describes hardware or a use case is **data** (YAML), so scale-out =
-more files, zero code changes.
+The lab is **two XCP-ng hosts**: `tg-01-xcp` (10.68.0.52, Intel E810 traffic-generator side) + `dpu-01-xcp` (10.68.0.53, OCTEON CN106 DPU side) with the DPU board `dpu-01` (10.68.0.190). Orchestration uses `playbooks/deploy.yml` and `playbooks/cleanup.yml` with roles. Everything that describes hardware or a use case is **data** (YAML), so scale-out = more files, zero code changes.
 
 ## Domain model (the decoupling that matters)
 
@@ -26,17 +23,17 @@ daolab/
 ├── usecases/            one YAML per DAO use-case variant (requires, roles, verify)
 ├── setups/              one YAML per reservable setup (members, links, mermaid diagram)
 ├── inventory/           Ansible inventory; host_vars hold PCI BDFs + current hw_class
-├── playbooks/           dpu_prepare / host_vm / verify / teardown + roles/ebf_set (stub)
-├── service/
-│   ├── config.py        env-driven settings (.env.example)
-│   ├── schema.sql       users / pools / setups / resources / usecases / reservations / vms
-│   ├── models.py        sqlite helpers
-│   ├── catalog.py       load usecases/ + setups/ YAML, mirror into DB (`daolab sync`)
-│   ├── scheduler.py     pure placement (FCFS, slot-shift, capability match, hw_class lead time)
-│   ├── runner.py        ansible-runner wrapper, one fn per transition
-│   ├── engine.py        lifecycle loop: queued→provisioning→ready→active→cleaning→released
-│   ├── api.py           FastAPI: catalog / setups / reservations + internal IP callback; serves dashboard/
-│   └── cli.py           `daolab init | sync | add-user | reserve | status`
+    ├── playbooks/           deploy.yml / cleanup.yml + roles/ (lease_ip, dpu_app, host_vm, verify, otel_agent, ebf_set, ...)
+    ├── service/
+    │   ├── config.py        env-driven settings (.env.example)
+    │   ├── schema.sql       users / pools / setups / resources / usecases / reservations / vms / jobs / ip_pools / ip_leases
+    │   ├── models.py        sqlite helpers
+    │   ├── catalog.py       load usecases/ + setups/ YAML, mirror into DB (`daolab sync`)
+    │   ├── scheduler.py     pure placement (FCFS, slot-shift, capability match, hw_class lead time)
+    │   ├── runner.py        runner wrapper (mock/ansible), one fn per transition
+    │   ├── engine.py        lifecycle loop: queued→provisioning→ready→active→cleaning→released/quarantined/failed
+    │   ├── api.py           FastAPI: catalog / setups / reservations / jobs / internal/* + dashboard
+    │   └── cli.py           `daolab init | sync | add-user | reserve | status`
 ├── scripts/run/dev.sh   one-shot dev runner: venv + init + sync + dev users (prints tokens) + serve
 ├── dashboard/
 │   ├── user.html        full use-case catalog + request (auto-match or DIY) + my reservations

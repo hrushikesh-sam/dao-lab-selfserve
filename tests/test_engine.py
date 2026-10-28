@@ -298,7 +298,8 @@ def test_when_retries_are_exhausted_a_cleanup_job_is_queued_and_releases_the_res
     assert row["state"] == "failed" and out.failed == 1 and out.ready == 0
     assert "create_vms" in row["failure_reason"]
     assert dpu_class(db, sid) == "cls-a"                                # nothing was flashed
-    assert models.held_by(db, sid) is None                              # next booking can start
+    # B-94: a failed reservation with pending cleanup must hold the setup until cleanup finishes
+    assert models.held_by(db, sid) is not None
     assert [(j["kind"], j["state"]) for j in jobs(db, rid)] == \
         [("deploy", "failed"), ("cleanup", "pending")]
     [deploy_job] = [j for j in jobs(db, rid) if j["kind"] == "deploy"]

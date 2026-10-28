@@ -3,12 +3,11 @@
 Part of the daolab implementation plan — see [README.md](README.md) for the doc map.
 
 This document specifies everything under `inventory/` and `playbooks/`: the Ansible inventory,
-the one-time dom0 passthrough prep, the `tpl-ubuntu2204-dao` template build, and the four
-playbooks (`dpu_prepare.yml`, `host_vm.yml`, `verify.yml`, `teardown.yml`) that
-`service/runner.py` invokes via ansible-runner (contract §8; invocation timing is
+the one-time dom0 passthrough prep, the `tpl-ubuntu2204-dao` template build, and `playbooks/deploy.yml` and `playbooks/cleanup.yml` (with roles) that
+`service/runner.py` invokes via ansible-runner (contract A8; invocation timing is
 [04-lifecycle-engine.md](04-lifecycle-engine.md)'s territory). Two invariants govern every line
 here: **every playbook is idempotent** (engine retry = run again) and **passthrough prep is
-one-time in dom0, never per reservation**.
+one-time in dom0, never per reservation**. The lab uses two XCP-ng hosts (`tg-01-xcp`, `dpu-01-xcp`) and DPU `dpu-01` at 10.68.0.190.
 
 ## Inventory layout — `inventory/hosts.yml` and `host_vars/`
 
@@ -138,7 +137,7 @@ fresh VM for `install` tasks and `verify.yml`. In the manual Phase-1 run the two
 
 ## Playbook specifications
 
-All four playbooks run against `inventory/hosts.yml` with the exact extravars of contract §8:
+`deploy.yml` and `cleanup.yml` run against `inventory/hosts.yml` with extravars passed by the runner (including `reservation_id`, `trace_id`, leased IPs); contract details in plan/09.
 `reservation_id`, `usecase`, `setup`, `user`, `ssh_pubkey`, plus `hw_class`, `diy` (bool),
 `templates` (JSON object, DIY only), `daolab_api_url`, `daolab_internal_secret`.
 `reservation_id=0` is the manual Phase-1 sentinel (never issued by the DB); the
@@ -324,7 +323,7 @@ graph LR
 ```
 
 A future setup with a different wiring (two NICs, a GPU host) only needs its YAML + inventory
-entries; the same four playbooks resolve and run unchanged. Resolution failures (no `kind: dpu`
+entries; `deploy.yml`/`cleanup.yml` resolve and run unchanged. Resolution failures (no `kind: dpu`
 member for an `on: dpu` role) fail play 0 with a named assert — they indicate a use case whose
 `requires` did not actually encode its needs.
 

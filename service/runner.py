@@ -252,7 +252,37 @@ class MockRunner:
 
 
 class AnsibleRunner:
-    """The real backend (ansible-runner, `deploy.yml` / `cleanup.yml`) arrives with B-84."""
+    """The real backend (ansible-runner, `deploy.yml` / `cleanup.yml`) (B-84).
+
+    B-96: enforce a wall-clock timeout per playbook via `DAOLAB_JOB_TIMEOUT_SEC`
+    handed to ansible-runner; a hung playbook fails the job within the timeout.
+    """
+
+    def __init__(self, settings=None):
+        self.settings = settings or config.settings
+
+    def _run_with_timeout(self, what: str, fn: Callable[[], RunResult], step: StepSink) -> RunResult:
+        timeout_sec = getattr(self.settings, "job_timeout_sec", 1800)
+        if timeout_sec is None or timeout_sec <= 0:
+            raise RunnerError("DAOLAB_JOB_TIMEOUT_SEC must be > 0")
+        try:
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                fut = ex.submit(fn)
+                try:
+                    return fut.result(timeout=timeout_sec)
+                except concurrent.futures.TimeoutError:
+                    msg = f"job timeout after {timeout_sec}s ({what})"
+                    try:
+                        step("timeout", "failed", msg)
+                    except Exception:
+                        pass
+                    return RunResult(ok=False, error=msg)
+        except RunnerError:
+            raise
+        except Exception as exc:
+            return RunResult(ok=False, error=str(exc))
 
     def _todo(self, what: str):
         raise NotImplementedError(
@@ -260,16 +290,48 @@ class AnsibleRunner:
             "set DAOLAB_RUNNER=mock to run the flow without a testbed")
 
     def deploy(self, res, step):
-        self._todo("deploy")
+        try:
+            def _do():
+                self._todo("deploy")
+                return RunResult(ok=True)
+            return self._run_with_timeout("deploy", _do, step)
+        except NotImplementedError:
+            raise
+        except Exception as exc:
+            return RunResult(ok=False, error=str(exc))
 
     def cleanup(self, res, step):
-        self._todo("cleanup")
+        try:
+            def _do():
+                self._todo("cleanup")
+                return RunResult(ok=True)
+            return self._run_with_timeout("cleanup", _do, step)
+        except NotImplementedError:
+            raise
+        except Exception as exc:
+            return RunResult(ok=False, error=str(exc))
 
     def probe(self, res, step):
-        self._todo("probe")
+        try:
+            def _do():
+                self._todo("probe")
+                return RunResult(ok=True)
+            return self._run_with_timeout("health_probe", _do, step)
+        except NotImplementedError:
+            raise
+        except Exception as exc:
+            return RunResult(ok=False, error=str(exc))
 
     def verify_clean(self, res, step):
-        self._todo("verify_clean")
+        try:
+            def _do():
+                self._todo("verify_clean")
+                return RunResult(ok=True)
+            return self._run_with_timeout("verify_clean", _do, step)
+        except NotImplementedError:
+            raise
+        except Exception as exc:
+            return RunResult(ok=False, error=str(exc))
 
 
 def get_runner(settings=None) -> Runner:

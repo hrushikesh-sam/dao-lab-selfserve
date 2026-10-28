@@ -2,15 +2,11 @@
 
 Part of the daolab implementation plan — see [README.md](README.md) for the doc map.
 
-Defines the seven entities, the full sqlite schema (`service/schema.sql`), the two YAML
-contracts, the `daolab sync` mirroring rules, and the `hw_class`/EBF semantics. Everything
-downstream — API ([02-backend-api.md](02-backend-api.md)), scheduler
-([03-scheduler.md](03-scheduler.md)), engine ([04-lifecycle-engine.md](04-lifecycle-engine.md))
-— reads and writes only what is defined here.
+Defines the entities, the full sqlite schema (`service/schema.sql`), the YAML contracts, the `daolab sync` mirroring rules, and the `hw_class`/EBF semantics. The schema includes `jobs`, `ip_pools`, `ip_leases`, and supports states `cleaning`, `quarantined`, `failed` per plan/09. Everything downstream — API ([02-backend-api.md](02-backend-api.md)), scheduler ([03-scheduler.md](03-scheduler.md)), engine ([04-lifecycle-engine.md](04-lifecycle-engine.md)) — reads and writes only what is defined here.
 
 ## Entities at a glance
 
-Seven tables: `users`, `pools`, `setups`, `resources`, `usecases`, `reservations`, `vms`.
+Tables: `users`, `pools`, `setups`, `resources`, `usecases`, `reservations`, `vms`, `jobs`, `ip_pools`, `ip_leases`, `audit_events`. (Counts as in `service/schema.sql`.)
 Every table also carries `created_at` / `updated_at` (UTC ISO-8601 `YYYY-MM-DDTHH:MM:SSZ`, set by
 `models.py`; omitted from the diagram for brevity).
 
@@ -22,6 +18,9 @@ erDiagram
     usecases ||--o{ reservations : "usecase_id"
     setups ||--o{ reservations : "setup_id"
     reservations ||--o{ vms : "reservation_id (CASCADE)"
+    reservations ||--o{ jobs : "reservation_id"
+    ip_pools ||--o{ ip_leases : "pool_id"
+    reservations ||--o{ ip_leases : "reservation_id"
 
     setups {
         text capabilities "JSON, sorted union"
@@ -38,9 +37,10 @@ erDiagram
         text hw_class "declared need"
         text roles "JSON role map"
         text yaml_path "NULL=planned, builtin=diy"
+        text health "JSON health rules"
     }
     reservations {
-        text state "7-state CHECK"
+        text state "CHECK includes queued,provisioning,ready,active,cleaning,released,failed,quarantined"
         text requested_start_at "user ask"
         text start_at "granted (slot-shift)"
         int diy "0|1"
@@ -48,6 +48,16 @@ erDiagram
     vms {
         text role "from usecase roles"
         text ip "via POST /internal/vm-ip"
+    }
+    jobs {
+        text kind "deploy|cleanup|health_probe|reconcile"
+        text state "queued|running|succeeded|failed|timeout"
+        text trace_id "OTel trace id"
+    }
+    ip_leases {
+        text ip "from ip_pools"
+        text state "reserved|leased|released"
+        int reservation_id "FK"
     }
 ```
 
@@ -71,7 +81,7 @@ def from_json(text: str)                                       # parse for TEXT 
 
 Ids are `INTEGER PRIMARY KEY AUTOINCREMENT`, starting at 1. API paths use the integer id; API
 requests and YAML always use the natural name (`usecase: tls-proxy-nginx`, `setup: setup-01`).
-`reservation_id=0` is reserved for manual Phase-1 playbook runs and is never issued by the DB.
+`reservation_id=0` is reserved for manual playbook runs and is never issued by the DB. Orchestration uses `deploy.yml`/`cleanup.yml`.
 
 ## Entity reference
 

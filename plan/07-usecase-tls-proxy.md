@@ -14,7 +14,7 @@ hosts, the 25G wire, the SDP path, VM provisioning on both sides, and the IP cal
 inbuilt-server variant is deferred; the last section lists exactly which YAML fields change.
 
 Everything in this document is data plus playbook content — one YAML file
-(`usecases/tls-proxy-nginx.yml`), inventory facts, and tasks inside the four shared playbooks.
+(`usecases/tls-proxy-nginx.yml`), inventory facts, and tasks inside `playbooks/deploy.yml` and `playbooks/cleanup.yml` with roles.
 Zero service-code changes (invariant: use cases and setups are data, never code). YAML schema:
 [01-domain-model.md](01-domain-model.md). Playbook and inventory mechanics:
 [05-provisioning.md](05-provisioning.md). State machine driving the runs:

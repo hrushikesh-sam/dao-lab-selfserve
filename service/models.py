@@ -13,7 +13,7 @@ SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 RESERVATION_STATES = ("queued", "provisioning", "ready", "active", "cleaning", "quarantined",
                       "released", "failed")
 BUSY_STATES = ("queued", "provisioning", "ready", "active", "cleaning", "quarantined")
-HELD_STATES = ("provisioning", "ready", "active", "cleaning", "quarantined")
+HELD_STATES = ("provisioning", "ready", "active", "cleaning", "quarantined", "failed")
 TERMINAL_STATES = ("released", "failed")
 # Per-user quota buckets (B-15): a reservation is "live" while it owns a setup (deploying or
 # deployed) and "future" while it is only booked. plan/09 §4 caps these at 1 and 2.

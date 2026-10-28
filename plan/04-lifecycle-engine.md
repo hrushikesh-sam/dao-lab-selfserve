@@ -36,12 +36,12 @@ stateDiagram-v2
 |---|---|---|---|---|
 | *(create)* | `POST /reservations` / `daolab reserve` (api) | `scheduler.py` matches capabilities, applies FCFS + slot-shift + lead time, fixes `setup_id`, `start_at`, `end_at` | `queued` | API-side errors only ([02-backend-api.md](02-backend-api.md)) — slot conflicts are never errors |
 | `queued` | engine tick (d): `now >= start_at − lead` and the setup is free | one transaction: create `vms` rows for every role, CAS state update | `provisioning` | crash before commit = nothing happened; next tick redoes it |
-| `provisioning` | engine tick (e): one full attempt | non-diy: `runner.dpu_prepare` (includes `ebf_set` iff `usecase.hw_class` differs from the DPU's `resources.hw_class`) → `runner.host_vm` → `runner.verify`; diy: `runner.host_vm` only | `ready` when all succeed and every VM role has an `ip`; update `resources.hw_class` after a reflash; fire webhook if `DAOLAB_WEBHOOK_URL` set | `retries += 1`, stay `provisioning` while `retries < DAOLAB_MAX_RETRIES` (idempotent replay next tick) |
-| `provisioning` | a failure brings `retries` to `DAOLAB_MAX_RETRIES` | best-effort single `runner.teardown`; set `failure_reason` | `failed` | teardown here is best-effort — its failure is logged, state is `failed` either way |
+| `provisioning` | engine tick (e): one full attempt | deploy via `runner.deploy` (backed by `playbooks/deploy.yml` roles: `lease_ip`, `dpu_app`/roles, `host_vm`, `verify`, etc.) | `ready` when all succeed and every VM role has an `ip`/lease as required; update `resources.hw_class` after a reflash; fire webhook if `DAOLAB_WEBHOOK_URL` set | `retries += 1`, stay `provisioning` while `retries < DAOLAB_MAX_RETRIES` (idempotent replay next tick) |
+| `provisioning` | a failure brings `retries` to `DAOLAB_MAX_RETRIES` | best-effort `runner.cleanup` / cleanup flow; set `failure_reason` | `failed` | cleanup here is best-effort — its failure is logged, state is `failed` either way; failed reservations hold setup until cleanup verified (B-94) |
 | `ready` | engine tick (a): `now >= start_at` | none | `active` | — |
 | `ready` | `DELETE /reservations/{id}` (api) | state change + `retries = 0`; engine drives the teardown | `tearing_down` | — |
 | `active` | engine tick (b): `now >= end_at`, or `DELETE /reservations/{id}` | `retries = 0` on entry | `tearing_down` | — |
-| `tearing_down` | engine tick (c): `runner.teardown` succeeds | setup freed; **`resources.hw_class` is left untouched** | `released` | `retries += 1`; after `DAOLAB_MAX_RETRIES`: `failed`, set `failure_reason`, setup stays held and surfaces under `held_by` on `admin.html` until an admin intervenes manually |
+| `cleaning` | engine tick (c): `runner.cleanup` then `runner.verify_clean` | if clean → release leases/setup → `released`; if residue → reconcile/quarantine → `quarantined`; **`resources.hw_class` is left untouched** | `released`/`quarantined`/`failed` | retries as needed; on failure/quarantine setup held until resolved (admin force-clean) |
 | `queued` | `DELETE /reservations/{id}` before provisioning began (api) | no playbooks ran; nothing to tear down | `released` | — |
 
 Cancel while `provisioning` or `tearing_down` → `409 invalid_state` (retry once `ready`) — the
@@ -63,7 +63,7 @@ def tick(db: sqlite3.Connection, now: datetime) -> int:
     """One pass over the reservations table. Returns transitions performed."""
     n  = _promote_ready_to_active(db, now)   # (a) ready -> active, start_at due
     n += _expire_active(db, now)             # (b) active -> tearing_down, end_at passed
-    n += _drive_teardowns(db, now)           # (c) run runner.teardown per due reservation
+    n += _drive_teardowns(db, now)           # (c) run cleanup per due reservation (deploy.yml/cleanup.yml)
     n += _start_due_provisioning(db, now)    # (d) queued -> provisioning, create vms rows
     n += _drive_provisioning(db, now)        # (e) one full provisioning attempt per setup
     return n
