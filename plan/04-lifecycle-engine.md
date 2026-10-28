@@ -331,7 +331,7 @@ Every line is `key=value` pairs after a fixed prefix, grep-first design:
 ```
 
 Fixed vocabulary: `event` ∈ `tick_start` | `tick_end` | `transition` | `playbook` | `hw_class` |
-`webhook`; `r` = reservation id; `from`/`to` = exact state names; `playbook` = the four runner
+`webhook`; `r` = reservation id; `from`/`to` = exact state names; `playbook` = deploy/cleanup roles/run
 names; `reason` mirrors what lands in `failure_reason`. The full ansible-runner event stream
 from `RunResult.events` is emitted at DEBUG only. `grep 'to=failed'` finds every terminal
 failure; `grep 'r=12 '` reconstructs one reservation's life; timestamps are the same UTC

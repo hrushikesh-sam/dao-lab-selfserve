@@ -134,7 +134,7 @@ Eleven files. Each owns its decisions; everything else points at it.
 | Automation | ansible-runner | Programmatic playbook invocation with structured status/events — one runner function per lifecycle transition. |
 | Frontend | Single-file vanilla-JS dashboards + mermaid | Dumb views over the API, no build step; mermaid renders the topology diagrams shipped inside setup YAML. |
 | Tests | pytest | Scheduler unit tests run against an in-memory sqlite handle, no hardware. |
-| Entry points | make | The four workflows — `setup`, `test`, `api`, `engine` — as one-word commands. |
+| Entry points | make | Workflows — `setup`, `test`, `api`, `engine` — as one-word commands. |
 
 Packaging: one `pyproject.toml` at repo root declares the dependencies (`fastapi`, `uvicorn`,
 `pyyaml`, `ansible-runner`, `httpx`, `python-dotenv`, `pytest`) and the console script

@@ -302,7 +302,7 @@ stays the user's for a manual `redeploy`.
 ## 7. Access control: VMs and the DPU
 
 The rule is that only the slot owner can log in, and only while the slot is open. It is
-enforced in four layers, so a missed cleanup step never leaks access.
+enforced in multiple layers, so a missed cleanup step never leaks access.
 
 | Layer | Mechanism | Takes effect |
 |---|---|---|
