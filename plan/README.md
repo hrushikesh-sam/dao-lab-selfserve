@@ -26,8 +26,13 @@ daolab lets a user reserve a **setup** — a wired group of lab nodes — pre-pr
 Marvell [DAO](https://marvellembeddedprocessors.github.io/dao/) use case. Scheduling is **FCFS**
 (placed in `created_at` order) with **slot-shift** on conflict: an overlapping request is never
 rejected, it is moved to the earliest free slot. A reservation moves through
+<<<<<<< HEAD
 `queued → provisioning → ready → active → cleaning → released` (plus terminal `failed`, `quarantined`),
 driven by an engine that runs idempotent Ansible playbooks via `deploy.yml`/`cleanup.yml` against XCP-ng hosts and the OCTEON.
+=======
+`queued → provisioning → ready → active → tearing_down → released` (plus terminal `failed`),
+driven by an engine that runs idempotent Ansible playbooks against XCP-ng hosts and the OCTEON.
+>>>>>>> akshay
 
 **Lab topology (two XCP-ng hosts):** `tg-01-xcp` (10.68.0.52, Intel E810 traffic-generator) and `dpu-01-xcp` (10.68.0.53, OCTEON CN106 DPU host). The DPU board `dpu-01` is at 10.68.0.190. The setup is defined in `setups/tb-01.yml` in pool `lab-1`:
 

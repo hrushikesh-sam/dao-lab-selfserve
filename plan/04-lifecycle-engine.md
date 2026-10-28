@@ -41,7 +41,11 @@ stateDiagram-v2
 | `ready` | engine tick (a): `now >= start_at` | none | `active` | — |
 | `ready` | `DELETE /reservations/{id}` (api) | state change + `retries = 0`; engine drives the teardown | `tearing_down` | — |
 | `active` | engine tick (b): `now >= end_at`, or `DELETE /reservations/{id}` | `retries = 0` on entry | `tearing_down` | — |
+<<<<<<< HEAD
 | `cleaning` | engine tick (c): `runner.cleanup` then `runner.verify_clean` | if clean → release leases/setup → `released`; if residue → reconcile/quarantine → `quarantined`; **`resources.hw_class` is left untouched** | `released`/`quarantined`/`failed` | retries as needed; on failure/quarantine setup held until resolved (admin force-clean) |
+=======
+| `tearing_down` | engine tick (c): `runner.teardown` succeeds | setup freed; **`resources.hw_class` is left untouched** | `released` | `retries += 1`; after `DAOLAB_MAX_RETRIES`: `failed`, set `failure_reason`, setup stays held and surfaces under `held_by` on `admin.html` until an admin intervenes manually |
+>>>>>>> akshay
 | `queued` | `DELETE /reservations/{id}` before provisioning began (api) | no playbooks ran; nothing to tear down | `released` | — |
 
 Cancel while `provisioning` or `tearing_down` → `409 invalid_state` (retry once `ready`) — the
@@ -63,7 +67,11 @@ def tick(db: sqlite3.Connection, now: datetime) -> int:
     """One pass over the reservations table. Returns transitions performed."""
     n  = _promote_ready_to_active(db, now)   # (a) ready -> active, start_at due
     n += _expire_active(db, now)             # (b) active -> tearing_down, end_at passed
+<<<<<<< HEAD
     n += _drive_teardowns(db, now)           # (c) run cleanup per due reservation (deploy.yml/cleanup.yml)
+=======
+    n += _drive_teardowns(db, now)           # (c) run runner.teardown per due reservation
+>>>>>>> akshay
     n += _start_due_provisioning(db, now)    # (d) queued -> provisioning, create vms rows
     n += _drive_provisioning(db, now)        # (e) one full provisioning attempt per setup
     return n

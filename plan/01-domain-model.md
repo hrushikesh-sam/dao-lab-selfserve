@@ -40,7 +40,11 @@ erDiagram
         text health "JSON health rules"
     }
     reservations {
+<<<<<<< HEAD
         text state "CHECK includes queued,provisioning,ready,active,cleaning,released,failed,quarantined"
+=======
+        text state "7-state CHECK"
+>>>>>>> akshay
         text requested_start_at "user ask"
         text start_at "granted (slot-shift)"
         int diy "0|1"
