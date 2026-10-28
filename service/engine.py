@@ -9,9 +9,20 @@ A tick walks the reservations in a fixed order:
   2. active -> cleaning      when end_at has passed (and queues a `cleanup` job whose first
                              step, `terminate-user`, kills the DPU's `lab` sessions so access
                              is revoked at the end of the slot — plan/09 §7, B-53)
-  3. queued -> provisioning  at start_at - lead, if the setup is available and not held
-                             (and queues a `deploy` job)
+  3. queued -> provisioning  at start_at - lead, if the setup is available, not held, and
+                             has no cleanup / reconcile job outstanding (B-94: the
+                             reservation of a failed deploy is terminal, so `held_by`
+                             does not see it while its cleanup is still queued)
+                             (and, in the same transaction, creates the reservation's `vms`
+                             rows and queues a `deploy` job)
   4. run the pending jobs, oldest first, through the runner (B-22)
+  5. sweep orphans (B-73): destroy every daolab-r<id>-* VM whose reservation is terminal or
+     gone and has no cleanup / reconcile job waiting, and release `leased` addresses still
+     held by terminal reservations. Catches residue from crashes and manual runs.
+  6. evaluate the health rules of every `active` reservation (B-67), store the verdict as its
+     latest snapshot, and fire DAOLAB_WEBHOOK_URL when it flips to `down` (only then, not on
+     every tick that stays down). Runs only with the telemetry stack switched on
+     (DAOLAB_OTEL_ENDPOINT set); without it health falls back to the probe job (plan/09 §13).
 
 A setup is freed by step 4 (cleanup verified clean -> released), after step 3 has already
 looked at it, so the next booking on that setup starts on the NEXT tick. That costs at most
@@ -22,6 +33,11 @@ The engine keeps nothing in memory between ticks: every decision comes from the 
 the clock. Every state change is a compare-and-set (`models.transition_reservation`,
 `models.transition_job`), so a second engine process can never double-fire a transition.
 Runner calls block; ticks are serialised, so a long deploy simply delays the next tick.
+
+Tracing (B-62): with DAOLAB_OTEL_ENDPOINT set, every job runs inside its own span. The span's
+trace id is stored on the job (retries and the automatic cleanup of a failed deploy inherit it,
+so one booking's whole story is one trace), every recorded step becomes a child span, and the
+runner can hand `otel.traceparent()` to Ansible as TRACEPARENT. Off by default; no-op then.
 
 Crash recovery (B-26): every tick starts by putting `running` jobs that have shown no activity
 for DAOLAB_JOB_TIMEOUT_SEC (default 30 min) back to `pending`. Each step a runner records counts
@@ -48,22 +64,36 @@ What a finished job does to its reservation:
                       reservation keeps its state either way (no retries, no automatic cleanup):
                       a failed replay must not tear down a lab the user is still working in;
                       they can redeploy again or clean up.
-  * cleanup        -> cleanup, then verify_clean regardless of the cleanup result (plan/09 §9);
-                      from `cleaning`: clean -> released, residue -> quarantined;
-                      from `failed`: clean -> released, residue stays `failed` (no edge to
-                      quarantined). Releasing IP leases and flagging the setup come with B-71.
+  * cleanup        -> B-71: cleanup, then verify_clean regardless of the cleanup result
+                      (plan/09 §9); while residue remains, reconcile + verify again, up to
+                      DAOLAB_RECONCILE_ATTEMPTS times. Clean: the IP leases are released and
+                      the reservation goes `released` (from `cleaning` or `failed`); if that
+                      was the setup's last dirty reservation, a quarantined setup is available
+                      again. Residue: the reservation's leased IPs are quarantined, the setup
+                      is flagged `quarantined` (a `maintenance` flag is left alone), and the
+                      reservation goes `quarantined` (from `cleaning`; a `failed` one stays
+                      `failed`, there is no edge).
+  * reconcile      -> reconcile then verify_clean, once (force-clean, B-74, queues these):
+                      clean -> every lease of the reservation is released (quarantined ones
+                      too), the reservation goes `released`, and the setup is available again
+                      if nothing else on it is dirty; residue -> the job fails and the setup
+                      stays (or goes back to) quarantined.
   * health_probe   -> only the job is recorded
 """
 import argparse
+import json
 import logging
+import re
 import sqlite3
+import signal
 import sys
 import time
+import urllib.request
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from . import config, migrations, models, runner as runner_mod, scheduler
+from . import config, health, ipam, migrations, models, otel, runner as runner_mod, scheduler
 from .runner import RunResult
 
 log = logging.getLogger("daolab.engine")
@@ -76,7 +106,7 @@ EXPECTED_STATES = {
     "deploy": ("provisioning", "ready", "active"),     # ready/active = redeploy
     "cleanup": ("cleaning", "failed"),
     "health_probe": ("ready", "active"),
-    "reconcile": ("quarantined",),
+    "reconcile": ("quarantined", "failed"),           # failed: residue after a failed deploy
 }
 
 
@@ -93,11 +123,17 @@ class TickResult:
     redeployed: int = 0      # redeploy ok (reservation unchanged)
     failed: int = 0          # deploy failed for the last time
     released: int = 0        # cleanup verified clean
-    quarantined: int = 0     # residue after cleanup
+    quarantined: int = 0     # residue after cleanup (and reconcile attempts)
+    reconciled: int = 0      # reconcile job verified clean -> released (B-71/B-72)
+    orphan_vms: int = 0      # VMs of terminal / unknown reservations destroyed (B-73)
+    orphan_leases: int = 0   # leased addresses of terminal reservations released (B-73)
+    health_checked: int = 0  # active reservations whose health was evaluated (B-67)
+    went_down: int = 0       # ... of which flipped to `down` (webhook fired)
 
     @property
     def total(self) -> int:
-        return self.recovered + self.activated + self.expired + self.started + self.jobs_run
+        return (self.recovered + self.activated + self.expired + self.started + self.jobs_run
+                + self.orphan_vms + self.orphan_leases)
 
 
 def _ts(now: datetime) -> str:
@@ -172,6 +208,8 @@ def _start_due(db: sqlite3.Connection, now: datetime, cfg: scheduler.SchedConfig
     for r in scheduler.startable_queued(db):
         if models.held_by(db, r["setup_id"]) is not None:
             continue                                # the setup is still in use
+        if models.unfinished_cleanup_job(db, r["setup_id"]) is not None:
+            continue                                # B-94: its cleanup is outstanding
         uc = models.usecase_by_id(db, r["usecase_id"])
         lead = scheduler.start_lead_min(db, r["setup_id"], uc["hw_class"], cfg)
         if models.parse_ts(r["start_at"]).timestamp() - lead * 60 > now.timestamp():
@@ -180,7 +218,10 @@ def _start_due(db: sqlite3.Connection, now: datetime, cfg: scheduler.SchedConfig
             with _txn(db):
                 if models.held_by(db, r["setup_id"]) is not None:   # re-check under the lock
                     raise _Skip
+                if models.unfinished_cleanup_job(db, r["setup_id"]) is not None:
+                    raise _Skip
                 models.transition_reservation(db, r["id"], "provisioning", from_state="queued")
+                models.create_vms(db, r["id"])      # before any playbook: callbacks need them
                 models.create_job(db, r["id"], "deploy")
             n += 1
         except (_Skip, models.ReservationStateError):
@@ -190,13 +231,20 @@ def _start_due(db: sqlite3.Connection, now: datetime, cfg: scheduler.SchedConfig
 
 # ---- 4. run the pending jobs ----------------------------------------------------------
 
-def _call(fn, res, sink, what: str) -> RunResult:
+def _call(fn, ctx, sink, what: str) -> RunResult:
     """Run one runner function; a crash becomes a failed result instead of killing the tick."""
     try:
-        return fn(res, sink)
+        return fn(ctx, sink)
     except Exception as e:                           # noqa: BLE001 — the engine must survive
-        log.exception("runner %s crashed for reservation %s", what, res["id"])
+        log.exception("runner %s crashed for reservation %s", what, ctx["id"])
         return RunResult(ok=False, error=f"{type(e).__name__}: {e}")
+
+
+def _context(db, job, res) -> dict:
+    """What the runner gets instead of a DB row: the reservation context (models) plus the job."""
+    return {**models.reservation_context(db, res["id"]),
+            "job_id": job["id"], "job_kind": job["kind"], "attempt": job["attempt"],
+            "job_created_at": job["created_at"]}
 
 
 def _audit(db, job, action: str, detail: dict) -> None:
@@ -221,9 +269,9 @@ def _finish(db, job_id: int, result: RunResult) -> None:
         models.transition_job(db, job_id, "failed", error=result.error or "failed")
 
 
-def _run_deploy(db, rn, job, res, sink, out: TickResult) -> RunResult:
+def _run_deploy(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
     redeploy = res["state"] != "provisioning"          # ready/active: replay inside a live slot
-    result = _call(rn.deploy, res, sink, "deploy")
+    result = _call(rn.deploy, ctx, sink, "deploy")
     with _txn(db):          # job result + reservation move + audit commit together or not at all
         _finish(db, job["id"], result)
         if redeploy:
@@ -252,29 +300,81 @@ def _run_deploy(db, rn, job, res, sink, out: TickResult) -> RunResult:
     return result
 
 
-def _run_cleanup(db, rn, job, res, sink, out: TickResult) -> RunResult:
-    cleaned = _call(rn.cleanup, res, sink, "cleanup")
-    verified = _call(rn.verify_clean, res, sink, "verify_clean")   # whatever the cleanup said
-    clean = verified.ok and not verified.residue
-    if clean:
-        result = RunResult(ok=True)
-    else:
-        what = ", ".join(verified.residue) if verified.residue else (verified.error or "unknown")
-        result = RunResult(ok=False, error=f"residue after cleanup: {what}", residue=verified.residue)
+def _is_clean(verified: RunResult) -> bool:
+    return verified.ok and not verified.residue       # `ok` alone is not trusted
+
+
+def _residue_result(verified: RunResult, after: str) -> RunResult:
+    if _is_clean(verified):
+        return RunResult(ok=True)
+    what = ", ".join(verified.residue) if verified.residue else (verified.error or "unknown")
+    return RunResult(ok=False, error=f"residue after {after}: {what}", residue=verified.residue)
+
+
+def _quarantine_setup(db, res) -> None:
+    """Residue survived: block the reservation's addresses and stop new deploys on the setup
+    (B-18 gate). An admin's `maintenance` flag is stronger and is left alone."""
+    ipam.quarantine_reservation(db, res["id"])
+    setup = db.execute("SELECT availability FROM setups WHERE id = ?",
+                       (res["setup_id"],)).fetchone()
+    if setup["availability"] == "available":
+        models.set_setup_availability(db, res["setup_id"], "quarantined")
+
+
+def _maybe_free_setup(db, setup_id: int) -> None:
+    """A quarantined setup is available again once none of its reservations is dirty."""
+    setup = db.execute("SELECT availability FROM setups WHERE id = ?", (setup_id,)).fetchone()
+    if setup["availability"] == "quarantined" and not models.dirty_reservations(db, setup_id):
+        models.set_setup_availability(db, setup_id, "available")
+
+
+def _run_cleanup(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+    cleaned = _call(rn.cleanup, ctx, sink, "cleanup")
+    verified = _call(rn.verify_clean, ctx, sink, "verify_clean")   # whatever the cleanup said
+    reconcile, attempts = getattr(rn, "reconcile", None), 0
+    while not _is_clean(verified) and reconcile is not None \
+            and attempts < config.settings.reconcile_attempts:
+        attempts += 1                                # B-71: reconcile x N, verifying each time
+        _call(reconcile, ctx, sink, "reconcile")
+        verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
+    result = _residue_result(verified, "cleanup")
     with _txn(db):          # job result + reservation move + audit commit together or not at all
         _finish(db, job["id"], result)
-        if clean:
+        if result.ok:
+            ipam.release(db, res["id"])
             # from `cleaning` or from `failed` (the cleanup queued when retries ran out):
             # both have exactly one legal exit, this one.
             if _move(db, res["id"], "released", from_state=res["state"]):
                 out.released += 1
-        elif res["state"] == "cleaning":
-            if _move(db, res["id"], "quarantined", from_state="cleaning"):
+            _maybe_free_setup(db, res["setup_id"])
+        else:
+            _quarantine_setup(db, res)
+            # residue after an already-failed deploy has no reservation state to go to (no
+            # failed -> quarantined edge); it stays `failed` and the setup carries the flag.
+            if res["state"] == "cleaning" and _move(db, res["id"], "quarantined",
+                                                    from_state="cleaning"):
                 out.quarantined += 1
-        # residue after an already-failed deploy has nowhere to go (no failed -> quarantined);
-        # the reservation stays `failed`, noted in the audit detail below.
         _audit(db, job, "cleanup", {"ok": result.ok, "cleanup_ok": cleaned.ok,
+                                    "reconcile_attempts": attempts,
                                     "residue": list(verified.residue), "error": result.error})
+    return result
+
+
+def _run_reconcile(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+    reconciled = _call(rn.reconcile, ctx, sink, "reconcile")
+    verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
+    result = _residue_result(verified, "reconcile")
+    with _txn(db):
+        _finish(db, job["id"], result)
+        if result.ok:
+            ipam.clear(db, res["id"])                 # quarantined addresses proven free too
+            if _move(db, res["id"], "released", from_state=res["state"]):
+                out.reconciled += 1
+            _maybe_free_setup(db, res["setup_id"])
+        else:
+            _quarantine_setup(db, res)
+        _audit(db, job, "reconcile", {"ok": result.ok, "reconcile_ok": reconciled.ok,
+                                      "residue": list(verified.residue), "error": result.error})
     return result
 
 
@@ -324,12 +424,135 @@ def _run_job(db, rn, job, out: TickResult) -> None:
     except runner_mod.RunnerError as e:
         models.transition_job(db, job["id"], "failed", error=str(e))
         return
-    if job["kind"] == "deploy":
-        _run_deploy(db, rn, job, res, sink, out)
-    elif job["kind"] == "cleanup":
-        _run_cleanup(db, rn, job, res, sink, out)
-    else:                                            # health_probe
-        _finish(db, job["id"], _call(fn, res, sink, job["kind"]))
+    ctx = _context(db, job, res)
+    log_for = getattr(rn, "log_path_for", None)     # B-84: the ansible runner's job log
+    if callable(log_for) and not job["log_path"]:
+        models.set_job_log_path(db, job["id"], log_for(job["id"]))
+    with otel.job_span(job, ctx) as span:            # B-62: one trace per job (no-op if off)
+        if span is not None:
+            if models.set_job_trace_id(db, job["id"], span.trace_id):
+                job = models.job_by_id(db, job["id"])     # retries / auto-cleanup inherit it
+            sink = _traced(sink, span)
+        if job["kind"] == "deploy":
+            result = _run_deploy(db, rn, job, res, ctx, sink, out)
+        elif job["kind"] == "cleanup":
+            result = _run_cleanup(db, rn, job, res, ctx, sink, out)
+        elif job["kind"] == "reconcile":
+            result = _run_reconcile(db, rn, job, res, ctx, sink, out)
+        else:                                        # health_probe
+            result = _call(fn, ctx, sink, job["kind"])
+            _finish(db, job["id"], result)
+        if span is not None:
+            span.finish(result.ok, result.error)
+
+
+def _traced(sink, span):
+    """Record each step on the job row and as a child span of the job's span."""
+    def step(name: str, state: str = "ok", detail: str | None = None) -> None:
+        sink(name, state, detail)
+        span.step(name, state, detail)
+    return step
+
+
+# ---- 5. orphan sweep (B-73) ----------------------------------------------------------------
+
+_TAGGED = re.compile(r"^daolab-r(\d+)-")
+
+
+def _job_waiting(db, res_id: int) -> bool:
+    """A pending or running job will deal with this reservation's leftovers itself."""
+    return db.execute("SELECT 1 FROM jobs WHERE reservation_id = ? AND state IN "
+                      "('pending', 'running') LIMIT 1", (res_id,)).fetchone() is not None
+
+
+def _orphan(db, res_id: int) -> bool:
+    res = models.reservation_by_id(db, res_id)
+    if res is None:
+        return True                                  # e.g. a VM made by hand or a dropped row
+    return res["state"] in models.TERMINAL_STATES and not _job_waiting(db, res_id)
+
+
+def _sweep_log_sink(name: str, state: str = "ok", detail: str | None = None) -> None:
+    log.info("event=orphan_sweep step=%s state=%s detail=%s", name, state, detail)
+
+
+def _sweep_orphans(db, rn, out: TickResult) -> None:
+    models.wipe_access_passwords(db)                 # a finished slot's password is not kept
+    lister, destroyer = getattr(rn, "tagged_vms", None), getattr(rn, "destroy_vms", None)
+    left_behind: set[int] = set()                    # reservations whose VMs survived
+    if lister is not None and destroyer is not None:
+        try:
+            names = list(lister())
+        except Exception:                            # noqa: BLE001 — never stop the tick
+            log.exception("orphan sweep: could not list the testbed's VMs")
+            names = []
+        doomed = [n for n in names
+                  if (m := _TAGGED.match(n)) is not None and _orphan(db, int(m.group(1)))]
+        if doomed:
+            result = _call(lambda _ctx, sink: destroyer(doomed, sink), {"id": 0},
+                           _sweep_log_sink, "destroy_vms")
+            if result.ok:
+                out.orphan_vms += len(doomed)
+            else:
+                left_behind = {int(_TAGGED.match(n).group(1)) for n in doomed}
+            models.audit(db, "engine", "orphan_sweep", None, None,
+                         {"vms": doomed, "ok": result.ok, "error": result.error})
+    rows = db.execute(
+        f"""SELECT DISTINCT l.reservation_id FROM ip_leases l
+            JOIN reservations r ON r.id = l.reservation_id
+            WHERE l.state = 'leased' AND r.state IN ({", ".join("?" for _ in models.TERMINAL_STATES)})""",
+        models.TERMINAL_STATES).fetchall()
+    for r in rows:
+        rid = r["reservation_id"]
+        if rid in left_behind or _job_waiting(db, rid):
+            continue
+        n = ipam.release(db, rid)
+        if n:
+            out.orphan_leases += n
+            models.audit(db, "engine", "orphan_sweep", "reservation", rid, {"leases_released": n})
+
+
+# ---- 6. health of active reservations (B-67) ---------------------------------------------
+
+def post_webhook(payload: dict) -> None:
+    """POST `payload` to DAOLAB_WEBHOOK_URL, at most once: a failure is logged, never retried
+    and never blocks the engine (plan/04 "Webhook on ready" semantics). No-op when unset."""
+    url = (config.settings.webhook_url or "").strip()
+    if not url:
+        return
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            log.info("event=webhook r=%s status=%s", payload.get("reservation_id"), resp.status)
+    except Exception as e:                           # noqa: BLE001 — at-most-once by design
+        log.warning("event=webhook r=%s failed: %s", payload.get("reservation_id"), e)
+
+
+def _health_query():
+    """The Prometheus query function, or None when the telemetry stack is off."""
+    if not (config.settings.otel_endpoint or "").strip():
+        return None
+    return health.prometheus(config.settings.prometheus_url)
+
+
+def _evaluate_health(db, now: datetime, query, out: TickResult) -> None:
+    rows = db.execute("SELECT * FROM reservations WHERE state = 'active' ORDER BY id").fetchall()
+    for r in rows:
+        try:
+            verdict = health.verdict_object(health.evaluate_reservation(db, r["id"], now, query))
+        except Exception:                            # noqa: BLE001 — one bad rule set must not stop the tick
+            log.exception("health evaluation failed for reservation %s", r["id"])
+            continue
+        with _txn(db):
+            prev = models.save_health_snapshot(db, r["id"], verdict)
+        out.health_checked += 1
+        if verdict["verdict"] == "down" and prev != "down":
+            out.went_down += 1
+            ctx = models.reservation_context(db, r["id"])
+            post_webhook({"event": "reservation.health_down", "reservation_id": r["id"],
+                          "usecase": ctx["usecase"], "setup": ctx["setup"], "user": ctx["user"],
+                          "previous": prev, "health": verdict})
 
 
 def _run_pending(db, rn, out: TickResult) -> None:
@@ -341,8 +564,9 @@ def _run_pending(db, rn, out: TickResult) -> None:
 
 def tick(db: sqlite3.Connection, now: datetime, rn=None,
          cfg: scheduler.SchedConfig | None = None,
-         job_timeout_sec: float | None = None) -> TickResult:
-    """One pass. `now` is injected (tests freeze it); `rn` defaults to the configured runner."""
+         job_timeout_sec: float | None = None, health_query=None) -> TickResult:
+    """One pass. `now` is injected (tests freeze it); `rn` defaults to the configured runner;
+    `health_query` (a health.Query) defaults to Prometheus when the telemetry stack is on."""
     rn = rn if rn is not None else runner_mod.get_runner()
     cfg = cfg if cfg is not None else scheduler.SchedConfig.from_settings(config.settings)
     if job_timeout_sec is None:
@@ -353,6 +577,10 @@ def tick(db: sqlite3.Connection, now: datetime, rn=None,
     out.expired = _expire_active(db, now)
     out.started = _start_due(db, now, cfg)
     _run_pending(db, rn, out)
+    _sweep_orphans(db, rn, out)
+    query = health_query if health_query is not None else _health_query()
+    if query is not None:
+        _evaluate_health(db, now, query, out)
     return out
 
 
@@ -375,6 +603,12 @@ def run_loop(db, interval_sec: float, rn=None, sleep=time.sleep, max_ticks: int 
     return ticks
 
 
+def stop_on_sigterm() -> None:
+    """SIGTERM (systemctl stop) ends the loop like ^C does. A job cut off mid-playbook stays
+    `running` and crash recovery takes it on the next start, as after a kill."""
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m service.engine",
                                      description="Run one engine tick, or tick forever with --loop.")
@@ -382,6 +616,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="tick every DAOLAB_ENGINE_INTERVAL_SEC seconds until interrupted")
     opts = parser.parse_args(argv)
     logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
+    otel.setup_tracing(None, "daolab-engine")       # B-61/B-62: no-op without an endpoint
     db = models.connect(config.settings.db_path)
     have, want = migrations.current_version(db), migrations.latest_version()
     if have != want:
@@ -402,6 +637,7 @@ def main(argv: list[str] | None = None) -> int:
             result = tick(db, datetime.now(timezone.utc), rn)
             print(f"tick done: {result}")
             return 0
+        stop_on_sigterm()
         try:
             run_loop(db, config.settings.engine_interval_sec, rn)
         except KeyboardInterrupt:

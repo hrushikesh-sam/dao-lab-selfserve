@@ -195,6 +195,59 @@ _OLD_STATES = "'tearing_down', 'released', 'failed'"
 _NEW_STATES = "'cleaning', 'quarantined', 'released', 'failed'"
 
 
+def _m7_lease_role_unique_while_leased(conn: sqlite3.Connection) -> None:
+    """B-41: `(reservation, role)` is unique among *leased* rows only (v2 made it unique
+    among live rows, i.e. leased or quarantined). A quarantined lease still blocks its
+    address through `(pool, ip)`, but it must not stop the same role from leasing a
+    replacement: that is how an address something else answers on is swapped out
+    (`ipam.mark_conflict`). Re-leasing stays idempotent: there is at most one `leased` row
+    per (reservation, role)."""
+    conn.execute("DROP INDEX IF EXISTS idx_ip_leases_res_role")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ip_leases_res_role_leased "
+        "ON ip_leases(reservation_id, role) WHERE state = 'leased'")
+
+
+def _m8_usecase_health(conn: sqlite3.Connection) -> None:
+    """plan/09 §8 (B-64 follow-up, needed by B-65): the use case's `health:` rules, as the
+    JSON list `daolab sync` validated. Request handlers and the engine never read YAML, so
+    the rules have to live on the row. Existing rows have none until the next sync."""
+    add_column(conn, "usecases", "health", "TEXT NOT NULL DEFAULT '[]'")
+
+
+def _m9_health_snapshots(conn: sqlite3.Connection) -> None:
+    """plan/09 §8 / §11 (B-67): the latest health verdict of each reservation, written by the
+    engine every tick for `active` reservations. Only the newest row is needed, so there is
+    one row per reservation, overwritten in place. `checks` is the per-check JSON list;
+    `changed_at` is when the verdict last changed (the webhook fires on a change to down)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS health_snapshots (
+            reservation_id INTEGER PRIMARY KEY REFERENCES reservations(id) ON DELETE CASCADE,
+            verdict        TEXT    NOT NULL
+                           CHECK (verdict IN ('healthy', 'degraded', 'down', 'unknown')),
+            reason         TEXT,
+            checks         TEXT    NOT NULL DEFAULT '[]',
+            last_seen      TEXT,
+            evaluated_at   TEXT    NOT NULL,
+            changed_at     TEXT    NOT NULL,
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL
+        )""")
+
+
+def _m10_reservation_access(conn: sqlite3.Connection) -> None:
+    """How a reservation's owner gets into the testbed (dashboard Deploy dialog):
+    `reservations.ssh_pubkey` is the SSH key given at deploy (NULL: the owner's registered
+    key); `reservations.access_password` is the generated password when no key was given
+    (shown to the owner while the slot is live, wiped when it ends). `resources.address` is
+    a member's management address from the inventory (DPUs are static), which the API shows
+    as `ssh lab@<address>`."""
+    add_column(conn, "reservations", "ssh_pubkey", "TEXT")
+    add_column(conn, "reservations", "access_password", "TEXT")
+    add_column(conn, "resources", "address", "TEXT")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -202,6 +255,10 @@ MIGRATIONS: list[Migration] = [
     Migration(4, "audit_events", _m4_audit_events),
     Migration(5, "jobs", _m5_jobs),
     Migration(6, "reservation_states", _m6_reservation_states),
+    Migration(7, "lease_role_unique_while_leased", _m7_lease_role_unique_while_leased),
+    Migration(8, "usecase_health", _m8_usecase_health),
+    Migration(9, "health_snapshots", _m9_health_snapshots),
+    Migration(10, "reservation_access", _m10_reservation_access),
 ]
 
 

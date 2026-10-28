@@ -1,0 +1,101 @@
+# playbooks/bringup.yml — B-85: get a testbed ready for dashboard deploys, and say what is
+# missing. Run once by an admin (and again after hardware changes); idempotent.
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01
+#
+# On the DPU it checks what a deploy relies on and writes the personality marker; with
+# -e daolab_deploy_vms=true it also checks the XCP-ng host. It fails at the end listing every
+# missing prerequisite, so one run gives the whole to-do list.
+- name: resolve the setup
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: resolve
+      ansible.builtin.import_tasks: tasks/resolve.yml
+
+- name: the DPU
+  hosts: r_dpu
+  gather_facts: false
+  vars:
+    _root: "{{ daolab_bringup_root | default('') }}"
+  tasks:
+    - name: the operator account can sudo without a password
+      become: true
+      ansible.builtin.command: "true"
+      register: _sudo
+      changed_when: false
+      ignore_errors: true
+
+    - name: the tools and trees the runbooks use
+      ansible.builtin.shell: |
+        for t in dpdk-devbind.py; do command -v $t >/dev/null || echo "missing command: $t"; done
+        [ -d /home/dao-test ] || echo "missing: /home/dao-test (the runbooks' account)"
+        [ -d /home/dao-test/dao-clean ] || echo "missing: /home/dao-test/dao-clean (SmartNIC tree, dao-smartnic runbook step 4)"
+        grep -rqs marvell /etc/apt/sources.list.d/ || echo "missing: the Marvell DAO apt repository (VPP install)"
+        systemctl cat nginx-tls.service >/dev/null 2>&1 || echo "missing: nginx-tls.service (the board's resting state, restarted by VPP cleanup)"
+        true
+      register: _dpu_missing
+      changed_when: false
+
+    - name: "step: hw_class marker"
+      become: true
+      ansible.builtin.shell: |
+        mkdir -p {{ _root }}/etc/daolab
+        if [ ! -s {{ _root }}/etc/daolab/hw_class ]; then
+          echo {{ hw_class }} > {{ _root }}/etc/daolab/hw_class && echo written
+        fi
+      register: _marker
+      changed_when: "'written' in _marker.stdout"
+      when: hw_class is defined and _sudo is succeeded
+
+    - name: remember what is missing on the DPU
+      ansible.builtin.set_fact:
+        daolab_missing: >-
+          {{ (['dao-test cannot sudo without a password (become)'] if _sudo is failed else [])
+             + (_dpu_missing.stdout_lines | select | list)
+             + ([] if hw_class is defined else ['host_vars/' ~ inventory_hostname ~ '.yml: hw_class']) }}
+
+- name: the XCP-ng host (only with VMs)
+  hosts: r_dom0
+  gather_facts: false
+  tasks:
+    - name: the template is there
+      ansible.builtin.shell: |
+        {% for t in templates | default(['tpl-ubuntu2204-dao']) %}
+        [ -n "$(xe template-list name-label={{ t }} --minimal)" ] || echo "missing template: {{ t }}"
+        {% endfor %}
+        true
+      register: _tpl
+      changed_when: false
+
+    - name: every listed VF is in pciback
+      ansible.builtin.command: xl pci-assignable-list
+      register: _assignable
+      changed_when: false
+
+    - name: remember what is missing on the host
+      ansible.builtin.set_fact:
+        daolab_missing: >-
+          {{ (_tpl.stdout_lines | select | list)
+             + ((e810_vfs | default([]) + sdp_vfs | default([]))
+                | reject('in', _assignable.stdout_lines | map('trim') | list)
+                | map('regex_replace', '^', 'VF not in pciback: ') | list)
+             + ([] if (sr_uuid | default('')) else ['host_vars/' ~ inventory_hostname ~ '.yml: sr_uuid'])
+             + ([] if (e810_vfs | default([])) else ['host_vars/' ~ inventory_hostname ~ '.yml: e810_vfs']) }}
+
+- name: report
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: everything that is missing
+      ansible.builtin.set_fact:
+        _missing: >-
+          {{ (_missing | default([])) + ((hostvars[item].daolab_missing | default([]))
+             | map('regex_replace', '^', item ~ ': ') | list) }}
+      loop: "{{ (groups['r_dpu'] | default([])) + (groups['r_dom0'] | default([])) }}"
+
+    - name: the testbed is ready for deploys
+      ansible.builtin.assert:
+        that: (_missing | default([])) | length == 0
+        success_msg: "ready: nothing missing"
+        fail_msg: "not ready yet:\n- {{ _missing | join('\n- ') }}"

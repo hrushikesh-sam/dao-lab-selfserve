@@ -170,10 +170,10 @@ def test_mock_fail_cleanup_looks_fine_but_leaves_residue():
     sink = Sink()
     result = m.verify_clean(RES, sink)
     assert result.ok is False and result.error == "residue found after cleanup"
-    assert result.residue == ("vm daolab-r7-backend", "ip lease of reservation 7")
+    assert result.residue == ("vm:daolab-r7-backend", "dpu_session:lab")
     assert sink.names == list(VERIFY_CLEAN_STEPS)                       # every check still runs
-    assert [c[1] for c in sink.calls] == ["failed", "ok", "ok", "ok"]
-    assert "daolab-r7-backend" in sink.calls[0][2]
+    assert [c[1] for c in sink.calls] == ["failed", "ok", "failed", "ok"]
+    assert sink.calls[0][2] == "vm:daolab-r7-backend" and sink.calls[2][2] == "dpu_session:lab"
 
 
 def test_residue_is_reported_every_time_so_reconcile_never_clears_it():
@@ -266,30 +266,45 @@ def test_method_for_maps_job_kinds_to_runner_functions():
     assert runner.method_for(m, "deploy") == m.deploy
     assert runner.method_for(m, "cleanup") == m.cleanup
     assert runner.method_for(m, "health_probe") == m.probe
+    assert runner.method_for(m, "reconcile") == m.reconcile           # B-72
 
 
-def test_method_for_rejects_what_does_not_exist_yet():
-    with pytest.raises(RunnerError, match="B-72"):
-        runner.method_for(mock(), "reconcile")
+def test_method_for_rejects_an_unknown_kind():
     with pytest.raises(RunnerError, match="unknown job kind"):
         runner.method_for(mock(), "reboot")
 
 
-@pytest.mark.parametrize("fn", ["deploy", "cleanup", "probe", "verify_clean"])
-def test_the_ansible_backend_says_plainly_that_it_is_not_built_yet(fn):
-    with pytest.raises(NotImplementedError, match="B-84.*DAOLAB_RUNNER=mock"):
-        getattr(AnsibleRunner(), fn)(RES, Sink())
-
-
-def test_every_job_kind_in_the_model_is_handled_or_explicitly_deferred():
-    handled = 0
+def test_every_job_kind_in_the_model_is_handled():
     for kind in models.JOB_KINDS:
-        try:
-            runner.method_for(mock(), kind)
-            handled += 1
-        except RunnerError as e:
-            assert kind == "reconcile" and "B-72" in str(e)
-    assert handled == 3
+        assert callable(runner.method_for(mock(), kind))
+
+
+# ---- B-72: reconcile ---------------------------------------------------------------
+
+def test_mock_reconcile_walks_its_steps():
+    sink = Sink()
+    assert mock().reconcile(RES, sink) == RunResult(ok=True)
+    assert sink.names == list(runner.RECONCILE_STEPS)
+
+
+def test_mock_reconcile_cannot_clear_stubborn_residue():
+    m = mock(fail={"cleanup"})
+    assert m.reconcile(RES, Sink()).ok
+    assert not m.verify_clean(RES, Sink()).ok                          # still there: quarantine
+
+
+def test_mock_reconcile_stops_the_fake_exporter():
+    stopped = []
+
+    class Exp:
+        def __init__(self, rid): self.rid = rid
+        def start(self): return self
+        def stop(self): stopped.append(self.rid)
+
+    m = MockRunner(exporter_factory=Exp)
+    m.deploy(RES, Sink())
+    m.reconcile(RES, Sink())
+    assert stopped == [RES["id"]]
 
 
 # ---- B-68: mock telemetry (a fake exporter per reservation) ------------------------
@@ -313,6 +328,34 @@ def test_mock_exporter_serves_metrics_and_registers_a_file_sd_target(tmp_path):
     finally:
         exp.stop()
     assert not (tmp_path / "res-7.json").exists()          # stopping drops the target
+
+
+def test_the_mock_exporter_serves_every_series_the_usecase_rules_read(tmp_path):
+    """B-68 follow-up: a mock deploy has to read `healthy`, so every metric a shipped health
+    rule queries (except `up`, which Prometheus generates) is served, with the rule's labels."""
+    import os
+    import re
+    from service import catalog
+    ucs, errors = catalog.load_usecases(os.path.join(os.path.dirname(__file__), "..", "usecases"))
+    assert errors == []
+    wanted = set()
+    for uc in ucs:
+        for rule in uc["health"]:
+            for metric, labels in re.findall(r"([a-z_]+)\{([^}]*)\}", rule["promql"]):
+                if metric != "up":
+                    fixed = dict(re.findall(r'([a-z_]+)="([^"$]+)"', labels))
+                    wanted.add((metric, tuple(sorted(fixed.items()))))
+    exp = runner.MockExporter(7, targets_dir=str(tmp_path))
+    exp.start()
+    try:
+        body = urllib.request.urlopen(f"http://{exp.target}/metrics", timeout=5).read().decode()
+    finally:
+        exp.stop()
+    for metric, fixed in wanted:
+        line = next((l for l in body.splitlines() if l.startswith(metric + "{")), None)
+        assert line is not None, f"mock exporter does not serve {metric}"
+        assert all(f'{k}="{v}"' in line for k, v in fixed), (metric, line)
+        assert float(line.rsplit(" ", 1)[1]) >= 0
 
 
 def test_deploy_starts_the_exporter_and_cleanup_stops_it(tmp_path):
@@ -368,3 +411,66 @@ def test_get_runner_only_wires_exporters_when_otel_is_enabled(monkeypatch, tmp_p
     finally:
         exp.stop()
 
+
+
+# ---- B-70: structured residue ----------------------------------------------------------
+
+def test_residue_items_are_kind_colon_ident():
+    assert runner.residue_item("vm", "daolab-r1-a") == "vm:daolab-r1-a"
+    assert runner.parse_residue("vf:0000:5e:01.0") == ("vf", "0000:5e:01.0")   # BDF keeps its colons
+    assert runner.parse_residue("ip:10.30.0.101") == ("ip", "10.30.0.101")
+    assert runner.parse_residue("vf 0000:03:00.2 still bound") == ("other", "vf 0000:03:00.2 still bound")
+    with pytest.raises(ValueError):
+        runner.residue_item("disk", "x")
+
+
+def test_mock_residue_comes_from_the_context_vms_and_leases():
+    ctx = {"id": 9, "vms": [{"role": "vpp", "name": None, "ip": "10.0.0.1"},
+                            {"role": "sink", "name": "daolab-r9-sink", "ip": "10.30.0.101"}],
+           "leases": ["10.30.0.101"]}
+    sink = Sink()
+    result = mock(fail={"cleanup"}).verify_clean(ctx, sink)
+    assert result.residue == ("vm:daolab-r9-sink", "ip:10.30.0.101")
+    states = dict((c[0], c[1]) for c in sink.calls)
+    assert states == {"check_vms": "failed", "check_vfs": "ok", "check_sessions": "ok",
+                      "check_ips": "failed"}
+
+
+# ---- B-63: the Ansible OpenTelemetry callback ----------------------------------------------
+
+def test_ansible_env_without_telemetry_only_points_at_the_config():
+    env = runner.ansible_env(_settings(otel_endpoint="", playbooks_dir="/opt/daolab/playbooks"))
+    assert env["ANSIBLE_CONFIG"] == "/opt/daolab/playbooks/ansible.cfg"
+    assert not [k for k in env if k.startswith(("OTEL_", "DAOLAB_ANSIBLE_OTEL", "TRACEPARENT"))]
+
+
+def test_ansible_env_with_telemetry_turns_the_callback_on_under_the_job_span():
+    tp = "00-" + "ab" * 16 + "-" + "cd" * 8 + "-01"
+    env = runner.ansible_env(_settings(otel_endpoint="collector:4317"), traceparent=tp)
+    assert env["DAOLAB_ANSIBLE_OTEL"] == "true"
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://collector:4317"
+    assert env["OTEL_EXPORTER_OTLP_INSECURE"] == "true"
+    assert env["OTEL_SERVICE_NAME"] == "daolab-ansible" and env["TRACEPARENT"] == tp
+
+
+def test_ansible_env_keeps_tls_endpoints_and_skips_an_absent_traceparent():
+    env = runner.ansible_env(_settings(otel_endpoint="https://otel.lab:443"))
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://otel.lab:443"
+    assert env["OTEL_EXPORTER_OTLP_INSECURE"] == "false" and "TRACEPARENT" not in env
+
+
+def test_the_ansible_cfg_enables_the_callback_from_the_environment():
+    import configparser
+    import os
+    cfg = configparser.ConfigParser()
+    cfg.read(os.path.join(os.path.dirname(__file__), "..", "playbooks", "ansible.cfg"))
+    assert cfg["defaults"]["callbacks_enabled"] == "community.general.opentelemetry"
+    assert cfg["callback_opentelemetry"]["enable_from_environment"] == "DAOLAB_ANSIBLE_OTEL"
+
+
+def test_ansible_env_hands_over_the_become_password_file(tmp_path):
+    f = tmp_path / "become"
+    env = runner.ansible_env(_settings(otel_endpoint="", become_password_file=str(f)))
+    assert env["ANSIBLE_BECOME_PASSWORD_FILE"] == str(f)
+    assert "ANSIBLE_BECOME_PASSWORD_FILE" not in runner.ansible_env(
+        _settings(otel_endpoint="", become_password_file=""))

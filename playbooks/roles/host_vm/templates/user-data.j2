@@ -1,0 +1,31 @@
+#cloud-config
+# daolab-r{{ reservation_id | int }}-{{ vm.role }} — rendered by playbooks/roles/host_vm (B-80)
+hostname: {{ vm.name }}
+{% set _pw = daolab_access_password | default('') %}
+ssh_pwauth: {{ 'true' if _pw else 'false' }}
+users:
+  - name: {{ user }}
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys: {{ (ssh_pubkey | default('')).splitlines() | map('trim') | select | list | to_json }}
+{% if _pw %}
+    lock_passwd: false
+    plain_text_passwd: {{ _pw | to_json }}
+{% endif %}
+{% if host_vm_control_pubkey | trim %}
+  - name: {{ host_vm_service_login }}
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys: {{ [host_vm_control_pubkey | trim] | to_json }}
+{% endif %}
+{% set _pkgs = [] %}
+{% for id in vm.install %}{% set _ = _pkgs.extend(host_vm_install_map[id]) %}{% endfor %}
+{% if _pkgs %}
+packages: {{ _pkgs | unique | list | to_json }}
+{% endif %}
+runcmd:
+{% if 'http-server' in vm.install %}
+  - [sh, -c, "echo 'daolab reservation {{ reservation_id | int }}' > /var/www/html/index.html"]
+  - [sh, -c, "test -f /var/www/html/payload-64k.bin || dd if=/dev/urandom of=/var/www/html/payload-64k.bin bs=1024 count=64"]
+{% endif %}
+  - [sh, -c, "test -s /etc/daolab/otelcol.yaml && systemctl enable --now daolab-otel || true"]

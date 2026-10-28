@@ -201,6 +201,121 @@ def set_vm_ip(conn, vm_id: int, ip: str) -> None:
     update(conn, "vms", vm_id, {"ip": ip})
 
 
+def vm_name(res_id: int, role: str) -> str:
+    """The XCP-ng name (and tag prefix) of a reservation's VM: `daolab-r<id>-<role>`."""
+    return f"daolab-r{res_id}-{role}"
+
+
+def _member_of_kind(members, kind: str):
+    return next((m for m in members if m["kind"] == kind), None)
+
+
+def planned_vms(conn, res) -> list[dict]:
+    """The `vms` rows a reservation will have (plan/04 step (d)), resolved against its setup:
+
+      * `on: dpu`      -> host = the DPU member's name, no template, no VM name;
+      * `on: dpu_host` -> host = the XCP-ng host of the DPU member;
+      * `on: tg_host`  -> host = the XCP-ng host of the NIC member;
+      * diy            -> one VM per host of `diy_templates`, the host name as the role.
+
+    A role whose member the setup lacks is left out (capability matching should make that
+    impossible; the deploy then fails on the missing VM instead of the engine crashing)."""
+    members = setup_members(conn, res["setup_id"])
+    out = []
+    if res["diy"]:
+        for host, template in sorted(from_json(res["diy_templates"] or "{}").items()):
+            out.append({"role": host, "host": host, "template": template,
+                        "name": vm_name(res["id"], host)})
+        return out
+    uc = usecase_by_id(conn, res["usecase_id"])
+    roles = from_json(uc["roles"]) if uc["roles"] else {}
+    dpu = _member_of_kind(members, "dpu")
+    nic = _member_of_kind(members, "nic")
+    for role, spec in roles.items():
+        on = spec.get("on")
+        if on == "dpu" and dpu is not None:
+            out.append({"role": role, "host": dpu["name"], "template": None, "name": None})
+        elif on in ("dpu_host", "tg_host"):
+            member = dpu if on == "dpu_host" else nic
+            if member is not None:
+                out.append({"role": role, "host": member["host"], "template": spec.get("vm"),
+                            "name": vm_name(res["id"], role)})
+    return out
+
+
+def create_vms(conn, res_id: int) -> int:
+    """Insert the reservation's `vms` rows (ip NULL) before any playbook runs, so the
+    `/internal/vm-ip` and `/internal/leases` callbacks always find their (reservation, role).
+    Idempotent: existing rows are kept. Returns how many rows were added."""
+    res = reservation_by_id(conn, res_id)
+    added = 0
+    for vm in planned_vms(conn, res):
+        if vm_by_role(conn, res_id, vm["role"]) is None:
+            insert(conn, "vms", {"reservation_id": res_id, **vm})
+            added += 1
+    return added
+
+
+ACCESS_LOGIN = "lab"           # the DPU login users get (playbooks/roles/dpu_access)
+
+
+def access_keys(res, user) -> str:
+    """The SSH key(s) that open this reservation: the one given at deploy, else - unless the
+    owner asked for a password instead - their registered key."""
+    if res["ssh_pubkey"] is not None:
+        return res["ssh_pubkey"]
+    return "" if res["access_password"] is not None else user["ssh_pubkey"]
+
+
+def access_fields(res, user) -> dict:
+    """The access part of the runner context: `ssh_pubkey` (may be empty in password mode),
+    `access_password` (None in key mode), the login, `access_until` (end_at as a unix time:
+    the keys stop working then, sshd `expiry-time`) and `access_expires` - the day after
+    end_at, the account's expiry backstop if a cleanup never runs."""
+    from datetime import timedelta
+    end = parse_ts(res["end_at"])
+    return {"ssh_pubkey": access_keys(res, user), "access_password": res["access_password"],
+            "access_login": ACCESS_LOGIN, "access_until": int(end.timestamp()),
+            "access_expires": (end + timedelta(days=1)).date().isoformat()}
+
+
+def wipe_access_passwords(conn) -> int:
+    """Forget the generated passwords of reservations that are over (the account is locked
+    by then anyway). Returns how many were wiped."""
+    cur = conn.execute("UPDATE reservations SET access_password = NULL "
+                       "WHERE access_password IS NOT NULL AND state IN ('released', 'failed')")
+    return cur.rowcount
+
+
+def reservation_context(conn, res_id: int) -> dict:
+    """Everything a runner needs about one reservation, read once by the engine so the runner
+    never touches the DB. Keys follow the playbook extravars (plan/04 runner contract):
+    `reservation_id`, `usecase`, `setup`, `user`, `ssh_pubkey`, `hw_class`, `diy`,
+    `templates`; plus `id` (what every runner function reads), the use case's `roles` and
+    `verify`, the setup `members`, the reservation's `vms` and its live `leases` (IPs)."""
+    r = reservation_by_id(conn, res_id)
+    user = user_by_id(conn, r["user_id"])
+    uc = usecase_by_id(conn, r["usecase_id"])
+    setup = conn.execute("SELECT name FROM setups WHERE id = ?", (r["setup_id"],)).fetchone()
+    return {
+        **access_fields(r, user),
+        "id": r["id"], "reservation_id": r["id"], "state": r["state"],
+        "start_at": r["start_at"], "end_at": r["end_at"],
+        "usecase": uc["name"], "setup": setup["name"],
+        "user": user["username"],
+        "hw_class": uc["hw_class"], "diy": bool(r["diy"]),
+        "templates": from_json(r["diy_templates"]) if r["diy_templates"] else {},
+        "roles": from_json(uc["roles"]) if uc["roles"] else {},
+        "verify": from_json(uc["verify"]) if uc["verify"] else {},
+        "members": [{"name": m["name"], "kind": m["kind"], "host": m["host"]}
+                    for m in setup_members(conn, r["setup_id"])],
+        "vms": [{"role": v["role"], "host": v["host"], "template": v["template"],
+                 "name": v["name"], "ip": v["ip"]} for v in vms_for_reservation(conn, res_id)],
+        "leases": [l["ip"] for l in ip_leases_for_reservation(conn, res_id)
+                   if l["state"] != "released"],
+    }
+
+
 # ---- IP pools / leases (B-40) ----------------------------------------------
 
 def ip_pool_by_name(conn, name: str):
@@ -219,8 +334,10 @@ def live_leases(conn, pool_id: int):
 
 
 def ip_lease_by_role(conn, res_id: int, role: str):
+    """The `leased` row of (reservation, role), or None. There is at most one (migration 7);
+    quarantined rows of the same role (a swapped-out conflicting address) are not returned."""
     return conn.execute(
-        """SELECT * FROM ip_leases WHERE reservation_id = ? AND role = ? AND state != 'released'
+        """SELECT * FROM ip_leases WHERE reservation_id = ? AND role = ? AND state = 'leased'
            ORDER BY id LIMIT 1""", (res_id, role)).fetchone()
 
 
@@ -240,11 +357,25 @@ def set_setup_availability(conn, setup_id: int, availability: str) -> None:
     update(conn, "setups", setup_id, {"availability": availability})
 
 
+def dirty_reservations(conn, setup_id: int) -> list:
+    """Reservations on the setup whose residue is not cleared (B-71): `quarantined` ones, and
+    `failed` ones whose latest cleanup / reconcile job failed (residue after the cleanup of a
+    failed deploy has no reservation state to go to). The setup stays quarantined while any
+    is left."""
+    return conn.execute(
+        """SELECT r.* FROM reservations r
+           WHERE r.setup_id = ? AND (r.state = 'quarantined' OR (r.state = 'failed' AND (
+               SELECT j.state FROM jobs j WHERE j.reservation_id = r.id
+               AND j.kind IN ('cleanup', 'reconcile') ORDER BY j.id DESC LIMIT 1) = 'failed'))
+           ORDER BY r.id""", (setup_id,)).fetchall()
+
+
 # ---- audit log (B-55) ------------------------------------------------------
 
 AUDIT_ACTIONS = (
     "cancel", "admin_override",                        # written by the API today
     "deploy", "cleanup", "redeploy", "force_clean",    # written by the engine (B-20/B-23)
+    "reconcile", "orphan_sweep",                       # engine: B-71/B-72, B-73
 )
 
 
@@ -266,6 +397,39 @@ def list_audit_events(conn, limit: int = 100) -> list:
     """Newest-first slice of the audit log (raw rows; `detail` is JSON text)."""
     return conn.execute(
         "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+
+
+# ---- health snapshots (B-67) ---------------------------------------------------
+
+def health_snapshot(conn, res_id: int):
+    return conn.execute("SELECT * FROM health_snapshots WHERE reservation_id = ?",
+                        (res_id,)).fetchone()
+
+
+def save_health_snapshot(conn, res_id: int, verdict: dict) -> str | None:
+    """Store `verdict` (health.verdict_object) as the reservation's latest snapshot, replacing
+    the previous one. Returns the previous verdict (None if there was none); `changed_at`
+    only moves when the verdict differs from it."""
+    prev = health_snapshot(conn, res_id)
+    now = utcnow()
+    row = {"verdict": verdict["verdict"], "reason": verdict.get("reason"),
+           "checks": to_json(verdict.get("checks", [])), "last_seen": verdict.get("last_seen"),
+           "evaluated_at": verdict.get("evaluated_at") or now}
+    if prev is None:
+        conn.execute(
+            """INSERT INTO health_snapshots (reservation_id, verdict, reason, checks, last_seen,
+                                             evaluated_at, changed_at, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (res_id, row["verdict"], row["reason"], row["checks"], row["last_seen"],
+             row["evaluated_at"], now, now, now))
+        return None
+    changed = now if prev["verdict"] != row["verdict"] else prev["changed_at"]
+    conn.execute(
+        """UPDATE health_snapshots SET verdict = ?, reason = ?, checks = ?, last_seen = ?,
+                  evaluated_at = ?, changed_at = ?, updated_at = ? WHERE reservation_id = ?""",
+        (row["verdict"], row["reason"], row["checks"], row["last_seen"], row["evaluated_at"],
+         changed, now, res_id))
+    return prev["verdict"]
 
 
 # ---- jobs (B-20) -------------------------------------------------------------
@@ -341,6 +505,22 @@ def running_mutating_job(conn, setup_id: int):
         (setup_id, *MUTATING_JOB_KINDS)).fetchone()
 
 
+def unfinished_cleanup_job(conn, setup_id: int):
+    """A pending or running cleanup / reconcile job on `setup_id`, or None (B-94).
+
+    Between a deploy's last failed attempt and the end of its cleanup chain the reservation
+    is `failed` — terminal, so `held_by` ignores it — while the setup may still carry the
+    residue of the half-finished deploy. `dirty_reservations` only sees the chain's result
+    (a cleanup/reconcile that already failed), so it is blind to this window. A job belongs
+    to a setup through its reservation; non-terminal reservations are caught by `held_by`
+    anyway, so the rule is simply: no new deploy while a cleanup is outstanding."""
+    return conn.execute(
+        """SELECT j.* FROM jobs j JOIN reservations r ON r.id = j.reservation_id
+           WHERE r.setup_id = ? AND j.state IN ('pending', 'running')
+           AND j.kind IN ('cleanup', 'reconcile')
+           ORDER BY j.id LIMIT 1""", (setup_id,)).fetchone()
+
+
 def stale_running_jobs(conn, idle_before: str):
     """`running` jobs with no sign of life since before `idle_before` (a timestamp string), oldest
     first (B-26). Every step a runner records bumps `updated_at`, so a deploy that is slow but
@@ -373,6 +553,20 @@ def requeue_job(conn, job) -> bool:
 def requeue_stale_jobs(conn, idle_before: str) -> list[int]:
     """Requeue every stale running job (see `stale_running_jobs`); returns the ids requeued."""
     return [j["id"] for j in stale_running_jobs(conn, idle_before) if requeue_job(conn, j)]
+
+
+def set_job_trace_id(conn, job_id: int, trace_id: str) -> bool:
+    """Record the OpenTelemetry trace id of a job (B-62); only fills an empty one, so a retry
+    that continues an earlier trace keeps it. Returns True if it was written."""
+    cur = conn.execute("UPDATE jobs SET trace_id = ?, updated_at = ? "
+                       "WHERE id = ? AND trace_id IS NULL", (trace_id, utcnow(), job_id))
+    return cur.rowcount == 1
+
+
+def set_job_log_path(conn, job_id: int, log_path: str) -> None:
+    """Point the job at its playbook log (B-84); GET /jobs/{id} shows its tail."""
+    conn.execute("UPDATE jobs SET log_path = ?, updated_at = ? WHERE id = ?",
+                 (log_path, utcnow(), job_id))
 
 
 def job_steps(job) -> list[dict]:

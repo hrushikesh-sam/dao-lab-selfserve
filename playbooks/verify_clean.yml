@@ -1,0 +1,122 @@
+# playbooks/verify_clean.yml — B-70: prove a reservation left nothing behind (plan/09 §9).
+#
+# Read-only: every check is a direct query, never an Ansible "changed" result. The outcome is
+# a residue list, one "kind:ident" string per item (service/runner.py RESIDUE_KINDS), written
+# as JSON to {{ daolab_output_file }} on the control node; an empty list means clean.
+#
+#   vm:<name>        an XCP-ng VM named daolab-r<id>-* still exists
+#   vf:<bdf>         an E810/SDP VF from host_vars is not back in `xl pci-assignable-list`
+#   dpu_session:lab  processes of the shared DPU login are still running
+#   dpu_app:<unit>   a use-case app unit (daolab-app-*.service) is still active on the DPU,
+#   dpu_app:<proc>   or an app process the runbooks start by hand (vpp, dao-smart-nic) runs
+#   ip:<address>     an address leased to the reservation still answers ping
+#
+# A host that cannot be reached fails the run (rc != 0), so the runner reports "could not
+# verify" and the engine treats the setup as not clean: verification is fail-safe.
+#
+# Extra vars: reservation_id, setup, daolab_output_file, plus what play 0 reads
+# (playbooks/tasks/resolve.yml). Step names (`step: ...`) become job steps (B-84).
+- name: resolve the setup
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: resolve
+      ansible.builtin.import_tasks: tasks/resolve.yml
+
+- name: check the XCP-ng hosts
+  hosts: r_dom0
+  gather_facts: false
+  tasks:
+    - name: "step: check_vms"
+      ansible.builtin.shell: |
+        set -o pipefail
+        xe vm-list is-control-domain=false params=name-label --minimal \
+          | tr ',' '\n' | grep -E '^daolab-r{{ reservation_id | int }}-' || true
+      args:
+        executable: /bin/bash
+      register: _vms
+      changed_when: false
+
+    - name: "step: check_vfs"
+      ansible.builtin.command: xl pci-assignable-list
+      register: _assignable
+      changed_when: false
+
+    - name: collect this host's residue
+      ansible.builtin.set_fact:
+        daolab_residue: >-
+          {{ (_vms.stdout_lines | select | map('regex_replace', '^', 'vm:') | list)
+             + ((e810_vfs | default([]) + sdp_vfs | default([]))
+                | reject('in', _assignable.stdout_lines | map('trim') | list)
+                | map('regex_replace', '^', 'vf:') | list) }}
+
+- name: check the DPU
+  hosts: r_dpu
+  gather_facts: false
+  tasks:
+    - name: "step: check_sessions"
+      ansible.builtin.shell: pgrep -u {{ hostvars['localhost'].daolab_lab_login }} -c || true
+      register: _sessions
+      changed_when: false
+
+    - name: list active use-case app units
+      ansible.builtin.shell: |
+        systemctl list-units 'daolab-app-*' --state=active --plain --no-legend | awk '{print $1}'
+      register: _apps
+      changed_when: false
+
+    - name: list the DAO app processes the runbooks start by hand (VPP, SmartNIC)
+      ansible.builtin.shell: |
+        {% for name, pattern in (daolab_app_processes | default({'vpp': 'vpp|vpp_main', 'dao-smart-nic': 'dao-smart-nic'})).items() %}
+        pgrep -x '{{ pattern }}' >/dev/null && echo '{{ name }}'
+        {% endfor %}
+        true
+      register: _procs
+      changed_when: false
+
+    - name: collect this host's residue
+      ansible.builtin.set_fact:
+        daolab_residue: >-
+          {{ (['dpu_session:' ~ hostvars['localhost'].daolab_lab_login]
+              if (_sessions.stdout | trim | int(0)) > 0 else [])
+             + (_apps.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list)
+             + (_procs.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list) }}
+
+- name: check the leased addresses are silent
+  hosts: r_dom0[0]
+  gather_facts: false
+  tasks:
+    - name: "step: check_ips"
+      ansible.builtin.command: ping -c 2 -W 1 {{ item }}
+      loop: "{{ hostvars['localhost'].daolab_leases }}"
+      register: _pings
+      changed_when: false
+      failed_when: false
+
+    - name: collect the addresses that answered
+      ansible.builtin.set_fact:
+        daolab_ip_residue: >-
+          {{ _pings.results | selectattr('rc', 'equalto', 0) | map(attribute='item')
+             | map('regex_replace', '^', 'ip:') | list }}
+
+- name: report
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: gather every host's residue
+      ansible.builtin.set_fact:
+        _residue: >-
+          {{ (_residue | default([])) + (hostvars[item].daolab_residue | default([]))
+             + (hostvars[item].daolab_ip_residue | default([])) }}
+      loop: "{{ (groups['r_dom0'] | default([])) + (groups['r_dpu'] | default([])) }}"
+
+    - name: write the residue list for the runner
+      ansible.builtin.copy:
+        content: "{{ (_residue | default([])) | to_json }}"
+        dest: "{{ daolab_output_file }}"
+        mode: "0600"
+      when: daolab_output_file is defined
+
+    - name: show the residue
+      ansible.builtin.debug:
+        msg: "{{ _residue | default([]) if (_residue | default([])) else 'clean' }}"

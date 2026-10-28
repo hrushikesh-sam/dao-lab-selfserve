@@ -10,7 +10,7 @@ import sqlite3
 
 import yaml
 
-from . import models
+from . import ipam, models
 
 KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ROLE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -19,7 +19,7 @@ EXPECT = re.compile(r"^(==|!=|>=|<=|>|<)\s*-?\d+(\.\d+)?$")
 KINDS = ("dpu", "gpu", "nic", "compute")
 ON_VALUES = ("dpu", "dpu_host", "tg_host")
 SEVERITIES = ("critical", "degraded")
-DEFAULT_IP_POOL = "default"     # the single DAOLAB_IP_POOL-backed pool (B-43)
+DEFAULT_IP_POOL = ipam.DEFAULT_POOL   # the single DAOLAB_IP_POOL-backed pool (B-43)
 
 # Seeded by `daolab init` from the root README use-case table; doc_url/doc_summary
 # carry the verbatim intro text and page link from the DAO application docs.
@@ -183,6 +183,29 @@ def inventory_hosts(inventory_path: str) -> set[str]:
 
     walk(data)
     return hosts
+
+
+def inventory_addresses(inventory_path: str) -> dict[str, str]:
+    """{host: ansible_host} for every inventory host that has one (any nesting)."""
+    if not os.path.exists(inventory_path):
+        return {}
+    with open(inventory_path) as f:
+        data = _load_yaml(f) or {}
+    out: dict[str, str] = {}
+
+    def walk(node):
+        if not isinstance(node, dict):
+            return
+        for key, value in node.items():
+            if key == "hosts" and isinstance(value, dict):
+                for host, hv in value.items():
+                    if isinstance(hv, dict) and hv.get("ansible_host"):
+                        out[host] = str(hv["ansible_host"])
+            else:
+                walk(value)
+
+    walk(data)
+    return out
 
 
 def _yaml_files(dir_path: str) -> list[str]:
@@ -430,6 +453,7 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
     if errors:
         raise SyncError(errors)
 
+    addresses = inventory_addresses(inventory_path)
     conn.execute("BEGIN IMMEDIATE")
     try:
         # pools
@@ -453,7 +477,8 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
                     "SELECT id FROM resources WHERE setup_id = ? AND name = ?",
                     (setup_id, mname)).fetchone()
                 fields = {"kind": spec["kind"], "capabilities": models.to_json(sorted(spec["capabilities"])),
-                          "host": spec["host"]}      # hw_class never written by sync
+                          "host": spec["host"],      # hw_class never written by sync
+                          "address": addresses.get(mname)}   # a static DPU's mgmt address
                 if existing:
                     models.update(conn, "resources", existing["id"], fields)
                 else:
@@ -467,7 +492,8 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
             row = models.usecase_by_name(conn, u["name"])
             fields = {"variant": u["variant"], "requires": models.to_json(u["requires"]),
                       "hw_class": u["hw_class"], "roles": models.to_json(u["roles"]),
-                      "verify": models.to_json(u["verify"]), "yaml_path": u["yaml_path"]}
+                      "verify": models.to_json(u["verify"]), "health": models.to_json(u["health"]),
+                      "yaml_path": u["yaml_path"]}
             if row:
                 models.update(conn, "usecases", row["id"], fields)   # description preserved
             else:

@@ -1,0 +1,39 @@
+# playbooks/tasks/app_exporter.yml — B-81: run files/daolab-app-exporter on the DPU for the
+# reservation's app, and hand its endpoint to the otel agent (dpu_app_scrape_targets).
+# Vars: app_exporter_args (e.g. "--app vpp --vpp-socket /run/vpp/cli.sock").
+- name: install the exporter
+  become: true
+  ansible.builtin.copy:
+    src: "{{ hostvars['localhost'].daolab_playbooks }}/files/daolab-app-exporter"
+    dest: "{{ app_exporter_bin | default('/usr/local/bin/daolab-app-exporter') }}"
+    mode: "0755"
+
+- name: its unit
+  become: true
+  ansible.builtin.copy:
+    dest: "{{ app_exporter_unit_dir | default('/etc/systemd/system') }}/daolab-app-exporter.service"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=daolab app health exporter (B-81)
+      After=network-online.target
+      [Service]
+      ExecStart={{ app_exporter_bin | default('/usr/local/bin/daolab-app-exporter') }} {{ app_exporter_args }} --listen 127.0.0.1:{{ app_exporter_port | default(9273) }}
+      Restart=on-failure
+      [Install]
+      WantedBy=multi-user.target
+  register: _exporter_unit
+
+# An expression, not {% if %}: Ansible's trim_blocks eats the newline after {% endif %} and glues
+# the next command onto this line (`restart daolab-app-exportersystemctl enable ...`, rc 5).
+- name: start it (restart when its arguments changed)
+  become: true
+  ansible.builtin.shell: |
+    systemctl daemon-reload
+    {{ 'systemctl restart daolab-app-exporter' if _exporter_unit.changed else 'true' }}
+    systemctl enable --now daolab-app-exporter
+  changed_when: _exporter_unit.changed
+
+- name: the otel agent scrapes it
+  ansible.builtin.set_fact:
+    dpu_app_scrape_targets: [{job: daolab-app, target: "127.0.0.1:{{ app_exporter_port | default(9273) }}"}]

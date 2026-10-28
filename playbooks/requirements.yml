@@ -1,0 +1,4 @@
+# playbooks/requirements.yml — `ansible-galaxy collection install -r playbooks/requirements.yml`
+collections:
+  - name: community.general        # the opentelemetry callback (B-63)
+    version: ">=9.0.0"

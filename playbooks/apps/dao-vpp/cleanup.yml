@@ -1,0 +1,43 @@
+# playbooks/apps/dao-vpp/cleanup.yml — B-81/B-82: give the board back after VPP, by Akshay's
+# 11_cleanup_04.yml (stop VPP, live port back to rvu_nicpf, restart nginx-tls) imported
+# unchanged. Already back in that state -> only makes sure nginx-tls runs.
+- name: VPP cleanup - read the board
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: the runbook values (VPP_ansible/group_vars/all.yml)
+      ansible.builtin.include_vars:
+        file: "{{ hostvars['localhost'].daolab_playbooks }}/../VPP_ansible/group_vars/all.yml"
+
+    - name: is VPP running (its main thread is named vpp_main, so not just -x vpp)
+      ansible.builtin.command: pgrep -x 'vpp|vpp_main'
+      register: _vpp_proc
+      changed_when: false
+      failed_when: false
+
+    - name: which driver holds the live port
+      ansible.builtin.shell: basename "$(readlink {{ daolab_sysfs | default('/sys') }}/bus/pci/devices/{{ pci_live_port }}/driver)" 2>/dev/null || echo none
+      register: _vpp_port
+      changed_when: false
+
+    - name: does the board need giving back
+      ansible.builtin.set_fact:
+        daolab_vpp_give_back: "{{ _vpp_proc.rc == 0 or (_vpp_port.stdout | trim) == 'vfio-pci' }}"
+
+    - name: stop the health exporter
+      become: true
+      ansible.builtin.shell: systemctl disable --now daolab-app-exporter 2>/dev/null || true
+      changed_when: false
+
+- name: VPP cleanup - runbook step 15
+  ansible.builtin.import_playbook: "{{ daolab_vpp_books | default('../../../VPP_ansible/playbooks') }}/11_cleanup_04.yml"
+  when: daolab_vpp_give_back | bool
+
+- name: VPP cleanup - nginx-tls back (the board's resting state)
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: "step: stop_app"
+      become: true
+      ansible.builtin.command: systemctl start {{ nginx_service }}
+      changed_when: false

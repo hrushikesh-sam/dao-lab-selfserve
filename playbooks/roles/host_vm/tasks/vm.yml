@@ -1,0 +1,175 @@
+# One VM, idempotent: an existing VM is never re-cloned, a wired VF is never re-picked, a
+# running VM is never restarted. Re-running after any failure converges (plan/05).
+- name: the address leased for {{ vm.role }}
+  ansible.builtin.set_fact:
+    _ip: "{{ hostvars['localhost'].daolab_ips[vm.role] }}"
+    _created: false
+
+- name: does {{ vm.name }} exist
+  ansible.builtin.command: xe vm-list name-label={{ vm.name }} --minimal
+  register: _exists
+  changed_when: false
+
+- name: never two VMs with one name
+  ansible.builtin.assert:
+    that: "',' not in _exists.stdout"
+    fail_msg: "more than one VM is named {{ vm.name }} on {{ inventory_hostname }}; destroy the extras (reconcile.yml)"
+
+- name: clone {{ vm.template }}
+  when: _exists.stdout | trim | length == 0
+  block:
+    - name: find the template
+      ansible.builtin.command: xe template-list name-label={{ vm.template }} --minimal
+      register: _tpl
+      changed_when: false
+
+    - name: exactly one template of that name
+      ansible.builtin.assert:
+        that: _tpl.stdout | trim | length > 0 and ',' not in _tpl.stdout
+        fail_msg: >-
+          template {{ vm.template }} is {{ 'not on' if (_tpl.stdout | trim | length == 0) else 'ambiguous on' }}
+          {{ inventory_hostname }} (role {{ vm.role }}); build it per plan/05 "Building tpl-ubuntu2204-dao"
+
+    - name: "step: create_vm {{ vm.role }}"
+      ansible.builtin.command: xe vm-clone uuid={{ _tpl.stdout | trim }} new-name-label={{ vm.name }}
+      register: _clone
+
+    - name: remember the new VM
+      ansible.builtin.set_fact:
+        _created: true
+
+- name: the VM's uuid
+  ansible.builtin.set_fact:
+    _uuid: "{{ (_clone.stdout if _created else _exists.stdout) | trim }}"
+
+- name: power state
+  ansible.builtin.command: xe vm-param-get uuid={{ _uuid }} param-name=power-state
+  register: _power
+  changed_when: false
+
+# ---- first-boot seed (cloud-init NoCloud through xenstore) -----------------------------
+# Written whenever the VM is not running (a run that died between clone and boot re-seeds);
+# a running VM already booted with its seed and is left alone.
+- name: every install id is known
+  ansible.builtin.assert:
+    that: item in host_vm_install_map
+    fail_msg: >-
+      role {{ vm.role }}: install id '{{ item }}' has no packages in host_vm_install_map
+      (playbooks/roles/host_vm/defaults/main.yml)
+  loop: "{{ vm.install }}"
+
+- name: the otel agent config for this VM
+  ansible.builtin.include_role:
+    name: otel_agent
+    tasks_from: render
+  vars:
+    otel_agent_attributes:
+      daolab.reservation: "{{ reservation_id | int }}"
+      daolab.user: "{{ user }}"
+      daolab.role: "{{ vm.role }}"
+      daolab.setup: "{{ setup }}"
+      host: "{{ vm.name }}"
+    otel_agent_httpcheck: "{{ vm_httpcheck | default([]) }}"
+
+- name: render the seed
+  ansible.builtin.set_fact:
+    _seed:
+      user-data: "{{ lookup('ansible.builtin.template', 'user-data.j2') | b64encode }}"
+      network-config: "{{ lookup('ansible.builtin.template', 'network-config.j2') | b64encode }}"
+      meta-data: "{{ ('instance-id: ' ~ vm.name ~ '-' ~ _ip ~ '\nlocal-hostname: ' ~ vm.name ~ '\n') | b64encode }}"
+      otel: "{{ (otel_agent_config_text if (otel_agent_collector | default('') | length > 0) else '') | b64encode }}"
+
+- name: every seed key fits in xenstore (4 KiB per value)
+  ansible.builtin.assert:
+    that: item.value | length < 3800
+    fail_msg: "vm-data/daolab/{{ item.key }} is {{ item.value | length }} bytes; xenstore takes < 4096"
+  loop: "{{ _seed | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: "step: seed {{ vm.role }}"
+  ansible.builtin.command: >-
+    xe vm-param-set uuid={{ _uuid }}
+    xenstore-data:vm-data/ip={{ _ip }}
+    xenstore-data:vm-data/daolab/user-data={{ _seed['user-data'] }}
+    xenstore-data:vm-data/daolab/network-config={{ _seed['network-config'] }}
+    xenstore-data:vm-data/daolab/meta-data={{ _seed['meta-data'] }}
+    xenstore-data:vm-data/daolab/otel={{ _seed['otel'] }}
+  when: _power.stdout | trim != 'running'
+  no_log: "{{ daolab_no_log | default(true) }}"
+
+# ---- management VIF ------------------------------------------------------------------
+- name: does it have its management VIF
+  ansible.builtin.command: xe vif-list vm-uuid={{ _uuid }} device=0 --minimal
+  register: _vif
+  changed_when: false
+
+- name: attach the management VIF
+  when: _vif.stdout | trim | length == 0
+  block:
+    - name: find the management network
+      ansible.builtin.command: xe network-list name-label="{{ mgmt_network }}" --minimal
+      register: _net
+      changed_when: false
+      failed_when: _net.stdout | trim | length == 0
+
+    - name: "step: vif {{ vm.role }}"
+      ansible.builtin.command: xe vif-create vm-uuid={{ _uuid }} network-uuid={{ _net.stdout | trim }} device=0
+
+# ---- data-plane VF (deterministic: the vf_index-th BDF of the host's family list) --------
+- name: pick the VF
+  when: vm.vf_family is not none
+  block:
+    - name: the host has that many VFs
+      ansible.builtin.assert:
+        that: (vars[vm.vf_family] | default([])) | length > vm.vf_index
+        fail_msg: >-
+          {{ inventory_hostname }} has no VF #{{ vm.vf_index }} in {{ vm.vf_family }} for role
+          {{ vm.role }} (connect: {{ vm.connect }}); add VFs per plan/05 "One-time dom0 preparation"
+
+    - name: what is wired now
+      ansible.builtin.command: xe vm-param-get uuid={{ _uuid }} param-name=other-config param-key=pci
+      register: _pci
+      changed_when: false
+      failed_when: false
+
+    - name: the chosen VF
+      ansible.builtin.set_fact:
+        _bdf: "{{ vars[vm.vf_family][vm.vf_index] }}"
+
+    - name: wire it (only if not already)
+      when: (_pci.stdout | trim) != ('0/' ~ _bdf)
+      block:
+        - name: it must be free in pciback
+          ansible.builtin.command: xl pci-assignable-list
+          register: _assignable
+          changed_when: false
+          failed_when: _bdf not in (_assignable.stdout_lines | map('trim') | list)
+
+        - name: "step: vf {{ vm.role }}"
+          ansible.builtin.command: xe vm-param-set uuid={{ _uuid }} other-config:pci=0/{{ _bdf }}
+
+# ---- boot and wait for the leased address -------------------------------------------------
+- name: "step: start_vm {{ vm.role }}"
+  ansible.builtin.command: xe vm-start uuid={{ _uuid }}
+  when: _power.stdout | trim != 'running'
+
+- name: "step: wait_ip {{ vm.role }}"
+  ansible.builtin.command: xe vm-param-get uuid={{ _uuid }} param-name=networks param-key=0/ip
+  register: _guest_ip
+  until: _guest_ip.rc == 0 and (_guest_ip.stdout | trim) == _ip
+  retries: "{{ host_vm_ip_retries }}"
+  delay: "{{ host_vm_ip_delay }}"
+  changed_when: false
+
+- name: "step: post_vm_ip {{ vm.role }}"
+  ansible.builtin.uri:
+    url: "{{ daolab_api_url }}/internal/vm-ip"
+    method: POST
+    headers:
+      X-Daolab-Secret: "{{ daolab_internal_secret }}"
+    body_format: json
+    body: {reservation_id: "{{ reservation_id | int }}", role: "{{ vm.role }}", ip: "{{ _ip }}"}
+  delegate_to: localhost
+  when: reservation_id | int != 0
+  no_log: "{{ daolab_no_log | default(true) }}"

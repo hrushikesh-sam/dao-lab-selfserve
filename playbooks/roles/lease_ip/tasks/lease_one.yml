@@ -1,0 +1,59 @@
+# One VM role: lease, then make sure nothing else answers on the address before using it.
+- name: "step: lease_ip {{ vm.role }}"
+  ansible.builtin.uri:
+    url: "{{ daolab_api_url }}/internal/leases"
+    method: POST
+    headers:
+      X-Daolab-Secret: "{{ daolab_internal_secret }}"
+    body_format: json
+    body: {reservation_id: "{{ reservation_id | int }}", role: "{{ vm.role }}"}
+  register: _lease
+  no_log: "{{ daolab_no_log | default(true) }}"
+
+- name: remember the address
+  ansible.builtin.set_fact:
+    _ip: "{{ _lease.json.ip }}"
+
+# A replay finds its own VM already up on the address: that is not a conflict.
+- name: is this reservation's VM already there
+  ansible.builtin.command: xe vm-list name-label={{ vm.name }} --minimal
+  delegate_to: "{{ vm.host }}"
+  register: _ours
+  changed_when: false
+
+- name: does anything else answer on {{ _ip }}
+  ansible.builtin.command: ping -c 2 -W 1 {{ _ip }}
+  delegate_to: "{{ vm.host }}"
+  register: _ping
+  changed_when: false
+  failed_when: false
+  when: _ours.stdout | trim | length == 0
+
+- name: "step: lease_conflict {{ vm.role }}"
+  when: _ping.rc | default(1) == 0
+  block:
+    - name: swap the address (it is quarantined, never issued again)
+      ansible.builtin.uri:
+        url: "{{ daolab_api_url }}/internal/leases/conflict"
+        method: POST
+        headers:
+          X-Daolab-Secret: "{{ daolab_internal_secret }}"
+        body_format: json
+        body: {ip: "{{ _ip }}"}
+      register: _swap
+      no_log: "{{ daolab_no_log | default(true) }}"
+
+    - name: take the replacement
+      ansible.builtin.set_fact:
+        _ip: "{{ _swap.json.ip }}"
+
+    - name: the replacement must be silent too
+      ansible.builtin.command: ping -c 2 -W 1 {{ _ip }}
+      delegate_to: "{{ vm.host }}"
+      register: _ping2
+      changed_when: false
+      failed_when: _ping2.rc == 0
+
+- name: record it
+  ansible.builtin.set_fact:
+    daolab_ips: "{{ (daolab_ips | default({})) | combine({vm.role: _ip}) }}"

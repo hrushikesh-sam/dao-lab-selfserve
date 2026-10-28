@@ -110,7 +110,7 @@ def test_upgrade_renames_rows_and_keeps_every_child_row(tmp_path):
     ids = _seed_v5(conn)
     with pytest.raises(sqlite3.IntegrityError):                      # the old CHECK refuses it
         conn.execute("UPDATE reservations SET state = 'cleaning' WHERE id = ?", (ids["queued"],))
-    assert models.init_db(conn) == [6]
+    assert models.init_db(conn) == [m.version for m in migrations.MIGRATIONS if m.version > 5]
     states = {r["id"]: r["state"] for r in conn.execute("SELECT id, state FROM reservations")}
     assert states == {ids["queued"]: "queued", ids["tearing_down"]: "cleaning",
                       ids["released"]: "released", ids["failed"]: "failed"}
@@ -334,14 +334,17 @@ def test_cancel_in_any_other_state_is_a_409(api_env, state):
 
 
 def test_cancel_loses_a_race_with_the_engine_cleanly(api_env, monkeypatch):
-    """The engine claims the booking between the API's read and write: 409, not an overwrite."""
+    """The engine claims the booking between the API's read and write: 409, not an overwrite.
+    The engine's move is committed on its own before the API's transaction starts."""
+    from service import api
     rid = _api_res(api_env, "queued")
-    real = models.transition_reservation
+    real_owned = api._owned_reservation
 
-    def engine_got_there_first(conn, res_id, new_state, *a, **kw):
-        real(conn, res_id, "provisioning")                          # the engine's move
-        return real(conn, res_id, new_state, *a, **kw)              # ours now fails
-    monkeypatch.setattr(models, "transition_reservation", engine_got_there_first)
+    def read_then_the_engine_claims(conn, res_id, user):
+        row = real_owned(conn, res_id, user)                         # the API's read: queued
+        models.transition_reservation(conn, res_id, "provisioning")  # the engine's move, committed
+        return row
+    monkeypatch.setattr(api, "_owned_reservation", read_then_the_engine_claims)
     r = _delete(api_env, rid)
     assert r.status_code == 409
     assert r.json()["error"] == {"code": "invalid_state",

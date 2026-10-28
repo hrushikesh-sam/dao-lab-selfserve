@@ -1,0 +1,20 @@
+# playbooks/apps/nginx-tls/deploy.yml — B-81: the TLS proxy. On the board it is the resting
+# state (nginx-tls.service, which the VPP runbook stops and restarts), so deploying it means
+# making sure it runs and exporting its health.
+- name: TLS proxy - nginx-tls running
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: "step: dpu_app"
+      become: true
+      ansible.builtin.command: systemctl start {{ nginx_service | default('nginx-tls.service') }}
+      changed_when: false
+
+    - name: it stays up
+      ansible.builtin.command: systemctl is-active {{ nginx_service | default('nginx-tls.service') }}
+      changed_when: false
+
+    - name: health exporter
+      ansible.builtin.include_tasks: ../../tasks/app_exporter.yml
+      vars:
+        app_exporter_args: --app nginx --nginx-addr 127.0.0.1:443

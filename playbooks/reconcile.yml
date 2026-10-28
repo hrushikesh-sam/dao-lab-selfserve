@@ -1,0 +1,94 @@
+# playbooks/reconcile.yml — B-72: destroy what a cleanup or an interrupted deploy left behind
+# (plan/09 §9, the "reconcile" box). Unlike cleanup.yml it does not trust Ansible facts or the
+# use case: it acts directly on what verify_clean.yml finds.
+#
+#   1. on each dom0: every VM named daolab-r<id>-* -> force shutdown + uninstall (the VM, its
+#      VIFs and VDIs; its passed-through VF goes back to the host);
+#   2. on each dom0: every host_vars VF missing from `xl pci-assignable-list` -> re-seized
+#      with `xl pci-assignable-add` ("unbind VFs");
+#   3. on the DPU: the app's runbook cleanup again (apps/<app>/cleanup.yml), then every
+#      daolab-app-* unit stopped (hw_class untouched, plan/01 invariant);
+#   4. on the DPU: every session / process of the shared lab login killed.
+#
+# Every step is idempotent and safe on a clean testbed. Followed by verify_clean.yml.
+# Extra vars: reservation_id, setup (+ what play 0 reads). `daolab_vm_names` (a list of VM
+# names) replaces step 1's name match: the orphan sweep (B-73) passes the orphans it found.
+- name: resolve the setup
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: resolve
+      ansible.builtin.import_tasks: tasks/resolve.yml
+
+- name: reconcile the XCP-ng hosts
+  hosts: r_dom0
+  gather_facts: false
+  tasks:
+    - name: list every VM on the host
+      ansible.builtin.shell: |
+        xe vm-list is-control-domain=false params=name-label --minimal | tr ',' '\n'
+      args:
+        executable: /bin/bash
+      register: _all_vms
+      changed_when: false
+
+    - name: pick the VMs to destroy
+      ansible.builtin.set_fact:
+        _doomed: >-
+          {{ (_all_vms.stdout_lines | select('in', daolab_vm_names) | list)
+             if daolab_vm_names is defined else
+             (_all_vms.stdout_lines
+              | select('match', '^daolab-r' ~ (reservation_id | int) ~ '-') | list) }}
+
+    - name: "step: destroy_vms"
+      ansible.builtin.shell: |
+        set -o pipefail
+        for uuid in $(xe vm-list name-label='{{ item }}' --minimal | tr ',' ' '); do
+          xe vm-shutdown uuid="$uuid" force=true 2>/dev/null || true
+          xe vm-uninstall uuid="$uuid" force=true
+        done
+      args:
+        executable: /bin/bash
+      loop: "{{ _doomed }}"
+      changed_when: true
+
+    - name: list assignable VFs
+      ansible.builtin.command: xl pci-assignable-list
+      register: _assignable
+      changed_when: false
+
+    - name: "step: rebind_vfs"
+      ansible.builtin.command: xl pci-assignable-add {{ item }}
+      loop: >-
+        {{ (e810_vfs | default([]) + sdp_vfs | default([]))
+           | reject('in', _assignable.stdout_lines | map('trim') | list) | list }}
+      register: _rebind
+      changed_when: _rebind.rc == 0
+      failed_when: false          # a VF still held by a running VM: verify reports it
+
+- name: the DAO app's own cleanup, again (VPP / SmartNIC give their devices back)
+  ansible.builtin.import_playbook: "apps/{{ daolab_app | default('none') }}/cleanup.yml"
+
+- name: reconcile the DPU
+  hosts: r_dpu
+  gather_facts: false
+  tasks:
+    - name: "step: stop_app"
+      ansible.builtin.shell: |
+        units=$(systemctl list-units 'daolab-app-*' --state=active --plain --no-legend | awk '{print $1}')
+        [ -z "$units" ] && exit 0
+        systemctl stop $units
+        echo "stopped: $units"
+      register: _stop
+      changed_when: "'stopped:' in _stop.stdout"
+
+    - name: "step: kill_sessions"
+      ansible.builtin.shell: |
+        login={{ hostvars['localhost'].daolab_lab_login }}
+        if pgrep -u "$login" -c >/dev/null; then
+          loginctl terminate-user "$login" 2>/dev/null || true
+          pkill -KILL -u "$login" || true
+          echo killed
+        fi
+      register: _kill
+      changed_when: "'killed' in _kill.stdout"

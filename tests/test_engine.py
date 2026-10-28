@@ -1,6 +1,8 @@
 """B-23: the engine tick — bookings become running reservations (plan/09 §6, §9, §10)."""
 import dataclasses
 import logging
+import os
+import signal
 from datetime import timedelta
 
 import pytest
@@ -321,13 +323,26 @@ def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog, monkeyp
     assert "reservation %s" % rid in caplog.text or "boom" in caplog.text
 
 
-def test_the_unfinished_ansible_backend_fails_jobs_with_a_clear_message(world, monkeypatch):
-    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
+def test_a_failing_ansible_deploy_fails_the_job_with_the_playbooks_error(world, monkeypatch, tmp_path):
+    """B-84: the ansible backend reports the failing task; the engine treats it like any
+    other deploy failure."""
+    import types
+    s = dataclasses.replace(config.settings, max_retries=1, artifacts_dir=str(tmp_path))
+    monkeypatch.setattr(config, "settings", s)
     db = world[0]
     rid = res(world, uc="a", start=T(9, 5), end=T(10))
-    tick(db, rn=runner.AnsibleRunner())
+
+    def fake_run(**kw):
+        kw["event_handler"]({"event": "runner_on_failed", "event_data": {
+            "task": "step: create_vm tgen", "host": "tb-01-xcp", "res": {"msg": "no template"}}})
+        return types.SimpleNamespace(status="failed", rc=2)
+
+    class Quiet(runner.AnsibleRunner):            # no orphan sweep against a real testbed
+        tagged_vms = None
+
+    tick(db, rn=Quiet(s, run=fake_run))
     assert state(db, rid) == "failed"
-    assert "B-84" in jobs(db)[0]["error"]
+    assert jobs(db)[0]["error"] == "step: create_vm tgen on tb-01-xcp: no template"
 
 
 # ---- 4. running jobs: redeploy (B-28 creates a deploy job on a live reservation) ------------
@@ -480,7 +495,8 @@ def test_a_retry_succeeding_makes_the_reservation_ready_and_queues_no_cleanup(wo
 
 def test_residue_after_the_cleanup_of_a_failed_deploy_leaves_the_reservation_failed(world, monkeypatch):
     """There is no failed -> quarantined edge (plan/09 s10): the cleanup job fails and says why,
-    the audit row lists the residue, and the reservation stays `failed`. Flagging the setup is B-71."""
+    the audit row lists the residue, and the reservation stays `failed`; the setup carries the
+    quarantine flag instead (B-71)."""
     monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, max_retries=1))
     db = world[0]
     rid = res(world, uc="a", start=T(9, 5), end=T(10))
@@ -491,6 +507,9 @@ def test_residue_after_the_cleanup_of_a_failed_deploy_leaves_the_reservation_fai
     assert cleanup["state"] == "failed" and cleanup["error"].startswith("residue after cleanup:")
     [event] = [e for e in models.list_audit_events(db) if e["action"] == "cleanup"]
     assert len(models.from_json(event["detail"])["residue"]) == 2
+    sid = world[1]
+    assert db.execute("SELECT availability FROM setups WHERE id = ?", (sid,)).fetchone()[0] == \
+        "quarantined"
 
 
 def test_the_automatic_cleanup_is_held_back_by_a_running_job_like_any_other(world, monkeypatch):
@@ -646,13 +665,14 @@ def test_health_probe_on_a_queued_reservation_is_refused(world):
     assert jobs(db)[0]["state"] == "failed" and "expected ready or active" in jobs(db)[0]["error"]
 
 
-def test_reconcile_jobs_are_deferred_to_b72(world):
+def test_a_reconcile_job_runs_the_runners_reconcile(world):
     db = world[0]
     rid = res(world, state="quarantined")
     models.create_job(db, rid, "reconcile")
     tick(db)
-    assert jobs(db)[0]["state"] == "failed" and "B-72" in jobs(db)[0]["error"]
-    assert state(db, rid) == "quarantined"
+    assert jobs(db)[0]["state"] == "succeeded"
+    assert [s["name"] for s in models.job_steps(jobs(db)[0])][:len(runner.RECONCILE_STEPS)] == \
+           list(runner.RECONCILE_STEPS)
 
 
 def test_pending_jobs_run_oldest_first(world):
@@ -1055,9 +1075,25 @@ def test_main_rejects_a_bad_runner_setting(cli_env, monkeypatch, capsys):
     assert engine.main([]) == 1 and "DAOLAB_RUNNER" in capsys.readouterr().err
 
 
-def test_main_loop_stops_cleanly_on_ctrl_c(cli_env, monkeypatch, capsys):
+@pytest.fixture
+def sigterm():
+    """Puts pytest's own SIGTERM handler back after a test that lets the engine take it."""
+    old = signal.getsignal(signal.SIGTERM)
+    yield
+    signal.signal(signal.SIGTERM, old)
+
+
+def test_main_loop_stops_cleanly_on_ctrl_c(cli_env, monkeypatch, capsys, sigterm):
     monkeypatch.setattr(engine, "run_loop", lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()))
     assert engine.main(["--loop"]) == 0 and "engine stopped" in capsys.readouterr().out
+    assert signal.getsignal(signal.SIGTERM) is signal.default_int_handler
+
+
+def test_sigterm_stops_the_loop_like_ctrl_c(world, sigterm):
+    engine.stop_on_sigterm()
+    with pytest.raises(KeyboardInterrupt):
+        engine.run_loop(world[0], 0, mock(), sleep=lambda s: os.kill(os.getpid(), signal.SIGTERM),
+                        max_ticks=3, clock=lambda: NOW)
 
 
 def test_main_loop_passes_the_configured_interval(cli_env, monkeypatch):

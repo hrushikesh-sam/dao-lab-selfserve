@@ -1,0 +1,98 @@
+# playbooks/tasks/plan_vms.yml — after tasks/resolve.yml, on localhost (B-80).
+#
+# Builds `daolab_vm_plan`, one entry per VM of the reservation, everything host_vm needs:
+#   {role, host, name, template, connect, install, vf_family, vf_index, data_ip}
+# and `daolab_dpu_role` (the on: dpu role's name, '' for diy). Non-diy VM roles come from the
+# use case's roles (on: dpu_host -> the DPU member's XCP-ng host, on: tg_host -> the NIC
+# member's); diy gets one bare VM per `templates` host, the host name as the role (plan/05).
+#
+# VFs are assigned deterministically: per (host, VF family), the k-th role in role-name order
+# takes the k-th BDF of the host's list, so a replayed deploy re-picks the same VF (plan/05
+# "VF allocation strategy").
+- name: load the data-plane addressing
+  ansible.builtin.include_vars:
+    file: ../vars/dataplane.yml
+
+- name: find the DPU / NIC members' XCP-ng hosts
+  ansible.builtin.set_fact:
+    _dpu_host: "{{ (daolab_members | selectattr('kind', 'equalto', 'dpu') | map(attribute='host') | list + [''])[0] }}"
+    _nic_host: "{{ (daolab_members | selectattr('kind', 'equalto', 'nic') | map(attribute='host') | list + [''])[0] }}"
+    _dp: "{{ daolab_dataplane[usecase] | default({}) if not (diy | default(false) | bool) else {} }}"
+    _families: {e810-vf: e810_vfs, sdp: sdp_vfs}
+
+- name: list the VM roles (use case)
+  ansible.builtin.set_fact:
+    _vm_roles: >-
+      {{ daolab_roles | dict2items | rejectattr('value.vm', 'undefined')
+         | sort(attribute='key') | list }}
+    daolab_dpu_role: >-
+      {{ (daolab_roles | dict2items | selectattr('value.on', 'equalto', 'dpu')
+          | map(attribute='key') | list + [''])[0] }}
+  when: not (diy | default(false) | bool)
+
+- name: list the VM roles (diy)
+  ansible.builtin.set_fact:
+    _vm_roles: >-
+      {{ (templates | default({})) | dict2items(key_name='key', value_name='tpl')
+         | sort(attribute='key') | list }}
+    daolab_dpu_role: ''
+  when: diy | default(false) | bool
+
+- name: plan each VM (role, host, template, wiring)
+  ansible.builtin.set_fact:
+    _plan0: >-
+      {{ (_plan0 | default([])) + [{
+           'role': item.key,
+           'host': item.key if (diy | default(false) | bool)
+                   else (_dpu_host if item.value.on == 'dpu_host' else _nic_host),
+           'name': 'daolab-r' ~ (reservation_id | int) ~ '-' ~ item.key,
+           'template': item.tpl if (diy | default(false) | bool) else item.value.vm,
+           'connect': None if (diy | default(false) | bool) else item.value.connect | default(None),
+           'install': [] if (diy | default(false) | bool)
+                      else ([item.value.install] if item.value.install is string
+                            else item.value.install | default([])),
+           'data_ip': _dp[item.key] if (_dp[item.key] | default(None)) is string else None,
+           'vf_family': None if (diy | default(false) | bool)
+                        else _families[item.value.connect | default('')] | default(None)
+         }] }}
+  loop: "{{ _vm_roles }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: give each VM its VF index (k-th role of its host and VF family)
+  ansible.builtin.set_fact:
+    daolab_vm_plan: >-
+      {{ (daolab_vm_plan | default([])) + [item | combine({'vf_index':
+           _plan0[:idx] | selectattr('host', 'equalto', item.host)
+                        | selectattr('vf_family', 'equalto', item.vf_family) | list | length})] }}
+  loop: "{{ _plan0 | default([]) }}"
+  loop_control:
+    index_var: idx
+    label: "{{ item.role }}"
+
+- name: no VM roles at all
+  ansible.builtin.set_fact:
+    daolab_vm_plan: []
+  when: daolab_vm_plan is not defined
+
+- name: every VM must land on a host of the setup
+  ansible.builtin.assert:
+    that: item.host in daolab_dom0s
+    fail_msg: >-
+      role {{ item.role }} resolves to host '{{ item.host }}', which is not an XCP-ng host of
+      setup {{ setup }} ({{ daolab_dom0s | join(', ') }})
+  loop: "{{ daolab_vm_plan }}"
+  loop_control:
+    label: "{{ item.role }}"
+
+- name: the DPU's addresses
+  ansible.builtin.set_fact:
+    # what users SSH to and what is posted as the DPU role's vms.ip: its static mgmt address
+    daolab_dpu_ip: >-
+      {{ (hostvars[daolab_dpu].ansible_host | default(daolab_dpu)) if daolab_dpu_role else '' }}
+    # what verify's {<dpu role>_ip} means: its first data-plane wire address, else the above
+    daolab_dpu_data_ip: >-
+      {{ ((_dp[daolab_dpu_role] | dict2items | selectattr('key', 'match', 'wire')
+           | sort(attribute='key') | map(attribute='value') | list + [''])[0]).split('/')[0]
+         if (daolab_dpu_role and (_dp[daolab_dpu_role] | default(None)) is mapping)
+         else (hostvars[daolab_dpu].ansible_host | default(daolab_dpu) if daolab_dpu_role else '') }}

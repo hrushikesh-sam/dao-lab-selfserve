@@ -16,12 +16,18 @@ NEW_DEFAULTS = {
     "slot_min": 30,
     "cleanup_min": 10,
     "default_hours": 1,
-    "ip_pool": "10.30.0.100-10.30.0.199",
+    "ip_pool": "10.68.1.0-10.68.2.200",
     "early_access": False,
     "health_stale_sec": 120,
     "otel_endpoint": "",
     "max_live_reservations": 1,
     "max_future_reservations": 2,
+    "prometheus_url": "http://localhost:9090",
+    "reconcile_attempts": 2,
+    "authz_secret": "",
+    "allow_destructive": False,
+    "deploy_vms": True,
+    "become_password_file": "",
 }
 
 ENV_NAMES = {
@@ -35,6 +41,12 @@ ENV_NAMES = {
     "otel_endpoint": "DAOLAB_OTEL_ENDPOINT",
     "max_live_reservations": "DAOLAB_MAX_LIVE_RESERVATIONS",
     "max_future_reservations": "DAOLAB_MAX_FUTURE_RESERVATIONS",
+    "prometheus_url": "DAOLAB_PROMETHEUS_URL",
+    "reconcile_attempts": "DAOLAB_RECONCILE_ATTEMPTS",
+    "authz_secret": "DAOLAB_AUTHZ_SECRET",
+    "allow_destructive": "DAOLAB_ALLOW_DESTRUCTIVE",
+    "deploy_vms": "DAOLAB_DEPLOY_VMS",
+    "become_password_file": "DAOLAB_BECOME_PASSWORD_FILE",
 }
 
 
