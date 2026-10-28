@@ -1,0 +1,9 @@
+﻿[Unit]
+Description=DAO Lab DB backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
