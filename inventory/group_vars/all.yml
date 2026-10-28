@@ -1,0 +1,8 @@
+﻿# Global vars for two-host testbed
+vm_name_prefix: daolab-r
+vm_gateway: 10.68.0.1
+vm_dns:
+  - 10.68.0.1
+  - 8.8.8.8
+vm_domain: lab.local
+ipam_network: 10.68.0.0/22

@@ -130,7 +130,7 @@ disabling leaves the user's reservations untouched — cancel them via
 `DELETE /reservations/{id}` if the hold must end.
 
 **GET /setups** → `200`, one row per setup; `held_by` = the reservation currently in
-`provisioning`/`ready`/`active`/`tearing_down` on the setup or `null`; `queue` = `queued`
+`provisioning`/`ready`/`active`/`cleaning`/`quarantined`/`failed` on the setup or `null`; `queue` = `queued`
 reservations ordered by `start_at`; both use the reservation-summary shape
 `{"id", "user", "usecase", "state", "start_at", "end_at"}`:
 
@@ -315,7 +315,7 @@ Every non-2xx response has exactly this envelope — a stable machine `code`, a 
 | `validation_error` | 422 | Malformed body/timestamp, `hours` < 1, unknown fields, diy-field presence violations, template map not covering every VM host. |
 | `usecase_unavailable` | 409 | Reserving a `planned` row (`detail.reason: "no_yaml"`); horizon exhausted (`detail.reason: "no_free_slot"`). |
 | `unmet_capability` | 409 | No setup's capabilities ⊇ `requires`; message names the missing list. |
-| `invalid_state` | 409 | Cancel while `provisioning`/`tearing_down`/`released`/`failed`; `detail: {"state": "..."}`. |
+| `invalid_state` | 409 | Cancel while `provisioning`/`cleaning`/`quarantined`/`released`/`failed`; `detail: {"state": "..."}`. |
 | `internal_error` | 500 | Unhandled exception. |
 
 Further examples (unknown use case, bad token, wrong role):
@@ -387,7 +387,7 @@ Cases (each asserts the error envelope shape on every non-2xx):
 | 8 | Reserve unknown name / planned row / `hours: 0` / `setup` on non-diy / diy without `templates` / diy templates missing a host | `404` / `409 usecase_unavailable` / `422` / `422` / `422` / `422` |
 | 9 | Reserve `diy` with `setup: setup-01` + full template map | `201`, `diy: true` |
 | 10 | Owner reads own reservation; other user reads it; admin reads it | `200` / `403` / `200`; list is newest-first |
-| 11 | Cancel matrix (states set directly via models helpers) | `queued`→`released`; `ready`→`tearing_down`; `provisioning`→`409 invalid_state` |
+| 11 | Cancel matrix (states set directly via models helpers) | `queued`→`released`; `ready`/`active`→`cleaning`; `provisioning`/`cleaning`/`quarantined`/`released`/`failed`→`409 invalid_state` |
 | 12 | Callback: wrong secret; secret unset in settings; unknown role; happy path | `401`; `401`; `404`; `{"ok": true}` then reservation object shows `ip` and `ssh: "ssh <user>@<ip>"` |
 | 13 | Callback replay with same body | `200` again (idempotent) |
 | 14 | `GET /` and `/admin.html` | `200`, HTML bodies from `DAOLAB_DASHBOARD_DIR` |
