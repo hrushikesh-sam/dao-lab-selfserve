@@ -1,3 +1,40 @@
+<<<<<<< HEAD
+# inventory/host_vars/dpu-01.yml — filled from `lspci -D`, /sys/bus/platform/devices and
+# /sys/bus/pci/devices/*/sriov_numvfs (Phase 1, B-85).
+# Board `xeon3-oct-112`, Ubuntu 22.04.5 aarch64, nproc=24, mgmt eth5 10.68.0.190 (login `dao-test`).
+# bdf.cpt_vfs is bound to vfio-pci and sized to nproc; bdf.sdp_pf is the OCTEON SDP admin function
+# whose VFs (a0f7, rvu_nicvf) the board exposes to dpu-01-xcp for smartnic/VPP.
+hw_class: sdp-pf1-vf8              # Phase-1 bootstrap ONLY; resources.hw_class in the DB is
+                                   # the source of truth after the first provision
+bdf:
+  sdp_pf: "0002:01:00.0"           # device a065, drv rvu_af; 9 VFs 0002:01:00.1–0002:01:01.1 (a0f7)
+  cpt_pf: "0002:20:00.0"           # device a0f2, drv rvu_cptpf; sriov_totalvfs=64, numvfs=24
+  cpt_vfs:                         # device a0f3, drv vfio-pci; 24 = nproc = 24
+    - "0002:20:00.1"
+    - "0002:20:00.2"
+    - "0002:20:00.3"
+    - "0002:20:00.4"
+    - "0002:20:00.5"
+    - "0002:20:00.6"
+    - "0002:20:00.7"
+    - "0002:20:01.0"
+    - "0002:20:01.1"
+    - "0002:20:01.2"
+    - "0002:20:01.3"
+    - "0002:20:01.4"
+    - "0002:20:01.5"
+    - "0002:20:01.6"
+    - "0002:20:01.7"
+    - "0002:20:02.0"
+    - "0002:20:02.1"
+    - "0002:20:02.2"
+    - "0002:20:02.3"
+    - "0002:20:02.4"
+    - "0002:20:02.5"
+    - "0002:20:02.6"
+    - "0002:20:02.7"
+    - "0002:20:03.0"
+=======
 # inventory/host_vars/dpu-01.yml — the CN10K board xeon3-oct-112 (B-85 bring-up).
 #
 # The VPP / SmartNIC specifics (PCI addresses, ports, paths) are the runbooks' own values in
@@ -12,3 +49,4 @@ hw_class: sdp-pf1-vf8
 # The operator account the runbooks run as must sudo without a password (their become: true
 # steps run unattended from the dashboard). If it cannot, set ansible_become_password here
 # through ansible-vault, never in plain text.
+>>>>>>> origin/akshay

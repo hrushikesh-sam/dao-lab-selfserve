@@ -7,9 +7,9 @@ roles:
   proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
   backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
   client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf}
-verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}
+verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "1000 succeeded"}
 health:
   - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                         expect: "== 1"}
   - {name: ssh_reachable, promql: 'min(tcpcheck_status{daolab_reservation="$RID",port="22"})',   expect: "== 1"}
-  - {name: https_ok,      promql: 'httpcheck_status{daolab_reservation="$RID"}',                 expect: "== 1"}
+  - {name: https_ok,      promql: 'httpcheck_status{daolab_reservation="$RID",http_status_class="2xx"}', expect: "== 1"}
   - {name: backend_up,    promql: 'nginx_up{daolab_reservation="$RID",host="dpu-01"}',                            expect: "== 1", severity: degraded}

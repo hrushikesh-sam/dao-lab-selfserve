@@ -6,7 +6,7 @@ Part of the daolab implementation plan — see [README.md](README.md) for the do
 
 The repo-root [`README.md`](../README.md) is the **product spec and source of truth**: it defines
 the domain model, the use-case catalog, the repo layout, the phased pipeline, and the six design
-invariants. It stays that way. The nine documents in `plan/` turn that spec into an
+invariants. It stays that way. The eleven documents in `plan/` turn that spec into an
 implementation blueprint — exact schemas, function signatures, endpoint tables, wireframes, and
 ordered task lists — so a competent engineer builds each component without guessing.
 
@@ -26,18 +26,22 @@ daolab lets a user reserve a **setup** — a wired group of lab nodes — pre-pr
 Marvell [DAO](https://marvellembeddedprocessors.github.io/dao/) use case. Scheduling is **FCFS**
 (placed in `created_at` order) with **slot-shift** on conflict: an overlapping request is never
 rejected, it is moved to the earliest free slot. A reservation moves through
-`queued → provisioning → ready → active → cleaning → released` (plus `quarantined` when cleanup leaves residue, and terminal `failed`),
+<<<<<<< HEAD
+`queued → provisioning → ready → active → cleaning → released` (plus terminal `failed`, `quarantined`),
+driven by an engine that runs idempotent Ansible playbooks via `deploy.yml`/`cleanup.yml` against XCP-ng hosts and the OCTEON.
+=======
+`queued → provisioning → ready → active → tearing_down → released` (plus terminal `failed`),
 driven by an engine that runs idempotent Ansible playbooks against XCP-ng hosts and the OCTEON.
+>>>>>>> akshay
 
-**Today: exactly one setup**, `setup-01` in pool `lab-1`:
+**Lab topology (two XCP-ng hosts):** `tg-01-xcp` (10.68.0.52, Intel E810 traffic-generator) and `dpu-01-xcp` (10.68.0.53, OCTEON CN106 DPU host). The DPU board `dpu-01` is at 10.68.0.190. The setup is defined in `setups/tb-01.yml` in pool `lab-1`:
 
 | Member | `kind` | `capabilities` | XCP-ng host | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `dpu-01` | `dpu` | `[octeon-cn106, sdp]` | `dpu-01-xcp` | OCTEON CN106 DPU; runs DAO apps directly; carries the current `hw_class` (e.g. `sdp-pf1-vf8`) |
 | `tg-01` | `nic` | `[e810]` | `tg-01-xcp` | Intel E810 traffic-generator NIC; client VMs get E810 VFs via passthrough |
 
-One link — `{a: dpu-01.eth0, b: tg-01.e810p0, capability: wire}` — a 25G wire. The setup's
-capability union is `[e810, octeon-cn106, sdp, wire]`.
+Links wire TG and DPU (see `setups/tb-01.yml`). The setup's capability union is `[e810, octeon-cn106, sdp, wire]`.
 
 **Tomorrow: N heterogeneous setups** mixing DPUs, GPUs, NICs, and pure compute
 (`kind ∈ dpu | gpu | nic | compute`). Everything that describes hardware or a use case is
@@ -48,7 +52,7 @@ pseudo-use-case: pick a setup and a base VM template per host, get bare wired VM
 
 ## Architecture
 
-One Python package (`service/`), one sqlite file, two HTML pages, four playbooks. The API and
+One Python package (`service/`), one sqlite file, two HTML pages, `deploy.yml` / `cleanup.yml` (roles). The API and
 engine are separate processes sharing the DB in WAL mode.
 
 ```mermaid
@@ -75,7 +79,7 @@ graph TD
     end
 
     subgraph lab["Lab hardware"]
-        PB["playbooks/<br/>dpu_prepare · host_vm · verify · teardown"]
+        PB["playbooks/<br/>deploy.yml · cleanup.yml + roles"]
         DX["dpu-01-xcp (XCP-ng)"]
         TX["tg-01-xcp (XCP-ng)"]
         OC["dpu-01 — OCTEON CN106"]
@@ -103,13 +107,13 @@ graph TD
 Data flow in one paragraph: `daolab sync` mirrors `usecases/` and `setups/` YAML into the DB.
 A dashboard or the CLI hits `POST /reservations`; `api.py` calls `scheduler.py`, which fixes
 `setup_id`, `start_at`, `end_at` (slot-shifting if needed) and writes the row as `queued`. The
-engine tick picks it up at `start_at − lead`, drives `runner.py` through
-`dpu_prepare → host_vm → verify`, playbooks post VM IPs back via `POST /internal/vm-ip`, and the
-reservation becomes `ready`, then `active`, then is torn down at `end_at`.
+engine tick picks it up at `start_at − lead`, drives `runner.py` through `playbooks/deploy.yml` roles,
+playbooks post VM IPs/leases as needed via the internal APIs, and the reservation becomes `ready`,
+then `active`, then is cleaned up at `end_at` via `playbooks/cleanup.yml`.
 
 ## Document map
 
-Nine files. Each owns its decisions; everything else points at it.
+Eleven files. Each owns its decisions; everything else points at it.
 
 | File | Scope (one line) | Key decisions owned |
 |---|---|---|
@@ -135,7 +139,7 @@ Nine files. Each owns its decisions; everything else points at it.
 | Automation | ansible-runner | Programmatic playbook invocation with structured status/events — one runner function per lifecycle transition. |
 | Frontend | Single-file vanilla-JS dashboards + mermaid | Dumb views over the API, no build step; mermaid renders the topology diagrams shipped inside setup YAML. |
 | Tests | pytest | Scheduler unit tests run against an in-memory sqlite handle, no hardware. |
-| Entry points | make | The four workflows — `setup`, `test`, `api`, `engine` — as one-word commands. |
+| Entry points | make | Workflows — `setup`, `test`, `api`, `engine` — as one-word commands. |
 
 Packaging: one `pyproject.toml` at repo root declares the dependencies (`fastapi`, `uvicorn`,
 `pyyaml`, `ansible-runner`, `httpx`, `python-dotenv`, `pytest`) and the console script

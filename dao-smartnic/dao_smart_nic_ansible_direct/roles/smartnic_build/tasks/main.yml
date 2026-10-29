@@ -15,7 +15,7 @@
 
 - name: Check VPP is not running
   ansible.builtin.shell: |
-    if pgrep -x vpp >/dev/null; then
+    if pgrep -x vpp >/dev/null || pgrep -x vpp_main >/dev/null || pgrep -af '/vpp' 2>/dev/null | grep -qv grep; then
       echo "VPP RUNNING"
       exit 1
     fi

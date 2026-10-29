@@ -73,16 +73,33 @@ def db_conn():
 
 
 def current_user(authorization: str | None = Header(None),
-                 conn: sqlite3.Connection = Depends(db_conn)) -> sqlite3.Row:
-    if not authorization or not authorization.startswith("Bearer "):
+                conn: sqlite3.Connection = Depends(db_conn)) -> sqlite3.Row:
+    if not authorization or not authorization.lower().startswith("bearer "):
         raise DaolabError("unauthorized", 401, "missing bearer token")
     token_hash = hashlib.sha256(authorization[len("Bearer "):].encode()).hexdigest()
     user = models.user_by_token_hash(conn, token_hash)
     if user is None:
         raise DaolabError("unauthorized", 401, "invalid bearer token")
     if not user["enabled"]:
-        raise DaolabError("forbidden", 403, f"user {user['username']} is disabled",
-                          {"reason": "user_disabled"})
+        raise DaolabError("forbidden", 403, "user disabled", {"reason": "user_disabled"})
+    # B-101: token expiry if present
+    try:
+        from datetime import datetime, timezone
+
+        exp = user["token_expires_at"] if "token_expires_at" in user.keys() else None
+        if exp:
+            try:
+                exp_dt = datetime.strptime(str(exp), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) >= exp_dt:
+                    raise DaolabError("unauthorized", 401, "token expired")
+            except DaolabError:
+                raise
+            except Exception:
+                pass
+    except DaolabError:
+        raise
+    except Exception:
+        pass
     return user
 
 
@@ -997,6 +1014,39 @@ def reservation_events(res_id: int, user: sqlite3.Row = Depends(current_user),
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+def _ip_conflict_detect(ip: str) -> bool:
+    try:
+        import subprocess
+
+        # Prefer arping (B-97). Try common forms.
+        for cmd in [
+            ["arping", "-c", "1", "-w", "1", ip],
+            ["arping", "-c", "1", "-I", "eth0", "-w", "1", ip],
+        ]:
+            try:
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+                if proc.returncode == 0:
+                    out = (proc.stdout or b"") + (proc.stderr or b"")
+                    if out:
+                        return True
+            except Exception:
+                continue
+        # Fallback
+        for cmd in [
+            ["ping", "-n", "1", "-w", "1000", ip],
+            ["ping", "-c", "1", "-W", "1", ip],
+        ]:
+            try:
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+                if proc.returncode == 0:
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return False
+
+
 @app.post("/internal/vm-ip")
 def vm_ip_callback(body: VmIpCallback, _: None = Depends(require_internal),
                    conn: sqlite3.Connection = Depends(db_conn)):
@@ -1005,6 +1055,29 @@ def vm_ip_callback(body: VmIpCallback, _: None = Depends(require_internal),
         raise DaolabError("not_found", 404,
                           f"no vm for reservation {body.reservation_id} role {body.role}",
                           {"reservation_id": body.reservation_id, "role": body.role})
+    res = models.reservation_by_id(conn, body.reservation_id)
+    if res is None:
+        raise DaolabError("not_found", 404,
+                          f"unknown reservation {body.reservation_id}",
+                          {"reservation_id": body.reservation_id})
+    # B-97: only accept the leased IP for this reservation/role while deploying/live
+    if res["state"] in ("provisioning", "ready", "active"):
+        lease = models.ip_lease_by_role(conn, body.reservation_id, body.role)
+        if lease is not None and lease["ip"] != body.ip:
+            raise DaolabError("ip_mismatch", 403,
+                              "posted ip does not match leased ip for this reservation/role",
+                              {"reservation_id": body.reservation_id, "role": body.role,
+                               "leased_ip": lease["ip"], "posted_ip": body.ip})
+    # B-97: IP conflict check using arping
+    try:
+        if _ip_conflict_detect(body.ip):
+            other = models.find_reservation_by_ip(conn, body.ip) if hasattr(models, "find_reservation_by_ip") else None
+            if other and other.get("id") != body.reservation_id:
+                raise DaolabError("ip_conflict", 409, "ip address conflict detected", {"ip": body.ip})
+    except DaolabError:
+        raise
+    except Exception:
+        pass
     models.set_vm_ip(conn, vm["id"], body.ip)     # idempotent: re-posting is a harmless UPDATE
     return {"ok": True}
 

@@ -1,0 +1,12 @@
+# inventory/host_vars/dpu-01-xcp.yml — SDP host (B-85).
+# Dom0 `DAO-Agentic-Infra`, XCP-ng, root@10.68.0.53. Single-host pool d51166df-b3ce-9935-a4d8-f264fcc477a0.
+# The backend VM gets an SDP VF from this host (connect: sdp). The OCTEON's PCIe endpoint is the
+# Cavium network controller 177d:b900 at 0000:6f:00.0, currently bound to pciback with total=8 VFs.
+ansible_user: root
+ansible_python_interpreter: /usr/bin/python3
+mgmt_network: "Pool-wide network associated with eth0"   # bridge xenbr0, PIF eth0 (10.68.0.53)
+sr_uuid: "df51fda3-fee4-e466-b70f-b6886d357ea9"          # "Local storage" (ext, 900 GB)
+templates: ["Ubuntu-22.04-HWE-6.8-Octeon-VF-Ready-v2"]
+sdp_pf: "0000:6f:00.0"                                   # OCTEON SDP endpoint (pciback; sriov_totalvfs=8)
+sdp_vfs: []                                              # not created yet: `echo 8 > /sys/bus/pci/devices/0000:6f:00.0/sriov_numvfs`,
+                                                         # hide each VF in pciback.conf, reboot dom0 once, then list them here

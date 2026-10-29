@@ -1,3 +1,13 @@
+<<<<<<< HEAD
+﻿# Global vars for two-host testbed
+vm_name_prefix: daolab-r
+vm_gateway: 10.68.0.1
+vm_dns:
+  - 10.68.0.1
+  - 8.8.8.8
+vm_domain: lab.local
+ipam_network: 10.68.0.0/22
+=======
 # inventory/group_vars/all.yml — lab-wide values (B-85 bring-up).
 #
 # The VMs' management network: addresses come from DAOLAB_IP_POOL (10.68.1.0-10.68.2.200) and
@@ -6,3 +16,4 @@
 mgmt_prefix: 16              # TODO(B-85): confirm the lab subnet's prefix length
 mgmt_gateway: ""             # TODO(B-85): the lab gateway, e.g. 10.68.0.1
 mgmt_dns: []                 # TODO(B-85): the lab resolvers
+>>>>>>> origin/akshay

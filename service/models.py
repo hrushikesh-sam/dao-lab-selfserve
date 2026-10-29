@@ -13,7 +13,7 @@ SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 RESERVATION_STATES = ("queued", "provisioning", "ready", "active", "cleaning", "quarantined",
                       "released", "failed")
 BUSY_STATES = ("queued", "provisioning", "ready", "active", "cleaning", "quarantined")
-HELD_STATES = ("provisioning", "ready", "active", "cleaning", "quarantined")
+HELD_STATES = ("provisioning", "ready", "active", "cleaning", "quarantined", "failed")
 TERMINAL_STATES = ("released", "failed")
 # Per-user quota buckets (B-15): a reservation is "live" while it owns a setup (deploying or
 # deployed) and "future" while it is only booked. plan/09 §4 caps these at 1 and 2.
@@ -503,6 +503,22 @@ def running_mutating_job(conn, setup_id: int):
             WHERE r.setup_id = ? AND j.state = 'running' AND j.kind IN ({marks})
             ORDER BY j.id LIMIT 1""",
         (setup_id, *MUTATING_JOB_KINDS)).fetchone()
+
+
+def unfinished_cleanup_job(conn, setup_id: int):
+    """A pending or running cleanup / reconcile job on `setup_id`, or None (B-94).
+
+    Between a deploy's last failed attempt and the end of its cleanup chain the reservation
+    is `failed` — terminal, so `held_by` ignores it — while the setup may still carry the
+    residue of the half-finished deploy. `dirty_reservations` only sees the chain's result
+    (a cleanup/reconcile that already failed), so it is blind to this window. A job belongs
+    to a setup through its reservation; non-terminal reservations are caught by `held_by`
+    anyway, so the rule is simply: no new deploy while a cleanup is outstanding."""
+    return conn.execute(
+        """SELECT j.* FROM jobs j JOIN reservations r ON r.id = j.reservation_id
+           WHERE r.setup_id = ? AND j.state IN ('pending', 'running')
+           AND j.kind IN ('cleanup', 'reconcile')
+           ORDER BY j.id LIMIT 1""", (setup_id,)).fetchone()
 
 
 def stale_running_jobs(conn, idle_before: str):

@@ -9,7 +9,10 @@ A tick walks the reservations in a fixed order:
   2. active -> cleaning      when end_at has passed (and queues a `cleanup` job whose first
                              step, `terminate-user`, kills the DPU's `lab` sessions so access
                              is revoked at the end of the slot — plan/09 §7, B-53)
-  3. queued -> provisioning  at start_at - lead, if the setup is available and not held
+  3. queued -> provisioning  at start_at - lead, if the setup is available, not held, and
+                             has no cleanup / reconcile job outstanding (B-94: the
+                             reservation of a failed deploy is terminal, so `held_by`
+                             does not see it while its cleanup is still queued)
                              (and, in the same transaction, creates the reservation's `vms`
                              rows and queues a `deploy` job)
   4. run the pending jobs, oldest first, through the runner (B-22)
@@ -205,6 +208,8 @@ def _start_due(db: sqlite3.Connection, now: datetime, cfg: scheduler.SchedConfig
     for r in scheduler.startable_queued(db):
         if models.held_by(db, r["setup_id"]) is not None:
             continue                                # the setup is still in use
+        if models.unfinished_cleanup_job(db, r["setup_id"]) is not None:
+            continue                                # B-94: its cleanup is outstanding
         uc = models.usecase_by_id(db, r["usecase_id"])
         lead = scheduler.start_lead_min(db, r["setup_id"], uc["hw_class"], cfg)
         if models.parse_ts(r["start_at"]).timestamp() - lead * 60 > now.timestamp():
@@ -212,6 +217,8 @@ def _start_due(db: sqlite3.Connection, now: datetime, cfg: scheduler.SchedConfig
         try:
             with _txn(db):
                 if models.held_by(db, r["setup_id"]) is not None:   # re-check under the lock
+                    raise _Skip
+                if models.unfinished_cleanup_job(db, r["setup_id"]) is not None:
                     raise _Skip
                 models.transition_reservation(db, r["id"], "provisioning", from_state="queued")
                 models.create_vms(db, r["id"])      # before any playbook: callbacks need them
