@@ -13,7 +13,7 @@ from tests.conftest import NOW, REPO, T, mk_res, mk_user
 
 @pytest.fixture
 def real(db):
-    """The real catalog: tb-01 (dpu-01 + tg-01 on tb-01-xcp) and the three use cases."""
+    """The real catalog: tb-01 (dpu-01 on dpu-01-xcp, tg-01 on tg-01-xcp) and the use cases."""
     catalog.seed_usecases(db)
     catalog.sync(db, os.path.join(REPO, "usecases"), os.path.join(REPO, "setups"),
                  os.path.join(REPO, "inventory", "hosts.yml"))
@@ -41,8 +41,8 @@ def test_vpp_roles_resolve_against_tb01(real):
     rid = book(real)
     assert models.create_vms(db, rid) == 3
     assert sorted(rows(db, rid)) == [
-        ("sink", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-sink", None),   # dpu_host
-        ("tgen", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-tgen", None),   # tg_host
+        ("sink", "tg-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-sink", None),   # tg_host (B-93)
+        ("tgen", "tg-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-tgen", None),   # tg_host
         ("vpp", "dpu-01", None, None, None),                                        # on: dpu
     ]
 
@@ -70,7 +70,7 @@ def test_a_role_whose_member_is_missing_is_left_out(real):
     db.execute("DELETE FROM resources WHERE setup_id = ? AND kind = 'nic'", (sid,))
     rid = book(real)
     models.create_vms(db, rid)
-    assert sorted(r[0] for r in rows(db, rid)) == ["sink", "vpp"]       # no tgen
+    assert sorted(r[0] for r in rows(db, rid)) == ["vpp"]       # sink and tgen both live on tg_host
 
 
 def test_engine_creates_the_rows_with_the_provisioning_move(real):

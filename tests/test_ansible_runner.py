@@ -235,6 +235,7 @@ def lab(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", f"{lab.bindir}:{os.path.dirname(ANSIBLE)}:{os.environ['PATH']}")
     monkeypatch.setenv("FAKELAB_STATE", str(lab.state_path))
     monkeypatch.setenv("FAKELAB_LOG", str(lab.log_path))
+    monkeypatch.setenv("DAOLAB_XO_CMD", "daolab-xo")         # B-93: the fake XO client
     monkeypatch.setenv("ANSIBLE_LOCAL_TEMP", str(tmp_path / "tmp"))
     monkeypatch.setenv("ANSIBLE_HOME", str(tmp_path / "ansible-home"))
     return lab
@@ -258,9 +259,9 @@ def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
     dirty_result = rn.verify_clean(ctx, steps)
     assert dirty_result.ok is False
     assert sorted(dirty_result.residue) == sorted([
-        "vm:daolab-r12-sink", "vf:0000:5e:01.1", "dpu_session:lab",
+        "vm:daolab-r12-sink", "dpu_session:lab",       # the VF goes with its VM (B-93)
         "dpu_app:daolab-app-dao-vpp.service", "ip:10.30.0.101"])
-    assert [n for n, _, _ in steps.calls] == ["check_vms", "check_vfs", "check_sessions", "check_ips"]
+    assert [n for n, _, _ in steps.calls] == ["check_vms", "check_sessions", "check_ips"]
     assert rn.reconcile(ctx, Steps()).ok
     st = lab.state()
     st["pingable"] = []
