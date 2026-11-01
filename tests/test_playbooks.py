@@ -24,21 +24,24 @@ ANSIBLE = (os.environ.get("DAOLAB_TEST_ANSIBLE_PLAYBOOK") or shutil.which("ansib
 pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed "
                                                     "(pip install -e .[ansible])")
 
-FAKES = ("xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping",
+FAKES = ("daolab-xo", "xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping",
          "pktgen", "h2load", "which", "vppctl", "dpdk-devbind.py", "fakeproc", "getent",
          "useradd", "usermod", "chpasswd", "chage", "visudo", "sshd")
 E810_VFS = ["0000:5e:01.0", "0000:5e:01.1"]
 SDP_VFS = ["0000:03:02.0", "0000:03:02.1"]
 TPL_UUID = "11111111-tpl0-0000-0000-000000000000"
 NET_UUID = "22222222-net0-0000-0000-000000000000"
+SRIOV_UUID = "44444444-sriov-0000-0000-000000000000"
 MEMBERS = [{"name": "dpu-01", "kind": "dpu", "host": "tb-01-xcp"},
            {"name": "tg-01", "kind": "nic", "host": "tb-01-xcp"}]
 
 
 def clean_state():
     return {"vms": {}, "templates": {"tpl-ubuntu2204-dao": TPL_UUID},
-            "networks": {"Pool-wide network associated with eth0": NET_UUID},
-            "assignable": E810_VFS + SDP_VFS, "lab_procs": 0, "units": {}, "pingable": [],
+            "networks": {"Pool-wide network associated with eth0": NET_UUID,
+                         "SRIOV-E810": SRIOV_UUID},
+            "assignable": E810_VFS + SDP_VFS, "sriov_vfs": E810_VFS,
+            "lab_procs": 0, "units": {}, "pingable": [],
             "files": {}}
 
 
@@ -64,7 +67,9 @@ class Lab:
                            "xcp_hosts": {"hosts": {"tb-01-xcp": {
                                "e810_vfs": E810_VFS, "sdp_vfs": SDP_VFS,
                                "mgmt_network": "Pool-wide network associated with eth0",
-                               "sr_uuid": "33333333-sr00"}}},
+                               "sr_uuid": "33333333-sr00", "xo_pool": "pool-tb01",
+                               "sriov_networks": {"e810-vf": "SRIOV-E810",
+                                                  "sdp": "SRIOV-E810"}}}},
                            "dpus": {"hosts": {"dpu-01": {"ansible_host": "10.68.0.190"}}}}}}
         self.inventory = tmp_path / "hosts.json"
         self.inventory.write_text(json.dumps(inv))
@@ -82,7 +87,8 @@ class Lab:
     def run(self, playbook, roles_path=None, **extravars):
         ev = {"reservation_id": 12, "setup": "tb-01", "usecase": "vpp", "user": "alice",
               "ssh_pubkey": "ssh-ed25519 AAAAalice alice@laptop", "diy": False,
-              "daolab_members": MEMBERS, "daolab_output_file": str(self.out_path)}
+              "daolab_members": MEMBERS, "daolab_output_file": str(self.out_path),
+              "daolab_xo": "daolab-xo"}
         ev.update(extravars)
         evfile = self.dir / "extravars.json"
         evfile.write_text(json.dumps(ev))
@@ -130,14 +136,15 @@ def dirty(state, rid=12):
 def test_verify_clean_on_a_clean_testbed_reports_nothing(lab):
     assert lab.run("verify_clean.yml", daolab_leases=["10.30.0.100"]) == 0, lab.stdout
     assert lab.output() == []
-    assert lab.calls("xe") and lab.calls("xl") and lab.calls("ping")      # it did look
+    assert lab.calls("daolab-xo") and lab.calls("ping")                # it did look (XO, B-93)
+    assert not lab.calls("xe") and not lab.calls("xl")                  # never on the dom0
 
 
 def test_verify_clean_reports_every_kind_of_residue(lab):
     lab.set(dirty(clean_state()))
     assert lab.run("verify_clean.yml", daolab_leases=["10.30.0.100", "10.30.0.101"]) == 0, lab.stdout
     assert sorted(lab.output()) == sorted([
-        "vm:daolab-r12-sink", "vf:0000:5e:01.1", "dpu_session:lab",
+        "vm:daolab-r12-sink", "dpu_session:lab",       # its VF goes with the VM (SR-IOV VIF)
         "dpu_app:daolab-app-dao-vpp.service", "ip:10.30.0.101"])
 
 
@@ -175,20 +182,18 @@ def test_reconcile_destroys_every_kind_of_residue_and_verify_then_agrees(lab):
     assert lab.output() == []
 
 
-def test_reconcile_rebinds_a_vf_that_lost_pciback(lab):
-    st = clean_state()
-    st["assignable"].remove("0000:03:02.0")                           # e.g. a crash rebinding it
-    lab.set(st)
+def test_reconcile_destroys_through_xen_orchestra_and_never_logs_in_to_a_dom0(lab):
+    lab.set(dirty(clean_state()))
     assert lab.run("reconcile.yml") == 0, lab.stdout
-    assert "0000:03:02.0" in lab.state()["assignable"]
-    assert ["xl", "pci-assignable-add", "0000:03:02.0"] in lab.calls("xl")
+    assert ["daolab-xo", "destroy", "--vm", "vm-sink"] in lab.calls("daolab-xo")
+    assert not lab.calls("xe") and not lab.calls("xl")                 # B-93: XO only
 
 
 def test_reconcile_is_safe_on_a_clean_testbed_and_changes_nothing(lab):
     before = lab.state()
     assert lab.run("reconcile.yml") == 0, lab.stdout
     assert lab.state() == before
-    assert not [c for c in lab.calls("xe") if c[1] in ("vm-shutdown", "vm-uninstall")]
+    assert not [c for c in lab.calls("daolab-xo") if c[1] == "destroy"]
     assert not lab.calls("loginctl") and not lab.calls("pkill")
 
 
@@ -479,11 +484,13 @@ def test_deploy_vpp_end_to_end(lab, api, books):
     assert sorted(st["vms"]) == ["daolab-r12-sink", "daolab-r12-tgen"]
     sink, tgen = st["vms"]["daolab-r12-sink"], st["vms"]["daolab-r12-tgen"]
     assert (sink["power"], sink["ip"], tgen["ip"]) == ("running", "10.30.0.100", "10.30.0.101")
-    # deterministic VFs: k-th e810-vf role on tb-01-xcp takes e810_vfs[k]
-    assert (sink["other_config"]["pci"], tgen["other_config"]["pci"]) == \
-        ("0/0000:5e:01.0", "0/0000:5e:01.1")
+    # B-93: each e810-vf role gets a VIF on the SR-IOV network; xapi hands it a free VF on start
+    assert [v["network"] for v in sink["vifs"]] == ["template", SRIOV_UUID]
+    assert {sink["other_config"]["pci"], tgen["other_config"]["pci"]} == \
+        {"0/0000:5e:01.0", "0/0000:5e:01.1"}
     assert sorted(st["assignable"]) == sorted(SDP_VFS)
-    assert [v["device"] for v in sink["vifs"]] == ["0"]
+    assert all(vm["memory_fixed"] and "daolab-r12" in vm["tags"] for vm in st["vms"].values())
+    assert not lab.calls("xe") and not lab.calls("xl")                 # never on the dom0
     # the cloud-init seed: owner key on the owner's login only, the service key elsewhere
     ud = yaml.safe_load(seed(sink, "user-data"))
     users = {u["name"]: u["ssh_authorized_keys"] for u in ud["users"]}
@@ -492,7 +499,7 @@ def test_deploy_vpp_end_to_end(lab, api, books):
     assert ud["packages"] == ["iperf3"]
     net = yaml.safe_load(seed(sink, "network-config"))
     assert net["ethernets"]["mgmt0"]["addresses"] == ["10.30.0.100/24"]
-    assert net["ethernets"]["data0"] == {"match": {"driver": "iavf"}, "set-name": "data0",
+    assert net["ethernets"]["data0"] == {"match": {"driver": "iavf"},
                                          "addresses": ["10.65.0.37/24"]}
     assert "pktgen-dpdk" in yaml.safe_load(seed(tgen, "user-data"))["packages"]
     # the DPU app: Akshay's VPP runbook steps for a board at rest, then its health exporter
@@ -559,7 +566,8 @@ def test_a_missing_template_is_named(lab, api, books):
 def test_running_out_of_vfs_is_named(lab, api, books):
     assert deploy(lab, api, books, daolab_roles={**VPP_ROLES, "extra": {
         "on": "tg_host", "vm": "tpl-ubuntu2204-dao", "install": [], "connect": "e810-vf"}}) != 0
-    assert "has no VF #2 in e810_vfs" in lab.stdout
+    # B-93: the SR-IOV network has no third VF; XO refuses the start and the deploy says so
+    assert "step: start_vm extra" in lab.stdout and "SRIOV" in lab.stdout
 
 
 def test_an_unknown_install_id_is_refused(lab, api, books):
@@ -866,7 +874,7 @@ def test_cleanup_is_safe_on_a_clean_testbed(lab, books):
     before = lab.state()
     assert cleanup(lab, books) == 0, lab.stdout[-2000:]
     assert lab.state()["vms"] == before["vms"]
-    assert not [c for c in lab.calls("xe") if c[1] in ("vm-shutdown", "vm-uninstall")]
+    assert not [c for c in lab.calls("daolab-xo") if c[1] == "destroy"]
 
 
 def test_verify_clean_sees_an_app_process_left_running(lab):
@@ -906,7 +914,7 @@ def test_without_vms_verify_cleanup_and_reconcile_never_touch_the_dom0(lab, book
     assert cleanup(lab, books, daolab_deploy_vms=False) == 0, lab.stdout[-2000:]
     assert lab.run("reconcile.yml", daolab_deploy_vms=False, daolab_app="none",
                    **books.vars) == 0, lab.stdout[-2000:]
-    assert not lab.calls("xe") and not lab.calls("xl")
+    assert not lab.calls("xe") and not lab.calls("xl") and not lab.calls("daolab-xo")
     assert "daolab-r12-sink" in lab.state()["vms"]    # untouched
 
 

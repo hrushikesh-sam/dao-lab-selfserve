@@ -50,6 +50,8 @@ class Settings:
     deploy_vms: bool
     become_password_file: str
     deployable: tuple[str, ...]
+    xo_url: str
+    xo_token_file: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -99,6 +101,9 @@ class Settings:
             deploy_vms=flag("DAOLAB_DEPLOY_VMS", "true"),
             become_password_file=env("DAOLAB_BECOME_PASSWORD_FILE", ""),
             deployable=tuple(n.strip() for n in env("DAOLAB_DEPLOYABLE", "").split(",") if n.strip()),
+            # B-93: the use cases' VMs are made through Xen Orchestra (scripts/run/xo.sh)
+            xo_url=env("DAOLAB_XO_URL", "https://127.0.0.1:8443/rest/v0"),
+            xo_token_file=env("DAOLAB_XO_TOKEN_FILE", ""),
         )
 
 

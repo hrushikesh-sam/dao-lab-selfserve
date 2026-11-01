@@ -28,7 +28,7 @@ host_vm_install_map:
   sink: [iperf3]
   offload-client: [ethtool]
 
-# guest driver of each passthrough family, matched by netplan to name the data NIC data0
+# guest driver of each passthrough family, matched by netplan to configure the data NIC
 host_vm_data_drivers:
   e810-vf: iavf
   sdp: octeon_ep_vf

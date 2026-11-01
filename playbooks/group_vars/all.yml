@@ -1,0 +1,7 @@
+# playbooks/group_vars/all.yml — defaults every playbook shares (loaded next to the playbooks).
+#
+# B-93: the Xen Orchestra client the VM tasks call (service/xo.py). It runs on the control node
+# with the interpreter that runs ansible-playbook (the daolab venv), and reads DAOLAB_XO_URL /
+# DAOLAB_XO_TOKEN_FILE from the environment the runner gives it. The tests point it at their
+# fake (`-e daolab_xo=daolab-xo`).
+daolab_xo: "{{ ansible_playbook_python }} -m service.xo"

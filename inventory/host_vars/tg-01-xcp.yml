@@ -1,11 +1,13 @@
 # inventory/host_vars/tg-01-xcp.yml — E810 / traffic-gen host (B-85).
 # Dom0 `xcp-ng-fxbqndvl`, XCP-ng, root@10.68.0.52. Single-host pool 6769f0a6-7f4e-88ae-801e-648d0f5d0650.
 # The client VM's E810 VF comes from this host (connect: e810-vf).
-ansible_user: root
-ansible_python_interpreter: /usr/bin/python3
+xo_pool: "6769f0a6-7f4e-88ae-801e-648d0f5d0650"               # XO pool of this host (B-93)
 mgmt_network: "Pool-wide network 0"                      # bridge xenbr0, PIF eth0 (10.68.0.52)
 sr_uuid: "73946000-676f-3f7d-a117-50e7aecc7009"          # "Local storage" (ext, 427 GB)
-templates: ["Ubuntu-22.04-HWE-6.8-Octeon-VF-Ready-v2_COPY"]
+templates: ["tpl-ubuntu2204-dao"]                       # built per plan/05 (daolab-seed); the
+                                                         # older ...-Octeon-VF-Ready-v2_COPY ignores the seed
+sriov_networks:                                          # connect: -> SR-IOV network (a VIF on it IS the VF)
+  e810-vf: "SRIOV-E810"                                  # 5886a435-..., PIF eth3
 e810_pf: "0000:01:00.1"                                  # E810-C for QSFP; 128 VFs total (numvfs=128)
 e810_vfs:                                                # from `xl pci-assignable-list` (in pciback)
   - "0000:01:11.0"

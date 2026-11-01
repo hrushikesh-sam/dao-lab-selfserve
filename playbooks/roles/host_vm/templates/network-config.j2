@@ -1,9 +1,12 @@
 # daolab-r{{ reservation_id | int }}-{{ vm.role }} — rendered by playbooks/roles/host_vm (B-80)
+# Matched by driver only, never renamed (B-93): netplan's set-name is a udev rename, and on
+# first boot udev has already named the NIC (eth0) before cloud-init writes this file, so a
+# renamed entry matched nothing and the NIC stayed DOWN (seen 2026-11-01 on tpl-ubuntu2204-dao).
+# Each VM has exactly one Xen `vif` NIC; its VF uses another driver (iavf / octeon_ep_vf).
 version: 2
 ethernets:
   mgmt0:
     match: {driver: vif}
-    set-name: mgmt0
     addresses: [{{ _ip }}/{{ mgmt_prefix }}]
 {% if mgmt_gateway %}
     routes: [{to: default, via: {{ mgmt_gateway }}}]
@@ -14,6 +17,5 @@ ethernets:
 {% if vm.data_ip and vm.connect %}
   data0:
     match: {driver: {{ host_vm_data_drivers[vm.connect] }}}
-    set-name: data0
     addresses: [{{ vm.data_ip }}]
 {% endif %}

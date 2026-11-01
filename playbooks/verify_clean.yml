@@ -5,7 +5,6 @@
 # as JSON to {{ daolab_output_file }} on the control node; an empty list means clean.
 #
 #   vm:<name>        an XCP-ng VM named daolab-r<id>-* still exists
-#   vf:<bdf>         an E810/SDP VF from host_vars is not back in `xl pci-assignable-list`
 #   dpu_session:lab  processes of the shared DPU login are still running
 #   dpu_app:<unit>   a use-case app unit (daolab-app-*.service) is still active on the DPU,
 #   dpu_app:<proc>   or an app process the runbooks start by hand (vpp, dao-smart-nic) runs
@@ -23,32 +22,20 @@
     - name: resolve
       ansible.builtin.import_tasks: tasks/resolve.yml
 
-- name: check the XCP-ng hosts
+- name: check the XCP-ng hosts (through Xen Orchestra, B-93)
   hosts: r_dom0
   gather_facts: false
   tasks:
     - name: "step: check_vms"
-      ansible.builtin.shell: |
-        set -o pipefail
-        xe vm-list is-control-domain=false params=name-label --minimal \
-          | tr ',' '\n' | grep -E '^daolab-r{{ reservation_id | int }}-' || true
-      args:
-        executable: /bin/bash
+      ansible.builtin.command: "{{ daolab_xo }} vms --pool {{ xo_pool }} --prefix daolab-r{{ reservation_id | int }}-"
       register: _vms
       changed_when: false
 
-    - name: "step: check_vfs"
-      ansible.builtin.command: xl pci-assignable-list
-      register: _assignable
-      changed_when: false
-
+    # A VF is a VIF on the SR-IOV network: it goes back to the PF with its VM, so a leftover VF
+    # always shows up as a leftover VM above (no pciback bookkeeping since B-93).
     - name: collect this host's residue
       ansible.builtin.set_fact:
-        daolab_residue: >-
-          {{ (_vms.stdout_lines | select | map('regex_replace', '^', 'vm:') | list)
-             + ((e810_vfs | default([]) + sdp_vfs | default([]))
-                | reject('in', _assignable.stdout_lines | map('trim') | list)
-                | map('regex_replace', '^', 'vf:') | list) }}
+        daolab_residue: "{{ _vms.stdout | from_json | map(attribute='name') | map('regex_replace', '^', 'vm:') | list }}"
 
 - name: check the DPU
   hosts: r_dpu

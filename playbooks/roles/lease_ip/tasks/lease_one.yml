@@ -15,9 +15,8 @@
     _ip: "{{ _lease.json.ip }}"
 
 # A replay finds its own VM already up on the address: that is not a conflict.
-- name: is this reservation's VM already there
-  ansible.builtin.command: xe vm-list name-label={{ vm.name }} --minimal
-  delegate_to: "{{ vm.host }}"
+- name: is this reservation's VM already there (Xen Orchestra, B-93)
+  ansible.builtin.command: "{{ daolab_xo }} vms --pool {{ hostvars[vm.host].xo_pool }} --name {{ vm.name }}"
   register: _ours
   changed_when: false
 
@@ -27,7 +26,7 @@
   register: _ping
   changed_when: false
   failed_when: false
-  when: _ours.stdout | trim | length == 0
+  when: (_ours.stdout | from_json) | length == 0
 
 - name: "step: lease_conflict {{ vm.role }}"
   when: _ping.rc | default(1) == 0

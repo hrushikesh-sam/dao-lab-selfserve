@@ -650,6 +650,14 @@ def ansible_env(settings=None, traceparent: str | None = None) -> dict[str, str]
     become_file = (getattr(s, "become_password_file", "") or "").strip()
     if become_file:                 # sudo password for the runbooks' account, never on argv / in logs
         env["ANSIBLE_BECOME_PASSWORD_FILE"] = os.path.abspath(os.path.expanduser(become_file))
+    # B-93: the VM tasks' Xen Orchestra client (service/xo.py) reads these; the token stays in
+    # its file, never on argv / in extra vars / in logs
+    xo_url = (getattr(s, "xo_url", "") or "").strip()
+    if xo_url:
+        env["DAOLAB_XO_URL"] = xo_url
+    xo_token = (getattr(s, "xo_token_file", "") or "").strip()
+    if xo_token:
+        env["DAOLAB_XO_TOKEN_FILE"] = os.path.abspath(os.path.expanduser(xo_token))
     endpoint = (s.otel_endpoint or "").strip()
     if not endpoint:
         return env
