@@ -1,11 +1,25 @@
-<<<<<<< HEAD
-# inventory/host_vars/dpu-01.yml — filled from `lspci -D`, /sys/bus/platform/devices and
+# inventory/host_vars/dpu-01.yml — the CN10K board xeon3-oct-112 (B-85 bring-up).
+#
+# Filled from `lspci -D`, /sys/bus/platform/devices and
 # /sys/bus/pci/devices/*/sriov_numvfs (Phase 1, B-85).
 # Board `xeon3-oct-112`, Ubuntu 22.04.5 aarch64, nproc=24, mgmt eth5 10.68.0.190 (login `dao-test`).
 # bdf.cpt_vfs is bound to vfio-pci and sized to nproc; bdf.sdp_pf is the OCTEON SDP admin function
 # whose VFs (a0f7, rvu_nicvf) the board exposes to dpu-01-xcp for smartnic/VPP.
+#
+# The VPP / SmartNIC runbooks take their PCI addresses, ports and paths from their own values in
+# VPP_ansible/group_vars/all.yml and dao-smartnic/.../group_vars/all.yml. The bdf map below is a
+# record of what the board exposes.
+
+# The EBF personality the board runs. playbooks/bringup.yml writes it to /etc/daolab/hw_class
+# once; from then on a deploy whose use case needs another personality stops with the manual
+# flash message (roles/ebf_set) instead of running on the wrong one.
 hw_class: sdp-pf1-vf8              # Phase-1 bootstrap ONLY; resources.hw_class in the DB is
                                    # the source of truth after the first provision
+
+# The operator account the runbooks run as must sudo without a password (their become: true
+# steps run unattended from the dashboard). If it cannot, set ansible_become_password here
+# through ansible-vault, never in plain text.
+
 bdf:
   sdp_pf: "0002:01:00.0"           # device a065, drv rvu_af; 9 VFs 0002:01:00.1–0002:01:01.1 (a0f7)
   cpt_pf: "0002:20:00.0"           # device a0f2, drv rvu_cptpf; sriov_totalvfs=64, numvfs=24
@@ -34,19 +48,3 @@ bdf:
     - "0002:20:02.6"
     - "0002:20:02.7"
     - "0002:20:03.0"
-=======
-# inventory/host_vars/dpu-01.yml — the CN10K board xeon3-oct-112 (B-85 bring-up).
-#
-# The VPP / SmartNIC specifics (PCI addresses, ports, paths) are the runbooks' own values in
-# VPP_ansible/group_vars/all.yml and dao-smartnic/.../group_vars/all.yml; they are not repeated
-# here. This file holds what daolab itself needs about the board.
-
-# The EBF personality the board runs. playbooks/bringup.yml writes it to /etc/daolab/hw_class
-# once; from then on a deploy whose use case needs another personality stops with the manual
-# flash message (roles/ebf_set) instead of running on the wrong one.
-hw_class: sdp-pf1-vf8
-
-# The operator account the runbooks run as must sudo without a password (their become: true
-# steps run unattended from the dashboard). If it cannot, set ansible_become_password here
-# through ansible-vault, never in plain text.
->>>>>>> origin/akshay
