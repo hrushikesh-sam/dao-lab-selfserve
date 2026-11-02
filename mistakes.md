@@ -363,3 +363,16 @@ be updated and the other forgotten.
 | XCP-ng CLI (`tags:contains=`, `xe`/`xl` command set) | https://docs.xcp-ng.org/appendix/cli_reference |
 | SQLite FK semantics (`NO ACTION` default, `ON DELETE CASCADE`) | SQLite foreign-keys documentation (behaviour verified against `plan/01:217-219`, `plan/01:236`, `plan/08:241`) |
 | Lab hardware facts (F1–F4) | Live inspection of `tg-01-xcp` (10.68.0.52), `dpu-01-xcp` (10.68.0.53), board `dpu-01` (10.68.0.190) |
+
+---
+
+### Closed
+
+| ID | Closed by | How | Evidence |
+|---|---|---|---|
+| **A1** | B-92 | `plan/09` (diagrams, §-summary) now shows the two XCP-ng hosts `tg-01-xcp` / `dpu-01-xcp`; `tb-01-xcp` is gone from the inventory | `ansible-inventory --graph`: `xcp_hosts` = `tg-01-xcp`, `dpu-01-xcp` |
+| **A7** | B-92 | `inventory/hosts.yml` + `setups/tb-01.yml` = `dpu-01`/`dpu-01-xcp` + `tg-01`/`tg-01-xcp`; the placeholder `host_vars/tb-01-xcp.yml` removed | `playbooks/bringup.yml -e setup=tb-01 -e daolab_deploy_vms=true` → "ready: nothing missing" (2026-11-02) |
+| **F1** | B-92 | Inventory matches the measured lab: `tg-01-xcp` 10.68.0.52 (pool `6769f0a6…`), `dpu-01-xcp` 10.68.0.53 (pool `d51166df…`), `dpu-01` 10.68.0.190 | same bring-up run; a real `vpp` deploy with VMs on 2026-11-01 (B-93) |
+| **F3** | B-92 | `tg-01-xcp` host_vars carry the E810 PF + VFs; VMs take a VF through the `SRIOV-E810` network (B-93) | `tgen` VM on its VF pinged VPP's 10.65.0.192 with 0% loss (2026-11-01) |
+| **D8** | B-92 | `DAOLAB_IP_POOL=10.68.1.0-10.68.2.200` inside the measured `/22` (gateway 10.68.0.1, DNS 8.8.8.8 / 8.8.4.4) in `inventory/group_vars/all.yml`; `plan/09`'s `10.30.0.1xx` replaced | `dpu-01` eth5: `10.68.0.190/22`, `default via 10.68.0.1`; VMs came up on 10.68.1.1 / 10.68.1.2 |
+

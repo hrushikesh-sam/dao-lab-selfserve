@@ -4,8 +4,8 @@
 xo_pool: "6769f0a6-7f4e-88ae-801e-648d0f5d0650"               # XO pool of this host (B-93)
 mgmt_network: "Pool-wide network 0"                      # bridge xenbr0, PIF eth0 (10.68.0.52)
 sr_uuid: "73946000-676f-3f7d-a117-50e7aecc7009"          # "Local storage" (ext, 427 GB)
-templates: ["tpl-ubuntu2204-dao"]                       # built per plan/05 (daolab-seed); the
-                                                         # older ...-Octeon-VF-Ready-v2_COPY ignores the seed
+templates: ["tpl-ubuntu2204-dao"]                       # d9acd7a1-...: Ubuntu 22.04 cloud image + daolab-seed
+                                                         # (plan/05); ...-Octeon-VF-Ready-v2_COPY ignores the seed
 sriov_networks:                                          # connect: -> SR-IOV network (a VIF on it IS the VF)
   e810-vf: "SRIOV-E810"                                  # 5886a435-..., PIF eth3
 e810_pf: "0000:01:00.1"                                  # E810-C for QSFP; 128 VFs total (numvfs=128)

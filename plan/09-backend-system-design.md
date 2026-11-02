@@ -41,18 +41,22 @@ billing and quotas beyond a simple per-user cap.
 ```mermaid
 graph LR
     subgraph TB["testbed tb-01 (single exclusive setup)"]
-        subgraph HOST["tb-01-xcp · XCP-ng host"]
-            DOM0["dom0<br/>xe / xl · pciback (one-time)"]
-            E810["Intel E810<br/>p0 QSFP28 · p1 QSFP28<br/>VFs passed to VMs"]
-            VM1["role VM: client / traffic-gen<br/>E810 VF on p0"]
-            VM2["role VM: backend / sink<br/>E810 VF on p1"]
+        subgraph TGX["tg-01-xcp · XCP-ng host 10.68.0.52 (pool xcp-ng-fxbqndvl)"]
+            E810["Intel E810<br/>p0 QSFP28 · p1 QSFP28<br/>VFs via the SRIOV-E810 network"]
+            VM1["role VM: client / traffic-gen<br/>E810 VF"]
+            VM2["role VM: backend / sink<br/>E810 VF"]
         end
+        subgraph DPX["dpu-01-xcp · XCP-ng host 10.68.0.53 (pool DAO-Agentic-Infra)"]
+            SDPPF["OCTEON SDP endpoint 0000:6f:00.0<br/>(SDP VFs not created yet)"]
+        end
+        XO["Xen Orchestra<br/>REST API · both pools"]
         DPU["OCTEON DPU<br/>single QSFP port<br/>own mgmt port + console"]
     end
     E810 ===|"Y split cable leg A"| DPU
     E810 ===|"Y split cable leg B"| DPU
+    DPU ---|"PCIe / SDP"| SDPPF
     MGMT(["lab mgmt network<br/>VM pool 10.68.1.0–10.68.2.200<br/>DPU static 10.68.0.190"])
-    MGMT --- DOM0
+    MGMT --- XO
     MGMT --- VM1
     MGMT --- VM2
     MGMT ---|"DPU reachable on its own"| DPU
@@ -112,7 +116,7 @@ graph TD
 
     subgraph LAB["Testbed tb-01"]
         PB["playbooks/deploy.yml<br/>playbooks/cleanup.yml"]
-        XCP["tb-01-xcp (XCP-ng)"]
+        XCP["Xen Orchestra · tg-01-xcp + dpu-01-xcp (XCP-ng)"]
         VMS["role VMs<br/>otelcol agent"]
         DPU["DPU<br/>otelcol agent · sshd AuthorizedKeysCommand"]
     end
@@ -268,7 +272,7 @@ sequenceDiagram
     RUN->>PB: ansible-playbook deploy.yml -e reservation_id, usecase, user, ssh_pubkey
     PB->>API: POST /internal/leases {res, role} per role
     API->>IP: lease (atomic, idempotent)
-    IP-->>PB: 10.30.0.1xx per role
+    IP-->>PB: 10.68.1.x per role
     PB->>PB: ping the IP from the VM's dom0: if something answers, mark it conflict and lease another
     PB->>DPU: set hw_class if different (EBF) · start DPU app · install otel agent
     PB->>XCP: clone tpl → daolab-r<id>-<role>, VF passthrough, cloud-init(static IP, owner key, otel agent)
@@ -528,8 +532,9 @@ P1–P3 land:
   rows.
 - **[05-provisioning.md](05-provisioning.md):** the four playbooks become roles under a single
   `deploy.yml` plus `cleanup.yml`. VM IPs are leased and set statically through cloud-init
-  instead of being discovered through guest tools. The inventory collapses to one XCP-ng host
-  (`tb-01-xcp`) plus the DPU.
+  instead of being discovered through guest tools. The inventory is the lab's two XCP-ng hosts
+  (`tg-01-xcp` 10.68.0.52, `dpu-01-xcp` 10.68.0.53) plus the DPU, and the VMs are made through
+  Xen Orchestra's REST API (B-92, B-93).
 - **Tech stack ([README.md](README.md)):** adds OpenTelemetry (SDK, Collector, Ansible
   callback), with Prometheus and Jaeger as optional dev-time containers. This is the only new
   technology. There is still no message queue: jobs are DB rows.
