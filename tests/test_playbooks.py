@@ -1026,3 +1026,28 @@ def test_ansible_cfg_keeps_pipelining_off():
     cfg = configparser.ConfigParser()
     cfg.read(os.path.join(REPO, "playbooks", "ansible.cfg"))
     assert cfg["ssh_connection"].getboolean("pipelining") is False
+
+
+# ---- B-96: a DPU-only deploy has a functional gate (mistakes.md I10, P3) ------------------
+
+def test_a_dpu_only_vpp_deploy_checks_eth0_is_up_with_its_address(lab, api, books):
+    assert deploy(lab, api, books, daolab_deploy_vms=False) == 0, lab.stdout[-3000:]
+    assert "VPP eth0 is up with 10.65.0.192/24" in lab.stdout
+    assert ["vppctl", "-s", "/run/vpp/cli.sock", "show", "interface", "address"] in lab.calls("vppctl")
+
+
+def test_a_dpu_only_vpp_deploy_fails_when_eth0_is_down(lab, api, books):
+    st = lab.state()
+    st["vpp_ifaddr"] = "eth0 (dn):\nlocal0 (dn):"
+    lab.set(st)
+    assert deploy(lab, api, books, daolab_deploy_vms=False) != 0
+    assert "VPP is running but its live port is not ready" in lab.stdout
+
+
+def test_a_dpu_only_vpp_deploy_fails_when_eth0_has_no_address(lab, api, books):
+    st = lab.state()
+    st["vpp_ifaddr"] = "eth0 (up):\nlocal0 (dn):"
+    lab.set(st)
+    assert deploy(lab, api, books, daolab_deploy_vms=False) != 0
+    assert "expected 'eth0 (up)' with L3 10.65.0.192/24" in lab.stdout
+

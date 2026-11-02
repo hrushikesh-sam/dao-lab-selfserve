@@ -100,10 +100,29 @@
   hosts: dpu
   gather_facts: false
   tasks:
-    - name: "step: dpu_app"
+    - name: VPP answers on its CLI
       become: true
       ansible.builtin.command: vppctl -s {{ vpp_cli_socket }} show version
       changed_when: false
+
+    # B-96 (mistakes.md I10, P3): a DPU-only deploy has no VM to verify from, so the deploy's
+    # own gate is functional, not just "the CLI answers": the live port eth0 is up and carries
+    # the runbook's data address (VPP_ansible/group_vars: vpp_data_ip).
+    - name: VPP's live port and its address
+      become: true
+      ansible.builtin.command: vppctl -s {{ vpp_cli_socket }} show interface address
+      register: _vpp_addr
+      changed_when: false
+
+    - name: "step: dpu_app"
+      ansible.builtin.assert:
+        that:
+          - _vpp_addr.stdout is search('(?m)^eth0 \\(up\\):')
+          - _vpp_addr.stdout is search('L3 ' ~ (vpp_data_ip | regex_escape))
+        success_msg: "VPP eth0 is up with {{ vpp_data_ip }}"
+        fail_msg: >-
+          VPP is running but its live port is not ready: expected 'eth0 (up)' with L3 {{ vpp_data_ip }}
+          in `show interface address`, got: {{ _vpp_addr.stdout | replace('\n', ' | ') }}
 
     - name: health exporter
       ansible.builtin.include_tasks: ../../tasks/app_exporter.yml

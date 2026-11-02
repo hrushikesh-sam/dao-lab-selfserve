@@ -140,8 +140,10 @@ def test_a_failed_task_that_is_not_a_step_is_still_recorded(settings, ctx):
 
 
 def test_a_run_that_fails_without_events_still_has_an_error(settings, ctx):
-    result = AnsibleRunner(settings, run=FakeRun(status="timeout", rc=254)).cleanup(ctx, Steps())
-    assert result.ok is False and result.error == "cleanup.yml timeout (rc=254)"
+    s = dataclasses.replace(settings, job_timeout_sec=1800)
+    result = AnsibleRunner(s, run=FakeRun(status="timeout", rc=254)).cleanup(ctx, Steps())
+    assert result.ok is False and result.error == (            # B-96: says which limit hit
+        "cleanup.yml ran longer than DAOLAB_JOB_TIMEOUT_SEC (1800s) and was stopped")
 
 
 def test_verify_clean_reads_the_residue_the_playbook_wrote(settings, ctx):
@@ -318,3 +320,39 @@ def test_the_runner_uses_the_ansible_playbook_of_its_own_environment(settings, c
     if os.access(expected, os.X_OK):
         assert "binary" not in kw                     # raw mode would drop the playbook
         assert kw["envvars"]["PATH"].split(os.pathsep)[0] == os.path.dirname(expected)
+
+
+# ---- B-96: a wall-clock limit per playbook (mistakes.md P4) -----------------------------
+
+def test_the_job_timeout_is_handed_to_ansible_runner(settings, ctx):
+    fake = FakeRun()
+    AnsibleRunner(dataclasses.replace(settings, job_timeout_sec=1234), run=fake).deploy(ctx, Steps())
+    assert fake.calls[0]["timeout"] == 1234
+
+
+def test_a_timed_out_playbook_fails_its_job_and_names_the_limit(settings, ctx):
+    fake = FakeRun(status="timeout", rc=254)
+    result = AnsibleRunner(dataclasses.replace(settings, job_timeout_sec=60), run=fake).deploy(ctx, Steps())
+    assert not result.ok
+    assert result.error == "deploy.yml ran longer than DAOLAB_JOB_TIMEOUT_SEC (60s) and was stopped"
+
+
+def test_a_hung_playbook_is_stopped_within_the_timeout(lab, tmp_path):
+    """The done-when of B-96: a hung (fake) playbook fails its job within the timeout."""
+    import shutil
+    import time
+    books = tmp_path / "hung"
+    books.mkdir()
+    shutil.copy(os.path.join(REPO, "playbooks", "ansible.cfg"), books / "ansible.cfg")
+    (books / "deploy.yml").write_text(
+        "- hosts: localhost\n  gather_facts: false\n  tasks:\n"
+        "    - name: hang\n      ansible.builtin.command: sleep 120\n")
+    s = dataclasses.replace(config.settings, artifacts_dir=str(tmp_path / "jobs"),
+                            playbooks_dir=str(books), inventory=str(lab.inventory),
+                            otel_endpoint="", job_timeout_sec=5)
+    started = time.monotonic()
+    result = AnsibleRunner(s).deploy({"id": 7, "job_id": 70, "setup": "tb-01", "usecase": "vpp"},
+                                     Steps())
+    assert time.monotonic() - started < 60
+    assert not result.ok and "DAOLAB_JOB_TIMEOUT_SEC (5s)" in result.error
+

@@ -375,4 +375,7 @@ be updated and the other forgotten.
 | **F1** | B-92 | Inventory matches the measured lab: `tg-01-xcp` 10.68.0.52 (pool `6769f0a6…`), `dpu-01-xcp` 10.68.0.53 (pool `d51166df…`), `dpu-01` 10.68.0.190 | same bring-up run; a real `vpp` deploy with VMs on 2026-11-01 (B-93) |
 | **F3** | B-92 | `tg-01-xcp` host_vars carry the E810 PF + VFs; VMs take a VF through the `SRIOV-E810` network (B-93) | `tgen` VM on its VF pinged VPP's 10.65.0.192 with 0% loss (2026-11-01) |
 | **D8** | B-92 | `DAOLAB_IP_POOL=10.68.1.0-10.68.2.200` inside the measured `/22` (gateway 10.68.0.1, DNS 8.8.8.8 / 8.8.4.4) in `inventory/group_vars/all.yml`; `plan/09`'s `10.30.0.1xx` replaced | `dpu-01` eth5: `10.68.0.190/22`, `default via 10.68.0.1`; VMs came up on 10.68.1.1 / 10.68.1.2 |
+| **I10** (P3 part) | B-96 | A DPU-only `vpp` deploy has its own functional gate: `apps/dao-vpp/deploy.yml` asserts `eth0 (up)` with `L3 {{ vpp_data_ip }}` in `vppctl show interface address`, not only `show version`. The VM-side gate (`verify`) stays a substring match (I9, B-95). | `test_a_dpu_only_vpp_deploy_*`; on the board 2026-11-01: `eth0 (up): L3 10.65.0.192/24` |
+| **P3** | B-96 | as I10 above: the `dpu_app` step is the functional gate when VMs are off | same |
+| **P4** | B-96 | `ansible_runner.run(..., timeout=DAOLAB_JOB_TIMEOUT_SEC)`; a run that hits it fails its job with "ran longer than DAOLAB_JOB_TIMEOUT_SEC (Ns) and was stopped" | `test_a_hung_playbook_is_stopped_within_the_timeout` (a `sleep 120` playbook stopped at 5 s) |
 

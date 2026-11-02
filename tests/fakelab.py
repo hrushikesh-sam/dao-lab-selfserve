@@ -299,6 +299,9 @@ def vppctl(args):
     state = load()
     if not any(re.fullmatch("vpp|vpp_main", n) for n in state.get("procs", [])):
         fail("clib_socket_init: connect: No such file or directory")
+    if "address" in args:                                  # show interface address (B-96 gate)
+        print(state.get("vpp_ifaddr", "eth0 (up):\n  L3 10.65.0.192/24\nlocal0 (dn):"))
+        return
     print("vpp v24.09.0-cn10k built by fakelab")
 
 

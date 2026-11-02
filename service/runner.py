@@ -565,12 +565,19 @@ class AnsibleRunner:
                     envvars=envvars, event_handler=on_event, quiet=True, ident=kind,
                     # without a callback ansible-runner installs its own SIGTERM/SIGINT handlers
                     # for good, and the engine could no longer be stopped (systemctl stop, ^C)
-                    cancel_callback=lambda: False)
+                    cancel_callback=lambda: False,
+                    # B-96 (mistakes.md P4): a hung playbook must not block the single engine;
+                    # ansible-runner stops it after DAOLAB_JOB_TIMEOUT_SEC and reports "timeout"
+                    **({"timeout": int(self.s.job_timeout_sec)}
+                       if int(getattr(self.s, "job_timeout_sec", 0) or 0) > 0 else {}))
         finally:
             log.close()
         ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
         error = None
-        if not ok:
+        if getattr(r, "status", None) == "timeout":
+            error = (f"{self.PLAYBOOKS[playbook_key]} ran longer than DAOLAB_JOB_TIMEOUT_SEC "
+                     f"({self.s.job_timeout_sec}s) and was stopped")
+        elif not ok:
             where = f"{failure['task']} on {failure['host']}: " if failure.get("task") else ""
             error = where + (failure.get("msg") or
                              f"{self.PLAYBOOKS[playbook_key]} {getattr(r, 'status', 'failed')} "
