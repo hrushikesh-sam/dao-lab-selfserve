@@ -208,10 +208,22 @@ def _mk_vm(env, rid, role="backend"):
         "template": "tpl-ubuntu2204-dao", "name": f"daolab-r{rid}-{role}"})
 
 
+S = {"X-Daolab-Secret": "test-secret"}
+
+
+def _deploying(env, rid, role="backend"):
+    """Reservation `rid` mid-deploy with its `role` VM leased; returns the leased address."""
+    env.models.update(env.conn, "reservations", rid, {"state": "provisioning"})
+    r = env.client.post("/internal/leases", json={"reservation_id": rid, "role": role}, headers=S)
+    assert r.status_code == 200, r.text
+    return r.json()["ip"]
+
+
 def test_12_vm_ip_callback(env, monkeypatch):
     rid = reserve(env, env.user_token).json()["id"]
     _mk_vm(env, rid)
-    body = {"reservation_id": rid, "role": "backend", "ip": "10.20.0.21"}
+    ip = _deploying(env, rid)
+    body = {"reservation_id": rid, "role": "backend", "ip": ip}
     assert_error(env.client.post("/internal/vm-ip", json=body,
                                  headers={"X-Daolab-Secret": "wrong"}), 401, "unauthorized")
     from service import config
@@ -226,16 +238,62 @@ def test_12_vm_ip_callback(env, monkeypatch):
     assert ok.json() == {"ok": True}
     obj = env.client.get(f"/reservations/{rid}", headers=H(env.user_token)).json()
     vm = obj["vms"][0]
-    assert vm["ip"] == "10.20.0.21" and vm["ssh"] == "ssh hrushi@10.20.0.21"
+    assert vm["ip"] == ip and vm["ssh"] == f"ssh hrushi@{ip}"
 
 
 def test_13_callback_idempotent(env):
     rid = reserve(env, env.user_token).json()["id"]
     _mk_vm(env, rid)
-    body = {"reservation_id": rid, "role": "backend", "ip": "10.20.0.21"}
+    body = {"reservation_id": rid, "role": "backend", "ip": _deploying(env, rid)}
     for _ in range(2):
         assert env.client.post("/internal/vm-ip", json=body,
                                headers={"X-Daolab-Secret": "test-secret"}).status_code == 200
+
+
+def test_13b_callback_takes_only_the_roles_own_address(env):
+    """B-97 (mistakes.md J10, P5): a VM role may post only its leased address, only while the
+    reservation is deploying or live; nothing else reaches vms.ip."""
+    rid = reserve(env, env.user_token).json()["id"]
+    _mk_vm(env, rid)
+    _mk_vm(env, rid, role="frontend")
+    ip = _deploying(env, rid)
+    other = env.client.post("/internal/leases", json={"reservation_id": rid, "role": "frontend"},
+                            headers=S).json()["ip"]
+    post = lambda **b: env.client.post("/internal/vm-ip", headers=S,
+                                       json={"reservation_id": rid, "role": "backend", **b})
+    err = assert_error(post(ip="10.99.0.5"), 403, "ip_mismatch")
+    assert err["detail"] == {"reservation_id": rid, "role": "backend",
+                             "expected": ip, "posted": "10.99.0.5"}
+    assert_error(post(ip=other), 403, "ip_mismatch")             # the sibling role's lease
+    assert_error(post(ip="not-an-ip"), 422, "validation_error")
+    # the frontend's lease released: it has no address to report
+    env.conn.execute("UPDATE ip_leases SET state = 'released' WHERE ip = ?", (other,))
+    assert_error(env.client.post("/internal/vm-ip", headers=S, json={
+        "reservation_id": rid, "role": "frontend", "ip": other}), 409, "no_lease")
+    for st in ("queued", "cleaning", "released", "failed", "quarantined"):
+        env.models.update(env.conn, "reservations", rid, {"state": st})
+        assert_error(post(ip=ip), 409, "invalid_state")
+    for st in ("provisioning", "ready", "active"):
+        env.models.update(env.conn, "reservations", rid, {"state": st})
+        assert post(ip=ip).json() == {"ok": True}
+    assert {v["role"]: v["ip"] for v in
+            env.client.get(f"/reservations/{rid}", headers=H(env.user_token)).json()["vms"]
+            } == {"backend": ip, "frontend": None}
+
+
+def test_13c_dpu_role_posts_only_the_setups_dpu_address(env):
+    from service.api import _dpu_address
+    rid = reserve(env, env.user_token).json()["id"]
+    res = env.models.reservation_by_id(env.conn, rid)
+    dpu_ip = _dpu_address(env.conn, res["setup_id"])
+    assert dpu_ip
+    env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": "dpu", "host": "dpu-01",
+                                        "template": None, "name": None})
+    env.models.update(env.conn, "reservations", rid, {"state": "provisioning"})
+    post = lambda ip: env.client.post("/internal/vm-ip", headers=S,
+                                      json={"reservation_id": rid, "role": "dpu", "ip": ip})
+    assert_error(post("10.68.1.7"), 403, "ip_mismatch")
+    assert post(dpu_ip).json() == {"ok": True}
 
 
 def test_14_dashboards_served(env):

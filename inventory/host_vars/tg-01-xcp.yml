@@ -3,6 +3,7 @@
 # The client VM's E810 VF comes from this host (connect: e810-vf).
 xo_pool: "6769f0a6-7f4e-88ae-801e-648d0f5d0650"               # XO pool of this host (B-93)
 mgmt_network: "Pool-wide network 0"                      # bridge xenbr0, PIF eth0 (10.68.0.52)
+mgmt_bridge: "xenbr0"                                    # dom0 NIC on 10.68.0.0/22: lease arping runs here (B-97)
 sr_uuid: "73946000-676f-3f7d-a117-50e7aecc7009"          # "Local storage" (ext, 427 GB)
 templates: ["tpl-ubuntu2204-dao"]                       # d9acd7a1-...: Ubuntu 22.04 cloud image + daolab-seed
                                                          # (plan/05); ...-Octeon-VF-Ready-v2_COPY ignores the seed

@@ -1014,71 +1014,48 @@ def reservation_events(res_id: int, user: sqlite3.Row = Depends(current_user),
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
-def _ip_conflict_detect(ip: str) -> bool:
-    try:
-        import subprocess
-
-        # Prefer arping (B-97). Try common forms.
-        for cmd in [
-            ["arping", "-c", "1", "-w", "1", ip],
-            ["arping", "-c", "1", "-I", "eth0", "-w", "1", ip],
-        ]:
-            try:
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
-                if proc.returncode == 0:
-                    out = (proc.stdout or b"") + (proc.stderr or b"")
-                    if out:
-                        return True
-            except Exception:
-                continue
-        # Fallback
-        for cmd in [
-            ["ping", "-n", "1", "-w", "1000", ip],
-            ["ping", "-c", "1", "-W", "1", ip],
-        ]:
-            try:
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
-                if proc.returncode == 0:
-                    return True
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return False
-
-
 @app.post("/internal/vm-ip")
 def vm_ip_callback(body: VmIpCallback, _: None = Depends(require_internal),
                    conn: sqlite3.Connection = Depends(db_conn)):
-    vm = models.vm_by_role(conn, body.reservation_id, body.role)
-    if vm is None:
-        raise DaolabError("not_found", 404,
-                          f"no vm for reservation {body.reservation_id} role {body.role}",
-                          {"reservation_id": body.reservation_id, "role": body.role})
+    """The playbook reports the address a role came up on (B-97, mistakes.md J10/P5). Only
+    while the reservation is deploying or live, and only the address daolab gave that role:
+    a VM role's own `leased` address, the DPU role the setup's static DPU address. Anything
+    else is refused, so a wrong post cannot redirect the user's SSH line or the proxy."""
+    try:
+        ip = str(ipaddress.ip_address(body.ip))
+    except ValueError:
+        raise DaolabError("validation_error", 422, f"ip: not an IP address: {body.ip}")
     res = models.reservation_by_id(conn, body.reservation_id)
     if res is None:
         raise DaolabError("not_found", 404,
                           f"unknown reservation {body.reservation_id}",
                           {"reservation_id": body.reservation_id})
-    # B-97: only accept the leased IP for this reservation/role while deploying/live
-    if res["state"] in ("provisioning", "ready", "active"):
+    vm = models.vm_by_role(conn, body.reservation_id, body.role)
+    if vm is None:
+        raise DaolabError("not_found", 404,
+                          f"no vm for reservation {body.reservation_id} role {body.role}",
+                          {"reservation_id": body.reservation_id, "role": body.role})
+    if res["state"] not in _LEASE_STATES:
+        raise DaolabError("invalid_state", 409,
+                          f"reservation {body.reservation_id} is {res['state']}; addresses are "
+                          f"recorded only while {', '.join(_LEASE_STATES)}",
+                          {"reservation_id": body.reservation_id, "state": res["state"]})
+    if vm["name"] is None:                       # the DPU role: its static inventory address
+        expected = _dpu_address(conn, res["setup_id"])
+    else:
         lease = models.ip_lease_by_role(conn, body.reservation_id, body.role)
-        if lease is not None and lease["ip"] != body.ip:
-            raise DaolabError("ip_mismatch", 403,
-                              "posted ip does not match leased ip for this reservation/role",
-                              {"reservation_id": body.reservation_id, "role": body.role,
-                               "leased_ip": lease["ip"], "posted_ip": body.ip})
-    # B-97: IP conflict check using arping
-    try:
-        if _ip_conflict_detect(body.ip):
-            other = models.find_reservation_by_ip(conn, body.ip) if hasattr(models, "find_reservation_by_ip") else None
-            if other and other.get("id") != body.reservation_id:
-                raise DaolabError("ip_conflict", 409, "ip address conflict detected", {"ip": body.ip})
-    except DaolabError:
-        raise
-    except Exception:
-        pass
-    models.set_vm_ip(conn, vm["id"], body.ip)     # idempotent: re-posting is a harmless UPDATE
+        if lease is None:
+            raise DaolabError("no_lease", 409,
+                              f"role {body.role} of reservation {body.reservation_id} has no "
+                              f"leased address", {"reservation_id": body.reservation_id,
+                                                  "role": body.role})
+        expected = lease["ip"]
+    if ip != expected:
+        raise DaolabError("ip_mismatch", 403,
+                          f"{ip} is not the address daolab gave role {body.role}",
+                          {"reservation_id": body.reservation_id, "role": body.role,
+                           "expected": expected, "posted": ip})
+    models.set_vm_ip(conn, vm["id"], ip)         # idempotent: re-posting is a harmless UPDATE
     return {"ok": True}
 
 
@@ -1139,8 +1116,8 @@ def lease_ip(body: LeaseRequest, _: None = Depends(require_internal),
 @app.post("/internal/leases/conflict")
 def lease_conflict(body: LeaseConflict, _: None = Depends(require_internal),
                    conn: sqlite3.Connection = Depends(db_conn)):
-    """Something outside daolab answers on a leased address (the playbook pings / arpings it
-    before use). The address is quarantined so it is never issued again, and the same
+    """Something outside daolab answers on a leased address (the playbook arpings it from the
+    VM's dom0 before use). The address is quarantined so it is never issued again, and the same
     (reservation, role) gets a new one, returned here."""
     try:
         ip = str(ipaddress.ip_address(body.ip))

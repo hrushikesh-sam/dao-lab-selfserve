@@ -2,7 +2,7 @@
 """A fake testbed for running the real playbooks in tests (tests/test_playbooks.py).
 
 Installed under the names of the commands the playbooks call (daolab-xo, the B-93 Xen
-Orchestra client; xe, xl; pgrep, pkill, loginctl, systemctl, ping, arping), it answers from one JSON state file ($FAKELAB_STATE) and appends
+Orchestra client; xe, xl; pgrep, pkill, loginctl, systemctl, ping, arping, dom0-ssh), it answers from one JSON state file ($FAKELAB_STATE) and appends
 every call to $FAKELAB_LOG. Only the command forms the playbooks use are implemented; anything
 else exits 2 so a playbook that drifts from them fails loudly.
 
@@ -410,6 +410,15 @@ def arping(args):
     ping(args)
 
 
+def dom0_ssh(args):
+    """`dom0-ssh <host> <cmd...>`: the lease step's login to a dom0 (B-97). Runs <cmd> here,
+    where the other fakes answer it; the host is in the call log. `dom0_down` in the state
+    makes it fail as ssh does when it cannot log in (255)."""
+    if load().get("dom0_down"):
+        fail(f"ssh: connect to host {args[0]} port 22: Connection timed out", 255)
+    os.execvp(args[1], args[1:])
+
+
 def _opts(args):
     """argparse-style --key value pairs (repeatable --tag kept as a list)."""
     out, i = {"tag": []}, 0
@@ -527,7 +536,8 @@ def main():
                "pktgen": traffic, "h2load": traffic, "which": which, "vppctl": vppctl,
                "dpdk-devbind.py": devbind, "fakeproc": fakeproc, "getent": getent,
                "useradd": useradd, "usermod": usermod, "chpasswd": chpasswd, "chage": chage,
-               "visudo": visudo, "sshd": sshd, "daolab-xo": daolab_xo}.get(name)
+               "visudo": visudo, "sshd": sshd, "daolab-xo": daolab_xo,
+               "dom0-ssh": dom0_ssh}.get(name)
     if handler is None:
         fail(f"fakelab: no fake for {name}", 2)
     handler(sys.argv[1:])

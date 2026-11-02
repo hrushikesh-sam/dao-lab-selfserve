@@ -238,6 +238,7 @@ def lab(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKELAB_STATE", str(lab.state_path))
     monkeypatch.setenv("FAKELAB_LOG", str(lab.log_path))
     monkeypatch.setenv("DAOLAB_XO_CMD", "daolab-xo")         # B-93: the fake XO client
+    monkeypatch.setenv("DAOLAB_DOM0_SSH", "dom0-ssh")        # B-97: the lease arping's dom0 login
     monkeypatch.setenv("ANSIBLE_LOCAL_TEMP", str(tmp_path / "tmp"))
     monkeypatch.setenv("ANSIBLE_HOME", str(tmp_path / "ansible-home"))
     return lab

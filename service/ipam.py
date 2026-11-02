@@ -13,8 +13,8 @@ The backend owns every address a reservation's VMs use; the deploy playbook only
     gone (B-71). When that could not be proven, `quarantine_reservation(res)` keeps them
     blocked; only the reconciler or an admin frees a quarantined address (`clear`).
   * `mark_conflict(ip)`: something outside daolab answers on a leased address (the playbook's
-    ping/arping check). The lease is quarantined so the address is not handed out again, and
-    the same role can lease a replacement (migration 7).
+    arping check, run on the VM's dom0). The lease is quarantined so the address is not handed
+    out again, and the same role can lease a replacement (migration 7).
 
 Each function writes inside one BEGIN IMMEDIATE transaction unless the caller already holds
 one, so parallel deploys leasing at the same time serialise on sqlite's write lock.

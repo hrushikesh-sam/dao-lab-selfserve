@@ -5,3 +5,7 @@
 # DAOLAB_XO_TOKEN_FILE from the environment the runner gives it. The tests point it at their
 # fake (DAOLAB_XO_CMD=daolab-xo, or `-e daolab_xo=daolab-xo`).
 daolab_xo: "{{ lookup('ansible.builtin.env', 'DAOLAB_XO_CMD') | default(ansible_playbook_python ~ ' -m service.xo', true) }}"
+
+# B-97: how the lease step reaches a VM's dom0 for its arping check (the only dom0 login daolab
+# makes; it needs root's key on each dom0). The tests point it at their fake (DAOLAB_DOM0_SSH).
+daolab_dom0_ssh: "{{ lookup('ansible.builtin.env', 'DAOLAB_DOM0_SSH') | default('ssh -o BatchMode=yes -o ConnectTimeout=5 -l root', true) }}"

@@ -4,6 +4,7 @@
 # Cavium network controller 177d:b900 at 0000:6f:00.0, currently bound to pciback with total=8 VFs.
 xo_pool: "d51166df-b3ce-9935-a4d8-f264fcc477a0"               # XO pool of this host (B-93)
 mgmt_network: "Pool-wide network associated with eth0"   # bridge xenbr0, PIF eth0 (10.68.0.53)
+mgmt_bridge: "xenbr0"                                    # dom0 NIC on 10.68.0.0/22: lease arping runs here (B-97)
 sr_uuid: "df51fda3-fee4-e466-b70f-b6886d357ea9"          # "Local storage" (ext, 900 GB)
 templates: ["tpl-ubuntu2204-dao"]                       # eb8ecdeb-...: copy of tg-01-xcp's template (xva export)
 sriov_networks: {}                                       # no SDP SR-IOV network yet (sdp_vfs: [], F2)

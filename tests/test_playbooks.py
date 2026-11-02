@@ -26,7 +26,7 @@ pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not instal
 
 FAKES = ("daolab-xo", "xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping",
          "pktgen", "h2load", "which", "vppctl", "dpdk-devbind.py", "fakeproc", "getent",
-         "useradd", "usermod", "chpasswd", "chage", "visudo", "sshd")
+         "useradd", "usermod", "chpasswd", "chage", "visudo", "sshd", "dom0-ssh")
 E810_VFS = ["0000:5e:01.0", "0000:5e:01.1"]
 SDP_VFS = ["0000:03:02.0", "0000:03:02.1"]
 TPL_UUID = "11111111-tpl0-0000-0000-000000000000"
@@ -65,6 +65,7 @@ class Lab:
                                 "ansible_python_interpreter": "{{ ansible_playbook_python }}"},
                        "children": {
                            "xcp_hosts": {"hosts": {"tb-01-xcp": {
+                               "ansible_host": "10.68.0.52", "mgmt_bridge": "xenbr0",
                                "e810_vfs": E810_VFS, "sdp_vfs": SDP_VFS,
                                "mgmt_network": "Pool-wide network associated with eth0",
                                "sr_uuid": "33333333-sr00", "xo_pool": "pool-tb01",
@@ -88,7 +89,7 @@ class Lab:
         ev = {"reservation_id": 12, "setup": "tb-01", "usecase": "vpp", "user": "alice",
               "ssh_pubkey": "ssh-ed25519 AAAAalice alice@laptop", "diy": False,
               "daolab_members": MEMBERS, "daolab_output_file": str(self.out_path),
-              "daolab_xo": "daolab-xo"}
+              "daolab_xo": "daolab-xo", "daolab_dom0_ssh": "dom0-ssh"}
         ev.update(extravars)
         evfile = self.dir / "extravars.json"
         evfile.write_text(json.dumps(ev))
@@ -540,6 +541,21 @@ def test_a_conflicting_address_is_swapped_before_use(lab, api, books):
     assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
     assert api["blocked"] == {"10.30.0.100"}
     assert {v["ip"] for v in lab.state()["vms"].values()} == {"10.30.0.101", "10.30.0.102"}
+    # B-97: the check is ARP from the VM's dom0, on its management bridge; never ICMP
+    probes = lab.calls("dom0-ssh")
+    assert probes and all(c[1] == "10.68.0.52" and c[2:6] == ["arping", "-c", "2", "-w"]
+                          and c[7:9] == ["-I", "xenbr0"] for c in probes)
+    assert {c[-1] for c in lab.calls("arping")} >= {"10.30.0.100", "10.30.0.101"}
+    assert not lab.calls("ping")
+
+
+def test_an_unreachable_dom0_fails_the_lease_instead_of_passing_as_free(lab, api, books):
+    st = clean_state()
+    st["dom0_down"] = True
+    lab.set(st)
+    assert deploy(lab, api, books) != 0
+    assert "Connection timed out" in lab.stdout
+    assert lab.state()["vms"] == {}                       # nothing created on an unchecked address
 
 
 def test_a_failed_verify_fails_the_deploy_and_says_why(lab, api, books):
