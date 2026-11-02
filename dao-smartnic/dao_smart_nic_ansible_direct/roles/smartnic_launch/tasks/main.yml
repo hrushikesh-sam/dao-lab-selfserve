@@ -9,7 +9,9 @@
 
 - name: Refuse launch if VPP is running
   ansible.builtin.shell: |
-    if pgrep -x vpp >/dev/null || pgrep -x vpp_main >/dev/null || pgrep -af '/vpp' 2>/dev/null | grep -qv grep; then
+    # B-99: the VPP main thread is named vpp_main (pgrep -x vpp misses it); the -f fallback matches
+    # only a vpp binary started by path, never vppctl (whose command line also contains "/vpp").
+    if pgrep -x 'vpp|vpp_main' >/dev/null || pgrep -f '/bin/vpp( |$)' >/dev/null; then
       echo "VPP RUNNING - DO NOT LAUNCH"
       exit 1
     fi

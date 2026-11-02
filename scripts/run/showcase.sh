@@ -25,7 +25,7 @@ cd "$ROOT"
 export DAOLAB_DB_PATH="${DAOLAB_DB_PATH:-./var/showcase.db}"
 export DAOLAB_ARTIFACTS_DIR="${DAOLAB_ARTIFACTS_DIR:-./var/showcase-jobs}"
 export DAOLAB_RUNNER="${DAOLAB_RUNNER:-ansible}"
-export DAOLAB_DEPLOYABLE="${DAOLAB_DEPLOYABLE:-vpp}"
+export DAOLAB_DEPLOYABLE="${DAOLAB_DEPLOYABLE:-vpp,smartnic}"
 export DAOLAB_DEPLOY_VMS="${DAOLAB_DEPLOY_VMS:-false}"
 # the board owner's sign-off: the runbooks stop nginx-tls and rebind the port to vfio-pci
 export DAOLAB_ALLOW_DESTRUCTIVE="${DAOLAB_ALLOW_DESTRUCTIVE:-true}"

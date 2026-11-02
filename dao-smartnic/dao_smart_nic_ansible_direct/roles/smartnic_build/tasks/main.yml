@@ -15,7 +15,9 @@
 
 - name: Check VPP is not running
   ansible.builtin.shell: |
-    if pgrep -x vpp >/dev/null || pgrep -x vpp_main >/dev/null || pgrep -af '/vpp' 2>/dev/null | grep -qv grep; then
+    # B-99: the VPP main thread is named vpp_main (pgrep -x vpp misses it); the -f fallback matches
+    # only a vpp binary started by path, never vppctl (whose command line also contains "/vpp").
+    if pgrep -x 'vpp|vpp_main' >/dev/null || pgrep -f '/bin/vpp( |$)' >/dev/null; then
       echo "VPP RUNNING"
       exit 1
     fi
@@ -60,6 +62,8 @@
     path: "{{ dao_clone }}/build"
   register: build_dir
 
+# B-99: install where smartnic_binary points (clean_prefix); the hardcoded dao-clone/install
+# never matched dao-clean/install, so "Verify SmartNIC binary exists" could not pass.
 - name: Configure Meson in existing dao-clone
   become: false
   ansible.builtin.command:
@@ -67,7 +71,7 @@
       meson setup build
       -Denable_apps=smart-nic
       -Dplatform=cn10k
-      -Dprefix=/home/dao-test/dao-clone/install
+      -Dprefix={{ clean_prefix }}
       -Denable_kmods=false
       -Dprefer_static_build=true
       -Dprefer_static=true
@@ -82,7 +86,7 @@
       meson setup build --reconfigure
       -Denable_apps=smart-nic
       -Dplatform=cn10k
-      -Dprefix=/home/dao-test/dao-clone/install
+      -Dprefix={{ clean_prefix }}
       -Denable_kmods=false
       -Dprefer_static_build=true
       -Dprefer_static=true
