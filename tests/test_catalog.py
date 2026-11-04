@@ -172,3 +172,58 @@ def test_bad_ip_pool_rejected(conn, monkeypatch):
     with pytest.raises(catalog.SyncError) as e:
         catalog.sync(conn, UC_DIR, ST_DIR, INV)
     assert "after end" in "\n".join(e.value.errors)
+
+
+# ---- B-95 (mistakes.md I9, P2): parsed verify checks, httpcheck targets ---------------------
+
+def _uc(tmp_path, body):
+    d = tmp_path / "usecases"
+    d.mkdir(exist_ok=True)
+    (d / "b95.yml").write_text("name: b95\nvariant: v1\nrequires: [wire]\n" + body)
+    return catalog.load_usecases(str(d))
+
+
+def test_verify_match_with_numeric_checks_loads(tmp_path):
+    ucs, errors = _uc(tmp_path,
+        "roles: {r1: {on: dpu, app: a}, c: {on: tg_host, vm: t, connect: e810-vf,"
+        " httpcheck: ['https://{r1_ip}/']}}\n"
+        "verify: {from: c, cmd: 'h2load https://{r1_ip}/', match: '(?P<ok>\\d+) succeeded, (?P<bad>\\d+) failed',"
+        " expect: {ok: '== 1000', bad: '== 0'}}\n")
+    assert errors == []
+    assert ucs[0]["verify"]["expect"] == {"ok": "== 1000", "bad": "== 0"}
+    assert ucs[0]["roles"]["c"]["httpcheck"] == ["https://{r1_ip}/"]
+
+
+@pytest.mark.parametrize("verify,needle", [
+    ("{from: r1, cmd: c, match: '(unclosed', expect: {x: '== 1'}}", "verify.match: not a regex"),
+    ("{from: r1, cmd: c, match: '\\d+ ok', expect: {x: '== 1'}}", "needs at least one named group"),
+    ("{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: '== 1'}", "a map of group"),
+    ("{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: {m: '== 1'}}", "verify.expect.m: no group"),
+    ("{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: {n: 'lots'}}", "verify.expect.n: must be"),
+    ("{from: r1, cmd: c, expect: {n: '== 1'}}", "verify.expect: a non-empty string"),
+])
+def test_bad_verify_checks_are_named(tmp_path, verify, needle):
+    _, errors = _uc(tmp_path, "roles: {r1: {on: dpu, app: a}}\nverify: " + verify + "\n")
+    assert any(needle in e for e in errors), errors
+
+
+@pytest.mark.parametrize("role,needle", [
+    ("{on: dpu, app: a, httpcheck: ['https://x/']}", "httpcheck: only on VM roles"),
+    ("{on: tg_host, vm: t, connect: e810-vf, httpcheck: 'https://x/'}", "a non-empty list of http(s) URLs"),
+    ("{on: tg_host, vm: t, connect: e810-vf, httpcheck: ['ftp://x/']}", "a non-empty list of http(s) URLs"),
+    ("{on: tg_host, vm: t, connect: e810-vf, httpcheck: ['https://{nope_ip}/']}", "{nope_ip} names no role"),
+])
+def test_bad_httpcheck_is_named(tmp_path, role, needle):
+    _, errors = _uc(tmp_path, f"roles: {{r1: {role}}}\nverify: {{from: r1, cmd: c, expect: e}}\n")
+    assert any(needle in e for e in errors), errors
+
+
+def test_shipped_usecases_use_parsed_verify_checks():
+    """B-95: every shipped use case checks parsed numbers, never a bare substring."""
+    ucs, errors = catalog.load_usecases(UC_DIR)
+    assert errors == []
+    for uc in ucs:
+        assert uc["verify"].get("match") and isinstance(uc["verify"]["expect"], dict), uc["name"]
+    tls = next(u for u in ucs if u["name"] == "tls-proxy-nginx")
+    assert tls["roles"]["client"]["httpcheck"] == ["https://{proxy_ip}/"]
+    assert any('http_status_class="2xx"' in r["promql"] for r in tls["health"])

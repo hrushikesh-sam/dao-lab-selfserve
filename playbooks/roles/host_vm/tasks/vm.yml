@@ -73,6 +73,25 @@
       (playbooks/roles/host_vm/defaults/main.yml)
   loop: "{{ vm.install }}"
 
+# B-95: the use case's httpcheck URLs for this VM, `{<role>_ip}` -> that role's data-plane address
+- name: start from {{ vm.role }}'s own httpcheck URLs (not the previous VM's)
+  ansible.builtin.set_fact:
+    _httpcheck: "{{ vm.httpcheck | default([]) }}"
+
+- name: resolve {{ vm.role }}'s httpcheck URLs
+  ansible.builtin.set_fact:
+    _httpcheck: "{{ _httpcheck | map('replace', '{' ~ item.key ~ '_ip}', item.value) | list }}"
+  loop: "{{ hostvars['localhost'].daolab_role_data_ips | default({}) | dict2items | selectattr('value') | list }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: every httpcheck URL of {{ vm.role }} is resolved
+  ansible.builtin.assert:
+    that: (_httpcheck | select('search', '\\{[a-z][a-z0-9_]*_ip\\}') | list) == []
+    fail_msg: >-
+      role {{ vm.role }}: httpcheck {{ vm.httpcheck }} names a role with no data-plane address
+      (vars/dataplane.yml)
+
 - name: the otel agent config for this VM
   ansible.builtin.include_role:
     name: otel_agent
@@ -84,7 +103,7 @@
       daolab.role: "{{ vm.role }}"
       daolab.setup: "{{ setup }}"
       host: "{{ vm.name }}"
-    otel_agent_httpcheck: "{{ vm_httpcheck | default([]) }}"
+    otel_agent_httpcheck: "{{ _httpcheck }}"   # B-95: the role's httpcheck URLs
 
 - name: render the seed
   ansible.builtin.set_fact:
@@ -92,7 +111,9 @@
       user-data: "{{ lookup('ansible.builtin.template', 'user-data.j2') | b64encode }}"
       network-config: "{{ lookup('ansible.builtin.template', 'network-config.j2') | b64encode }}"
       meta-data: "{{ ('instance-id: ' ~ vm.name ~ '-' ~ _ip ~ '\nlocal-hostname: ' ~ vm.name ~ '\n') | b64encode }}"
-      otel: "{{ (otel_agent_config_text if (otel_agent_collector | default('') | length > 0) else '') | b64encode }}"
+      # daolab_otel_collector, not otel_agent_collector: that is a default of the otel_agent role
+      # and is not visible here, so the VMs never got an agent config (B-95)
+      otel: "{{ (otel_agent_config_text if (daolab_otel_collector | default('') | length > 0) else '') | b64encode }}"
 
 - name: every seed key fits in xenstore (4 KiB per value)
   ansible.builtin.assert:

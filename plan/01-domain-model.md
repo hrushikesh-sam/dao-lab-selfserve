@@ -297,11 +297,13 @@ Role object fields:
 | `crypto` | string, kebab-case | no | Crypto attachment for `on: dpu` roles only (e.g. `cpt-vfs`). |
 | `upstream` | string | no | Must name another role in the same file (e.g. proxy â†’ `backend`). |
 
-`verify` block: `{from: <role name>, cmd: <string>, expect: <string>}` â€” all three required.
+`verify` block: `{from: <role name>, cmd: <string>, [match: <regex>,] expect: …}` â€” `from`, `cmd`, `expect` required.
 `from` must exist in `roles`. `cmd` may use placeholders `{<role>_ip}` (e.g. `{proxy_ip}`),
-substituted by `verify.yml` from `vms.ip` of that role. `expect` is a substring that must
-appear in the command's stdout. Normative example:
-`{from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}`.
+substituted by `verify.yml` from `vms.ip` of that role. The command must exit 0. With `match`
+(a regex with named groups), `expect` maps each group to a check `<op> <number>` (the health
+rules' syntax) on the number it captured; without `match`, `expect` is a substring of stdout
+(legacy). Normative example (B-95):
+`{from: client, cmd: "h2load -n1000 https://{proxy_ip}/", match: '(?s)requests: (?P<total>\d+) total, \d+ started, \d+ done, (?P<succeeded>\d+) succeeded, (?P<failed>\d+) failed.*?status codes: (?P<s2xx>\d+) 2xx', expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}}`.
 
 Validation rules (all enforced by `daolab sync` before any DB write):
 `name` = file stem, kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`); `requires` non-empty; â‰¥ 1 role;

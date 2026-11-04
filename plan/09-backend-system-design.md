@@ -373,8 +373,12 @@ health:
   - {name: datapath,      promql: 'rate(vpp_interface_rx_packets{host="dpu-01"}[1m])',         expect: "> 0", severity: degraded}
 ```
 
-For TLS proxy, the `httpcheck` receiver targets `https://<proxy_ip>/` and the rule expects
-`httpcheck_status == 1`. SmartNIC checks the offload app's counters.
+For TLS proxy, the client VM's agent runs the `httpcheck` receiver against `https://<proxy_ip>/`
+(the client role's `httpcheck:` in the use-case YAML, B-95) and the rule is
+`httpcheck_status{http_status_class="2xx"} == 1`: the receiver emits one series per status
+class, 1 only for the class the answer fell in, so a 500 from NGINX does not pass. The receiver
+is now named `http_check`; `httpcheck` is kept because both pinned collectors (0.115 central,
+0.160 agent) accept it. SmartNIC checks the offload app's counters.
 
 **Verdict:** `healthy` when every check passes; `degraded` when only `severity: degraded`
 checks fail; `down` when any critical check fails; `unknown` when there is no telemetry for

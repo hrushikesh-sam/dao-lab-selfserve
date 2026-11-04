@@ -148,7 +148,7 @@ roles:
   proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
   backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
   client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf}
-verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}
+verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", match: '(?s)requests: (?P<total>\d+) total, \d+ started, \d+ done, (?P<succeeded>\d+) succeeded, (?P<failed>\d+) failed.*?status codes: (?P<s2xx>\d+) 2xx', expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}}
 ```
 
 ```yaml

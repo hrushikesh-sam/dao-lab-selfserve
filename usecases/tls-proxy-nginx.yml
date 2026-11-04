@@ -6,8 +6,14 @@ hw_class: sdp-pf1-vf8                 # SDP, 1 PF, 8 VFs — the proxy->backend 
 roles:
   proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
   backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
-  client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf}
-verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "1000 succeeded"}
+  client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf,
+            httpcheck: ["https://{proxy_ip}/"]}   # B-95: the client's agent probes the proxy -> https_ok
+# B-95: h2load's own summary lines, parsed - all 1000 requests succeeded, none failed, all 2xx
+verify:
+  from: client
+  cmd: "h2load -n1000 https://{proxy_ip}/"
+  match: '(?s)requests: (?P<total>\d+) total, \d+ started, \d+ done, (?P<succeeded>\d+) succeeded, (?P<failed>\d+) failed.*?status codes: (?P<s2xx>\d+) 2xx'
+  expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}
 health:
   - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                         expect: "== 1"}
   - {name: ssh_reachable, promql: 'min(tcpcheck_status{daolab_reservation="$RID",port="22"})',   expect: "== 1"}

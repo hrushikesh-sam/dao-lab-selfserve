@@ -9,7 +9,12 @@ roles:
   # B-93: the sink needs an E810 VF too, and only tg_host (tg-01-xcp) has E810 VFs; with one
   # XCP-ng host (tb-01-xcp) dpu_host and tg_host were the same machine (plan/09:48: E810 VF on p1)
   sink: {on: tg_host, vm: tpl-ubuntu2204-dao, install: [sink],       connect: e810-vf}
-verify: {from: tgen, cmd: "ping -c 4 -W 2 {vpp_ip}", expect: ", 0% packet loss"}
+# B-95: one warm-up ping (the first can be lost while ARP resolves), then 4 that must all answer
+verify:
+  from: tgen
+  cmd: "ping -c 1 -W 2 {vpp_ip} >/dev/null; ping -c 4 -W 2 {vpp_ip}"
+  match: '(?P<sent>\d+) packets transmitted, (?P<received>\d+) received.*?(?P<loss>\d+(?:\.\d+)?)% packet loss'
+  expect: {received: "== 4", loss: "== 0"}
 health:
   - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                         expect: "== 1"}
   - {name: ssh_reachable, promql: 'min(tcpcheck_status{daolab_reservation="$RID",port="22"})',   expect: "== 1"}

@@ -188,7 +188,7 @@ roles:
   proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
   backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
   client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf}
-verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}
+verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", match: '(?s)requests: (?P<total>\d+) total, \d+ started, \d+ done, (?P<succeeded>\d+) succeeded, (?P<failed>\d+) failed.*?status codes: (?P<s2xx>\d+) 2xx', expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}}
 ```
 
 Trace: `requires` ⊆ setup-01's computed capabilities `[e810, octeon-cn106, sdp, wire]`, so the
@@ -228,7 +228,8 @@ and 17 never touch a DIY run.
 
 Automated (`verify.yml`, driven verbatim by the YAML `verify` block): resolve `{proxy_ip}` from
 the proxy role's `vms.ip` (10.20.0.10), then on the client VM run
-`h2load -n1000 https://10.20.0.10/` and assert the substring `200: 1000` in stdout — all 1000
+`h2load -n1000 https://10.20.0.10/`; it must exit 0, and h2load's own summary must parse to
+`1000 succeeded`, `0 failed` and `1000 2xx` (B-95) — all 1000
 requests answered 200 across the wire, through TLS termination, to the backend and back.
 
 Manual corroboration for the Phase-1 checkpoint:
@@ -242,7 +243,7 @@ Manual corroboration for the Phase-1 checkpoint:
    path per the CN10K SDK kernel, e.g. under `/sys/kernel/debug/cn10k/cpt/`) and confirm the
    delta ≈ the handshake count; additionally the NGINX error log must show `dpdk_engine`
    initialising against the CPT VF queue pairs at startup. If the counters do not move, the
-   handshakes were done in software and the run fails review even with `200: 1000`.
+   handshakes were done in software and the run fails review even with all 1000 succeeded.
 
 ## Manual Phase 1 bring-up walkthrough
 
@@ -320,7 +321,7 @@ variants stay reservable side by side. Field-by-field diff:
 | `roles.proxy` | `{on: dpu, app: nginx-tls, crypto: cpt-vfs, upstream: backend}` | drops `upstream` — NGINX serves the payload from its local root |
 | `roles.backend` | present | **deleted** — no `dpu_host` VM, no SDP hop |
 | `roles.client` | unchanged | unchanged |
-| `verify` | `{from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}` | unchanged verbatim |
+| `verify` | `{from: client, cmd: "h2load -n1000 https://{proxy_ip}/", match: …, expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}}` (B-95) | unchanged verbatim |
 
 One playbook-template consequence, still zero service code: the `dpu_prepare.yml` nginx.conf
 template branches on whether the `on: dpu` role carries `upstream` — present ⇒ `proxy_pass` to

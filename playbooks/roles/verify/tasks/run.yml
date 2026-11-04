@@ -42,6 +42,17 @@
   changed_when: false
   failed_when: false
 
+# B-95 (mistakes.md I9): the command must succeed, and with `match` its numbers are checked
+# one by one ('<op> <number>' per named group), so "1000 succeeded" cannot be satisfied by a
+# 1000 somewhere else in the output (a byte count, an address, 10001 ...). Without `match`,
+# `expect` is the legacy substring (still after the exit-code check).
+- name: the command must succeed
+  ansible.builtin.assert:
+    that: _out.rc == 0
+    fail_msg: >-
+      verify failed: `{{ _cmd }}` exited {{ _out.rc }}: {{ (_out.stdout ~ _out.stderr)[-400:] }}
+    quiet: true
+
 - name: the answer must contain the expected text
   ansible.builtin.assert:
     that: daolab_verify.expect in _out.stdout
@@ -49,3 +60,33 @@
       verify failed: '{{ daolab_verify.expect }}' not in the output of `{{ _cmd }}`
       (rc={{ _out.rc }}): {{ (_out.stdout ~ _out.stderr)[-400:] }}
     success_msg: "verify ok: '{{ daolab_verify.expect }}'"
+  when: daolab_verify.match is not defined
+
+- name: the answer must match
+  ansible.builtin.assert:
+    that: _out.stdout is search(daolab_verify.match)
+    fail_msg: >-
+      verify failed: the output of `{{ _cmd }}` does not match `{{ daolab_verify.match }}`:
+      {{ (_out.stdout ~ _out.stderr)[-400:] }}
+    quiet: true
+  when: daolab_verify.match is defined
+
+- name: every parsed number must pass its check
+  vars:
+    _val: "{{ (_out.stdout | regex_search(daolab_verify.match, '\\g<' ~ item.key ~ '>'))[0] }}"
+    _op: "{{ item.value | trim | regex_replace('^(==|!=|>=|<=|>|<).*$', '\\1') }}"
+    _num: "{{ item.value | trim | regex_replace('^(==|!=|>=|<=|>|<)\\s*', '') | float }}"
+  ansible.builtin.assert:
+    that: >-
+      (_op == '==' and (_val | float) == (_num | float)) or
+      (_op == '!=' and (_val | float) != (_num | float)) or
+      (_op == '>=' and (_val | float) >= (_num | float)) or
+      (_op == '<=' and (_val | float) <= (_num | float)) or
+      (_op == '>' and (_val | float) > (_num | float)) or
+      (_op == '<' and (_val | float) < (_num | float))
+    fail_msg: "verify failed: {{ item.key }} = {{ _val }}, expected {{ item.value }} (`{{ _cmd }}`)"
+    success_msg: "verify ok: {{ item.key }} = {{ _val }} ({{ item.value }})"
+  # the loop is evaluated before `when`: no items at all for the legacy string form
+  loop: "{{ daolab_verify.expect | dict2items if daolab_verify.match is defined else [] }}"
+  loop_control:
+    label: "{{ item.key }}"

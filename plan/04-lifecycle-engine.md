@@ -334,8 +334,8 @@ Every line is `key=value` pairs after a fixed prefix, grep-first design:
 2026-09-01T09:48:20Z INFO  event=transition r=12 usecase=tls-proxy-nginx setup=setup-01 from=provisioning to=ready
 2026-09-01T09:48:21Z INFO  event=webhook    r=12 url=â€¦ status=200
 2026-09-01T09:48:21Z INFO  event=tick_end   transitions=2
-2026-09-01T11:02:03Z ERROR event=playbook   r=13 playbook=verify rc=2 ok=false duration_s=64.7 retries=3 reason="expect '200: 1000' not in stdout"
-2026-09-01T11:02:03Z ERROR event=transition r=13 from=provisioning to=failed reason="verify: expect '200: 1000' not in stdout"
+2026-09-01T11:02:03Z ERROR event=playbook   r=13 playbook=verify rc=2 ok=false duration_s=64.7 retries=3 reason="verify failed: succeeded = 3, expected == 1000"
+2026-09-01T11:02:03Z ERROR event=transition r=13 from=provisioning to=failed reason="verify failed: succeeded = 3, expected == 1000"
 ```
 
 Fixed vocabulary: `event` âˆˆ `tick_start` | `tick_end` | `transition` | `playbook` | `hw_class` |

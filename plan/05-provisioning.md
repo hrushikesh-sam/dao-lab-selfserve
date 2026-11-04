@@ -244,10 +244,12 @@ the verify block itself comes from `usecases/{{ usecase }}.yml`. **Tasks**:
    posted, so the substitution equals `vms.ip` without the playbook needing a DB handle.
 2. Substitute every `{<role>_ip}` placeholder in `cmd` (e.g. `{proxy_ip}`).
 3. `add_host` the `from` role's VM; run `cmd` there with the shell module, `register: out`.
-4. `assert: that: "expect_string in out.stdout"` with a failure message quoting both.
+4. Assert `out.rc == 0`; then, with `match`, parse the named groups and check each against its
+   `<op> <number>` in `expect` (one assertion per number, naming the one that is wrong);
+   without `match`, assert the legacy substring `expect in out.stdout` (B-95).
 
-**Idempotency** — read-only traffic test; rerun at will. **Failure modes** — `expect` substring
-absent (the real signal: provisioning produced a broken data path — engine retries then
+**Idempotency** — read-only traffic test; rerun at will. **Failure modes** — non-zero exit, no match, or a
+number outside its check (the real signal: provisioning produced a broken data path — engine retries then
 `failed`); `from` VM unreachable.
 
 ### `playbooks/teardown.yml`
@@ -396,7 +398,7 @@ Use-case specifics — NGINX/DPDK build flags, CPT engine config, payload — ar
    then the same `-e` set for `playbooks/host_vm.yml`, `playbooks/verify.yml`,
    `playbooks/teardown.yml`.
 7. Checkpoint before teardown: from the client VM,
-   `h2load -n1000 https://<proxy_ip>/` returns `200: 1000` and the backend VM's access log
+   `h2load -n1000 https://<proxy_ip>/` reports `1000 succeeded, 0 failed` and `1000 2xx`, and the backend VM's access log
    shows plain-HTTP hits — the same assertion `verify.yml` automates from the YAML's
    `verify` block.
 8. Re-run each playbook a second time and confirm it is a no-op (idempotency is the contract

@@ -1067,3 +1067,50 @@ def test_a_dpu_only_vpp_deploy_fails_when_eth0_has_no_address(lab, api, books):
     assert deploy(lab, api, books, daolab_deploy_vms=False) != 0
     assert "expected 'eth0 (up)' with L3 10.65.0.192/24" in lab.stdout
 
+
+
+# ---- B-95 (mistakes.md I9, P2): parsed verify checks; the VM agent's httpcheck targets ------
+
+PARSED = {"from": "tgen", "cmd": "pktgen -t {sink_ip}",
+          "match": r"tx (?P<tx>\d+) rx (?P<rx>\d+)", "expect": {"tx": "== 1000", "rx": ">= 1000"}}
+
+
+def test_parsed_verify_passes_on_the_right_numbers(lab, api, books):
+    with_traffic(lab, pktgen="run 7: tx 1000 rx 1000")
+    assert deploy(lab, api, books, daolab_verify=PARSED) == 0, lab.stdout[-3000:]
+    assert "verify ok: rx = 1000 (>= 1000)" in lab.stdout
+
+
+def test_parsed_verify_names_the_number_that_is_wrong(lab, api, books):
+    with_traffic(lab, pktgen="tx 1000 rx 3 (rx 1000 expected)")   # a stray 1000 cannot pass it
+    assert deploy(lab, api, books, daolab_verify=PARSED) != 0
+    assert "verify failed: rx = 3, expected >= 1000" in lab.stdout
+
+
+def test_verify_fails_on_a_nonzero_exit_even_with_the_right_text(lab, api, books):
+    with_traffic(lab, pktgen="tx 1000 rx 1000")
+    v = {**PARSED, "cmd": "pktgen -t {sink_ip}; exit 3"}
+    assert deploy(lab, api, books, daolab_verify=v) != 0
+    assert "verify failed: `pktgen -t 10.65.0.37; exit 3` exited 3" in lab.stdout
+
+
+def test_verify_says_when_the_output_does_not_match(lab, api, books):
+    with_traffic(lab, pktgen="connection refused")
+    assert deploy(lab, api, books, daolab_verify=PARSED) != 0
+    assert "does not match" in lab.stdout and "connection refused" in lab.stdout
+
+
+def test_httpcheck_urls_reach_the_vm_agent_with_data_plane_addresses(lab, api, books):
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")         # "installed" on the DPU
+    roles = {**VPP_ROLES, "tgen": {**VPP_ROLES["tgen"], "httpcheck": ["https://{vpp_ip}/"]}}
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, books, daolab_roles=roles, daolab_otel_collector="otel.lab:4317",
+                  otel_agent_bin=str(lab.dir / "otelcol-contrib"),
+                  otel_agent_config=str(lab.dir / "etc" / "otelcol.yaml"),
+                  otel_agent_unit_dir=str(lab.dir)) == 0, lab.stdout[-3000:]
+    vms = lab.state()["vms"]
+    tgen = yaml.safe_load(seed(vms["daolab-r12-tgen"], "otel"))
+    assert tgen["receivers"]["httpcheck"]["targets"][0]["endpoint"] == "https://10.65.0.192/"
+    assert "httpcheck" in tgen["service"]["pipelines"]["metrics"]["receivers"]
+    sink = yaml.safe_load(seed(vms["daolab-r12-sink"], "otel"))
+    assert "httpcheck" not in sink["receivers"]                     # only the role that asks
