@@ -300,8 +300,10 @@ def test_when_retries_are_exhausted_a_cleanup_job_is_queued_and_releases_the_res
     assert row["state"] == "failed" and out.failed == 1 and out.ready == 0
     assert "create_vms" in row["failure_reason"]
     assert dpu_class(db, sid) == "cls-a"                                # nothing was flashed
-    # B-94: a failed reservation with pending cleanup must hold the setup until cleanup finishes
-    assert models.held_by(db, sid) is not None
+    # B-94: `failed` is terminal, so held_by ignores it; the setup stays blocked by its pending
+    # cleanup job (unfinished_cleanup_job), and is free again once that cleanup has finished
+    assert models.held_by(db, sid) is None
+    assert models.unfinished_cleanup_job(db, sid) is not None
     assert [(j["kind"], j["state"]) for j in jobs(db, rid)] == \
         [("deploy", "failed"), ("cleanup", "pending")]
     [deploy_job] = [j for j in jobs(db, rid) if j["kind"] == "deploy"]
@@ -310,6 +312,7 @@ def test_when_retries_are_exhausted_a_cleanup_job_is_queued_and_releases_the_res
     assert models.from_json(event["detail"])["ok"] is False
     out = tick(db, rn=mock())                    # the automatic cleanup now tears it down
     assert state(db, rid) == "released" and out.released == 1
+    assert models.unfinished_cleanup_job(db, sid) is None
 
 
 def test_a_crashing_runner_fails_the_job_but_not_the_tick(world, caplog, monkeypatch):
