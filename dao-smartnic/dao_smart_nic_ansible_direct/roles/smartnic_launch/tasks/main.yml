@@ -66,7 +66,6 @@
       -s "{{ runtime_cli }}" \
       -h "{{ telnet_host }}" \
       -p "{{ telnet_port }}" \
-      
       > /tmp/dao-smart-nic-ansible.log 2>&1 &
     echo $!
   args:
@@ -104,11 +103,19 @@
   ansible.builtin.debug:
     var: log_output.stdout_lines
 
+# Read the listening socket from the kernel; do not connect. A client that connects to the
+# telnet port and hangs up stops dao-smart-nic (seen on xeon3-oct-112: wait_for's
+# connect-and-close probe made the app exit within seconds, with nothing in its log).
 - name: Verify telnet port is listening
-  ansible.builtin.wait_for:
-    host: "{{ telnet_host }}"
-    port: "{{ telnet_port }}"
-    timeout: 20
+  ansible.builtin.shell: |
+    ss -Hltn 'sport = :{{ telnet_port }}' | grep -q .
+  args:
+    executable: /bin/bash
+  register: telnet_listen
+  retries: 10
+  delay: 2
+  until: telnet_listen.rc == 0
+  changed_when: false
 
 - name: Verify SmartNIC hugepages
   ansible.builtin.shell: |
