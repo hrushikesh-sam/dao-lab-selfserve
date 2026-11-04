@@ -40,11 +40,7 @@ erDiagram
         text health "JSON health rules"
     }
     reservations {
-<<<<<<< HEAD
         text state "CHECK includes queued,provisioning,ready,active,cleaning,released,failed,quarantined"
-=======
-        text state "7-state CHECK"
->>>>>>> akshay
         text requested_start_at "user ask"
         text start_at "granted (slot-shift)"
         int diy "0|1"
@@ -123,7 +119,7 @@ rows whose YAML exists; those columns are exact JSON mirrors of the YAML fields.
 
 **reservations** â€” user + use case (or DIY) + matched setup + time slot. `requested_start_at` =
 user ask; `start_at` = scheduler grant after slot-shift (the API's `shifted` is the derived
-inequality, not a column). `state` follows the 7-state CHECK; `released`/`failed` terminal;
+inequality, not a column). `state` follows the 8-state CHECK (migration 6 renamed `tearing_down` to `cleaning` and added `quarantined`); `released`/`failed` terminal;
 `failure_reason` set only in `failed`. `diy = 1` marks DIY mode and `diy_templates` (JSON
 host â†’ template) is non-NULL only then. `retries` counts playbook retries per phase (cap
 `DAOLAB_MAX_RETRIES`).
@@ -290,9 +286,9 @@ Role object fields:
 | Field | Type | Required | Rules |
 |---|---|---|---|
 | `on` | enum: `dpu` \| `dpu_host` \| `tg_host` | yes | Placement selector, resolved against the matched setup at provisioning time: `dpu` â†’ the member with `kind: dpu` (runs on the OCTEON itself); `dpu_host` â†’ the XCP-ng `host` of that member; `tg_host` â†’ the XCP-ng `host` of the member with `kind: nic`. |
-| `app` | string, kebab-case | iff `on: dpu` | DAO application id installed by `dpu_prepare.yml` (e.g. `nginx-tls`). Forbidden on host roles. |
+| `app` | string, kebab-case | iff `on: dpu` | DAO application id deployed by `playbooks/apps/<app>/deploy.yml` (e.g. `nginx-tls`). Forbidden on host roles. |
 | `vm` | string, kebab-case | iff `on` is `dpu_host`/`tg_host` | Base VM template name (e.g. `tpl-ubuntu2204-dao`). Forbidden on `on: dpu`. |
-| `install` | string or list of strings | no | Software `host_vm.yml` installs inside the VM per the role (e.g. `http-server`, `[ab, h2load]`) â€” never baked into the template. |
+| `install` | string or list of strings | no | Software `roles/host_vm` installs inside the VM per the role (e.g. `http-server`, `[ab, h2load]`) â€” never baked into the template. |
 | `connect` | string, kebab-case | iff `vm` is set | How the VM is wired: today `sdp` or `e810-vf`. Data, not an enum â€” new values need no code change. |
 | `crypto` | string, kebab-case | no | Crypto attachment for `on: dpu` roles only (e.g. `cpt-vfs`). |
 | `upstream` | string | no | Must name another role in the same file (e.g. proxy â†’ `backend`). |
@@ -394,19 +390,19 @@ places with different meanings:
 
 Truth rule: `inventory/host_vars/dpu-01.yml` holds the Phase-1 bootstrap value; after that,
 `resources.hw_class` in the DB is the single source of truth for scheduling, updated by the
-engine when `dpu_prepare.yml` succeeds. Ownership of writes to `resources.hw_class`:
+engine when the deploy's DPU steps succeed. Ownership of writes to `resources.hw_class`:
 
 | Event | Effect on `resources.hw_class` |
 |---|---|
 | `daolab sync` | Never written (preserved on upsert, NULL on new rows). |
 | `provisioning` â†’ `ready` | Set to `usecase.hw_class` if `dpu_prepare` reflashed. |
 | `cleaning` â†’ `released` | **Left untouched** â€” the DPU keeps its last personality. |
-| DIY reservation | Never touched (DIY runs `host_vm.yml` only â€” no `dpu_prepare.yml`, no `verify.yml`). |
+| DIY reservation | Never touched (DIY runs only the VM steps of `deploy.yml`: no DPU app, no `verify`). |
 
 Consequences (both consumers detailed in [03-scheduler.md](03-scheduler.md) and
 [04-lifecycle-engine.md](04-lifecycle-engine.md)):
 
-- `playbooks/roles/ebf_set` runs inside `dpu_prepare.yml` **iff** the use case declares an
+- `playbooks/roles/ebf_set` runs inside `deploy.yml` (step `ebf_set`) **iff** the use case declares an
   `hw_class` different from the matched setup's DPU `resources.hw_class` at that time. A
   back-to-back rerun of the same use case therefore skips the reflash entirely.
 - Lead time: `lead = DAOLAB_HW_CLASS_LEAD_MIN` (default 15) minutes when the declared
@@ -425,7 +421,7 @@ Consequences (both consumers detailed in [03-scheduler.md](03-scheduler.md) and
    ISO-8601 `YYYY-MM-DDTHH:MM:SSZ`; every connection runs WAL + `foreign_keys=ON`.
 4. Kebab-case natural names are the external identifiers (YAML, API bodies, CLI); integer ids
    are internal (API paths/responses only); `reservation_id=0` is never issued.
-5. `reservations.state` is CHECK-constrained to the seven states; `released`/`failed` are
+5. `reservations.state` is CHECK-constrained to the eight states of `models.RESERVATION_STATES`; `released`/`failed` are
    terminal; `failure_reason` only in `failed`; `diy_templates` non-NULL only when `diy = 1`.
 6. `resources.hw_class` is written only by the engine on successful `dpu_prepare`; sync
    preserves it and teardown never resets it â€” only a differing next use case triggers `ebf_set`.

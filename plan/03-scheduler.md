@@ -2,7 +2,7 @@
 
 Part of the daolab implementation plan — see [README.md](README.md) for the doc map.
 
-Sources: root `README.md` (Phase 2, design invariants), contract §8 (scheduler rules, lead-time rule, state machine) + §12 (env vars), and [09-backend-system-design.md](09-backend-system-design.md) §4–5 (the `asap` / `at` modes, conflict blocking, turnaround buffer, slot grid), which this document implements. Siblings: [01-domain-model.md](01-domain-model.md) for the schema read here, [02-backend-api.md](02-backend-api.md) for the HTTP mapping of results, [04-lifecycle-engine.md](04-lifecycle-engine.md) for the engine's use of the same lead function, [08-cli-config-ops.md](08-cli-config-ops.md) for env-var plumbing.
+Sources: root `README.md` (Phase 2, design invariants), [04-lifecycle-engine.md](04-lifecycle-engine.md) (state machine), [08-cli-config-ops.md](08-cli-config-ops.md) (env vars), and [09-backend-system-design.md](09-backend-system-design.md) §4–5 and §10 (the `asap` / `at` modes, conflict blocking, turnaround buffer, slot grid), which this document implements. Siblings: [01-domain-model.md](01-domain-model.md) for the schema read here, [02-backend-api.md](02-backend-api.md) for the HTTP mapping of results, [04-lifecycle-engine.md](04-lifecycle-engine.md) for the engine's use of the same lead function, [08-cli-config-ops.md](08-cli-config-ops.md) for env-var plumbing.
 
 ## Contract: one pure function over a DB handle
 
@@ -29,15 +29,10 @@ def startable_queued(db) -> list[sqlite3.Row]: ...                              
 
 Callers:
 
-<<<<<<< HEAD
-- `POST /reservations` (and therefore `daolab reserve`) — `place()` then INSERT. Slot conflicts are **never** errors: the scheduler slot-shifts and the API returns the granted slot.
-- `GET /usecases` — `next_free_at()` per catalog row fills `next_free_at` and distinguishes `reason: "no_free_slot"`.
-=======
 - `POST /reservations` (and therefore `daolab reserve`) — `place()` then INSERT, inside the transaction that also checks the per-user quota. In mode `asap` (the default) slot conflicts are **never** errors: the scheduler slot-shifts and the API returns the granted slot. In mode `at` a conflict is a `NoFit` result, which the API maps to `409 slot_conflict` with `detail.alternatives` (B-14; alternatives from B-13).
 - `GET /usecases` — `next_free_at()` per catalog row fills `next_free_at` (the **Deploy now** label) and distinguishes `reason: "no_free_slot"`.
 - `GET /availability` — `busy_windows()` per capable setup (B-16, §Read-only helpers below).
 - The engine ([04-lifecycle-engine.md](04-lifecycle-engine.md)) — `startable_queued()` (B-18 gate) and `start_lead_min()` decide when a `queued` booking starts provisioning.
->>>>>>> origin/akshay
 
 How the API maps each result ([02-backend-api.md](02-backend-api.md)):
 
@@ -129,7 +124,7 @@ flowchart TD
 
 ### Step 1 — candidate setups by capability match
 
-Candidates = setups where `set(usecase.requires) ⊆ set(setup.capabilities)`, iterated `ORDER BY name`. Capability strings only — never hostnames, never `resources.host`. For `diy`, the explicitly named setup is the sole candidate (its `requires` is `[]`, so the filter is moot). If no candidate exists, compute per setup `missing = sorted(set(requires) - set(capabilities))`, pick the setup minimizing `(len(missing), name)`, and return `NoSetup(missing, closest_setup)` — exactly the `unmet_capability` payload of the contract's error model.
+Candidates = setups where `set(usecase.requires) ⊆ set(setup.capabilities)`, iterated `ORDER BY name`. Capability strings only — never hostnames, never `resources.host`. For `diy`, the explicitly named setup is the sole candidate (its `requires` is `[]`, so the filter is moot). If no candidate exists, compute per setup `missing = sorted(set(requires) - set(capabilities))`, pick the setup minimizing `(len(missing), name)`, and return `NoSetup(missing, closest_setup)` — exactly the `unmet_capability` payload of [02-backend-api.md](02-backend-api.md)'s error model.
 
 ### Step 2 — FCFS ordering
 
@@ -163,11 +158,7 @@ def timeline(db, setup, cfg) -> Timeline:
     # Timeline.class_at(t): class of the last step with start_at < t, else initial.
 ```
 
-<<<<<<< HEAD
-The lead is used twice, identically: the scheduler requires the setup free for `[start_at − lead, end_at]`, and the engine begins provisioning at `start_at − lead` (transition 2; `dpu_prepare` includes `ebf_set` iff the classes differ — see [04-lifecycle-engine.md](04-lifecycle-engine.md)). Slot-shift therefore automatically inserts the reflash gap between back-to-back reservations with differing `hw_class`. `diy` never declares an `hw_class` → always the short lead, never a reflash.
-=======
 The lead is used twice, with the same `lead_min` function: the scheduler requires the setup free for `[start_at − lead, end_at + cleanup_min)`, and the engine moves the booking to `provisioning` and queues its deploy job at `start_at − lead` ([04-lifecycle-engine.md](04-lifecycle-engine.md)). The engine's lead (`start_lead_min`) is computed against the DPU's **actual** `resources.hw_class` at tick time rather than the projection, so the long reflash lead is used exactly when the board really needs a reflash; and the engine starts a booking only while no other reservation holds the setup, so a lead that differs from the projected one never overlaps a neighbour. `deploy.yml` runs `ebf_set` first, which checks the board's personality ([05-provisioning.md](05-provisioning.md)). Slot-shift therefore automatically inserts the cleanup and reflash gap between back-to-back reservations with differing `hw_class`. `diy` never declares an `hw_class` → always the short lead, never a reflash.
->>>>>>> origin/akshay
 
 ### Step 5 — slot-shift sweep
 
@@ -187,8 +178,6 @@ def sweep(tl, uc_hw_class, base, hours, horizon_end, cfg, has_dpu) -> Slot | Non
 
 Each iteration returns or advances `s` past at least one busy interval → guaranteed termination. `place()` runs the sweep per candidate, collects `(start, lead_min, name, id)` tuples, and returns `Placed` from the minimum (tie-break table below) or `NoFreeSlot` if every candidate fails within `now + DAOLAB_SCHED_HORIZON_HOURS`.
 
-<<<<<<< HEAD
-=======
 ### Step 5a — slot grid (B-12)
 
 A granted start is always a multiple of `DAOLAB_SLOT_MIN` minutes after **UTC midnight** (30 → `:00` and `:30`), via `snap_up(t, slot_min)` = the earliest grid point at or after `t`; seconds round up, and `slot_min` must be ≥ 1 (`ValueError` otherwise). `asap` snaps its base and every candidate start the sweep produces, so it returns the earliest *grid* start whose window is free. Consequences with the defaults (cleanup 10, leads 5 / 15, grid 30): the raw earliest start after a booking is 12:15 (same class) or 12:25 (reflash), and both snap to 12:30, so the gap after a booking is a flat 30 minutes; and a "Deploy now" asked for at 09:07 starts at 09:30. A grid that does not divide 24 h evenly (say 50) simply restarts at each UTC midnight.
@@ -235,7 +224,6 @@ def place_at(db, req, candidates, uc_hw_class, now, cfg) -> Placed | NoFit:
 
 `conflict` is the single test shared with the sweep, so the two modes cannot disagree about what a conflict is. Consequence, pinned by a differential test: for any start at or after `now`, `at` is granted exactly when `asap` would grant that same start unshifted (identical `Placed`), and is a `NoFit` exactly when `asap` would have shifted. The lead window before the start counts, so do the cleanup after the booking's own end and a later booking's lead before *its* start, so `at` 12:00–14:00 right after a booking that ends 12:00 conflicts (first free start is 12:15 = 12:00 + 10 cleanup + 5 lead, as in `asap`). An `at` start that is not on the grid is refused as `NoFit(reason="off_grid")` even if the window is free, because snapping it would be shifting; the API returns it as `409 slot_conflict` with `detail.reason: "off_grid"` and grid-aligned alternatives (B-14). The checks run in the order past → off-grid → overlap. `DAOLAB_SCHED_HORIZON_HOURS` bounds the `asap` search only; `at` has no sweep to bound, so it does not enforce the horizon, and the API does not add a check either: an `at` booking may lie beyond the horizon. What limits hoarding today is the per-user quota (two future bookings); whether `at` should also respect the horizon is still an open policy question.
 
->>>>>>> origin/akshay
 Build order for the implementer: 1. dataclasses + `SchedConfig`; 2. loader SQL (`usecases`, `setups` + `resources`, timeline query); 3. `lead_min`; 4. `timeline` / `class_at`; 5. `sweep`; 6. `place` + `next_free_at`; 7. `tests/test_scheduler.py`.
 
 ### Read-only helpers for the API and the engine
@@ -251,7 +239,7 @@ Same rules as the rest of the module: SELECTs only, no clock, no env.
 | Rule | Statement |
 |---|---|
 | Candidate tie-break | Among candidates, pick min `(start_at, lead_min, setup_name)`. Earliest granted start wins; equal starts prefer the setup needing no EBF reflash (invariant 5: fewer reflashes); still equal → alphabetically first setup name. |
-| `closest_setup` tie-break | Smallest per-setup missing set; tie → alphabetically first setup (contract error model, verbatim). |
+| `closest_setup` tie-break | Smallest per-setup missing set; tie → alphabetically first setup ([02-backend-api.md](02-backend-api.md) error model). |
 | Iteration order | Setups `ORDER BY name`; reservations `ORDER BY start_at, id`. |
 | Interval convention | Half-open `[start − lead, end)`: a slot may begin exactly at a predecessor's `end_at` (plus its own lead). |
 | Past starts | `requested_start_at < now` (including the literal `now`) clamps the sweep base to `now`; `shifted` still compares against the stored `requested_start_at`. |
@@ -260,11 +248,7 @@ Same rules as the rest of the module: SELECTs only, no clock, no env.
 
 ## Worked examples
 
-<<<<<<< HEAD
-All examples: `setup-01` (capabilities `[e810, octeon-cn106, sdp, wire]`, DPU member `dpu-01` with `resources.hw_class = sdp-pf1-vf8`), defaults `DAOLAB_PROVISION_LEAD_MIN=5`, `DAOLAB_HW_CLASS_LEAD_MIN=15`. `tls-proxy-nginx` requires `[octeon-cn106, e810, wire]`, `hw_class: sdp-pf1-vf8`.
-=======
 Examples 1–3 are shown with the grid off (`DAOLAB_SLOT_MIN=1`) so the raw gaps are visible; example 4 adds the default 30-minute grid. All examples use the test fixture `setup-01` of `tests/test_scheduler.py`, which has the same capabilities and DPU as the real testbed `tb-01`: `setup-01` (capabilities `[e810, octeon-cn106, sdp, wire]`, DPU member `dpu-01` with `resources.hw_class = sdp-pf1-vf8`), defaults `DAOLAB_PROVISION_LEAD_MIN=5`, `DAOLAB_HW_CLASS_LEAD_MIN=15`, `DAOLAB_CLEANUP_MIN=10`. `tls-proxy-nginx` requires `[octeon-cn106, e810, wire]`, `hw_class: sdp-pf1-vf8`.
->>>>>>> origin/akshay
 
 **1 — simple grant.** Empty timeline; reserve `tls-proxy-nginx` at `2026-09-01T10:00:00Z` for 2 h. Use-case `hw_class` equals the DPU's → lead 5. Window `[09:55, 12:00)` is free.
 
@@ -299,16 +283,6 @@ engine starts dpu_prepare (incl. ebf_set) at 12:00 = start_at − 15m
 result: start_at=12:15:00Z end_at=14:15:00Z shifted=true
 ```
 
-<<<<<<< HEAD
-## Edge cases
-
-- **No satisfying setup** → `NoSetup`; `api.py` returns `409 unmet_capability` whose message **names the missing capability list** (Phase 2 checkpoint), e.g. `requires [octeon-cn106, e810, wire, gpu]` against setup-01 → `missing: ["gpu"]`, `closest_setup: "setup-01"`.
-- **Cancellation frees a slot.** `DELETE` of a `queued` reservation → `released` immediately; `released` is excluded from busy, so the slot is free for the *next* request at once. Cancelling `ready`/`active` goes through `tearing_down` (still busy) until `released`. Freed slots are never back-filled retroactively: earlier shifted grants stay where they were placed (FCFS grants are final).
-- **Back-to-back same `hw_class`** → no reflash, only `DAOLAB_PROVISION_LEAD_MIN` (example 2). Likewise a use case with `hw_class` null/omitted runs on whatever class the DPU has — never triggers `ebf_set`, never takes the long lead, and never changes the projection.
-- **N setups with partial capability overlap.** `requires [octeon-cn106, e810, wire]` with setup-01 `[e810, octeon-cn106, sdp, wire]` and a fixture `setup-02` `[gpu, octeon-cn106, sdp]`: only setup-01 is a candidate — partial overlap is not a match. If *both* satisfy `requires`, each is swept independently and the tie-break table decides; a request that would shift on setup-01 is granted unshifted on a free setup-02.
-- **Setup without a DPU member** (pure `nic`/`compute`/`gpu`): `has_dpu` is false, hw_class logic is inert, lead is always `DAOLAB_PROVISION_LEAD_MIN`.
-- **`failed` reservations** are excluded from the timeline (contract busy rule, verbatim). A failed *teardown* leaving the setup physically held is an operational condition surfaced via `held_by` and resolved by an admin — engine/ops concern ([04-lifecycle-engine.md](04-lifecycle-engine.md)), not a scheduler input.
-=======
 **3 — hw_class lead time.** r1 as in example 1. r2 is test-fixture use case `uc-b` (requires `[octeon-cn106]`, `hw_class: sdp-pf2-vf16`), requested `12:00`, 2 h. Projected class at `12:00` is `sdp-pf1-vf8` (left by r1) → differs → lead 15. Window `[11:45, 14:10)` overlaps r1 (busy to 12:10) → shift to `s = 12:10 + 15m = 12:25`; window `[12:10, 14:35)` is free.
 
 ```
@@ -339,13 +313,12 @@ If instead r2 had been an `at` request for 12:15, it is refused (`NoFit("off_gri
 - **Back-to-back same `hw_class`** → no reflash: the gap is `DAOLAB_CLEANUP_MIN + DAOLAB_PROVISION_LEAD_MIN` = 15 min (example 2). Likewise a use case with `hw_class` null/omitted runs on whatever class the DPU has — never triggers `ebf_set`, never takes the long lead, and never changes the projection.
 - **N setups with partial capability overlap.** `requires [octeon-cn106, e810, wire]` with setup-01 `[e810, octeon-cn106, sdp, wire]` and a fixture `setup-02` `[gpu, octeon-cn106, sdp]`: only setup-01 is a candidate — partial overlap is not a match. If *both* satisfy `requires`, each is swept independently and the tie-break table decides; a request that would shift on setup-01 is granted unshifted on a free setup-02.
 - **Setup without a DPU member** (pure `nic`/`compute`/`gpu`): `has_dpu` is false, hw_class logic is inert, lead is always `DAOLAB_PROVISION_LEAD_MIN`; the cleanup buffer still applies.
-- **`failed` reservations** are excluded from the timeline (contract busy rule, verbatim). Residue after a cleanup is not a scheduler input either: a cleanup that leaves residue moves the reservation to `quarantined` (a busy state, so it keeps blocking its window until reconcile or force-clean releases it) and flags the *setup* `quarantined`; residue after the cleanup of a `failed` deploy leaves the reservation `failed` and flags the setup the same way. The flag never changes placement — bookings keep being granted on a quarantined setup — it only stops the engine from starting them (B-18, §Read-only helpers; [04-lifecycle-engine.md](04-lifecycle-engine.md)).
+- **`failed` reservations** are excluded from the timeline (the busy rule, plan/09 §5). Residue after a cleanup is not a scheduler input either: a cleanup that leaves residue moves the reservation to `quarantined` (a busy state, so it keeps blocking its window until reconcile or force-clean releases it) and flags the *setup* `quarantined`; residue after the cleanup of a `failed` deploy leaves the reservation `failed` and flags the setup the same way. The flag never changes placement — bookings keep being granted on a quarantined setup — it only stops the engine from starting them (B-18, §Read-only helpers; [04-lifecycle-engine.md](04-lifecycle-engine.md)).
 - **Deploy now is not instant.** `start_at: "now"` at 09:07 resolves to a start of 09:30 (next grid point), so a one-click deploy can wait up to `DAOLAB_SLOT_MIN` minutes. plan/09 §5 additionally says "at or after `now + provision_lead`"; the scheduler does not add that lead to `now` (open question for the supervisor).
 - **A booking placed before an existing one can lengthen that one's lead.** Existing X (class B, 12:00) follows a class-B DPU, so its lead is 5 min. A class-A booking placed before X makes X a reflash (lead 15), so the new window + cleanup must end by `X.start − 15`, not `X.start − 5`. Likewise through bookings with no `hw_class`, which pass the projection on to the next classed booking. A cleanup of `0` restores the pre-B-11 gaps (5 / 15 min).
 - **Early release frees the buffer too.** `released`/`failed` reservations are excluded from the timeline, so once a cleanup is verified and the reservation is `released`, its `end_at + cleanup_min` block disappears with it.
 - **Mode `at` on a busy window** → `NoFit(reason="overlap")` carrying the requested `start_at`/`end_at`; nothing is shifted and nothing is written. With several capable setups the window is tested on each, and the request is granted on a free one (tie-break above); `NoFit` only when every candidate conflicts. `diy` tests only its named setup.
 - **Mode `at` with a start in the past** → `NoFit(reason="in_the_past")`; the API does not pre-validate it, so the user gets `409 slot_conflict` with that reason and alternatives starting at `now`.
->>>>>>> origin/akshay
 - **Horizon exhaustion** → `NoFreeSlot(horizon_hours=168)`; surfaces as `reason: "no_free_slot"` / `next_free_at: null` in the catalog.
 - **`reservation_id=0`** (manual Phase-1 runs) never exists as a DB row, so it never appears on any timeline.
 
@@ -386,8 +359,6 @@ Let S = candidate setups, R = timeline rows per setup (reservations not in `rele
 | 21 | `test_determinism_replay` | Run #2 and #5 twice on cloned DBs | Byte-identical `Placed` results both times |
 | 22 | `test_read_only` | Any `place()` call | `db.total_changes == 0` — the scheduler never writes |
 
-<<<<<<< HEAD
-=======
 B-10 adds the mode-`at` cases below (same file, same fixtures; `req(..., mode="at")`):
 
 | # | Test | Fixture / action | Expected |
@@ -469,5 +440,4 @@ B-18 adds the availability-gate cases:
 
 `busy_windows` is exercised through the API (`tests/test_api.py` cases 25–26) and `start_lead_min` through the engine (`tests/test_engine.py::test_start_lead_min_reads_the_live_dpu_class`); the race between two bookings of one `at` window is `tests/test_concurrency.py` (B-17).
 
->>>>>>> origin/akshay
 Tests 2 and 3 are the two Phase 2 checkpoint scenarios from the root README, verbatim: two overlapping reserve calls → the second is shifted to the next slot; reserving a use case whose `requires` no setup meets → rejected naming the missing capability.

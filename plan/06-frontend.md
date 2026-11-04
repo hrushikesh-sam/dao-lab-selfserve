@@ -19,7 +19,7 @@ response. The frontend computes nothing the backend already knows.
 | Decision | Concretely | Rationale |
 |---|---|---|
 | Two single files | All CSS and JS inline in `dashboard/user.html` and `dashboard/admin.html` | Deploy = copy a file into `DAOLAB_DASHBOARD_DIR`; nothing to compile, version, or cache-bust. |
-| Vanilla JS + `fetch` | ~300 lines of script per page against 9 small JSON endpoints | A framework earns its keep managing complex client state; dumb views over the API have none. |
+| Vanilla JS + `fetch` | a few hundred lines of script per page against 14 small JSON endpoints (map below) | A framework earns its keep managing complex client state; dumb views over the API have none. |
 | mermaid via CDN `<script>` tag | The **only** external asset, present in both files (identical `<head>` plumbing) | Setup YAML ships a `diagram` block; `admin.html` renders it verbatim, so topology never lives in frontend code. |
 | No build pipeline | No npm, no bundler, no transpiler | Two files are reviewable in one sitting; the build system would outweigh the code it builds. |
 
@@ -172,17 +172,19 @@ copyable `ssh` login, and `username` + "your registered SSH key" from the `auth`
 it the reservation's `diagram` (server-generated mermaid of the provisioned topology with IPs)
 is rendered via the same mermaid plumbing as admin.html.
 
-| state | badge | SSH shown | Cancel button |
+| state | badge | SSH shown | Button |
 |---|---|---|---|
-| `queued` | grey | no (`vms` is `[]`) | yes → `released` |
-| `provisioning` | amber | no (ips filling in) | no (API would 409 `invalid_state`) |
-| `ready` | green | yes | yes → `tearing_down` |
-| `active` | green | yes | yes → `tearing_down` |
-| `tearing_down` | amber | no | no |
-| `released` | muted | no | no |
-| `failed` | red + `failure_reason` | no | no |
+| `queued` | grey | no (`vms` is `[]`) | **Cancel** → `released` |
+| `provisioning` | amber | no (ips filling in) | none (the API would 409 `invalid_state`) |
+| `ready` | green | yes | **End now** → `cleaning` |
+| `active` | green | yes | **End now** → `cleaning` |
+| `cleaning` | amber | no | none |
+| `quarantined` | red | no | none (an admin force-cleans the setup) |
+| `released` | muted | no | none |
+| `failed` | red + `failure_reason` | no | none (its cleanup runs automatically) |
 
-Cancel = confirm dialog → `DELETE /reservations/{id}` → response `{"id", "state"}` updates the
+Cancel = confirm dialog → `DELETE /reservations/{id}` (a `queued` booking only); End now =
+confirm dialog → `POST /reservations/{id}/cleanup`. Either response `{"id", "state"}` updates the
 row instantly, then `refresh()`.
 
 Build order: (1) token gate + `api()` + banner; (2) catalog table; (3) use-case reserve modal;
@@ -262,21 +264,25 @@ Build order: (1) role gate; (2) pools column; (3) setup detail panel; (4) mermai
 | Page | Component | Endpoint(s) | Notes |
 |---|---|---|---|
 | both | token gate / header identity | `GET /whoami` | on token save and page load |
-| both | API status indicator | `GET /health` | auth none; drives the "API unreachable" banner |
 | user.html | use-case catalog table | `GET /usecases` | polled |
-| user.html | reserve modal (use-case mode) | `POST /reservations` | on submit |
-| user.html | DIY modal | `POST /reservations`; `GET /setups` | `/setups` only for admin tokens (dropdown assist); others type the name |
-| user.html | my-reservations list | `GET /reservations` | polled; full objects incl. `vms`/`ssh` |
-| user.html | post-action row refresh | `GET /reservations/{id}` | after reserve/cancel |
-| user.html | cancel button | `DELETE /reservations/{id}` | `queued`/`ready`/`active` only |
+| user.html | reserve / Deploy modal (use-case and DIY mode) | `POST /reservations`; `GET /setups` | `/setups` fills the DIY setup list |
+| user.html | my-reservations list | `GET /reservations` | polled; full objects incl. `vms`, `access`, `health` |
+| user.html | post-action row refresh | `GET /reservations/{id}` | after deploy / end / cancel |
+| user.html | **End now** | `POST /reservations/{id}/cleanup` | `ready` / `active` only |
+| user.html | health re-check | `POST /reservations/{id}/health/probe` | queues a `health_probe` job |
+| user.html | cancel button | `DELETE /reservations/{id}` | `queued` only (a live slot ends with End now) |
 | admin.html | role gate | `GET /whoami` | refuses render unless `role == "admin"` |
 | admin.html | pools column | `GET /pools` | polled |
-| admin.html | setup detail (members, links, diagram, held_by, queue) | `GET /setups` | polled; one call drives the whole panel |
+| admin.html | setup detail (members, links, diagram, held_by, queue, dirty) | `GET /setups` | polled; one call drives the whole panel |
 | admin.html | global reservation table | `GET /reservations?all=1` | polled; admin token required |
-| admin.html | admin cancel | `DELETE /reservations/{id}` | any user's reservation |
+| admin.html | reservation detail (jobs, steps, log tail) | `GET /reservations/{id}`; `GET /reservations/{id}/jobs` | on row click |
+| admin.html | admin End now / cancel | `POST /reservations/{id}/cleanup`; `DELETE /reservations/{id}` | any user's reservation |
+| admin.html | force-clean a quarantined setup | `POST /admin/setups/{name}/force-clean` | optional `skip_verify`; audit-logged |
 | admin.html | users panel | `GET /users` | polled; enabled badge + active count |
 | admin.html | enable/disable toggle | `PATCH /users/{id}` | confirm on disable; self-row inert |
-| — | never called by the frontend | `POST /internal/vm-ip` | internal auth (`X-Daolab-Secret`); playbook callback only |
+| — | never called by the frontend | `/internal/*` | playbook callbacks (`X-Daolab-Secret`); the full endpoint table is [02-backend-api.md](02-backend-api.md) |
+
+14 distinct endpoints, read from `dashboard/user.html` and `dashboard/admin.html` (B-98).
 
 ## Admin gating
 
@@ -291,7 +297,7 @@ admin ⊇ user, so an admin token drives `user.html` fully (and unlocks the DIY 
 ## Deliberate non-goals
 
 - **No framework** (React/Vue/htmx) and **no build pipeline** (npm, bundlers, transpilers):
-  two static files against 9 endpoints; the toolchain would exceed the code it ships.
+  two static files against 14 endpoints; the toolchain would exceed the code it ships.
 - **No websockets, no SSE — polling only**: the engine ticks once per
   `DAOLAB_ENGINE_INTERVAL_SEC` (60 s), so 15 s polling already over-samples reality.
 - **No SPA/router**: two audiences, two files, two URLs.

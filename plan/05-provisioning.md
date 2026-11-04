@@ -4,7 +4,7 @@ Part of the daolab implementation plan — see [README.md](README.md) for the do
 
 This document specifies everything under `inventory/` and `playbooks/`: the Ansible inventory,
 the one-time dom0 passthrough prep, the `tpl-ubuntu2204-dao` template build, and `playbooks/deploy.yml` and `playbooks/cleanup.yml` (with roles) that
-`service/runner.py` invokes via ansible-runner (contract A8; invocation timing is
+`service/runner.py` invokes via ansible-runner (when and how it is invoked is
 [04-lifecycle-engine.md](04-lifecycle-engine.md)'s territory). Two invariants govern every line
 here: **every playbook is idempotent** (engine retry = run again) and **passthrough prep is
 one-time in dom0, never per reservation**. The lab uses two XCP-ng hosts (`tg-01-xcp`, `dpu-01-xcp`) and DPU `dpu-01` at 10.68.0.190.
@@ -14,7 +14,7 @@ one-time in dom0, never per reservation**. The lab uses two XCP-ng hosts (`tg-01
 Two functional groups: `dpus` (OCTEON boards, SSH targets that run DAO apps directly — not VMs)
 and `xcp_hosts` (XCP-ng dom0s, where `xe`/`xl` commands run). Host names here are the join key:
 `setups/*.yml` member names (`dpu-01`) and member `host` fields (`dpu-01-xcp`, `tg-01-xcp`)
-must exist in this inventory (contract §10). Playbooks never hardcode these names — they
+must exist in this inventory ([01-domain-model.md](01-domain-model.md), setups). Playbooks never hardcode these names — they
 resolve them from the setup YAML at runtime (see role-driven provisioning below).
 
 ```yaml
@@ -71,7 +71,7 @@ e810_vfs:                         # E810 VFs in pciback; one per client VM with 
 ```
 
 Every playbook run receives this inventory via `-i inventory/hosts.yml`
-(`DAOLAB_INVENTORY`, contract §12). New setup = new host entries + host_vars files + one
+(`DAOLAB_INVENTORY`, [08-cli-config-ops.md](08-cli-config-ops.md)). New setup = new host entries + host_vars files + one
 `setups/*.yml` — zero code changes.
 
 ## One-time dom0 preparation — pciback, single reboot
@@ -102,7 +102,7 @@ Adding hardware later (new NIC, more VFs) = edit `pciback.conf`, one more reboot
 
 ## Building `tpl-ubuntu2204-dao`
 
-One base template per the contract (§14): Ubuntu 22.04 + xe-guest-utilities + a first-boot unit
+One base template: Ubuntu 22.04 + xe-guest-utilities + a first-boot unit
 that reads `vm-data/user` and `vm-data/ssh_key` from xenstore. **No role software is baked in**
 — `http-server`, `ab`, `h2load` etc. are installed by `host_vm.yml` per the use case's `roles`
 (README Phase 1 step 4).
@@ -137,8 +137,20 @@ fresh VM for `install` tasks and `verify.yml`. In the manual Phase-1 run the two
 
 ## Playbook specifications
 
-`deploy.yml` and `cleanup.yml` run against `inventory/hosts.yml` with extravars passed by the runner (including `reservation_id`, `trace_id`, leased IPs); contract details in plan/09.
-`reservation_id`, `usecase`, `setup`, `user`, `ssh_pubkey`, plus `hw_class`, `diy` (bool),
+`deploy.yml` and `cleanup.yml` run against `inventory/hosts.yml` with extravars passed by the runner (including `reservation_id`, `trace_id`, leased IPs); details in plan/09 §6.
+
+> **As built (B-98).** The four `### playbooks/*.yml` sections below are the original split.
+> They are now plays and roles of `playbooks/deploy.yml`, undone by `playbooks/cleanup.yml`:
+>
+> | Section below | As built | Dashboard job steps |
+> |---|---|---|
+> | — (new) | `roles/lease_ip`: a management address per VM role from `POST /internal/leases`; arping from the VM's dom0, a conflict is swapped via `/internal/leases/conflict` (B-42, B-97) | `lease_ips`, `lease_ip <role>` |
+> | `dpu_prepare.yml` | `roles/ebf_set`, then `playbooks/apps/<app>/deploy.yml` (the DPU app; on tb-01 the runbook playbooks in `VPP_ansible/` and `dao-smartnic/`), `roles/dpu_access` (the `lab` login), the DPU's `otel_agent` and address | `ebf_set`, `<app>_board_state`, `dpu_app`, `dpu_access`, `post_dpu_ip` |
+> | `host_vm.yml` | `roles/host_vm` through Xen Orchestra (`service/xo.py`, B-93): template, VF as a VIF on the host's SR-IOV network, cloud-init seed via xenstore; no `xe` on the dom0 | `create_vm`, `start_vm`, `wait_ip`, `post_vm_ip` |
+> | `verify.yml` | `roles/verify`: exit 0 and parsed numbers (B-95) | `verify` |
+> | `teardown.yml` | `playbooks/cleanup.yml`, then `verify_clean.yml` (residue check), `reconcile.yml`, and the engine's `orphans.yml` sweep | the cleanup / reconcile jobs' steps |
+
+The common extravars: `reservation_id`, `usecase`, `setup`, `user`, `ssh_pubkey`, plus `hw_class`, `diy` (bool),
 `templates` (JSON object, DIY only), `daolab_api_url`, `daolab_internal_secret`.
 `reservation_id=0` is the manual Phase-1 sentinel (never issued by the DB); the
 `/internal/vm-ip` callback tasks carry `when: reservation_id | int != 0`, so manual runs need no
@@ -173,7 +185,7 @@ consumes `hw_class` and the role's `app`/`crypto`/`upstream` fields. **Tasks** (
 2. `include_role: name=ebf_set` with `ebf_target_hw_class: "{{ hw_class }}"`, only
    `when: hw_class | default('') != ''` — the role itself no-ops when the board already matches
    (stub contract below). The engine only expects a reflash when `usecase.hw_class` differs from
-   `resources.hw_class` (contract §8 transition 2), but the role re-checks on-board state so a
+   `resources.hw_class` ([04-lifecycle-engine.md](04-lifecycle-engine.md), transition table), but the role re-checks on-board state so a
    retried run is safe.
 3. `package: name=cpt-firmware-cn10k state=present`.
 4. Enable CPT VFs (count = `nproc`) and bind `bdf.cpt_vfs` to vfio-pci
@@ -184,13 +196,13 @@ consumes `hw_class` and the role's `app`/`crypto`/`upstream` fields. **Tasks** (
    `upstream` resolved to the named role's IP once known — use-case specifics live in
    [07-usecase-tls-proxy.md](07-usecase-tls-proxy.md)); start/enable its service.
 6. Post the dpu role's IP (`ansible_host` of the board — the address clients reach) via the
-   callback task (contract §5: `dpu_prepare.yml` posts for `on: dpu` roles; the reservation
+   callback task ([02-backend-api.md](02-backend-api.md), internal endpoints: `dpu_prepare.yml` posts for `on: dpu` roles; the reservation
    object shows `ssh: null` for these, so no guest user is created on the board).
 
 **Idempotency** — every step is check-then-act or `creates:`-guarded; re-running after any
 failure resumes cleanly. **Failure modes** — `ebf_set` stub mismatch (manual flash needed, see
 below); vfio bind failure (missing module → clear assert message); app build failure; callback
-401 when `DAOLAB_INTERNAL_SECRET` is unset (contract §12: the API refuses the callback while
+401 when `DAOLAB_INTERNAL_SECRET` is unset ([08-cli-config-ops.md](08-cli-config-ops.md), security operations: the API refuses the callback while
 empty).
 
 ### `playbooks/host_vm.yml`
@@ -198,7 +210,7 @@ empty).
 **Purpose** — clone, wire, boot and soften every VM role (`on: dpu_host` / `on: tg_host`), then
 report IPs. The only playbook DIY reservations run. **Inputs** — all common extravars; for DIY,
 `templates` (JSON object host → template) replaces the use-case roles: one synthetic role per
-host, role name = host name (matching `vms.role` for diy, contract §4). **Tasks** (per VM role,
+host, role name = host name (matching `vms.role` for diy, [01-domain-model.md](01-domain-model.md)). **Tasks** (per VM role,
 executed on that role's dom0 in `r_dom0`):
 
 1. Play 0 (localhost): build the VM-role list — non-diy from `usecases/*.yml` roles with `vm:`
@@ -234,7 +246,7 @@ broken → timeout after 5 min); callback 401/404.
 
 ### `playbooks/verify.yml`
 
-**Purpose** — execute the use case's `verify` block (`{from, cmd, expect}`, contract §9) from
+**Purpose** — execute the use case's `verify` block (`{from, cmd, [match,] expect}`, [01-domain-model.md](01-domain-model.md)) from
 inside the `from` role's VM. Engine runs it for non-diy only. **Inputs** — common extravars;
 the verify block itself comes from `usecases/{{ usecase }}.yml`. **Tasks**:
 
@@ -256,7 +268,7 @@ number outside its check (the real signal: provisioning produced a broken data p
 
 **Purpose** — return the setup to free: destroy the reservation's VMs (their VFs return to the
 assignable pool implicitly), stop the DAO app. **Never** touches EBF, `hw_class`, or pciback —
-the DPU keeps its last `hw_class` after teardown (invariant; contract §8 transition 9).
+the DPU keeps its last `hw_class` after teardown (invariant; [04-lifecycle-engine.md](04-lifecycle-engine.md), transition table).
 **Inputs** — common extravars; only `reservation_id`, `setup`, `diy` matter. **Tasks**:
 
 1. Play 0 (localhost): load `setups/{{ setup }}.yml`, resolve dom0s (and the dpu node, non-diy).
@@ -272,7 +284,7 @@ the DPU keeps its last `hw_class` after teardown (invariant; contract §8 transi
 **Idempotency** — empty vm-list → clean no-op; a half-torn-down reservation re-runs to
 completion. **Failure modes** — dom0 unreachable or VM stuck → after `DAOLAB_MAX_RETRIES` the
 reservation goes `failed` and the setup stays held under `held_by` on admin.html until an admin
-intervenes (contract §8 transition 10).
+intervenes ([04-lifecycle-engine.md](04-lifecycle-engine.md), transition table).
 
 ## `playbooks/roles/ebf_set` — stub contract
 
@@ -299,7 +311,7 @@ board-specific flash lands later:
 ## Role-driven provisioning — `on:` selectors to plays and hosts
 
 Use-case roles never name hosts (invariant: capability match only). The `on:` selector is
-resolved against the **matched setup** at provisioning time (contract §9):
+resolved against the **matched setup** at provisioning time ([01-domain-model.md](01-domain-model.md)):
 
 | `on:` value | Resolution against `setups/<setup>.yml` | Executing playbook | Play target |
 |---|---|---|---|
@@ -359,7 +371,7 @@ Three VF families, two owners:
 | `bdf.cpt_vfs` | the OCTEON itself (vfio-pci) | DPDK OpenSSL engine, `crypto: cpt-vfs` | `dpu_prepare.yml` (all of them, count = nproc — not per-VM) |
 
 Allocation rule for the passthrough families: the engine is **single-flight per setup** and the
-scheduler holds a setup exclusively for a reservation's whole window (contract §8), so at most
+scheduler holds a setup exclusively for a reservation's whole window ([03-scheduler.md](03-scheduler.md)), so at most
 one reservation ever owns a setup's VFs at a time. Allocation is therefore **deterministic by
 index**: sort the reservation's VM roles needing a given `connect` on a given host
 alphabetically by role name; the k-th role takes `vf_list[k]`. Deterministic choice makes a

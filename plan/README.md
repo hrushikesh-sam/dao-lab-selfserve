@@ -4,16 +4,20 @@ Part of the daolab implementation plan — see [README.md](README.md) for the do
 
 ## Purpose and scope of this plan folder
 
-The repo-root [`README.md`](../README.md) is the **product spec and source of truth**: it defines
-the domain model, the use-case catalog, the repo layout, the phased pipeline, and the six design
-invariants. It stays that way. The eleven documents in `plan/` turn that spec into an
-implementation blueprint — exact schemas, function signatures, endpoint tables, wireframes, and
-ordered task lists — so a competent engineer builds each component without guessing.
+The repo-root [`README.md`](../README.md) is the **product spec**: the domain model, the use-case
+catalog, the repo layout and the six design invariants. The eleven documents in `plan/` turn that
+spec into an implementation blueprint — exact schemas, function signatures, endpoint tables,
+wireframes, and ordered task lists — so a competent engineer builds each component without
+guessing.
 
 Rules of the folder:
 
-- **Precedence**: root `README.md` > these plan docs. A plan doc never contradicts the spec; it
-  refines it.
+- **Precedence (B-98)**: for the backend as built, [09-backend-system-design.md](09-backend-system-design.md)
+  is the design of record (one `deploy.yml` + `cleanup.yml`, leased IPs, jobs, `cleaning` /
+  `quarantined`, OTel health); the code and its tests are checked against it. 01–08 and the root
+  `README.md` refine it and were brought in line with it; where an older sentence still
+  disagrees with 09, 09 wins and the older doc is the bug. A plan doc never contradicts the
+  product spec's invariants.
 - **Ownership**: each doc owns one area and its decisions (see the document map below). Sibling
   docs reference each other by relative filename with one-line pointers — never by duplicating
   content in depth.
@@ -26,13 +30,8 @@ daolab lets a user reserve a **setup** — a wired group of lab nodes — pre-pr
 Marvell [DAO](https://marvellembeddedprocessors.github.io/dao/) use case. Scheduling is **FCFS**
 (placed in `created_at` order) with **slot-shift** on conflict: an overlapping request is never
 rejected, it is moved to the earliest free slot. A reservation moves through
-<<<<<<< HEAD
 `queued → provisioning → ready → active → cleaning → released` (plus terminal `failed`, `quarantined`),
 driven by an engine that runs idempotent Ansible playbooks via `deploy.yml`/`cleanup.yml` against XCP-ng hosts and the OCTEON.
-=======
-`queued → provisioning → ready → active → tearing_down → released` (plus terminal `failed`),
-driven by an engine that runs idempotent Ansible playbooks against XCP-ng hosts and the OCTEON.
->>>>>>> akshay
 
 **Lab topology (two XCP-ng hosts):** `tg-01-xcp` (10.68.0.52, Intel E810 traffic-generator) and `dpu-01-xcp` (10.68.0.53, OCTEON CN106 DPU host). The DPU board `dpu-01` is at 10.68.0.190. The setup is defined in `setups/tb-01.yml` in pool `lab-1`:
 
@@ -118,16 +117,16 @@ Eleven files. Each owns its decisions; everything else points at it.
 | File | Scope (one line) | Key decisions owned |
 |---|---|---|
 | [README.md](README.md) | This index and system overview. | Tech-stack rationale; roadmap → doc mapping; glossary; plan-honesty rule. |
-| [01-domain-model.md](01-domain-model.md) | Domain model and data layer. | `service/schema.sql` DDL (7 tables); `models.py` helpers; `catalog.py` sync/upsert semantics; `usecases/*.yml` and `setups/*.yml` schemas; capability union rule. |
+| [01-domain-model.md](01-domain-model.md) | Domain model and data layer. | `service/schema.sql` baseline DDL + `service/migrations.py` (12 tables today: users, pools, setups, resources, usecases, reservations, vms, jobs, ip_pools, ip_leases, audit_events, health_snapshots); `models.py` helpers; `catalog.py` sync/upsert semantics; `usecases/*.yml` and `setups/*.yml` schemas; capability union rule. |
 | [02-backend-api.md](02-backend-api.md) | Backend API service. | Full endpoint table; reservation object shape; error model (`code`/`message`/`detail`); auth (token hashing, `X-Daolab-Secret`). |
 | [03-scheduler.md](03-scheduler.md) | Scheduler — pure placement logic. | FCFS ordering; slot-shift algorithm; `hw_class` lead-time rule; busy-window definition; `DAOLAB_SCHED_HORIZON_HOURS`; pure-function signature and test matrix. |
 | [04-lifecycle-engine.md](04-lifecycle-engine.md) | Lifecycle engine and runner. | State machine transition table; tick processing order; single-flight per setup; retry policy (`DAOLAB_MAX_RETRIES`); `runner.py` functions and extravars; webhook on `ready`. |
-| [05-provisioning.md](05-provisioning.md) | Provisioning and XCP-ng automation. | The four playbooks and `roles/ebf_set`; inventory and `host_vars` layout (BDFs, `hw_class`); one-time dom0 pciback prep; `tpl-ubuntu2204-dao` template build; VM naming `daolab-r<id>-<role>`. |
+| [05-provisioning.md](05-provisioning.md) | Provisioning and XCP-ng automation. | `deploy.yml` / `cleanup.yml` and their roles (`lease_ip`, `ebf_set`, `dpu_access`, `host_vm`, `verify`, `otel_agent`; the DPU apps under `playbooks/apps/`), plus `verify_clean` / `reconcile` / `orphans` / `bringup`; inventory and `host_vars` layout (BDFs, `hw_class`); one-time dom0 pciback prep; `tpl-ubuntu2204-dao` template build; VM naming `daolab-r<id>-<role>`. |
 | [06-frontend.md](06-frontend.md) | Frontend — user and admin dashboards. | `user.html` / `admin.html` wireframes; mermaid rendering of setup diagrams verbatim; token in `localStorage`; `GET /whoami` admin gate. |
 | [07-usecase-tls-proxy.md](07-usecase-tls-proxy.md) | First use case — NGINX TLS proxy (separate backend). | `usecases/tls-proxy-nginx.yml` contents; roles `proxy`/`backend`/`client`; CPT offload path; `verify` block; `hw_class: sdp-pf1-vf8`. |
-| [08-cli-config-ops.md](08-cli-config-ops.md) | CLI, configuration, and operations. | `daolab init \| sync \| add-user \| reserve \| status` verbs and flags; `.env.example` variables; `Makefile` targets; systemd timer; ops runbook (incl. `failed` teardown recovery). |
+| [08-cli-config-ops.md](08-cli-config-ops.md) | CLI, configuration, and operations. | `daolab init \| sync \| add-user \| revoke-token \| reserve \| status` verbs and flags; `.env.example` variables; `Makefile` targets; systemd timer; ops runbook (incl. `failed` teardown recovery). |
 | [09-backend-system-design.md](09-backend-system-design.md) | Backend system design: one-click deploy, cleanup, OTel health. | asap vs. `at` booking with `409 slot_conflict`; turnaround buffer; IP leasing; DPU access via `AuthorizedKeysCommand`; job model; teardown→verify→reconcile→quarantine; OTel health rules in use-case YAML; mock runner + test users. |
-| [10-backend-tasksheet.md](10-backend-tasksheet.md) | Backend tasksheet for 09. | Task IDs B-01…B-91 by phase P0–P6; dependencies; done-when criteria; estimates; critical path. |
+| [10-backend-tasksheet.md](10-backend-tasksheet.md) | Backend tasksheet for 09. | Task IDs B-01…B-101 by phase P0–P7; dependencies; done-when criteria; estimates; critical path. |
 
 ## Tech stack
 
@@ -138,7 +137,7 @@ Eleven files. Each owns its decisions; everything else points at it.
 | Database | sqlite via stdlib `sqlite3`, WAL mode | Zero-ops single-file DB; WAL lets the `api` and `engine` processes share it safely; move to Postgres only if >1 API worker (Phase 4). |
 | Automation | ansible-runner | Programmatic playbook invocation with structured status/events — one runner function per lifecycle transition. |
 | Frontend | Single-file vanilla-JS dashboards + mermaid | Dumb views over the API, no build step; mermaid renders the topology diagrams shipped inside setup YAML. |
-| Tests | pytest | Scheduler unit tests run against an in-memory sqlite handle, no hardware. |
+| Tests | pytest | ~900 tests, no hardware: scheduler, API, engine, migrations, and the real playbooks against a fake lab (`tests/fakelab.py`); CI runs them on every push (`.github/workflows/ci.yml`). |
 | Entry points | make | Workflows — `setup`, `test`, `api`, `engine` — as one-word commands. |
 
 Packaging: one `pyproject.toml` at repo root declares the dependencies (`fastapi`, `uvicorn`,
@@ -152,10 +151,23 @@ inline in each single HTML file.
 Phases from the root README. Each phase is independently useful; do not start phase N+1 until
 phase N's checkpoint passes.
 
+**Two phase ladders (C14, B-98).** The README's **Phase 0–4** below is the original product
+pipeline. The backend was built against [09](09-backend-system-design.md) §13's **P1–P6**, which
+[10](10-backend-tasksheet.md) tracks as **P0–P7**; task gates use those. They map as follows:
+
+| README phase | plan/10 phases (tasks) |
+|---|---|
+| 0 — bootstrap | P0 (B-01…B-06) |
+| 1 — hardware truth | P6's real playbooks (B-80…B-86) + P7 (B-92…B-101) on the real lab |
+| 2 — scheduling without hardware | P1 (B-10…B-18) |
+| 3 — automation loop | P2 (B-20…B-30), P3 (B-40…B-45), P4 (B-50…B-55), P6's cleanup verification and reconciler (B-70…B-74) |
+| 4 — harden and scale out | P5 (B-60…B-68), P7, docs follow-up (B-90, B-91, B-98) |
+
+
 | Phase | Goal | Checkpoint | Plan docs |
 |---|---|---|---|
 | **0 — bootstrap** | `python -m venv .venv`, `make setup`, `cp .env.example .env`, `daolab init && make test`. | Scheduler tests pass with no hardware. | [01](01-domain-model.md), [03](03-scheduler.md), [08](08-cli-config-ops.md) |
-| **1 — hardware truth** (the only risky phase) | Collect BDFs into `inventory/host_vars/`; one-time dom0 pciback prep; build `tpl-ubuntu2204-dao`; prepare the OCTEON (CPT firmware, vfio-pci, DAO NGINX); run `dpu_prepare.yml`, `host_vm.yml`, `verify.yml`, `teardown.yml` by hand with `-e reservation_id=0`. | From the client VM, `h2load -n1000 https://<proxy_ip>/` returns 1000×200 and the backend VM's access log shows plain-HTTP hits. | [05](05-provisioning.md), [07](07-usecase-tls-proxy.md) |
+| **1 — hardware truth** (the only risky phase) | Collect BDFs into `inventory/host_vars/`; one-time dom0 pciback prep; build `tpl-ubuntu2204-dao`; prepare the OCTEON (CPT firmware, vfio-pci, DAO NGINX); originally four playbooks run by hand, now one `deploy.yml` (and `cleanup.yml`) — `bringup.yml` checks the board and hosts are ready. | From the client VM, `h2load -n1000 https://<proxy_ip>/` returns 1000×200 and the backend VM's access log shows plain-HTTP hits. | [05](05-provisioning.md), [07](07-usecase-tls-proxy.md) |
 | **2 — scheduling without hardware** | `daolab sync`, `daolab add-user`, `make api`, `daolab reserve tls-proxy-nginx 2026-09-01T10:00 --hours 2`, `daolab status`. | Two overlapping reserves → second slot-shifted; unmet `requires` → rejected naming the missing capability; `user.html` shows the catalog with correct availability; `admin.html` renders setup-01's diagram. | [02](02-backend-api.md), [03](03-scheduler.md), [06](06-frontend.md), [08](08-cli-config-ops.md) |
 | **3 — automation loop** | `make engine`, or a systemd timer running `python -m service.engine` every minute. | A reservation created for "now" goes `queued → provisioning → ready` on its own; `admin.html` shows setup-01 held; at `end_at` it goes back to free. | [04](04-lifecycle-engine.md), [08](08-cli-config-ops.md) |
 | **4 — harden and scale out** | Remaining use-case YAMLs; a second setup YAML to prove N-setup matching; `verify.yml` driven by each YAML's `verify` block; webhook on `ready` (`DAOLAB_WEBHOOK_URL`); Postgres only if >1 API worker. | Second setup participates in capability matching; per-use-case smoke passes from YAML alone. | [01](01-domain-model.md), [04](04-lifecycle-engine.md), [05](05-provisioning.md), [07](07-usecase-tls-proxy.md) |

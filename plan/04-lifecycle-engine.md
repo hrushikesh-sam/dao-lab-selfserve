@@ -2,8 +2,8 @@
 
 Part of the daolab implementation plan â€” see [README.md](README.md) for the doc map.
 
-This document specifies `service/engine.py` and `service/runner.py`. It draws on contract Â§8
-(state machine, engine mechanics, runner contract). Placement itself â€” capability matching,
+This document specifies `service/engine.py` and `service/runner.py`. It draws on [09-backend-system-design.md](09-backend-system-design.md) (§6 deploy procedure, §10 state model)
+for the state machine, engine mechanics and runner contract. Placement itself â€” capability matching,
 FCFS, slot-shift, the lead-time computation â€” is the scheduler's job
 ([03-scheduler.md](03-scheduler.md)); playbook internals are [05-provisioning.md](05-provisioning.md);
 the cancel endpoint and the `/internal/vm-ip` handler are [02-backend-api.md](02-backend-api.md).
@@ -11,7 +11,7 @@ the cancel endpoint and the `/internal/vm-ip` handler are [02-backend-api.md](02
 ## Reservation state machine
 
 States, exact list: `queued`, `provisioning`, `ready`, `active`, `cleaning`, `released`,
-plus `failed` â€” the terminal error state the contract adds for failure handling. `released` and
+plus `failed` â€” the terminal error state plan/09 §10 keeps for failure handling. `released` and
 `failed` are terminal. There is no `cancelled` state: cancelling a `queued` reservation goes
 straight to `released`; cancelling `ready`/`active` goes through `cleaning` â†’ `released`.
 
@@ -41,11 +41,7 @@ stateDiagram-v2
 | `ready` | engine tick (a): `now >= start_at` | none | `active` | â€” |
 | `ready` | `DELETE /reservations/{id}` (api) | state change + `retries = 0`; engine drives the teardown | `cleaning` | â€” |
 | `active` | engine tick (b): `now >= end_at`, or `DELETE /reservations/{id}` | `retries = 0` on entry | `cleaning` | â€” |
-<<<<<<< HEAD
 | `cleaning` | engine tick (c): `runner.cleanup` then `runner.verify_clean` | if clean â†’ release leases/setup â†’ `released`; if residue â†’ reconcile/quarantine â†’ `quarantined`; **`resources.hw_class` is left untouched** | `released`/`quarantined`/`failed` | retries as needed; on failure/quarantine setup held until resolved (admin force-clean) |
-=======
-| `cleaning` | engine tick (c): `runner.teardown` succeeds | setup freed; **`resources.hw_class` is left untouched** | `released` | `retries += 1`; after `DAOLAB_MAX_RETRIES`: `failed`, set `failure_reason`, setup stays held and surfaces under `held_by` on `admin.html` until an admin intervenes manually |
->>>>>>> akshay
 | `queued` | `DELETE /reservations/{id}` before provisioning began (api) | no playbooks ran; nothing to tear down | `released` | â€” |
 
 Cancel while `provisioning` or `cleaning` â†’ `409 invalid_state` (retry once `ready`) â€” the
@@ -67,11 +63,7 @@ def tick(db: sqlite3.Connection, now: datetime) -> int:
     """One pass over the reservations table. Returns transitions performed."""
     n  = _promote_ready_to_active(db, now)   # (a) ready -> active, start_at due
     n += _expire_active(db, now)             # (b) active -> cleaning, end_at passed
-<<<<<<< HEAD
     n += _drive_teardowns(db, now)           # (c) run cleanup per due reservation (deploy.yml/cleanup.yml)
-=======
-    n += _drive_teardowns(db, now)           # (c) run runner.teardown per due reservation
->>>>>>> akshay
     n += _start_due_provisioning(db, now)    # (d) queued -> provisioning, create vms rows
     n += _drive_provisioning(db, now)        # (e) one full provisioning attempt per setup
     return n
@@ -111,7 +103,7 @@ Tick order is fixed â€” (a) through (e) exactly as above â€” so releas
   `DAOLAB_HW_CLASS_LEAD_MIN` minutes if the use case declares an `hw_class` different from the
   DPU's current `resources.hw_class`, else `DAOLAB_PROVISION_LEAD_MIN` minutes. The engine calls
   the same pure lead helper the scheduler uses (defined in [03-scheduler.md](03-scheduler.md)),
-  so scheduler and engine can never disagree â€” the contract requires the lead be "used twice,
+  so scheduler and engine can never disagree â€” [03-scheduler.md](03-scheduler.md) requires the lead be "used twice,
   identically". `resources.hw_class` in the DB is the single source of truth at tick time.
 - **Blocking is fine.** Steps (c) and (e) run ansible-runner synchronously; a provisioning tick
   can take minutes. Ticks are serialized (one process), so a long tick simply delays the next.
@@ -157,7 +149,7 @@ def _run(playbook: str, ctx: dict) -> RunResult:
 ```
 
 `ctx` is assembled once per attempt by `models.reservation_context(db, reservation_id) -> dict`
-(a join of `reservations` Ã— `users` Ã— `usecases` Ã— `setups`), with exactly the contract's
+(a join of `reservations` Ã— `users` Ã— `usecases` Ã— `setups`), with exactly these
 extravar names: `reservation_id`, `usecase`, `setup`, `user`, `ssh_pubkey`, `hw_class`, `diy`
 (bool), `templates` (JSON object, DIY only), `daolab_api_url`, `daolab_internal_secret`. The
 last two carry `DAOLAB_API_URL` and `DAOLAB_INTERNAL_SECRET` so playbooks can post VM IPs. This
@@ -234,7 +226,7 @@ If `DAOLAB_WEBHOOK_URL` is set, entering `ready` fires exactly one call from the
 httpx.post(config.DAOLAB_WEBHOOK_URL, json=reservation_object, timeout=10)
 ```
 
-The payload is the **canonical reservation object** of the contract â€” byte-for-byte the shape
+The payload is the **canonical reservation object** of [02-backend-api.md](02-backend-api.md) â€” byte-for-byte the shape
 `GET /reservations/{id}` returns: `id`, `user`, `usecase`, `setup`, `state` (`"ready"`), `diy`,
 `requested_start_at`, `start_at`, `end_at`, `shifted`, `failure_reason`, the full `vms` array
 with `role`/`host`/`template`/`name`/`ip`/`ssh`, `created_at`, `updated_at`. External automation
@@ -243,7 +235,7 @@ gets SSH targets without polling.
 Semantics are **at-most-once**: the engine commits the `ready` transition first, then posts. A
 non-2xx response or network error is logged at WARNING and never retried, never blocks the
 state machine, and a crash between commit and post loses that one webhook. Anything stronger
-would need a delivery column the contract does not define. Unset `DAOLAB_WEBHOOK_URL` (the
+would need a delivery column the schema does not define. Unset `DAOLAB_WEBHOOK_URL` (the
 default) skips the call entirely.
 
 ## The VM-IP callback during provisioning
