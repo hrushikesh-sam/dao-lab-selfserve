@@ -185,7 +185,7 @@ AΓÇôP). Owner `ΓÇö` = not assigned yet.
 | B-98 | Fold plan/09 into the rest of the doc set: `README.md`, `plan/README.md`, `plan/01`, `plan/06`, `plan/07`, `plan/08` (topology, playbooks, IP model, counts, the endpoint map, dangling "contract ┬º" references) | docs | B-92 | `mistakes.md` A2, A8, B8, B10, B13, C9, C14, I19, M4 closed | ΓÇö | todo |
 | B-99 | SmartNIC on the real board: in Akshay's runbook `smartnic_build` / `smartnic_launch` check `pgrep -x vpp` (misses `vpp_main`), and the build prefix (`dao-clone/install`) does not match `smartnic_binary` (`dao-clean/install`) | `dao-smartnic/` | ΓÇö | SmartNIC deploys and cleans up from the dashboard on xeon3-oct-112; then add it to `DAOLAB_DEPLOYABLE` | Akshay | done (`3cc37fb` on `b93-xo`) |
 | B-100 | Password-mode deploy verified on the real board: log in as `lab` with the generated password, refused after End now | ΓÇö | ΓÇö | recorded run | Akshay | done (2026-11-03, reservation 2 on xeon3-oct-112: `ssh lab@10.68.0.190` with the generated password → `lab` / `xeon3-oct-112` while active; after End now → released, the same password → `Permission denied`) |
-| B-101 | Operations: CI running the tests on every push; a DB backup timer; token expiry | `.github/workflows/`, `deploy/`, `service/models.py` | ΓÇö | `mistakes.md` K6, J15, J13 closed | ΓÇö | todo |
+| B-101 | Operations: CI running the tests on every push; a DB backup timer; token expiry | `.github/workflows/`, `deploy/`, `service/models.py` | ΓÇö | `mistakes.md` K6, J15, J13 closed | Akshay | done (`f0cbc1a` on `b93-xo`; CI run #4 on push: 881 passed, 3 failed = the known B-94 / B-95 tests) |
 
 ---
 
