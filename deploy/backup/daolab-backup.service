@@ -1,8 +1,13 @@
-﻿[Unit]
-Description=DAO Lab DB backup
+# deploy/backup/daolab-backup.service — one DB backup (B-101); started by daolab-backup.timer.
+# Same layout as daolab-api.service (plan/08): checkout at /opt/daolab, settings in its .env.
+[Unit]
+Description=daolab DB backup (sqlite online backup + prune)
 
 [Service]
 Type=oneshot
-Environment=DAOLAB_DB_PATH=/var/lib/daolab/daolab.db
-Environment=DAOLAB_BACKUP_DIR=/var/backups/daolab
-ExecStart=/usr/local/bin/daolab-backup.sh
+User=daolab
+WorkingDirectory=/opt/daolab
+EnvironmentFile=/opt/daolab/.env
+Environment=DAOLAB_BACKUP_DIR=/opt/daolab/backups
+Environment=DAOLAB_PYTHON=/opt/daolab/.venv/bin/python
+ExecStart=/opt/daolab/deploy/backup/backup-db.sh

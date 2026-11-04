@@ -9,7 +9,7 @@ operations: backups, token hygiene, troubleshooting. The API semantics behind th
 [04-lifecycle-engine.md](04-lifecycle-engine.md); playbooks and inventory in
 [05-provisioning.md](05-provisioning.md).
 
-## CLI reference — `daolab init | sync | add-user | reserve | status`
+## CLI reference — `daolab init | sync | add-user | revoke-token | reserve | status`
 
 Installed by `pyproject.toml` as console script `daolab = "service.cli:main"` (`make setup`).
 `init` and `sync` open the DB directly at `DAOLAB_DB_PATH`; `reserve` and `status` are thin
@@ -23,7 +23,8 @@ additionally accepts `YYYY-MM-DDTHH:MM` (interpreted as UTC) and the literal `no
 |---|---|---|---|
 | `init` | — | — | DB |
 | `sync` | — | — | DB |
-| `add-user` | `USERNAME PUBKEY_PATH` | `--role {admin,user}` (default `user`) | DB |
+| `add-user` | `USERNAME PUBKEY_PATH` | `--role {admin,user}` (default `user`), `--rotate` | DB |
+| `revoke-token` | `USERNAME` | — | DB |
 | `reserve` | `USECASE START` | `--hours N` (default `1`), `--setup NAME`, `--template HOST=TEMPLATE` (repeatable) | API |
 | `status` | — | `--all` (admin token required) | API |
 
@@ -65,14 +66,27 @@ $ echo $?
 Reads the SSH public key file, generates `secrets.token_urlsafe(32)`, stores only
 `sha256(token).hexdigest()` in `users.token_hash`, and prints the plaintext token **exactly
 once** as `token: <token>` — it is unrecoverable afterwards (see Security operations for
-rotation). Duplicate username → exit `1`. Default role is `user`.
+rotation). Duplicate username → exit `1` (`--rotate` replaces the token instead). Default role
+is `user`. The token expires after `DAOLAB_TOKEN_TTL_DAYS` (B-101), printed as `expires:`.
 
 ```
 $ daolab add-user hrushi ~/.ssh/id_ed25519.pub
 token: 4qXo9vGm1cT7ZfWkH2sYpBad3nRjLu8eKQxOI5wDyhc
+expires: 2027-02-02T10:00:00Z
 
 $ daolab add-user ops ~/.ssh/id_ed25519.pub --role admin
 token: kV7dPq2zXnJ4mW9sRtY6bC1gHf8aLoE3uNiT5wZxQjM
+expires: 2027-02-02T10:00:00Z
+```
+
+### `daolab revoke-token USERNAME`
+
+The user's current token stops working immediately (B-101); the row, reservations and audit
+history stay. Unknown username → exit `1`. Issue a new token with `add-user … --rotate`.
+
+```
+$ daolab revoke-token hrushi
+revoked: hrushi
 ```
 
 ### `daolab reserve USECASE START [--hours N] [--setup NAME] [--template HOST=TEMPLATE ...]`
@@ -247,9 +261,12 @@ failing playbook's task output appears under `daolab-engine`.
   ```
   sqlite3 /opt/daolab/daolab.db ".backup '/opt/daolab/backups/daolab-$(date -u +%Y%m%dT%H%M%SZ).db'"
   ```
-  Run nightly (cron or another systemd timer), prune by age. Restore: stop
+  Nightly: `deploy/backup/daolab-backup.timer` runs `deploy/backup/backup-db.sh` at 02:30 (the
+  same online backup, checked with `PRAGMA integrity_check`, pruned after
+  `DAOLAB_BACKUP_KEEP_DAYS`, default 14). Install and restore steps:
+  [`deploy/backup/README.md`](../deploy/backup/README.md). Restore in short: stop
   `daolab-api.service` and `daolab-engine.timer`, replace `daolab.db`, delete stale
-  `-wal`/`-shm` files, start again.
+  `-wal`/`-shm` files, `daolab init`, start again.
 - **Schema evolution stance** — no migration framework. `service/schema.sql` is the single
   source of truth and every statement is `CREATE ... IF NOT EXISTS`, so `daolab init` is always
   safe to re-run. Catalog tables (`pools`, `setups`, `resources`, `usecases`) are fully
@@ -265,19 +282,20 @@ failing playbook's task output appears under `daolab-engine`.
 
 - **Token storage** — `users.token_hash` holds only the SHA-256 hex of the bearer token; the
   plaintext exists once, on `add-user` stdout (`token: <token>`). A lost token cannot be
-  recovered, only rotated. Tokens do not expire.
-- **Token rotation** — re-running `add-user` for an existing username is an error; rotate by
-  deleting the row and re-adding:
-  ```
-  sqlite3 "$DAOLAB_DB_PATH" "DELETE FROM users WHERE username='hrushi';"
-  daolab add-user hrushi ~/.ssh/id_ed25519.pub
-  ```
-  With `foreign_keys=ON`, historical `reservations` rows referencing the user block the
-  DELETE — clear that user's reservation history first (admin decision; it is audit data).
+  recovered, only rotated.
+- **Token expiry (B-101)** — `add-user` sets `users.token_expires_at` to now +
+  `DAOLAB_TOKEN_TTL_DAYS` (default 90; `0` = never) and prints it (`expires: …`). Past it the
+  API answers `401 unauthorized` with `detail.reason = "token_expired"`; `/whoami` shows the
+  date. Tokens issued before schema v11 have no expiry (NULL) until rotated.
+- **Token rotation** — `daolab add-user <user> <pubkey> --rotate` gives an existing user a new
+  token (and a new expiry); the old one stops working at once and the user's reservations stay.
+- **Token revocation** — `daolab revoke-token <user>` makes the current token stop working
+  immediately without deleting the row (reservations and audit events reference it); rotate
+  to issue a new one.
 - **Disabling vs deleting** — to cut off a user, disable them from `admin.html`
   (`PATCH /users/{id}`, `{"enabled": false}`): the token stops working immediately
-  (`403 user_disabled`) and reservation history stays intact. Deleting the row is only for
-  token rotation (below).
+  (`403 user_disabled`) and reservation history stays intact. Rows are never deleted: a
+  leaked token is ended with `revoke-token` and replaced with `add-user --rotate`.
 - **Internal callback secret** — generate once with
   `python -c 'import secrets; print(secrets.token_urlsafe(32))'`, set as
   `DAOLAB_INTERNAL_SECRET` in `.env`. The API compares `X-Daolab-Secret` with

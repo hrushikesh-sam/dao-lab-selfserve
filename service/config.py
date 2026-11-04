@@ -41,6 +41,7 @@ class Settings:
     mock_step_sec: float
     mock_fail: str
     job_timeout_sec: int
+    token_ttl_days: int
     prometheus_url: str
     reconcile_attempts: int
     authz_secret: str
@@ -92,6 +93,7 @@ class Settings:
             mock_step_sec=float(env("DAOLAB_MOCK_STEP_SEC", "5")),
             mock_fail=env("DAOLAB_MOCK_FAIL", ""),
             job_timeout_sec=int(env("DAOLAB_JOB_TIMEOUT_SEC", "1800")),
+            token_ttl_days=int(env("DAOLAB_TOKEN_TTL_DAYS", "90")),
             prometheus_url=env("DAOLAB_PROMETHEUS_URL", "http://localhost:9090"),
             reconcile_attempts=int(env("DAOLAB_RECONCILE_ATTEMPTS", "2")),
             authz_secret=env("DAOLAB_AUTHZ_SECRET", ""),

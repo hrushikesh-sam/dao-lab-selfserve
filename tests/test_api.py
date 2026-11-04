@@ -577,3 +577,17 @@ def test_29_jobs_and_events(env):
     assert "event: step" in body
     assert "lease IP" in body and "DPU app: tls-proxy-nginx" in body
     assert_error(env.client.get(f"/reservations/{rid}/events", headers=H(bob)), 403, "forbidden")
+
+
+def test_b101_an_expired_token_is_refused(env):
+    """B-101 (mistakes.md J13): past users.token_expires_at the token is 401, like an unknown
+    one; before it (or with NULL, the pre-v11 tokens) it works and /whoami shows the date."""
+    tok = env.add_user("carol")
+    uid = env.conn.execute("SELECT id FROM users WHERE username = 'carol'").fetchone()["id"]
+    assert env.client.get("/whoami", headers=H(tok)).json()["token_expires_at"] is None
+    env.models.update(env.conn, "users", uid, {"token_expires_at": "2099-01-01T00:00:00Z"})
+    r = env.client.get("/whoami", headers=H(tok))
+    assert r.status_code == 200 and r.json()["token_expires_at"] == "2099-01-01T00:00:00Z"
+    env.models.update(env.conn, "users", uid, {"token_expires_at": "2000-01-01T00:00:00Z"})
+    err = assert_error(env.client.get("/whoami", headers=H(tok)), 401, "unauthorized")
+    assert err["detail"] == {"reason": "token_expired", "expired_at": "2000-01-01T00:00:00Z"}

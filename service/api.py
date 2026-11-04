@@ -82,24 +82,11 @@ def current_user(authorization: str | None = Header(None),
         raise DaolabError("unauthorized", 401, "invalid bearer token")
     if not user["enabled"]:
         raise DaolabError("forbidden", 403, "user disabled", {"reason": "user_disabled"})
-    # B-101: token expiry if present
-    try:
-        from datetime import datetime, timezone
-
-        exp = user["token_expires_at"] if "token_expires_at" in user.keys() else None
-        if exp:
-            try:
-                exp_dt = datetime.strptime(str(exp), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                if datetime.now(timezone.utc) >= exp_dt:
-                    raise DaolabError("unauthorized", 401, "token expired")
-            except DaolabError:
-                raise
-            except Exception:
-                pass
-    except DaolabError:
-        raise
-    except Exception:
-        pass
+    # B-101 (J13): a token past its expiry is refused like an unknown one
+    exp = user["token_expires_at"]
+    if exp is not None and models.utcnow() >= exp:
+        raise DaolabError("unauthorized", 401, "token expired; ask an admin for a new one",
+                          {"reason": "token_expired", "expired_at": exp})
     return user
 
 
@@ -439,7 +426,8 @@ def health():
 @app.get("/whoami")
 def whoami(user: sqlite3.Row = Depends(current_user)):
     return {"id": user["id"], "username": user["username"], "role": user["role"],
-            "created_at": user["created_at"], "ssh_pubkey": user["ssh_pubkey"]}
+            "created_at": user["created_at"], "ssh_pubkey": user["ssh_pubkey"],
+            "token_expires_at": user["token_expires_at"]}
 
 
 def _deployable(uc) -> bool:

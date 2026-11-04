@@ -1,8 +1,10 @@
-﻿[Unit]
-Description=DAO Lab DB backup
+# deploy/backup/daolab-backup.timer — nightly DB backup (B-101, mistakes.md J15).
+[Unit]
+Description=Nightly daolab DB backup
 
 [Timer]
-OnCalendar=daily
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=15min
 Persistent=true
 
 [Install]
