@@ -3,8 +3,41 @@
   ansible.builtin.meta: end_role
   when: otel_agent_collector | length == 0
 
-- name: the binary
-  ansible.builtin.include_tasks: binary.yml
+- name: is the agent installed
+  ansible.builtin.stat:
+    path: "{{ otel_agent_bin }}"
+  register: _otel_bin
+
+- name: install otelcol-contrib {{ otel_agent_version }}
+  when: not _otel_bin.stat.exists
+  block:
+    - name: find the architecture
+      ansible.builtin.command: uname -m
+      register: _uname
+      changed_when: false
+
+    - name: pick the release archive
+      ansible.builtin.set_fact:
+        _otel_arch: "{{ {'aarch64': 'arm64', 'arm64': 'arm64', 'x86_64': 'amd64'}[_uname.stdout | trim] | default('amd64') }}"
+
+    - name: make the install directory
+      ansible.builtin.file:
+        path: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}"
+        state: directory
+        mode: "0755"
+
+    - name: download and unpack the release
+      ansible.builtin.unarchive:
+        src: "{{ otel_agent_download_url }}"
+        dest: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}"
+        remote_src: true
+        creates: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}/otelcol-contrib"
+
+    - name: link the binary
+      ansible.builtin.file:
+        src: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}/otelcol-contrib"
+        dest: "{{ otel_agent_bin }}"
+        state: link
 
 - name: make the config directory
   ansible.builtin.file:

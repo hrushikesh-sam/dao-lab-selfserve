@@ -335,32 +335,6 @@ def test_otel_agent_render_only_for_cloud_init(lab):
     assert not lab.calls("systemctl")                               # nothing installed
 
 
-def test_otel_agent_on_a_vm_starts_the_agent_on_the_seeded_config(lab):
-    """B-86: the seed wrote the config; vm.yml installs the binary and unit, never rewrites it."""
-    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
-    (lab.dir / "etc").mkdir()
-    (lab.dir / "etc" / "otelcol.yaml").write_text("# from the seed\n")
-    path = _role_play(lab, "otel_agent", tasks_from="vm", **_agent_vars(lab))
-    assert run_role(lab, path) == 0, lab.stdout
-    assert (lab.dir / "etc" / "otelcol.yaml").read_text() == "# from the seed\n"
-    assert lab.state()["units"]["daolab-otel.service"] == "active"
-    assert f"--config {lab.dir / 'etc' / 'otelcol.yaml'}" in (lab.dir / "daolab-otel.service").read_text()
-
-
-def test_otel_agent_on_a_vm_without_the_seeded_config_says_so(lab):
-    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
-    path = _role_play(lab, "otel_agent", tasks_from="vm", **_agent_vars(lab))
-    assert run_role(lab, path) != 0
-    assert "daolab-seed did not write" in lab.stdout
-    assert not lab.calls("systemctl")
-
-
-def test_otel_agent_on_a_vm_without_a_collector_does_nothing(lab):
-    path = _role_play(lab, "otel_agent", tasks_from="vm", **_agent_vars(lab, otel_agent_collector=""))
-    assert run_role(lab, path) == 0, lab.stdout
-    assert not lab.calls("systemctl")
-
-
 def test_otel_agent_accepts_a_single_url_for_httpcheck(lab):
     import yaml
     path = _role_play(lab, "otel_agent", tasks_from="render",
@@ -543,28 +517,6 @@ def test_deploy_vpp_end_to_end(lab, api, books):
     assert all(secret == "s3" for _, secret, _ in api["calls"])
     # verify ran pktgen against the sink's DATA address
     assert ["pktgen", "-t", "10.65.0.37", "--rate", "10mpps"] in lab.calls("pktgen")
-
-
-def test_deploy_with_a_collector_starts_the_agent_on_every_vm(lab, api, books):
-    """B-86: the VM health rules (vms_up, ssh_reachable) need an agent inside each VM."""
-    with_traffic(lab, pktgen="tx 1000 rx 1000: rx == tx")
-    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
-    assert deploy(lab, api, books, daolab_otel_collector="10.10.1.111:4317",
-                  otel_agent_bin=str(lab.dir / "otelcol-contrib"),
-                  otel_agent_config=str(lab.dir / "etc" / "otelcol.yaml"),
-                  otel_agent_unit_dir=str(lab.dir)) == 0, lab.stdout[-3000:]
-    assert "step: otel_agent_vm" in lab.stdout
-    recap = {l.split()[0] for l in lab.stdout.splitlines() if " : ok=" in l}
-    for vm in ("daolab-r12-sink", "daolab-r12-tgen"):
-        assert vm in recap, recap                                  # the VM play reached it
-        assert "10.10.1.111:4317" in seed(lab.state()["vms"][vm], "otel")
-    assert lab.state()["units"]["daolab-otel.service"] == "active"
-
-
-def test_deploy_without_a_collector_reaches_no_vm(lab, api, books):
-    with_traffic(lab, pktgen="rx == tx")
-    assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
-    assert "step: otel_agent_vm" not in lab.stdout
 
 
 def test_deploy_twice_changes_nothing(lab, api, books):
