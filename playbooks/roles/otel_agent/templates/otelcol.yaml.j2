@@ -49,7 +49,7 @@ processors:
         value: "{{ value }}"
         action: upsert
 {% endfor %}
-  attributes/ssh:            # the use-case rules select tcpcheck_status{port="22"}
+  attributes/ssh:            # the use-case rules select tcpcheck_status_ratio{port="22"}
     actions:
       - key: port
         value: "22"

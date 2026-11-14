@@ -16,6 +16,6 @@ verify:
   expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}
 health:
   - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                         expect: "== 1"}
-  - {name: ssh_reachable, promql: 'min(tcpcheck_status{daolab_reservation="$RID",port="22"})',   expect: "== 1"}
+  - {name: ssh_reachable, promql: 'min(tcpcheck_status_ratio{daolab_reservation="$RID",port="22"})',   expect: "== 1"}
   - {name: https_ok,      promql: 'httpcheck_status{daolab_reservation="$RID",http_status_class="2xx"}', expect: "== 1"}
   - {name: backend_up,    promql: 'nginx_up{daolab_reservation="$RID",host="dpu-01"}',                            expect: "== 1", severity: degraded}

@@ -12,7 +12,7 @@ otel_agent_collector: "{{ daolab_otel_collector | default('') }}"   # host:port,
 otel_agent_insecure: true                                            # the lab collector is plaintext
 otel_agent_attributes: {}             # e.g. {daolab.reservation: "12", daolab.user: alice, ...}
 otel_agent_scrape_targets: []         # app exporters on this host: [{job: vpp, target: 127.0.0.1:9273}]
-otel_agent_ssh_check: true            # tcpcheck 127.0.0.1:22 -> tcpcheck_status{port="22"}
+otel_agent_ssh_check: true            # tcpcheck 127.0.0.1:22 -> tcpcheck_status_ratio{port="22"}
 otel_agent_httpcheck: []              # URLs to probe, e.g. the TLS proxy from the client VM
 otel_agent_self_port: 8888            # the agent's own metrics; self-scraped -> `up` per host
 otel_agent_interval: 15s

@@ -157,10 +157,12 @@ class MockExporter:
     # The series the use-case health rules read (usecases/*.yml `health:`), so a mock deploy
     # reads `healthy` end to end; Prometheus adds `up` itself. App series carry the DPU's
     # host label like the rules do. Counters grow at a steady rate so rate() is > 0.
-    GAUGES = (("tcpcheck_status", {"port": "22"}), ("httpcheck_status", {"http_status_class": "2xx"}),
+    # Names as the 0.160 collector's remote-write stores them (B-86): unit `1` gauges get
+    # `_ratio`, counters get `_total`.
+    GAUGES = (("tcpcheck_status_ratio", {"port": "22"}), ("httpcheck_status", {"http_status_class": "2xx"}),
               ("vpp_up", {"host": "dpu-01"}), ("nginx_up", {"host": "dpu-01"}),
               ("smartnic_up", {"host": "dpu-01"}))
-    COUNTERS = (("vpp_interface_rx_packets", {"host": "dpu-01"}, 1000.0),
+    COUNTERS = (("vpp_interface_rx_packets_total", {"host": "dpu-01"}, 1000.0),
                 ("smartnic_offload_pps", {"host": "dpu-01"}, 500.0))
 
     def _metrics_text(self) -> str:
