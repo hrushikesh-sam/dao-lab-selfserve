@@ -1,25 +1,30 @@
-# B-86: the agent on a role VM. host_vm already handed the VM its config through the seed
-# (render.yml -> daolab-seed -> {{ otel_agent_config }}); the template has no otelcol-contrib and
-# no unit, so the first-boot `systemctl enable --now daolab-otel` found nothing to start.
-# This installs both and starts the agent on the config the seed wrote. Run as the service login.
+# B-86: the agent on a role VM, over SSH as the service login. host_vm renders this VM's config
+# (render.yml) but cannot hand it over through the seed: it is over xenstore's per-value quota.
+# This writes it, installs otelcol-contrib and the unit, and starts the agent.
 - name: the agent needs a collector
   ansible.builtin.meta: end_role
   when: otel_agent_collector | length == 0
 
-- name: the seed wrote the agent config
-  ansible.builtin.stat:
-    path: "{{ otel_agent_config }}"
-  register: _otel_cfg
-
-- name: no config, no agent
+- name: host_vm rendered this VM's config
   ansible.builtin.assert:
-    that: _otel_cfg.stat.exists
-    fail_msg: >-
-      {{ otel_agent_config }} is missing on {{ inventory_hostname }}: daolab-seed did not write
-      vm-data/daolab/otel (is daolab-seed baked into the template? plan/05)
+    that: (otel_agent_vm_config | default('') | trim) | length > 0
+    fail_msg: "no agent config for {{ inventory_hostname }}: host_vm did not render one"
 
 - name: the binary
   ansible.builtin.include_tasks: binary.yml
+
+- name: make the config directory
+  ansible.builtin.file:
+    path: "{{ otel_agent_config | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: write the agent config
+  ansible.builtin.copy:
+    content: "{{ otel_agent_vm_config }}"
+    dest: "{{ otel_agent_config }}"
+    mode: "0644"
+  notify: restart the agent
 
 - name: install the unit
   ansible.builtin.template:

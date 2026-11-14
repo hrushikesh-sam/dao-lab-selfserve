@@ -335,23 +335,22 @@ def test_otel_agent_render_only_for_cloud_init(lab):
     assert not lab.calls("systemctl")                               # nothing installed
 
 
-def test_otel_agent_on_a_vm_starts_the_agent_on_the_seeded_config(lab):
-    """B-86: the seed wrote the config; vm.yml installs the binary and unit, never rewrites it."""
+def test_otel_agent_on_a_vm_writes_its_config_and_starts_the_agent(lab):
+    """B-86: host_vm renders the VM's config; vm.yml writes it over SSH (too big for xenstore)."""
     (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
-    (lab.dir / "etc").mkdir()
-    (lab.dir / "etc" / "otelcol.yaml").write_text("# from the seed\n")
-    path = _role_play(lab, "otel_agent", tasks_from="vm", **_agent_vars(lab))
+    path = _role_play(lab, "otel_agent", tasks_from="vm",
+                      **_agent_vars(lab, otel_agent_vm_config="# rendered by host_vm\n"))
     assert run_role(lab, path) == 0, lab.stdout
-    assert (lab.dir / "etc" / "otelcol.yaml").read_text() == "# from the seed\n"
+    assert (lab.dir / "etc" / "otelcol.yaml").read_text() == "# rendered by host_vm\n"
     assert lab.state()["units"]["daolab-otel.service"] == "active"
     assert f"--config {lab.dir / 'etc' / 'otelcol.yaml'}" in (lab.dir / "daolab-otel.service").read_text()
 
 
-def test_otel_agent_on_a_vm_without_the_seeded_config_says_so(lab):
+def test_otel_agent_on_a_vm_without_a_rendered_config_says_so(lab):
     (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
     path = _role_play(lab, "otel_agent", tasks_from="vm", **_agent_vars(lab))
     assert run_role(lab, path) != 0
-    assert "daolab-seed did not write" in lab.stdout
+    assert "host_vm did not render one" in lab.stdout
     assert not lab.calls("systemctl")
 
 
@@ -551,14 +550,43 @@ def test_deploy_with_a_collector_starts_the_agent_on_every_vm(lab, api, books):
     (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
     assert deploy(lab, api, books, daolab_otel_collector="10.10.1.111:4317",
                   otel_agent_bin=str(lab.dir / "otelcol-contrib"),
-                  otel_agent_config=str(lab.dir / "etc" / "otelcol.yaml"),
+                  otel_agent_config=str(lab.dir / "{{ inventory_hostname }}.yaml"),
                   otel_agent_unit_dir=str(lab.dir)) == 0, lab.stdout[-3000:]
     assert "step: otel_agent_vm" in lab.stdout
     recap = {l.split()[0] for l in lab.stdout.splitlines() if " : ok=" in l}
     for vm in ("daolab-r12-sink", "daolab-r12-tgen"):
         assert vm in recap, recap                                  # the VM play reached it
-        assert "10.10.1.111:4317" in seed(lab.state()["vms"][vm], "otel")
+        assert seed(lab.state()["vms"][vm], "otel") == ""          # E2BIG: never in xenstore
+        cfg = yaml.safe_load((lab.dir / f"{vm}.yaml").read_text())     # written over SSH
+        assert cfg["exporters"]["otlp"]["endpoint"] == "10.10.1.111:4317"
+        roles = {a["key"]: a["value"] for a in cfg["processors"]["resource"]["attributes"]}
+        assert roles["daolab.role"] == vm.rsplit("-", 1)[1] and roles["host"] == vm
     assert lab.state()["units"]["daolab-otel.service"] == "active"
+
+
+def test_every_seed_value_fits_the_xenstore_quota(lab, api, books):
+    """B-86: a value over oxenstored's quota-maxsize (2048) fails VM.start with E2BIG."""
+    with_traffic(lab, pktgen="rx == tx")
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
+    assert deploy(lab, api, books, daolab_otel_collector="10.10.1.111:4317",
+                  otel_agent_bin=str(lab.dir / "otelcol-contrib"),
+                  otel_agent_config=str(lab.dir / "{{ inventory_hostname }}.yaml"),
+                  otel_agent_unit_dir=str(lab.dir)) == 0, lab.stdout[-3000:]
+    for vm in lab.state()["vms"].values():
+        sizes = {k: len(v) for k, v in vm["xenstore"].items()}
+        assert all(n < 2048 for n in sizes.values()), sizes
+
+
+def test_a_paused_vm_stops_the_deploy_instead_of_another_start(lab, api, books):
+    """B-86: a start that failed half way leaves the VM paused; starting it again cannot work."""
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
+    st = lab.state()
+    st["vms"]["daolab-r12-sink"]["power"] = "paused"
+    lab.set(st)
+    assert deploy(lab, api, books) != 0
+    assert "daolab-r12-sink is paused, not Running or Halted" in lab.stdout
+    assert "step: verify" not in lab.stdout.split("daolab-r12-sink is paused")[1]
 
 
 def test_deploy_without_a_collector_reaches_no_vm(lab, api, books):
@@ -1154,11 +1182,10 @@ def test_httpcheck_urls_reach_the_vm_agent_with_data_plane_addresses(lab, api, b
     with_traffic(lab, pktgen="rx == tx")
     assert deploy(lab, api, books, daolab_roles=roles, daolab_otel_collector="otel.lab:4317",
                   otel_agent_bin=str(lab.dir / "otelcol-contrib"),
-                  otel_agent_config=str(lab.dir / "etc" / "otelcol.yaml"),
+                  otel_agent_config=str(lab.dir / "{{ inventory_hostname }}.yaml"),
                   otel_agent_unit_dir=str(lab.dir)) == 0, lab.stdout[-3000:]
-    vms = lab.state()["vms"]
-    tgen = yaml.safe_load(seed(vms["daolab-r12-tgen"], "otel"))
+    tgen = yaml.safe_load((lab.dir / "daolab-r12-tgen.yaml").read_text())
     assert tgen["receivers"]["httpcheck"]["targets"][0]["endpoint"] == "https://10.65.0.192/"
     assert "httpcheck" in tgen["service"]["pipelines"]["metrics"]["receivers"]
-    sink = yaml.safe_load(seed(vms["daolab-r12-sink"], "otel"))
+    sink = yaml.safe_load((lab.dir / "daolab-r12-sink.yaml").read_text())
     assert "httpcheck" not in sink["receivers"]                     # only the role that asks

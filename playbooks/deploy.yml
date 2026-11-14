@@ -88,6 +88,7 @@
 - name: create the VMs
   hosts: r_dom0
   gather_facts: false
+  any_errors_fatal: true          # B-86: a VM that did not come up stops the deploy here, with its error
   tasks:
     - name: host_vm
       ansible.builtin.include_role:
@@ -106,6 +107,9 @@
         ansible_user: "{{ host_vm_service_login | default('daolab') }}"
         ansible_connection: "{{ daolab_vm_connection | default('ssh') }}"
         ansible_become: true
+        otel_agent_vm_config: >-
+          {{ (groups['r_dom0'] | default([]) | map('extract', hostvars)
+              | map(attribute='daolab_vm_otel', default={}) | combine)[item.key] | default('') }}
       loop: "{{ (daolab_ips | default({})) | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
