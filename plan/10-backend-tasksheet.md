@@ -20,15 +20,16 @@ _Status reconciled after merging `origin/rama` into `rama` (2026-10-23): a task 
 when its code **and** tests are on the branch; `blocked` means it needs something not done
 yet; `todo` is unblocked and open._
 
-**Status:** every task is `done` except the two that need the hardware: B-85 (testbed
-bring-up ΓÇö the DPU half is done on xeon3-oct-112; the XCP-ng half needs the lab's two hosts
-in the inventory) and B-86 (the recorded run ΓÇö the DPU path runs end to end from the
-dashboard on the real board; the VMs need B-85). On top of the tasksheet: the DPU apps run
-Akshay's runbook playbooks (`VPP_ansible/`, `dao-smartnic/`) through `playbooks/apps/`, the
-dashboard deploys in one click with the user's SSH key or a generated password on the DPU's
-`lab` login, DPUs are static (xeon3-oct-112 at 10.68.0.190) and VMs lease from
-10.68.1.0ΓÇô10.68.2.200. What is still open is **P7** (B-92ΓÇªB-101, below); what was finished
-when is in [COMPLETION_LOG.md](../COMPLETION_LOG.md).
+**Status (2026-11-14):** 70 of 71 tasks are `done`. B-86 ran on the real lab: alice deployed
+VPP with its VMs in one click on tb-01 and it went ready, healthy, released, with the trace in
+Jaeger. The one task left is B-85 (testbed bring-up, Rama): its DPU half and its XCP-ng half for
+the E810 are done; SDP VFs on `dpu-01-xcp` are not, so SmartNIC's host VM and the TLS proxy's
+backend VM cannot be wired (see [docs/sdp-blocker.md](../docs/sdp-blocker.md)). On top of the
+tasksheet: the DPU apps run Akshay's runbook playbooks (`VPP_ansible/`, `dao-smartnic/`)
+through `playbooks/apps/`, the dashboard deploys in one click with the user's SSH key or a
+generated password on the DPU's `lab` login, DPUs are static (xeon3-oct-112 at 10.68.0.190) and
+VMs lease from 10.68.1.0-10.68.2.200. What was finished when is in
+[COMPLETION_LOG.md](../COMPLETION_LOG.md).
 
 ---
 
@@ -185,7 +186,7 @@ AΓÇôP). Owner `ΓÇö` = not assigned yet.
 | B-98 | Fold plan/09 into the rest of the doc set: `README.md`, `plan/README.md`, `plan/01`, `plan/06`, `plan/07`, `plan/08` (topology, playbooks, IP model, counts, the endpoint map, dangling "contract ┬º" references) | docs | B-92 | `mistakes.md` A2, A8, B8, B10, B13, C9, C14, I19, M4 closed | Akshay | done (docs folded into plan/09; leftover merge conflicts resolved) |
 | B-99 | SmartNIC on the real board: in Akshay's runbook `smartnic_build` / `smartnic_launch` check `pgrep -x vpp` (misses `vpp_main`), and the build prefix (`dao-clone/install`) does not match `smartnic_binary` (`dao-clean/install`) | `dao-smartnic/` | ΓÇö | SmartNIC deploys and cleans up from the dashboard on xeon3-oct-112; then add it to `DAOLAB_DEPLOYABLE` | Akshay | done (`3cc37fb` on `b93-xo`; `3a5de69`: the launch task now really starts dao-smart-nic in the background, and checks the telnet port with `ss` - a connect-and-close made the app exit) |
 | B-100 | Password-mode deploy verified on the real board: log in as `lab` with the generated password, refused after End now | ΓÇö | ΓÇö | recorded run | Akshay | done (2026-11-03, reservation 2 on xeon3-oct-112: `ssh lab@10.68.0.190` with the generated password → `lab` / `xeon3-oct-112` while active; after End now → released, the same password → `Permission denied`) |
-| B-101 | Operations: CI running the tests on every push; a DB backup timer; token expiry | `.github/workflows/`, `deploy/`, `service/models.py` | ΓÇö | `mistakes.md` K6, J15, J13 closed | Akshay | done (`f0cbc1a` on `b93-xo`; CI run #4 on push: 881 passed, 3 failed = the known B-94 / B-95 tests) |
+| B-101 | Operations: CI running the tests on every push; a DB backup timer; token expiry | `.github/workflows/`, `deploy/`, `service/models.py` | ΓÇö | `mistakes.md` K6, J15, J13 closed | Akshay | done (`f0cbc1a` on `b93-xo`; CI on every push; the 3 tests that failed on run #4 were the open B-94 / B-95 findings, fixed by `4190966` and `953ffda`) |
 
 ---
 

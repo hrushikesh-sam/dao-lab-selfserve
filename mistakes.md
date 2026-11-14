@@ -364,6 +364,17 @@ be updated and the other forgotten.
 | SQLite FK semantics (`NO ACTION` default, `ON DELETE CASCADE`) | SQLite foreign-keys documentation (behaviour verified against `plan/01:217-219`, `plan/01:236`, `plan/08:241`) |
 | Lab hardware facts (F1–F4) | Live inspection of `tg-01-xcp` (10.68.0.52), `dpu-01-xcp` (10.68.0.53), board `dpu-01` (10.68.0.190) |
 
+## Q. Found on the hardware (B-86, 2026-11-14) — all closed
+
+| ID | Where | Finding | Closed by |
+|---|---|---|---|
+| **Q1** | `tpl-ubuntu2204-dao`, `host_vm` | The template has no `otelcol-contrib` and no unit, so the seed's agent config started nothing: VM health could never have a series | `156c8ab`: the deploy installs and starts the agent on every VM after boot (`otel_agent` `vm.yml`) |
+| **Q2** | `host_vm` seed | The agent config, 2228 bytes as base64, is over oxenstored's `quota-maxsize` (2048 on the dom0s); `VM.start` failed with `Xs_protocol.Error("E2BIG")`, the VM stayed paused and the retries got `VM_BAD_POWER_STATE`. The size assert allowed 3800 | `df16daa`: the config goes over SSH; the assert uses `host_vm_xenstore_max: 2048`; a failed or paused VM stops the deploy |
+| **Q3** | `usecases/*.yml` health rules | The 0.160 collector's remote-write adds unit suffixes: `tcpcheck_status` is stored as `tcpcheck_status_ratio`, `vpp_interface_rx_packets` as `…_total`; the rules found no series | `ee82a6e` |
+| **Q4** | `service/health.py` | `max(timestamp({daolab_reservation=…}))`: `timestamp()` drops the name, and real agents send series that differ only by name, so Prometheus refused the query ("vector cannot contain metrics with the same labelset") | `1e09ae9`: `timestamp(up{…})` |
+| **Q5** | `dashboard/user.html`, `admin.html` | Both pages kept the token under one `localStorage` key on one origin; pasting the admin token made the user page act as dev-admin | separate keys `daolab_token_user` / `daolab_token_admin` |
+| **Q6** | `service/xo.py` | A 404 from XO exited 1 ("XO error") although the docstring promises 3 for not found | 404 raises `NotFound` |
+
 ---
 
 ### Closed

@@ -36,18 +36,22 @@ a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its U
 
 ## Status and pending work
 
-Done: 69 of 71 tasks of the backend tasksheet ([plan/10](plan/10-backend-tasksheet.md)); CI runs
+Done: 70 of 71 tasks of the backend tasksheet ([plan/10](plan/10-backend-tasksheet.md)); CI runs
 the whole suite on every push. On the real lab, from the dashboard:
 
 - **VPP** end to end, DPU only and with its VMs (tgen + sink created through Xen Orchestra on
   E810 VFs, leased addresses, ping to VPP with 0% loss), cleaned up to an empty testbed.
+- **Telemetry and health** (B-86, 2026-11-14): the OTel agent on the DPU and in every VM, the
+  central collector, Prometheus and Jaeger; the reservation goes ready -> **healthy** (VMs up,
+  SSH, VPP up, packets through VPP) and its deploy is one trace in Jaeger.
 - **SmartNIC** end to end on the DPU; its `tgen` VM comes up, its host VM needs SDP VFs.
 - Password-mode access (login during the slot, refused after End now).
 
 Pending:
 
-- **B-85 / B-86** — SDP VFs on `dpu-01-xcp` (`mistakes.md` F2): SmartNIC's host VM and the TLS
-  proxy's backend VM need them; the board owner's approval and a dom0 reboot.
+- **B-85** — SDP VFs on `dpu-01-xcp` (`mistakes.md` F2, [docs/sdp-blocker.md](docs/sdp-blocker.md)):
+  SmartNIC's host VM and the TLS proxy's backend VM need them; the board owner's approval and a
+  dom0 reboot.
 - Known gaps: SmartNIC cleanup leaves its 6 × 512 MB hugepages reserved; SmartNIC's `verify` is a
   placeholder until its host VM can be wired.
 

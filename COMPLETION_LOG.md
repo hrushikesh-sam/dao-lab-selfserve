@@ -1,18 +1,47 @@
 # Completion log
 
-What has been finished on `rama`, newest first, with the evidence for each. The task list is
-[plan/10](plan/10-backend-tasksheet.md); what is still open is its **P7** section (B-92…B-101)
-and [mistakes.md](mistakes.md).
+What has been finished, newest first, with the evidence for each. The task list is
+[plan/10](plan/10-backend-tasksheet.md); open findings are in [mistakes.md](mistakes.md).
 
-## Where things stand (2026-10-23)
+## Where things stand (2026-11-14)
 
 | | |
 |---|---|
-| Backend tasksheet | 59 of 61 tasks `done` (code + tests on the branch); B-85 and B-86 `blocked` on the XCP-ng hosts |
-| Pending | P7: 10 tasks, B-92…B-101 (VMs via Xen Orchestra, four correctness fixes, use-case gates, docs, ops) |
-| Tests | 861 passed (full suite, merged tree, `21961c6`) |
-| Real hardware | VPP on the DPU xeon3-oct-112 (10.68.0.190) deploys and cleans up from the dashboard |
-| Not yet on hardware | the use cases' VMs (`DAOLAB_DEPLOY_VMS=false`), VF/SDP passthrough, TLS proxy, SmartNIC, the telemetry stack |
+| Backend tasksheet | 70 of 71 tasks `done` (code + tests on `b93-xo`); B-85 `blocked` on SDP VFs |
+| Pending | B-85: SDP VFs on `dpu-01-xcp` ([docs/sdp-blocker.md](docs/sdp-blocker.md)) |
+| Tests | CI runs the whole suite on every push (B-101) |
+| Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; SmartNIC on the DPU; password-mode access |
+| Not yet on hardware | SmartNIC's host VM and the TLS proxy's backend VM (SDP VFs) |
+
+## 2026-11-14 — B-86 on the real lab
+
+- **The run** (reservation 5, alice): one click on `vpp` → lease → VPP on xeon3-oct-112 → sink
+  and tgen through XO → the OTel agent on the DPU and both VMs → `verify ok: received = 4 (== 4)`
+  → ready → **healthy** (`vms_up`, `ssh_reachable`, `dpu_app`, `datapath`) → End now → cleanup
+  clean → released. Jaeger trace `898db8a9` (daolab-engine + daolab-ansible, 287 spans); demo
+  recorded. Bob being refused was not shown live; the mock-runner test covers it.
+- **Fixed on the way**, each found only once telemetry ran on hardware:
+  - `156c8ab` — the VM template has no OTel agent; the deploy now installs and starts it on every
+    VM after boot. The central collector is pinned to 0.160.0 (0.115.0 does not exist).
+  - `df16daa` — the agent config (2228 bytes as base64) was over xenstore's `quota-maxsize` (2048),
+    so `VM.start` failed with `Xs_protocol.Error("E2BIG")` and left the VM paused; it is written
+    over SSH instead. A failed or paused VM now stops the deploy with its own error.
+  - `ee82a6e` — the 0.160 collector's remote-write stores `tcpcheck_status_ratio` and
+    `vpp_interface_rx_packets_total`; the health rules read those names.
+  - `1e09ae9` — the freshness query `timestamp({…})` failed on series that differ only by name;
+    it reads `timestamp(up{…})`.
+- Then: the two dashboards keep their tokens under their own keys (the shared key had the user
+  page deploy as dev-admin), and `daolab-xo` exits 3 on a 404.
+
+## 2026-11-01 … 2026-11-04 — P7 (Akshay)
+
+- B-93 VMs through Xen Orchestra (`85377e3`); B-92 the real lab in the inventory (`d1335ef`);
+  B-96 a DPU-only functional gate and a playbook timeout (`ec768e5`); B-97 `/internal/vm-ip`
+  takes only the leased address, arping before use (`072451b`); B-99 SmartNIC on the real board
+  (`3cc37fb`, launch fix `3a5de69`); B-100 password-mode login verified on the board (2026-11-03).
+- B-94 `failed` is terminal, not held (`4190966`); B-95 `verify` checks exit code and parsed
+  numbers, TLS gates (`953ffda`); B-98 docs folded into plan/09 (`4082745`); B-101 CI, nightly DB
+  backup, token expiry (`f0cbc1a`).
 
 ## 2026-10-23
 
