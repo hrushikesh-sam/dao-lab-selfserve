@@ -13,6 +13,16 @@ What has been finished, newest first, with the evidence for each. The task list 
 | Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; SmartNIC on the DPU; password-mode access |
 | Not yet on hardware | SmartNIC's host VM and the TLS proxy's backend VM (SDP VFs) |
 
+## 2026-11-15 — DPU hugepages given back
+
+- The board had six 512 MB hugepages (3 GB) reserved since SmartNIC's last run, one of them held
+  by a file VPP left (`e_cpt_engine82558map_0`, no process mapping it); nothing reserves any at
+  boot. `ea4e733`: cleanup (VPP and SmartNIC) and force-clean remove unmapped hugepage files and
+  set the 512 MB count back to the baseline (0); `verify_clean` reports leftovers as
+  `dpu_hugepages:<n>`.
+- On the board: VPP reserves 2 itself and runs healthy from 0 (it never depended on the leak),
+  End now -> 0; SmartNIC reserves 6 -> its cleanup (`release_hugepages`) -> 0, no files, clean.
+
 ## 2026-11-14 — B-86 on the real lab
 
 - **The run** (reservation 5, alice): one click on `vpp` → lease → VPP on xeon3-oct-112 → sink

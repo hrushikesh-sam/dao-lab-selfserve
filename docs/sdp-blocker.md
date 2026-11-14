@@ -56,7 +56,6 @@ limitation of the board configuration, not a scripting issue.
 
 ## Minor items still open
 
-- SmartNIC cleanup leaves hugepages reserved.
 - Clearer error for the SmartNIC host VM when SDP is unavailable.
 
 ## Live check, 2026-11-14

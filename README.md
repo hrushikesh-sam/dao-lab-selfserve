@@ -52,7 +52,7 @@ Pending:
 - **B-85** — SDP VFs on `dpu-01-xcp` (`mistakes.md` F2, [docs/sdp-blocker.md](docs/sdp-blocker.md)):
   SmartNIC's host VM and the TLS proxy's backend VM need them; the board owner's approval and a
   dom0 reboot.
-- Known gaps: SmartNIC cleanup leaves its 6 × 512 MB hugepages reserved; SmartNIC's `verify` is a
+- Known gaps: SmartNIC's `verify` is a
   placeholder until its host VM can be wired.
 
 History: [COMPLETION_LOG.md](COMPLETION_LOG.md); open findings: [mistakes.md](mistakes.md).

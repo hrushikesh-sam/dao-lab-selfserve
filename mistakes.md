@@ -374,6 +374,7 @@ be updated and the other forgotten.
 | **Q4** | `service/health.py` | `max(timestamp({daolab_reservation=…}))`: `timestamp()` drops the name, and real agents send series that differ only by name, so Prometheus refused the query ("vector cannot contain metrics with the same labelset") | `1e09ae9`: `timestamp(up{…})` |
 | **Q5** | `dashboard/user.html`, `admin.html` | Both pages kept the token under one `localStorage` key on one origin; pasting the admin token made the user page act as dev-admin | separate keys `daolab_token_user` / `daolab_token_admin` |
 | **Q6** | `service/xo.py` | A 404 from XO exited 1 ("XO error") although the docstring promises 3 for not found | 404 raises `NotFound` |
+| **Q7** | `dao-smartnic` launch, VPP | SmartNIC's launch reserves six 512 MB hugepages (3 GB) and its runbook cleanup never released them; VPP raises the count to 2 and leaves it; VPP left an unmapped hugepage file (`e_cpt_engine<pid>map_0`) that holds a page. `verify_clean` did not look, so the board was handed on with 3 GB locked | `ea4e733`: `tasks/release_hugepages.yml` after VPP / SmartNIC cleanup and in reconcile; `verify_clean` reports `dpu_hugepages:<n>`. Checked on the board 2026-11-15: 6 -> 0 (SmartNIC), 2 -> 0 (VPP) |
 
 ---
 
