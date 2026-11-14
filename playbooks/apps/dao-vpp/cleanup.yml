@@ -37,6 +37,9 @@
   hosts: dpu
   gather_facts: false
   tasks:
+    - name: hugepage files VPP left (e_cpt_engine<pid>map_0, 2026-11-14) and the pages back
+      ansible.builtin.include_tasks: ../../tasks/release_hugepages.yml
+
     - name: "step: stop_app"
       become: true
       ansible.builtin.command: systemctl start {{ nginx_service }}

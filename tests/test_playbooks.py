@@ -9,6 +9,8 @@ Skipped unless ansible-playbook is available: `pip install -e .[ansible]`, or po
 DAOLAB_TEST_ANSIBLE_PLAYBOOK at one.
 """
 import json
+import time
+from pathlib import Path
 import os
 import shutil
 import stat
@@ -89,7 +91,9 @@ class Lab:
         ev = {"reservation_id": 12, "setup": "tb-01", "usecase": "vpp", "user": "alice",
               "ssh_pubkey": "ssh-ed25519 AAAAalice alice@laptop", "diy": False,
               "daolab_members": MEMBERS, "daolab_output_file": str(self.out_path),
-              "daolab_xo": "daolab-xo", "daolab_dom0_ssh": "dom0-ssh"}
+              "daolab_xo": "daolab-xo", "daolab_dom0_ssh": "dom0-ssh",
+              # never the test machine's own /sys or /dev/hugepages (release_hugepages writes)
+              "daolab_sysfs": str(self.dir / "sys"), "daolab_hugetlbfs": str(self.dir / "hugepages")}
         ev.update(extravars)
         evfile = self.dir / "extravars.json"
         evfile.write_text(json.dumps(ev))
@@ -167,6 +171,27 @@ def test_verify_clean_is_read_only(lab):
     assert lab.state() == before
 
 
+def _hugepages(lab, n):
+    """A fake sysfs with n 512 MB hugepages reserved (SmartNIC's launch takes six)."""
+    d = lab.dir / "sys" / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "nr_hugepages").write_text(f"{n}\n")
+    return d / "nr_hugepages"
+
+
+def test_verify_clean_reports_hugepages_left_reserved(lab):
+    _hugepages(lab, 6)
+    assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
+    assert lab.output() == ["dpu_hugepages:6"]
+
+
+def test_verify_clean_accepts_hugepages_at_the_baseline(lab):
+    _hugepages(lab, 2)
+    assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys"),
+                   daolab_hugepages_baseline=2) == 0, lab.stdout
+    assert lab.output() == []
+
+
 # ---- B-72: reconcile.yml ---------------------------------------------------------------
 
 def test_reconcile_destroys_every_kind_of_residue_and_verify_then_agrees(lab):
@@ -180,6 +205,14 @@ def test_reconcile_destroys_every_kind_of_residue_and_verify_then_agrees(lab):
     st["pingable"] = []                                               # the VM was what answered
     lab.set(st)
     assert lab.run("verify_clean.yml", daolab_leases=["10.30.0.101"]) == 0, lab.stdout
+    assert lab.output() == []
+
+
+def test_reconcile_gives_the_hugepages_back(lab):
+    nr = _hugepages(lab, 6)
+    assert lab.run("reconcile.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
+    assert nr.read_text().strip() == "0"
+    assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
     assert lab.output() == []
 
 
@@ -775,7 +808,7 @@ def test_vpp_cleanup_gives_the_board_back(lab, books):
     assert ["systemctl", "start", "nginx-tls.service"] in lab.calls("systemctl")
 
 
-def _cleanup(lab, books, app):
+def _cleanup(lab, books, app, **over):
     wrapper = lab.dir / f"cleanup-{app}.yml"
     wrapper.write_text(yaml.safe_dump([
         {"hosts": "localhost", "gather_facts": False, "tasks": [
@@ -784,7 +817,7 @@ def _cleanup(lab, books, app):
         {"ansible.builtin.import_playbook": os.path.join(REPO, "playbooks", "apps", app,
                                                           "cleanup.yml")}]))
     return lab.run(str(wrapper), allow_destructive_changes=True, allow_cleanup=True,
-                   daolab_roles=VPP_ROLES, **books.vars)
+                   daolab_roles=VPP_ROLES, **{**books.vars, **over})
 
 
 def test_vpp_cleanup_of_a_board_at_rest_only_makes_sure_nginx_runs(lab, books):
@@ -816,6 +849,56 @@ def test_smartnic_cleanup_runs_the_runbook_cleanup(lab, books):
     board(lab, procs=["dao-smart-nic"])
     assert _cleanup(lab, books, "dao-smartnic") == 0, lab.stdout[-2000:]
     assert books.ran() == ["03_cleanup"] and "dao-smart-nic" not in lab.state()["procs"]
+
+
+def test_smartnic_cleanup_gives_back_the_six_512mb_hugepages(lab, books):
+    """The launch reserves six 512 MB pages; the runbook cleanup never released them."""
+    d = Path(books.vars["daolab_sysfs"]) / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
+    d.mkdir(parents=True)
+    (d / "nr_hugepages").write_text("6\n")
+    board(lab, procs=["dao-smart-nic"])
+    assert _cleanup(lab, books, "dao-smartnic") == 0, lab.stdout[-2000:]
+    assert (d / "nr_hugepages").read_text().strip() == "0"
+    assert "step: release_hugepages" in lab.stdout
+
+
+def test_cleanup_removes_a_hugepage_file_nothing_maps_and_keeps_one_in_use(lab, books, tmp_path):
+    """VPP left e_cpt_engine<pid>map_0 on the hugetlbfs mount (2026-11-14): its page cannot be
+    released while the file exists. A file a live process maps is kept."""
+    huge = tmp_path / "hugepages"
+    huge.mkdir()
+    (huge / "e_cpt_engine82558map_0").write_text("x")
+    held = huge / "held_map_0"
+    held.write_text("x")
+    keeper = subprocess.Popen(["python3", "-c", f"import mmap,time;f=open({str(held)!r},'r+b');"
+                               "m=mmap.mmap(f.fileno(),0);time.sleep(120)"])
+    try:
+        time.sleep(0.5)
+        board(lab)
+        assert _cleanup(lab, books, "dao-smartnic", daolab_hugetlbfs=str(huge)) == 0, lab.stdout[-2000:]
+    finally:
+        keeper.kill()
+    assert sorted(p.name for p in huge.iterdir()) == ["held_map_0"]
+    assert "removed: " in lab.stdout and "in use: " in lab.stdout
+
+
+def test_smartnic_cleanup_leaves_hugepages_at_the_baseline_alone(lab, books):
+    d = Path(books.vars["daolab_sysfs"]) / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
+    d.mkdir(parents=True)
+    (d / "nr_hugepages").write_text("0\n")
+    board(lab)
+    assert _cleanup(lab, books, "dao-smartnic") == 0, lab.stdout[-2000:]
+    assert "step: release_hugepages" in lab.stdout
+    assert (d / "nr_hugepages").read_text() == "0\n"                 # not rewritten
+
+
+def test_vpp_cleanup_removes_the_hugepage_file_vpp_left(lab, books, tmp_path):
+    huge = tmp_path / "hugepages"
+    huge.mkdir()
+    (huge / "e_cpt_engine82558map_0").write_text("x")
+    board(lab, procs=["vpp_main"])
+    assert _cleanup(lab, books, "dao-vpp", daolab_hugetlbfs=str(huge)) == 0, lab.stdout[-2000:]
+    assert list(huge.iterdir()) == []
 
 
 def test_tls_proxy_deploy_keeps_nginx_tls_running(lab, books):

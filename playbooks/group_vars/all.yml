@@ -8,4 +8,9 @@ daolab_xo: "{{ lookup('ansible.builtin.env', 'DAOLAB_XO_CMD') | default(ansible_
 
 # B-97: how the lease step reaches a VM's dom0 for its arping check (the only dom0 login daolab
 # makes; it needs root's key on each dom0). The tests point it at their fake (DAOLAB_DOM0_SSH).
+# The DPU's 512 MB hugepages (SmartNIC reserves six) and how many the board keeps at rest; a host
+# that boots with some reserved sets daolab_hugepages_baseline in its host_vars.
+daolab_hugepage_kb: 524288
+daolab_hugepages_baseline: 0
+
 daolab_dom0_ssh: "{{ lookup('ansible.builtin.env', 'DAOLAB_DOM0_SSH') | default('ssh -o BatchMode=yes -o ConnectTimeout=5 -l root', true) }}"

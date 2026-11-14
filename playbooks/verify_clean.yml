@@ -61,13 +61,22 @@
       register: _procs
       changed_when: false
 
+    - name: count the 512 MB hugepages still reserved
+      ansible.builtin.shell: >-
+        cat {{ daolab_sysfs | default('/sys') }}/kernel/mm/hugepages/hugepages-{{ daolab_hugepage_kb | default(524288) }}kB/nr_hugepages
+        2>/dev/null || echo 0
+      register: _huge
+      changed_when: false
+
     - name: collect this host's residue
       ansible.builtin.set_fact:
         daolab_residue: >-
           {{ (['dpu_session:' ~ hostvars['localhost'].daolab_lab_login]
               if (_sessions.stdout | trim | int(0)) > 0 else [])
              + (_apps.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list)
-             + (_procs.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list) }}
+             + (_procs.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list)
+             + (['dpu_hugepages:' ~ (_huge.stdout | trim)]
+                if (_huge.stdout | trim | int(0)) > (daolab_hugepages_baseline | default(0) | int) else []) }}
 
 - name: check the leased addresses are silent
   hosts: r_dom0[0]

@@ -66,9 +66,11 @@ class RunResult:
 #   dpu_session:lab         processes of the shared DPU login are still running
 #   dpu_app:<unit>          a use-case app unit is still active on the DPU
 #   ip:10.30.0.101          a leased address still answers ping
-RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "ip")
+#   dpu_hugepages:6         512 MB hugepages still reserved above the board's baseline
+RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "ip")
 CHECK_FOR_KIND = {"vm": "check_vms", "vf": "check_vfs", "dpu_session": "check_sessions",
-                  "dpu_app": "check_sessions", "ip": "check_ips"}
+                  "dpu_app": "check_sessions", "dpu_hugepages": "check_sessions",
+                  "ip": "check_ips"}
 
 
 def residue_item(kind: str, ident: str) -> str:

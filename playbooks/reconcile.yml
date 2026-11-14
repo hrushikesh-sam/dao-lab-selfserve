@@ -68,3 +68,6 @@
         fi
       register: _kill
       changed_when: "'killed' in _kill.stdout"
+
+    - name: hugepages back to the baseline
+      ansible.builtin.include_tasks: tasks/release_hugepages.yml
