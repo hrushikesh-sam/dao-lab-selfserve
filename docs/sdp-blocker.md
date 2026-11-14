@@ -58,3 +58,20 @@ limitation of the board configuration, not a scripting issue.
 
 - SmartNIC cleanup leaves hugepages reserved.
 - Clearer error for the SmartNIC host VM when SDP is unavailable.
+
+## Live check, 2026-11-14
+
+- `tg-01-xcp` 10.68.0.52, `dpu-01-xcp` 10.68.0.53, `dpu-01` 10.68.0.190 all reply to ping
+  (2-4 ms).
+- DPU half verified on `dpu-01` (Ubuntu 22.04.5): `lab` user exists (uid 1001),
+  `/etc/daolab/{authorized_keys,hw_class}` present, `octeontx2-sdp` / `rvu_af` / `rvu_nicpf` /
+  `rvu_cptpf` / `vfio-pci` in `/sys/bus/pci/drivers`, `octep_cp_agent` inactive, no
+  `vpp_main`, hugepages 0 - the board is idle and clean.
+- Regression found: `dao-test` sudo asks for a password (`sudo -n true` fails), so
+  `become: true` would fail on the VPP / SmartNIC playbooks. Restore passwordless sudo
+  (the inventory assumes it) before the next real deploy.
+- XCP-ng half not verified yet: both dom0s accept SSH connections on :22 but no root key
+  from the control node is authorized, and XO is not running on `127.0.0.1:8443` there.
+  Add the control node's public key to `root@10.68.0.52` / `.53`, then check
+  `xl pci-assignable-list`, `xe template-list name-label=tpl-ubuntu2204-dao`, `xe sr-list`,
+  `xe network-list` and the SDP `sriov_numvfs`.
