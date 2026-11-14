@@ -1,5 +1,6 @@
 """API test plan from plan/02-backend-api.md — HTTP wiring over the scheduler,
 plus the admin user-management endpoints. No hardware, no engine, no ansible."""
+import re
 import dataclasses
 import hashlib
 import json
@@ -301,6 +302,16 @@ def test_14_dashboards_served(env):
         r = env.client.get(path)
         assert r.status_code == 200
         assert "<!DOCTYPE html>" in r.text
+
+
+def test_the_two_dashboards_keep_their_tokens_apart(env):
+    """B-86: one shared localStorage key on one origin let the admin token replace the user's,
+    so the user page deployed as dev-admin. Each page now has its own key."""
+    keys = {}
+    for path in ("/user.html", "/admin.html"):
+        m = re.search(r'const TOKEN_KEY = "([^"]+)"', env.client.get(path).text)
+        keys[path] = m.group(1)
+    assert keys == {"/user.html": "daolab_token_user", "/admin.html": "daolab_token_admin"}
 
 
 # ---- admin user management (this iteration's addition) ----------------------

@@ -95,7 +95,9 @@ class Xo:
                 status = resp.status
         except urllib.error.HTTPError as e:
             detail = e.read().decode(errors="replace")[:400]
-            raise XoError(f"XO {method} {path}: HTTP {e.code} {detail}".strip()) from None
+            # 404 is "no such object" (a VM already destroyed): exit 3, as the docstring says
+            err = NotFound if e.code == 404 else XoError
+            raise err(f"XO {method} {path}: HTTP {e.code} {detail}".strip()) from None
         except urllib.error.URLError as e:
             raise XoError(f"XO {method} {path}: cannot reach {self.url} ({e.reason})") from None
         if status == 204 or not raw:
