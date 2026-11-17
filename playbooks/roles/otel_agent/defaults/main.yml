@@ -23,5 +23,7 @@ otel_agent_bin: /usr/local/bin/otelcol-contrib
 otel_agent_config: /etc/daolab/otelcol.yaml
 otel_agent_unit: daolab-otel
 otel_agent_unit_dir: /etc/systemd/system
+otel_agent_download_retries: 6    # with the delay: about a minute for a just-booted VM's DNS
+otel_agent_download_delay: 10
 otel_agent_download_url: >-
   https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v{{ otel_agent_version }}/otelcol-contrib_{{ otel_agent_version }}_linux_{{ _otel_arch | default('amd64') }}.tar.gz

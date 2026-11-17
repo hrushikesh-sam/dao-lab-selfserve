@@ -36,6 +36,10 @@ What has been finished, newest first, with the evidence for each. The task list 
   which the async CPT engine never answers (`mistakes.md` Q12). With `Connection: close` on the
   check (patched on the live VM, then in the agent template) the reservation went `healthy` with
   all four checks passing.
+- Reservation 7, with `4775164` and no hand patch: the deploy wrote `Connection: close` into the
+  client agent's config and the reservation went `healthy`, all four checks passing. Its attempt 1
+  failed on the client VM's agent download (`Temporary failure in name resolution` just after
+  boot); the engine's retry succeeded, and the download now retries itself (`mistakes.md` Q13).
 
 ## 2026-11-17 — nginx-tls back at rest; resting hugepage count is 2
 

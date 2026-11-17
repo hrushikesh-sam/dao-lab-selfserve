@@ -319,6 +319,16 @@ def run_role(lab, path):
     return lab.run(str(path))
 
 
+def test_otel_agent_retries_a_failed_download_before_failing(lab):
+    """mistakes.md Q13: a just-booted VM may not resolve github.com yet; the download is retried."""
+    path = _role_play(lab, "otel_agent", **_agent_vars(
+        lab, otel_agent_home=str(lab.dir / "lib"),
+        otel_agent_download_url="http://127.0.0.1:9/otelcol-contrib.tar.gz",
+        otel_agent_download_retries=2, otel_agent_download_delay=0))
+    assert run_role(lab, path) != 0
+    assert lab.stdout.count("FAILED - RETRYING") == 2, lab.stdout[-2000:]
+
+
 def test_otel_agent_renders_the_daolab_attributes_and_starts_the_unit(lab):
     import yaml
     (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")        # "installed" already

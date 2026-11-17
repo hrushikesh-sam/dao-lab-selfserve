@@ -28,6 +28,12 @@
         dest: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}"
         remote_src: true
         creates: "{{ otel_agent_home }}/otelcol-{{ otel_agent_version }}/otelcol-contrib"
+      # a VM just booted may not resolve names yet (the client VM's second NIC: "Temporary
+      # failure in name resolution", reservation 7, mistakes.md Q13): retry, not fail the deploy
+      register: _otel_unpack
+      until: _otel_unpack is succeeded
+      retries: "{{ otel_agent_download_retries }}"
+      delay: "{{ otel_agent_download_delay }}"
 
     - name: link the binary
       ansible.builtin.file:
