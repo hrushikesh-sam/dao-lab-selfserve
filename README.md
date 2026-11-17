@@ -36,7 +36,7 @@ a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its U
 
 ## Status and pending work
 
-Done: 70 of 71 tasks of the backend tasksheet ([plan/10](plan/10-backend-tasksheet.md)); CI runs
+Done: 71 of 72 tasks of the backend tasksheet ([plan/10](plan/10-backend-tasksheet.md)); CI runs
 the whole suite on every push. On the real lab, from the dashboard:
 
 - **VPP** end to end, DPU only and with its VMs (tgen + sink created through Xen Orchestra on

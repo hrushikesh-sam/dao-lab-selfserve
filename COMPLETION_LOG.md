@@ -3,22 +3,34 @@
 What has been finished, newest first, with the evidence for each. The task list is
 [plan/10](plan/10-backend-tasksheet.md); open findings are in [mistakes.md](mistakes.md).
 
-## Where things stand (2026-11-14)
+## Where things stand (2026-11-17)
 
 | | |
 |---|---|
-| Backend tasksheet | 70 of 71 tasks `done` (code + tests on `b93-xo`); B-85 `blocked` on SDP VFs |
+| Backend tasksheet | 71 of 72 tasks `done` (code + tests on `b93-xo`); B-85 `blocked` on SDP VFs |
 | Pending | B-85: SDP VFs on `dpu-01-xcp` ([docs/sdp-blocker.md](docs/sdp-blocker.md)) |
 | Tests | CI runs the whole suite on every push (B-101) |
-| Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; SmartNIC on the DPU; password-mode access |
-| Not yet on hardware | SmartNIC's host VM and the TLS proxy's backend VM (SDP VFs) |
+| Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; the TLS proxy with its backend and client VMs end to end (B-102); SmartNIC on the DPU; password-mode access |
+| Not yet on hardware | SmartNIC's host VM (SDP VFs); the TLS proxy's health rules with the telemetry stack on |
 
 ## 2026-11-17 — the TLS proxy use case, without SDP
 
 - Wired as DAO_Setups TLS_Proxy_ansible "Setup 2" (verified live 2026-09-05): client VM on an E810
   VF -> HTTPS to nginx on the DPU's enP2p4s0 (10.65.0.190, CPT offload) -> `/test/` over the
-  management network to the backend VM's HTTP :80 (`mistakes.md` Q10). Code and tests done; the
-  run on the board is next.
+  management network to the backend VM's HTTP :80 (`mistakes.md` Q10). Code and tests: `e4b859b`.
+- On the board (B-102), reservation 4 (alice), stack started with
+  `DAOLAB_DEPLOYABLE=vpp,smartnic,tls-proxy-nginx DAOLAB_DEPLOY_VMS=true`: the deploy succeeded on
+  attempt 1 (20 steps, `verify ok`: 100B/1KB/100KB/1MB/4MB, 200 and the exact sizes, through the
+  proxy), provisioning to ready in about 3.5 min, backend 10.68.1.0 and client 10.68.1.1. Live:
+  `proxy_pass http://10.68.1.0;`, two workers; from the client VM
+  `curl -sk https://10.65.0.190/test/1MB.html` gave `200 1048576`; the health probe re-ran `verify`
+  and succeeded (the verdict stayed unknown: the telemetry stack was off). End: released in about
+  40 s, XO `[]`, `proxy_pass http://10.68.0.194;`, nginx-tls active, 2 hugepages, 24 CPT VFs on
+  vfio-pci, `https 200`.
+- `544a2bc` made it deployable by default in `scripts/run/showcase.sh`.
+- That run left `/opt/async_nginx.conf.daolab-rest` behind (cleanup restored it but kept it), so a
+  later hand edit of the resting config would have been undone by the next cleanup; cleanup now
+  drops the copy once nginx-tls is back up on it (`mistakes.md` Q11).
 
 ## 2026-11-17 — nginx-tls back at rest; resting hugepage count is 2
 

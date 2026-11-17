@@ -38,3 +38,10 @@
         - name: nginx-tls serves TLS through the CPT engine
           ansible.builtin.include_tasks: ../../tasks/nginx_tls_ready.yml
           when: nginx_tls_check | default(true) | bool
+
+        # Only once nginx-tls is back up on it: a failed restart keeps the copy for the retry.
+        # Kept, a later hand edit of the resting config would be undone by the next cleanup.
+        - name: "step: drop_rest_copy"
+          ansible.builtin.file:
+            path: "{{ nginx_tls_conf | default('/opt/async_nginx.conf') }}.daolab-rest"
+            state: absent

@@ -970,6 +970,27 @@ def test_tls_proxy_points_nginx_at_the_reservations_backend_and_cleanup_restores
     assert conf.read_text() == REST_NGINX
     starts = [c for c in lab.calls("systemctl") if c[:2] == ["systemctl", "start"]]
     assert starts[-1] == ["systemctl", "start", "nginx-tls.service"]
+    assert not (lab.dir / "async_nginx.conf.daolab-rest").exists()
+
+
+def test_tls_proxy_cleanup_keeps_a_hand_edit_of_the_resting_config(lab, books):
+    """The saved copy goes with each cleanup, so the next deploy saves the config as it is then
+    (here hand-edited between reservations) and its cleanup puts that back, not the older one."""
+    board(lab)
+    conf, tv = _tls(lab)
+    run = dict(daolab_app="nginx-tls", usecase="tls-proxy-nginx", daolab_roles=TLS_ROLES,
+               daolab_deploy_vms=False, hw_class="", daolab_api_url="http://127.0.0.1:1",
+               daolab_internal_secret="x", reservation_id=0, daolab_ips={"backend": "10.68.1.7"},
+               **tv)
+    assert app_run(lab, books, "deploy.yml", **run) == 0, lab.stdout[-2000:]
+    assert _cleanup(lab, books, "nginx-tls", **tv) == 0, lab.stdout[-2000:]
+    edited = REST_NGINX.replace("10.68.0.194", "10.68.0.195")
+    conf.write_text(edited)
+    assert app_run(lab, books, "deploy.yml", **run) == 0, lab.stdout[-2000:]
+    assert "proxy_pass http://10.68.1.7;" in conf.read_text()
+    assert _cleanup(lab, books, "nginx-tls", **tv) == 0, lab.stdout[-2000:]
+    assert conf.read_text() == edited
+    assert not (lab.dir / "async_nginx.conf.daolab-rest").exists()
 
 
 def test_tls_proxy_deploy_gives_the_engine_its_hugepages(lab, books):
