@@ -225,5 +225,5 @@ def test_shipped_usecases_use_parsed_verify_checks():
     for uc in ucs:
         assert uc["verify"].get("match") and isinstance(uc["verify"]["expect"], dict), uc["name"]
     tls = next(u for u in ucs if u["name"] == "tls-proxy-nginx")
-    assert tls["roles"]["client"]["httpcheck"] == ["https://{proxy_ip}/"]
+    assert tls["roles"]["client"]["httpcheck"] == ["https://{proxy_ip}/test/1KB.html"]
     assert any('http_status_class="2xx"' in r["promql"] for r in tls["health"])

@@ -1,0 +1,20 @@
+# nginx-tls really serves: one worker alive (the engine's failures kill the worker and leave the
+# master listening), the CPT engine came up in THIS start, and TLS answers on the DPU itself.
+# Checked on the board 2026-11-17: `CPT HW Offload Configured!!!`, one worker, `https 200`.
+- name: "step: tls_ready"
+  ansible.builtin.shell: |
+    for i in $(seq 1 15); do
+      w=$(pgrep -fc '[n]ginx: worker process' || true)
+      code=$(curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:{{ nginx_tls_port | default(443) }}/ || true)
+      if [ "$w" -ge 1 ] && [ "$code" != "000" ]; then
+        echo "workers=$w https=$code"
+        tail -n 40 {{ nginx_tls_log | default('/usr/local/nginx/logs/error.log') }} | grep -q 'CPT HW Offload Configured' && exit 0
+      fi
+      sleep 2
+    done
+    echo "workers=$w https=$code"; tail -n 15 {{ nginx_tls_log | default('/usr/local/nginx/logs/error.log') }}; exit 1
+  args:
+    executable: /bin/bash
+  register: _ready
+  changed_when: false
+  failed_when: _ready.rc != 0

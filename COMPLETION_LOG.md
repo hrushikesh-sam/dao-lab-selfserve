@@ -13,6 +13,13 @@ What has been finished, newest first, with the evidence for each. The task list 
 | Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; SmartNIC on the DPU; password-mode access |
 | Not yet on hardware | SmartNIC's host VM and the TLS proxy's backend VM (SDP VFs) |
 
+## 2026-11-17 — the TLS proxy use case, without SDP
+
+- Wired as DAO_Setups TLS_Proxy_ansible "Setup 2" (verified live 2026-09-05): client VM on an E810
+  VF -> HTTPS to nginx on the DPU's enP2p4s0 (10.65.0.190, CPT offload) -> `/test/` over the
+  management network to the backend VM's HTTP :80 (`mistakes.md` Q10). Code and tests done; the
+  run on the board is next.
+
 ## 2026-11-17 — nginx-tls back at rest; resting hugepage count is 2
 
 - nginx-tls had failed at rest since the 2026-10-17 reboot (`mistakes.md` Q9): no CPT VFs. Rebuilt

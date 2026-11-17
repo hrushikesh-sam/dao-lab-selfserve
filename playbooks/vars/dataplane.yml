@@ -13,10 +13,9 @@
 # role: its first `wire*` one), so the verify traffic crosses the real datapath. A role with
 # no entry falls back to its management address.
 daolab_dataplane:
-  tls-proxy-nginx:
-    proxy: {wire: 10.20.0.10/24, sdp: 10.21.0.1/24}
-    backend: 10.21.0.2/24
-    client: 10.20.0.30/24
+  tls-proxy-nginx:                   # DAO_Setups TLS_Proxy_ansible config/env_all.yml
+    proxy: {wire0: 10.65.0.190/24}   # the DPU's enP2p4s0, where nginx-tls listens
+    client: 10.65.0.36/24            # the client's E810 VF (vm_vf_ip); backend: mgmt only
   vpp:
     vpp: {wire0: 10.65.0.192/24}     # VPP_ansible/group_vars: vpp_data_ip (peer 10.65.0.36)
     tgen: 10.65.0.36/24              # the runbook's ping peer; confirm at bring-up (B-85)

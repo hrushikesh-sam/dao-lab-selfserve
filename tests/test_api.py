@@ -364,7 +364,7 @@ def test_18_reservation_diagram_and_credentials(env):
     d = obj["diagram"]
     assert d.startswith("graph LR")
     assert "ssh hrushi@10.20.0.31" in d              # client VM credentials in the diagram
-    assert "upstream · sdp" in d                     # proxy -> backend edge
+    assert "upstream · mgmt" in d                    # proxy -> backend edge (management network)
     assert "e810-vf" in d                            # client -> proxy edge
     queued = reserve(env, env.user_token).json()
     assert queued["diagram"] is None                 # no vms yet -> no diagram

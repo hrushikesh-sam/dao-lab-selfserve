@@ -1,21 +1,29 @@
 # usecases/tls-proxy-nginx.yml
+# The wiring DAO_Setups/TLS_Proxy_ansible ("Setup 2") verified live (2026-09-05): the client VM on
+# an E810 VF talks HTTPS to nginx on the DPU's wire port (CPT TLS offload), which forwards /test/
+# over the MANAGEMENT network to the backend VM's HTTP :80. No SDP VF: the backend was first
+# planned on one (connect: sdp) and so waited on B-85; it does not need it.
 name: tls-proxy-nginx                 # must equal the file stem
 variant: separate-backend             # docs also describe: inbuilt-server (deferred)
 requires: [octeon-cn106, e810, wire]  # capability match only — no hostnames
-hw_class: sdp-pf1-vf8                 # SDP, 1 PF, 8 VFs — the proxy->backend path
+hw_class: sdp-pf1-vf8
 roles:
-  proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
-  backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
-  client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf,
-            httpcheck: ["https://{proxy_ip}/"]}   # B-95: the client's agent probes the proxy -> https_ok
-# B-95: h2load's own summary lines, parsed - all 1000 requests succeeded, none failed, all 2xx
+  proxy:   {on: dpu,     app: nginx-tls, crypto: cpt-vfs, upstream: backend}
+  # connect: mgmt - the management network only, no data-plane NIC: nginx's proxy_pass gets its
+  # leased address (apps/nginx-tls)
+  backend: {on: tg_host, vm: tpl-ubuntu2204-dao, install: [http-server], connect: mgmt}
+  client:  {on: tg_host, vm: tpl-ubuntu2204-dao, install: [ab], connect: e810-vf,
+            httpcheck: ["https://{proxy_ip}/test/1KB.html"]}   # B-95: the client's agent -> https_ok
+# every payload through the proxy from the backend: HTTP 200 and its exact size (TLS setup_guide
+# Stage 11). curl, not `ab -k`: the async CPT engine drops keep-alive after one request.
 verify:
   from: client
-  cmd: "h2load -n1000 https://{proxy_ip}/"
-  match: '(?s)requests: (?P<total>\d+) total, \d+ started, \d+ done, (?P<succeeded>\d+) succeeded, (?P<failed>\d+) failed.*?status codes: (?P<s2xx>\d+) 2xx'
-  expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}
+  cmd: "for f in 100B 1KB 100KB 1MB 4MB; do curl -sk -o /dev/null -w '%{http_code} %{size_download}\\n' https://{proxy_ip}/test/$f.html; done"
+  match: '(?P<c1>\d+) (?P<s1>\d+)\s+(?P<c2>\d+) (?P<s2>\d+)\s+(?P<c3>\d+) (?P<s3>\d+)\s+(?P<c4>\d+) (?P<s4>\d+)\s+(?P<c5>\d+) (?P<s5>\d+)'
+  expect: {c1: "== 200", s1: "== 100", c2: "== 200", s2: "== 1024", c3: "== 200", s3: "== 102400",
+           c4: "== 200", s4: "== 1048576", c5: "== 200", s5: "== 4194304"}
 health:
-  - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                         expect: "== 1"}
-  - {name: ssh_reachable, promql: 'min(tcpcheck_status_ratio{daolab_reservation="$RID",port="22"})',   expect: "== 1"}
+  - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                                    expect: "== 1"}
+  - {name: ssh_reachable, promql: 'min(tcpcheck_status_ratio{daolab_reservation="$RID",port="22"})',       expect: "== 1"}
   - {name: https_ok,      promql: 'httpcheck_status{daolab_reservation="$RID",http_status_class="2xx"}', expect: "== 1"}
-  - {name: backend_up,    promql: 'nginx_up{daolab_reservation="$RID",host="dpu-01"}',                            expect: "== 1", severity: degraded}
+  - {name: backend_up,    promql: 'nginx_up{daolab_reservation="$RID",host="dpu-01"}',                     expect: "== 1", severity: degraded}

@@ -921,13 +921,65 @@ def test_vpp_cleanup_removes_the_hugepage_file_vpp_left(lab, books, tmp_path):
     assert list(huge.iterdir()) == []
 
 
+REST_NGINX = """worker_processes 1;
+http {
+    server {
+        listen 443 ssl default_server;
+        location /test/ {
+            proxy_pass http://10.68.0.194;
+        }
+    }
+}
+"""
+TLS_ROLES = {"proxy": {"on": "dpu", "app": "nginx-tls", "upstream": "backend"},
+             "backend": {"on": "tg_host", "vm": "tpl-ubuntu2204-dao", "install": ["http-server"],
+                         "connect": "mgmt"}}
+
+
+def _tls(lab):
+    conf = lab.dir / "async_nginx.conf"
+    conf.write_text(REST_NGINX)
+    return conf, {"nginx_tls_conf": str(conf), "nginx_tls_manage_crypto": False,
+                  "nginx_tls_check": False}
+
+
 def test_tls_proxy_deploy_keeps_nginx_tls_running(lab, books):
     board(lab)
+    conf, tv = _tls(lab)
     assert vpp_deploy(lab, books, daolab_app="nginx-tls", usecase="tls-proxy-nginx",
-                      daolab_roles={"proxy": {"on": "dpu", "app": "nginx-tls"}}) == 0, \
+                      daolab_roles={"proxy": {"on": "dpu", "app": "nginx-tls"}}, **tv) == 0, \
         lab.stdout[-2000:]
     assert ["systemctl", "start", "nginx-tls.service"] in lab.calls("systemctl")
     assert "--app nginx" in (lab.dir / "daolab-app-exporter.service").read_text()
+    assert conf.read_text() == REST_NGINX                # no upstream role: resting backend
+
+
+def test_tls_proxy_points_nginx_at_the_reservations_backend_and_cleanup_restores_it(lab, books):
+    """DAO_Setups TLS_Proxy_ansible Setup 2: /test/ goes to the backend VM over mgmt."""
+    board(lab)
+    conf, tv = _tls(lab)
+    assert app_run(lab, books, "deploy.yml", daolab_app="nginx-tls", usecase="tls-proxy-nginx",
+                   daolab_roles=TLS_ROLES, daolab_deploy_vms=False, hw_class="",
+                   daolab_api_url="http://127.0.0.1:1", daolab_internal_secret="x",
+                   reservation_id=0, daolab_ips={"backend": "10.68.1.7"}, **tv) == 0, \
+        lab.stdout[-2000:]
+    assert "proxy_pass http://10.68.1.7;" in conf.read_text()
+    assert (lab.dir / "async_nginx.conf.daolab-rest").read_text() == REST_NGINX
+    assert "step: backend backend 10.68.1.7" in lab.stdout
+    assert _cleanup(lab, books, "nginx-tls", **tv) == 0, lab.stdout[-2000:]
+    assert conf.read_text() == REST_NGINX
+    starts = [c for c in lab.calls("systemctl") if c[:2] == ["systemctl", "start"]]
+    assert starts[-1] == ["systemctl", "start", "nginx-tls.service"]
+
+
+def test_tls_proxy_deploy_gives_the_engine_its_hugepages(lab, books):
+    board(lab)
+    conf, tv = _tls(lab)
+    nr = _hugepages(lab, 0)
+    assert vpp_deploy(lab, books, daolab_app="nginx-tls", usecase="tls-proxy-nginx",
+                      daolab_roles=TLS_ROLES, daolab_sysfs=str(lab.dir / "sys"), **tv) == 0, \
+        lab.stdout[-2000:]
+    assert nr.read_text().strip() == "2"
 
 
 def test_a_board_without_a_personality_marker_is_assumed_to_match(lab, books):
