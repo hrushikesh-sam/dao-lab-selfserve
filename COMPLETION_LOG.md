@@ -13,12 +13,15 @@ What has been finished, newest first, with the evidence for each. The task list 
 | Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; SmartNIC on the DPU; password-mode access |
 | Not yet on hardware | SmartNIC's host VM and the TLS proxy's backend VM (SDP VFs) |
 
-## 2026-11-17 — resting hugepage count is 1, not 0
+## 2026-11-17 — nginx-tls back at rest; resting hugepage count is 2
 
-- nginx-tls's CPT engine needs one free 512 MB page and never reserves it; `ea4e733` set the count
-  to 0 before restarting it. Cleanup and reconcile now set it to 1 (`daolab_hugepages_baseline`).
-- Found with it (`mistakes.md` Q9): nginx-tls has failed at rest since the 2026-10-17 reboot - no
-  CPT VFs (`lspci -d 177d:a0f3` = 0), the per-boot crypto setup was never rebuilt.
+- nginx-tls had failed at rest since the 2026-10-17 reboot (`mistakes.md` Q9): no CPT VFs. Rebuilt
+  on the board with the vendor script (24 VFs on vfio-pci): `CPT HW Offload Configured!!!`, one
+  worker, `https 200` from the DPU.
+- Its CPT engine maps two 512 MB pages and dies with one (`rte_errno=12`); it never reserves them
+  itself. `ea4e733` set the count to 0 and `a6aa0e8` to 1 before restarting it; cleanup and
+  reconcile now set it to 2 (`daolab_hugepages_baseline`) and clear engine files on both hugetlbfs
+  mounts (`/dev/hugepages`, `/mnt/huge`). Board after: 512 MB 2 reserved / 0 free, 2 MB 0.
 
 ## 2026-11-15 — DPU hugepages given back
 
