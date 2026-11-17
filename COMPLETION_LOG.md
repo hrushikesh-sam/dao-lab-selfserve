@@ -13,11 +13,18 @@ What has been finished, newest first, with the evidence for each. The task list 
 | Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; SmartNIC on the DPU; password-mode access |
 | Not yet on hardware | SmartNIC's host VM and the TLS proxy's backend VM (SDP VFs) |
 
+## 2026-11-17 — resting hugepage count is 1, not 0
+
+- nginx-tls's CPT engine needs one free 512 MB page and never reserves it; `ea4e733` set the count
+  to 0 before restarting it. Cleanup and reconcile now set it to 1 (`daolab_hugepages_baseline`).
+- Found with it (`mistakes.md` Q9): nginx-tls has failed at rest since the 2026-10-17 reboot - no
+  CPT VFs (`lspci -d 177d:a0f3` = 0), the per-boot crypto setup was never rebuilt.
+
 ## 2026-11-15 — DPU hugepages given back
 
 - The board had six 512 MB hugepages (3 GB) reserved since SmartNIC's last run, one of them held
-  by a file VPP left (`e_cpt_engine82558map_0`, no process mapping it); nothing reserves any at
-  boot. `ea4e733`: cleanup (VPP and SmartNIC) and force-clean remove unmapped hugepage files and
+  by a file a failed nginx-tls engine start left (`e_cpt_engine82558map_0`, no process mapping it;
+  first blamed on VPP); nothing reserves any at boot. `ea4e733`: cleanup (VPP and SmartNIC) and force-clean remove unmapped hugepage files and
   set the 512 MB count back to the baseline (0); `verify_clean` reports leftovers as
   `dpu_hugepages:<n>`.
 - On the board: VPP reserves 2 itself and runs healthy from 0 (it never depended on the leak),

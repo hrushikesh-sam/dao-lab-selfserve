@@ -1,11 +1,15 @@
-# Give the DPU's 512 MB hugepages back to the baseline. Included by apps/dao-smartnic/cleanup.yml
-# and reconcile.yml (the app is stopped by then); verify_clean.yml reports any left above the
-# baseline as `dpu_hugepages:<n>`.
-#   - SmartNIC's launch reserves six (3 GB); its runbook cleanup never released them.
-#   - A DAO app can leave its hugepage-backed file behind (VPP left e_cpt_engine<pid>map_0 on
-#     2026-11-14, no process mapping it): a page held by a file cannot be released, so files on
-#     the hugetlbfs mount that no process maps are removed first. A file still mapped is kept,
-#     its page stays reserved, and the check after cleanup reports it.
+# Put the DPU's 512 MB hugepages back to the board's resting count. Included by the VPP and
+# SmartNIC cleanups and by reconcile.yml (the app is stopped by then); verify_clean.yml reports
+# any left above it as `dpu_hugepages:<n>`.
+#   - The resting count is 1, not 0: nginx-tls (the board's resting state) runs the CPT OpenSSL
+#     engine, which needs one free 512 MB page per worker (--socket-mem=500, worker_processes 1)
+#     and never reserves it itself (DAO_Setups TLS_Proxy setup_guide, hygiene.yml).
+#   - SmartNIC's launch reserves six (3 GB) and VPP raises the count to two; neither gives
+#     them back.
+#   - Every exit or failed start of nginx-tls's engine leaves /dev/hugepages/e_cpt_engine<pid>map_0
+#     behind, holding a page (not VPP, as first written on 2026-11-15). Files on the hugetlbfs
+#     mount that no process maps are removed first; a file still mapped is kept, its page stays
+#     reserved, and the check after cleanup reports it.
 # Root comes from the DPU's inventory (`ansible_become: true` on the dpu group).
 - name: "step: release_hugepages"
   ansible.builtin.shell: |
@@ -17,13 +21,14 @@
     nr={{ daolab_sysfs | default('/sys') }}/kernel/mm/hugepages/hugepages-{{ daolab_hugepage_kb | default(524288) }}kB/nr_hugepages
     [ -e "$nr" ] || { echo "no $nr"; exit 0; }
     before=$(cat "$nr")
-    [ "$before" -le {{ daolab_hugepages_baseline | default(0) | int }} ] && { echo "at baseline: $before"; exit 0; }
-    echo {{ daolab_hugepages_baseline | default(0) | int }} > "$nr"
-    echo "released: $before -> $(cat "$nr")"
+    want={{ daolab_hugepages_baseline | default(1) | int }}
+    [ "$before" -eq "$want" ] && { echo "at baseline: $before"; exit 0; }
+    echo "$want" > "$nr"
+    echo "set: $before -> $(cat "$nr")"
   args:
     executable: /bin/bash
   register: _hugepages
-  changed_when: "'released:' in _hugepages.stdout or 'removed:' in _hugepages.stdout"
+  changed_when: "'set:' in _hugepages.stdout or 'removed:' in _hugepages.stdout"
 
 - name: what was given back
   ansible.builtin.debug:

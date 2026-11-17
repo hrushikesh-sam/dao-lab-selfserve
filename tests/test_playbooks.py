@@ -186,9 +186,8 @@ def test_verify_clean_reports_hugepages_left_reserved(lab):
 
 
 def test_verify_clean_accepts_hugepages_at_the_baseline(lab):
-    _hugepages(lab, 2)
-    assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys"),
-                   daolab_hugepages_baseline=2) == 0, lab.stdout
+    _hugepages(lab, 1)                                    # nginx-tls's one page is the baseline
+    assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
     assert lab.output() == []
 
 
@@ -211,7 +210,7 @@ def test_reconcile_destroys_every_kind_of_residue_and_verify_then_agrees(lab):
 def test_reconcile_gives_the_hugepages_back(lab):
     nr = _hugepages(lab, 6)
     assert lab.run("reconcile.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
-    assert nr.read_text().strip() == "0"
+    assert nr.read_text().strip() == "1"
     assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
     assert lab.output() == []
 
@@ -858,7 +857,7 @@ def test_smartnic_cleanup_gives_back_the_six_512mb_hugepages(lab, books):
     (d / "nr_hugepages").write_text("6\n")
     board(lab, procs=["dao-smart-nic"])
     assert _cleanup(lab, books, "dao-smartnic") == 0, lab.stdout[-2000:]
-    assert (d / "nr_hugepages").read_text().strip() == "0"
+    assert (d / "nr_hugepages").read_text().strip() == "1"          # nginx-tls keeps its page
     assert "step: release_hugepages" in lab.stdout
 
 
@@ -885,11 +884,21 @@ def test_cleanup_removes_a_hugepage_file_nothing_maps_and_keeps_one_in_use(lab, 
 def test_smartnic_cleanup_leaves_hugepages_at_the_baseline_alone(lab, books):
     d = Path(books.vars["daolab_sysfs"]) / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
     d.mkdir(parents=True)
-    (d / "nr_hugepages").write_text("0\n")
+    (d / "nr_hugepages").write_text("1\n")
     board(lab)
     assert _cleanup(lab, books, "dao-smartnic") == 0, lab.stdout[-2000:]
     assert "step: release_hugepages" in lab.stdout
-    assert (d / "nr_hugepages").read_text() == "0\n"                 # not rewritten
+    assert (d / "nr_hugepages").read_text() == "1\n"                 # not rewritten
+
+
+def test_cleanup_gives_nginx_tls_its_page_back_when_none_is_left(lab, books):
+    """2026-11-17: the count at 0 leaves nginx-tls's CPT engine without its 512 MB page."""
+    d = Path(books.vars["daolab_sysfs"]) / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
+    d.mkdir(parents=True)
+    (d / "nr_hugepages").write_text("0\n")
+    board(lab, procs=["vpp_main"])
+    assert _cleanup(lab, books, "dao-vpp") == 0, lab.stdout[-2000:]
+    assert (d / "nr_hugepages").read_text().strip() == "1"
 
 
 def test_vpp_cleanup_removes_the_hugepage_file_vpp_left(lab, books, tmp_path):
