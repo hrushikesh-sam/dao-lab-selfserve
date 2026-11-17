@@ -11,7 +11,7 @@ What has been finished, newest first, with the evidence for each. The task list 
 | Pending | B-85: SDP VFs on `dpu-01-xcp` ([docs/sdp-blocker.md](docs/sdp-blocker.md)) |
 | Tests | CI runs the whole suite on every push (B-101) |
 | Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; the TLS proxy with its backend and client VMs end to end (B-102); SmartNIC on the DPU; password-mode access |
-| Not yet on hardware | SmartNIC's host VM (SDP VFs); the TLS proxy's health rules with the telemetry stack on |
+| Not yet on hardware | SmartNIC's host VM (SDP VFs) |
 
 ## 2026-11-17 — the TLS proxy use case, without SDP
 
@@ -30,7 +30,12 @@ What has been finished, newest first, with the evidence for each. The task list 
 - `544a2bc` made it deployable by default in `scripts/run/showcase.sh`.
 - That run left `/opt/async_nginx.conf.daolab-rest` behind (cleanup restored it but kept it), so a
   later hand edit of the resting config would have been undone by the next cleanup; cleanup now
-  drops the copy once nginx-tls is back up on it (`mistakes.md` Q11).
+  drops the copy once nginx-tls is back up on it (`mistakes.md` Q11); proven on reservation 5.
+- With the telemetry stack on (reservation 6, Jaeger trace `a1f7f3c9`): `vms_up`, `ssh_reachable`
+  and `backend_up` passed, `https_ok` failed: the client agent's httpcheck reused its connection,
+  which the async CPT engine never answers (`mistakes.md` Q12). With `Connection: close` on the
+  check (patched on the live VM, then in the agent template) the reservation went `healthy` with
+  all four checks passing.
 
 ## 2026-11-17 — nginx-tls back at rest; resting hugepage count is 2
 

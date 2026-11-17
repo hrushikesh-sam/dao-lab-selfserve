@@ -36,6 +36,10 @@ receivers:
 {% for url in _httpcheck %}
       - endpoint: {{ url }}
         method: GET
+        # a new connection per check: nginx-tls's async CPT engine never answers a second request
+        # on a kept-alive one, so a reused connection times out (mistakes.md Q12)
+        headers:
+          Connection: close
         tls:
           insecure_skip_verify: true
 {% endfor %}

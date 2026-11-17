@@ -363,6 +363,7 @@ def test_otel_agent_render_only_for_cloud_init(lab):
     assert run_role(lab, path) == 0, lab.stdout
     cfg = yaml.safe_load((lab.dir / "rendered.yaml").read_text())
     assert cfg["receivers"]["httpcheck"]["targets"][0]["endpoint"] == "https://10.30.0.100/"
+    assert cfg["receivers"]["httpcheck"]["targets"][0]["headers"] == {"Connection": "close"}
     assert "httpcheck" in cfg["service"]["pipelines"]["metrics"]["receivers"]
     assert not lab.calls("systemctl")                               # nothing installed
 
