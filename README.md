@@ -28,8 +28,8 @@ daolab add-user <name> ~/.ssh/<their key>.pub     # one per user; prints their d
 ```
 
 For a demo on the real board, `scripts/run/showcase.sh` does all of the above in one go: the
-ansible runner, DPU only unless started with `DAOLAB_DEPLOY_VMS=true`, VPP and SmartNIC as the
-deployable use cases (`DAOLAB_DEPLOYABLE=vpp,smartnic`), one-minute slots so a click deploys
+ansible runner, DPU only unless started with `DAOLAB_DEPLOY_VMS=true`, VPP, SmartNIC and the TLS proxy as the
+deployable use cases (`DAOLAB_DEPLOYABLE=vpp,smartnic,tls-proxy-nginx`), one-minute slots so a click deploys
 within seconds, its own DB in `var/showcase.db`. It needs SSH as `dao-test` to the board and, for its sudo, a file holding only
 that password (`~/.daolab-become-dao-test`, chmod 600). `scripts/run/xo.sh` runs Xen Orchestra in
 a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its UI).
