@@ -34,7 +34,7 @@
           if [ "$(readlink "$fd" 2>/dev/null)" = "/dev/vfio/$g" ]; then p=${fd#/proc/}; pids="$pids ${p%%/*}"; fi
         done
         pids=$(echo $pids | tr ' ' '\n' | sort -u | tr '\n' ' ')
-        [ -n "${pids// /}" ] || exit 0
+        [ -n "$(echo $pids)" ] || exit 0
         echo "stopping ML device holders:$pids"
         kill $pids 2>/dev/null; sleep 3; kill -9 $pids 2>/dev/null || true
       register: _ml_stop
