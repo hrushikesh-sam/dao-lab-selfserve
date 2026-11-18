@@ -28,7 +28,7 @@ handshakes with it, and `octep_cp_agent` requires the DPU's SDP RVU PF to be bou
 - Leaving it with `rvu_af` keeps OVS working but `octep_cp_agent` cannot use it, so the
   host-side SDP endpoint never comes up and no SDP VFs are available for VMs.
 
-Net effect: host-side SDP (SmartNIC host VM, TLS backend VM) and `rvu_af`-dependent apps
+Net effect: host-side SDP (SmartNIC host VM) and `rvu_af`-dependent apps
 (OVS offload) look mutually exclusive on this hardware. This appears to be a resource
 limitation of the board configuration, not a scripting issue.
 
