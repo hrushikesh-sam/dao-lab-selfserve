@@ -58,7 +58,8 @@ rc=$?
 rm -rf "/var/run/dpdk/$PREFIX"
 find /dev/hugepages /mnt/huge -maxdepth 1 -name "${PREFIX}map_*" -delete 2>/dev/null
 
-mv "$RESULT.tmp" "$RESULT"
+# dpdk-test-mldev colours its verdict ("Result: \e[32mSuccess\e[0m") even into a file; keep plain text
+sed 's/\x1b\[[0-9;]*m//g' "$RESULT.tmp" > "$RESULT" && rm -f "$RESULT.tmp"
 cat "$RESULT"
 if [ "$rc" -eq 0 ] && grep -q '^Result: Success' "$RESULT"; then
   echo "daolab-ml-smoke: success=1"; exit 0
