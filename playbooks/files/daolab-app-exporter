@@ -15,11 +15,15 @@ YAML `health:` rules read, so health means the same thing on the testbed as in t
                                                     counter: the rule takes rate() of it). The
                                                     app's ports are DPDK, so by default there
                                                     is none and the degraded-only rule says so.
+  --app ml        ml_up                             1 when --ml-pci is bound to vfio-pci
+                  ml_last_smoke_ok                  1 when --ml-result (daolab-ml-smoke's last
+                                                    log) says "Result: Success"
 
 Every value is read when Prometheus scrapes, never cached; a probe that fails reports 0 / no
 series rather than an error page. Standard library only (the DPU image has python3).
 """
 import argparse
+import os
 import re
 import socket
 import subprocess
@@ -126,7 +130,22 @@ def smartnic_metrics(args) -> list[str]:
     return lines
 
 
-APPS = {"vpp": vpp_metrics, "nginx": nginx_metrics, "smartnic": smartnic_metrics}
+def ml_metrics(args) -> list[str]:
+    try:
+        drv = os.path.basename(os.readlink(f"{args.pci_sysfs}/{args.ml_pci}/driver"))
+    except OSError:
+        drv = ""
+    try:
+        with open(args.ml_result) as fh:
+            ok = any(line.startswith("Result: Success") for line in fh)
+    except OSError:
+        ok = False
+    return ["# TYPE ml_up gauge", f"ml_up {1 if drv == 'vfio-pci' else 0}",
+            "# TYPE ml_last_smoke_ok gauge", f"ml_last_smoke_ok {1 if ok else 0}"]
+
+
+APPS = {"vpp": vpp_metrics, "nginx": nginx_metrics, "smartnic": smartnic_metrics,
+        "ml": ml_metrics}
 
 
 def render(args) -> str:
@@ -145,6 +164,9 @@ def main(argv=None) -> None:
     p.add_argument("--pci", default="", help="informational: the app's PF")
     p.add_argument("--netdev", default="", help="kernel netdev whose rx_packets to export")
     p.add_argument("--sysfs", default="/sys/class/net")
+    p.add_argument("--ml-pci", default="0000:00:10.0", help="the ML device (--app ml)")
+    p.add_argument("--ml-result", default="/var/lib/daolab/ml/last-smoke.log")
+    p.add_argument("--pci-sysfs", default="/sys/bus/pci/devices")
     p.add_argument("--once", action="store_true", help="print the metrics once and exit")
     args = p.parse_args(argv)
     if args.once:

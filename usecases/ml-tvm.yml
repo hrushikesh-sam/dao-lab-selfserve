@@ -1,0 +1,23 @@
+# usecases/ml-tvm.yml — ML inference on the OCTEON 10 MLIP (DAO guides/applications/machine-learning.html).
+#
+# DPU-only: no VMs. The user gets the board's `lab` login with sudo and runs dpdk-test-mldev
+# (or their own mldev app) against the ML device. Deploy binds the ML device to vfio-pci, adds
+# hugepages next to the resting nginx-tls's own, and proves the MLIP with Marvell's shipped
+# ResNet50 FP16 model against its shipped reference output. Validated by hand on xeon3-oct-112
+# on 2026-11-18 (firmware mlip-fw-0.1.24.11, 5.72 ms / 174 inf/s FP16, 2.45 ms / 408 inf/s INT8).
+#
+# No hw_class: the MLIP does not depend on the EBF personality, so an ML booking never waits
+# for a reflash.
+name: ml-tvm                          # must equal the file stem
+variant: shipped-models               # the guide's host-compiled (TVM/MMLC) flow comes later
+requires: [octeon-cn106, mlip]        # capability match only — no hostnames
+roles:
+  infer: {on: dpu, app: ml-tvm}
+verify:
+  from: infer
+  cmd: "sudo -n /usr/local/bin/daolab-ml-smoke"
+  match: 'daolab-ml-smoke: success=(?P<success>\d)'
+  expect: {success: "== 1"}
+health:
+  - {name: ml_device,   promql: 'ml_up{daolab_reservation="$RID",host="dpu-01"}',               expect: "== 1"}
+  - {name: ml_smoke_ok, promql: 'ml_last_smoke_ok{daolab_reservation="$RID",host="dpu-01"}',    expect: "== 1", severity: degraded}

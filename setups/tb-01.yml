@@ -2,7 +2,7 @@
 name: tb-01
 pool: lab-1
 members:
-  dpu-01: {kind: dpu, capabilities: [octeon-cn106, sdp], host: dpu-01-xcp}
+  dpu-01: {kind: dpu, capabilities: [octeon-cn106, sdp, mlip], host: dpu-01-xcp}
   tg-01:  {kind: nic, capabilities: [e810],              host: tg-01-xcp}
 links:
   - {a: tg-01.e810p0, b: dpu-01.sfp0, capability: wire}
