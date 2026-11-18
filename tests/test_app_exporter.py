@@ -73,10 +73,11 @@ def test_vpp_metrics_match_the_vpp_rules(fake_vppctl):
     assert out["vpp_up"] == 1
     assert out['vpp_interface_rx_packets{interface="eth0"}'] == 12345
     assert not any("local0" in k for k in out)
-    # the use-case rules: vpp_up{...} and rate(vpp_interface_rx_packets{...}[1m])
+    # the use-case rules: vpp_up{...} and rate(vpp_interface_rx_packets_total{...}[1m]) (remote-write adds _total)
     text = open(os.path.join(REPO, "usecases", "vpp.yml")).read()
     for metric in re.findall(r"(vpp_[a-z_]+)\{", text):
-        assert any(k.startswith(metric) for k in out), metric
+        stored = metric.removesuffix("_total")        # the exporter's name before remote-write
+        assert any(k.startswith(stored) for k in out), metric
 
 
 def test_vpp_down_is_zero_and_no_counters(fake_vppctl):

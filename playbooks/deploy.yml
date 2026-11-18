@@ -10,7 +10,8 @@
 #                       password), telemetry (otel agent, the app's exporter), post its address
 #   play 3   dom0s      host_vm: the use case's VMs (clone, cloud-init seed, VF, boot, post IP),
 #                       when DAOLAB_DEPLOY_VMS is on (the XCP-ng host must be in the inventory)
-#   play 4   localhost  verify: the use case's YAML verify block, from its `from` VM
+#   play 4   the VMs    the otel agent on each VM (B-86), when there is a collector
+#   play 5   localhost  verify: the use case's YAML verify block, from its `from` VM
 #
 # Idempotent: the app wrappers read the board and only run the steps that move it forward, the
 # VM roles never clone twice, so the engine's retry is "run it again".
@@ -87,11 +88,43 @@
 - name: create the VMs
   hosts: r_dom0
   gather_facts: false
+  any_errors_fatal: true          # B-86: a VM that did not come up stops the deploy here, with its error
   tasks:
     - name: host_vm
       ansible.builtin.include_role:
         name: host_vm
       when: daolab_deploy_vms | default(true) | bool
+
+- name: reach the VMs through the service login
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: one host per VM role (B-86)
+      ansible.builtin.add_host:
+        name: "daolab-r{{ reservation_id | int }}-{{ item.key }}"
+        groups: r_vms
+        ansible_host: "{{ item.value }}"
+        ansible_user: "{{ host_vm_service_login | default('daolab') }}"
+        ansible_connection: "{{ daolab_vm_connection | default('ssh') }}"
+        ansible_become: true
+        otel_agent_vm_config: >-
+          {{ (groups['r_dom0'] | default([]) | map('extract', hostvars)
+              | map(attribute='daolab_vm_otel', default={}) | combine)[item.key] | default('') }}
+      loop: "{{ (daolab_ips | default({})) | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      changed_when: false
+      when: (daolab_deploy_vms | default(true) | bool) and
+            (daolab_otel_collector | default('') | length > 0)
+
+- name: the otel agent on every VM
+  hosts: r_vms
+  gather_facts: false
+  tasks:
+    - name: telemetry (the config came with the seed; this installs and starts the agent)
+      ansible.builtin.include_role:
+        name: otel_agent
+        tasks_from: vm
 
 - name: verify
   hosts: localhost

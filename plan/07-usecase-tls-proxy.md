@@ -2,6 +2,12 @@
 
 Part of the daolab implementation plan — see [README.md](README.md) for the doc map.
 
+> **Superseded in part (2026-11-17, `mistakes.md` Q10, B-102).** The use case as built and run on
+> tb-01 forwards to the backend over the **management network** (DAO_Setups TLS_Proxy_ansible
+> "Setup 2"), not over SDP / virtio-net: the backend is `on: tg_host, connect: mgmt`, and `verify`
+> fetches five payloads with curl instead of `h2load`. `usecases/tls-proxy-nginx.yml` and the
+> README are the current shape; the SDP addressing below is the original plan.
+
 ## Goal and references
 
 The first use case daolab must run end-to-end is **`tls-proxy-nginx`**: the NGINX TLS termination

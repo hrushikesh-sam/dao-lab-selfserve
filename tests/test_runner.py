@@ -419,6 +419,7 @@ def test_residue_items_are_kind_colon_ident():
     assert runner.residue_item("vm", "daolab-r1-a") == "vm:daolab-r1-a"
     assert runner.parse_residue("vf:0000:5e:01.0") == ("vf", "0000:5e:01.0")   # BDF keeps its colons
     assert runner.parse_residue("ip:10.30.0.101") == ("ip", "10.30.0.101")
+    assert runner.parse_residue("dpu_hugepages:6") == ("dpu_hugepages", "6")      # SmartNIC leak
     assert runner.parse_residue("vf 0000:03:00.2 still bound") == ("other", "vf 0000:03:00.2 still bound")
     with pytest.raises(ValueError):
         runner.residue_item("disk", "x")

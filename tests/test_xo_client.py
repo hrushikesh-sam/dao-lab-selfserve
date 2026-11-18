@@ -181,6 +181,8 @@ def test_seed_start_ip_and_destroy(fake, capsys, tmp_path):
     assert methods == [("GET", f"/vms/{vm_id}"), ("POST", f"/vms/{vm_id}/actions/hard_shutdown"),
                        ("DELETE", f"/vms/{vm_id}")]
     assert fake.vms == {}
+    rc, _, err = run(capsys, "power", "--vm", vm_id)              # gone: not found, not an error
+    assert rc == 3 and "HTTP 404" in err
 
 
 def test_vms_filters_by_exact_name_or_prefix(fake, capsys):

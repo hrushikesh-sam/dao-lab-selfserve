@@ -20,15 +20,16 @@ _Status reconciled after merging `origin/rama` into `rama` (2026-10-23): a task 
 when its code **and** tests are on the branch; `blocked` means it needs something not done
 yet; `todo` is unblocked and open._
 
-**Status:** every task is `done` except the two that need the hardware: B-85 (testbed
-bring-up ΓÇö the DPU half is done on xeon3-oct-112; the XCP-ng half needs the lab's two hosts
-in the inventory) and B-86 (the recorded run ΓÇö the DPU path runs end to end from the
-dashboard on the real board; the VMs need B-85). On top of the tasksheet: the DPU apps run
-Akshay's runbook playbooks (`VPP_ansible/`, `dao-smartnic/`) through `playbooks/apps/`, the
-dashboard deploys in one click with the user's SSH key or a generated password on the DPU's
-`lab` login, DPUs are static (xeon3-oct-112 at 10.68.0.190) and VMs lease from
-10.68.1.0ΓÇô10.68.2.200. What is still open is **P7** (B-92ΓÇªB-101, below); what was finished
-when is in [COMPLETION_LOG.md](../COMPLETION_LOG.md).
+**Status (2026-11-17):** 71 of 72 tasks are `done`. B-86 ran on the real lab: alice deployed
+VPP with its VMs in one click on tb-01 and it went ready, healthy, released, with the trace in
+Jaeger; B-102 did the same for the TLS proxy, whose backend now goes over the management network.
+The one task left is B-85 (testbed bring-up, Rama): its DPU half and its XCP-ng half for
+the E810 are done; SDP VFs on `dpu-01-xcp` are not, so SmartNIC's host VM cannot be wired (see [docs/sdp-blocker.md](../docs/sdp-blocker.md)). On top of the
+tasksheet: the DPU apps run Akshay's runbook playbooks (`VPP_ansible/`, `dao-smartnic/`)
+through `playbooks/apps/`, the dashboard deploys in one click with the user's SSH key or a
+generated password on the DPU's `lab` login, DPUs are static (xeon3-oct-112 at 10.68.0.190) and
+VMs lease from 10.68.1.0-10.68.2.200. What was finished when is in
+[COMPLETION_LOG.md](../COMPLETION_LOG.md).
 
 ---
 
@@ -160,7 +161,7 @@ when is in [COMPLETION_LOG.md](../COMPLETION_LOG.md).
 | B-83 | OTel agent install (VMs via cloud-init, DPU via role) with `daolab.*` resource attributes | `playbooks/roles/otel_agent` | B-60 | metrics labelled by reservation in Prometheus | Rama | done |
 | B-84 | `runner.py` ansible backend via `ansible-runner` (extravars, TRACEPARENT, per-job artifact dir) | `runner.py` | B-22, B-80 | real job logs linked from `GET /jobs/{id}` | Akshay | done |
 | B-85 | Testbed bring-up: dom0 pciback for E810 VFs, template `tpl-ubuntu2204-dao`, DPU sshd drop-in, host_vars BDFs | `inventory/host_vars/` | B-04 | manual checklist in [05-provisioning.md](05-provisioning.md) ticked | Rama | blocked — the DPU half is done on xeon3-oct-112 (`playbooks/bringup.yml`, host_vars); the XCP-ng half is done for E810 (B-92, B-93: both hosts in the inventory, template on both pools, VMs through XO). Left: SDP VFs on `dpu-01-xcp` (`sdp_vfs: []`, `mistakes.md` F2), which needs the board owner's OK and a dom0 reboot. The blocker is one SDP RVU PF: binding it to `vfio-pci` for `octep_cp_agent` breaks the `rvu_af` mailbox that OVS offload needs, and leaving it on `rvu_af` starves the host-side endpoint; host `sriov_numvfs` writes fail, most likely because XCP-ng's 4.19 dom0 kernel has no `octeon_ep`. Live check 2026-11-14: all three hosts reply to ping; the DPU half is verified (`lab` user, `/etc/daolab`, `octeontx2-sdp`/`rvu_af` drivers present, `octep_cp_agent` inactive, hugepages 0, board idle). The `dao-test` sudo drop-in was missing (it had only a password rule), so `/etc/sudoers.d/90-daolab` with NOPASSWD was added and `sudo -n true` passes. XCP-ng half verified 2026-11-14: on `tg-01-xcp` the pool `6769f0a6`, SR `73946000`, template `d9acd7a1`, `SRIOV-E810` `5886a435` and mgmt network `61f86fd2` all match host_vars; the E810 PF `0000:01:00.1` is on `ice` with 128 VFs and 8 in pciback - host_vars listed 7, `0000:01:11.7` added; on `dpu-01-xcp` `0000:6f:00.0` (`177d:b900`) is on pciback with 8/0 VFs, its template `eb8ecdeb` and SR `df51fda3` match, and `modinfo octeon_ep` fails on both hosts, confirming the SDP hypothesis; Docs drift: `playbooks/files/{daolab-keys,sshd-daolab.conf}` are unused - live access is the role-generated `10-daolab-lab.conf`. See [docs/sdp-blocker.md](../docs/sdp-blocker.md) |
-| B-86 | End-to-end on tb-01: alice one-click VPP ΓåÆ ready ΓåÆ healthy ΓåÆ slot end ΓåÆ released; bob blocked from the DPU throughout | ΓÇö | all P6 | demo recorded; trace in Jaeger | Akshay | blocked ΓÇö the DPU path runs end to end from the dashboard on xeon3-oct-112 (VPP, 2026-10-16) and the whole flow on the mock runner (`tests/test_e2e_tb01.py`, `tests/test_dashboard_e2e.py`); VPP with VMs (tgen + sink through XO, ping 0% loss) runs end to end too (2026-11-02, B-93/B-97). Left: the health badge and the Jaeger trace (the telemetry stack), bob blocked, the recorded demo; SmartNIC's host VM needs SDP VFs (B-85); the TLS backend VM needs SDP VFs too - see [docs/sdp-blocker.md](../docs/sdp-blocker.md) |
+| B-86 | End-to-end on tb-01: alice one-click VPP ΓåÆ ready ΓåÆ healthy ΓåÆ slot end ΓåÆ released; bob blocked from the DPU throughout | ΓÇö | all P6 | demo recorded; trace in Jaeger | Akshay (`156c8ab`, `df16daa`, `ee82a6e`, `1e09ae9`); Rama (B-85 host checks, passwordless sudo for `dao-test`) | done (2026-11-14, reservation 5) - alice deployed VPP with VMs in one click on tb-01: lease, VPP on xeon3-oct-112, sink + tgen through XO, the agent on the DPU and both VMs, `verify ok: received = 4 (== 4)`; ready -> healthy (vms_up, ssh_reachable, dpu_app, datapath all ok) -> End now -> cleanup clean -> released. Demo recorded; Jaeger trace `898db8a9` (daolab-engine + daolab-ansible, 287 spans). Fixed on the way: no agent in the VMs (`156c8ab`); agent config over the xenstore quota-maxsize 2048, VM.start E2BIG (`df16daa`); collector 0.160 names `tcpcheck_status_ratio` / `vpp_interface_rx_packets_total` (`ee82a6e`); freshness query collided on series that differ only by name (`1e09ae9`). Not shown live: bob blocked from the DPU (covered on the mock runner by `tests/test_e2e_tb01.py::test_alice_one_click_vpp_through_to_released_and_bob_never_gets_in`). SmartNIC and TLS VMs still need SDP VFs (B-85, [docs/sdp-blocker.md](../docs/sdp-blocker.md)) |
 
 ## Docs follow-up
 
@@ -185,7 +186,8 @@ AΓÇôP). Owner `ΓÇö` = not assigned yet.
 | B-98 | Fold plan/09 into the rest of the doc set: `README.md`, `plan/README.md`, `plan/01`, `plan/06`, `plan/07`, `plan/08` (topology, playbooks, IP model, counts, the endpoint map, dangling "contract ┬º" references) | docs | B-92 | `mistakes.md` A2, A8, B8, B10, B13, C9, C14, I19, M4 closed | Akshay | done (docs folded into plan/09; leftover merge conflicts resolved) |
 | B-99 | SmartNIC on the real board: in Akshay's runbook `smartnic_build` / `smartnic_launch` check `pgrep -x vpp` (misses `vpp_main`), and the build prefix (`dao-clone/install`) does not match `smartnic_binary` (`dao-clean/install`) | `dao-smartnic/` | ΓÇö | SmartNIC deploys and cleans up from the dashboard on xeon3-oct-112; then add it to `DAOLAB_DEPLOYABLE` | Akshay | done (`3cc37fb` on `b93-xo`; `3a5de69`: the launch task now really starts dao-smart-nic in the background, and checks the telnet port with `ss` - a connect-and-close made the app exit) |
 | B-100 | Password-mode deploy verified on the real board: log in as `lab` with the generated password, refused after End now | ΓÇö | ΓÇö | recorded run | Akshay | done (2026-11-03, reservation 2 on xeon3-oct-112: `ssh lab@10.68.0.190` with the generated password → `lab` / `xeon3-oct-112` while active; after End now → released, the same password → `Permission denied`) |
-| B-101 | Operations: CI running the tests on every push; a DB backup timer; token expiry | `.github/workflows/`, `deploy/`, `service/models.py` | ΓÇö | `mistakes.md` K6, J15, J13 closed | Akshay | done (`f0cbc1a` on `b93-xo`; CI run #4 on push: 881 passed, 3 failed = the known B-94 / B-95 tests) |
+| B-101 | Operations: CI running the tests on every push; a DB backup timer; token expiry | `.github/workflows/`, `deploy/`, `service/models.py` | ΓÇö | `mistakes.md` K6, J15, J13 closed | Akshay | done (`f0cbc1a` on `b93-xo`; CI on every push; the 3 tests that failed on run #4 were the open B-94 / B-95 findings, fixed by `4190966` and `953ffda`) |
+| B-102 | The TLS proxy (`tls-proxy-nginx`) end to end on the real board, without SDP: client VM -> HTTPS to nginx-tls on the DPU (CPT offload) -> backend VM over mgmt (DAO_Setups Setup 2) | `usecases/tls-proxy-nginx.yml`, `playbooks/apps/nginx-tls/` | B-81 | deploy, `verify`, End on tb-01, board back at rest | Akshay | done (`e4b859b`, `544a2bc` on `b93-xo`; 2026-11-17, reservation 4 on xeon3-oct-112: ready in ~3.5 min, `verify ok` for 100B-4MB, `200 1048576` from the client VM, released with XO `[]` and nginx-tls back on `proxy_pass http://10.68.0.194`; `mistakes.md` Q10, Q11) |
 
 ---
 

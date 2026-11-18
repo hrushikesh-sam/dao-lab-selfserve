@@ -368,16 +368,16 @@ invariants:
 # usecases/vpp.yml (excerpt)
 health:
   - {name: vms_up,        promql: 'min(up{daolab_reservation="$RID"})',                       expect: "== 1"}
-  - {name: ssh_reachable, promql: 'min(tcpcheck_status{daolab_reservation="$RID",port="22"})', expect: "== 1"}
+  - {name: ssh_reachable, promql: 'min(tcpcheck_status_ratio{daolab_reservation="$RID",port="22"})', expect: "== 1"}
   - {name: dpu_app,       promql: 'vpp_up{host="dpu-01"}',                                     expect: "== 1"}
-  - {name: datapath,      promql: 'rate(vpp_interface_rx_packets{host="dpu-01"}[1m])',         expect: "> 0", severity: degraded}
+  - {name: datapath,      promql: 'rate(vpp_interface_rx_packets_total{host="dpu-01"}[1m])',         expect: "> 0", severity: degraded}
 ```
 
 For TLS proxy, the client VM's agent runs the `httpcheck` receiver against `https://<proxy_ip>/`
 (the client role's `httpcheck:` in the use-case YAML, B-95) and the rule is
 `httpcheck_status{http_status_class="2xx"} == 1`: the receiver emits one series per status
 class, 1 only for the class the answer fell in, so a 500 from NGINX does not pass. The receiver
-is now named `http_check`; `httpcheck` is kept because both pinned collectors (0.115 central,
+is now named `http_check`; `httpcheck` is kept because both pinned collectors (0.160 central,
 0.160 agent) accept it. SmartNIC checks the offload app's counters.
 
 **Verdict:** `healthy` when every check passes; `degraded` when only `severity: degraded`

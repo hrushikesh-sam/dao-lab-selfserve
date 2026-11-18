@@ -24,3 +24,6 @@
     - name: "step: stop_app"
       ansible.builtin.shell: "! pgrep -x dao-smart-nic"
       changed_when: false
+
+    - name: give back the hugepages the launch reserved (the runbook cleanup leaves them)
+      ansible.builtin.include_tasks: ../../tasks/release_hugepages.yml

@@ -80,7 +80,6 @@ SmartNIC run already did this successfully, so the "mutually exclusive" theory i
 
 ## Minor items still open
 
-- SmartNIC cleanup leaves hugepages reserved.
 - Clearer error for the SmartNIC host VM when SDP is unavailable.
 
 ## Live check, 2026-11-14

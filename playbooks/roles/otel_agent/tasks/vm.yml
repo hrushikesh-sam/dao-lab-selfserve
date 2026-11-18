@@ -1,0 +1,45 @@
+# B-86: the agent on a role VM, over SSH as the service login. host_vm renders this VM's config
+# (render.yml) but cannot hand it over through the seed: it is over xenstore's per-value quota.
+# This writes it, installs otelcol-contrib and the unit, and starts the agent.
+- name: the agent needs a collector
+  ansible.builtin.meta: end_role
+  when: otel_agent_collector | length == 0
+
+- name: host_vm rendered this VM's config
+  ansible.builtin.assert:
+    that: (otel_agent_vm_config | default('') | trim) | length > 0
+    fail_msg: "no agent config for {{ inventory_hostname }}: host_vm did not render one"
+
+- name: the binary
+  ansible.builtin.include_tasks: binary.yml
+
+- name: make the config directory
+  ansible.builtin.file:
+    path: "{{ otel_agent_config | dirname }}"
+    state: directory
+    mode: "0755"
+
+- name: write the agent config
+  ansible.builtin.copy:
+    content: "{{ otel_agent_vm_config }}"
+    dest: "{{ otel_agent_config }}"
+    mode: "0644"
+  notify: restart the agent
+
+- name: install the unit
+  ansible.builtin.template:
+    src: daolab-otel.service.j2
+    dest: "{{ otel_agent_unit_dir }}/{{ otel_agent_unit }}.service"
+    mode: "0644"
+  register: _otel_unit
+  notify: restart the agent
+
+- name: reload systemd
+  ansible.builtin.command: systemctl daemon-reload
+  when: _otel_unit.changed
+  changed_when: true
+
+- name: "step: otel_agent_vm"
+  ansible.builtin.command: systemctl enable --now {{ otel_agent_unit }}
+  register: _otel_enable
+  changed_when: "'Created symlink' in _otel_enable.stderr"

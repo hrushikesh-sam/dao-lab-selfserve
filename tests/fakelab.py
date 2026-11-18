@@ -16,6 +16,7 @@ State:
   pingable   [ip, ...]                  addresses something answers on
   files      {path: text}               files the DPU-side commands are asked about
 """
+import fcntl
 import json
 import os
 import re
@@ -29,7 +30,7 @@ def load():
 
 
 def save(state):
-    tmp = os.environ["FAKELAB_STATE"] + ".tmp"
+    tmp = f'{os.environ["FAKELAB_STATE"]}.{os.getpid()}.tmp'      # own name per process
     with open(tmp, "w") as fh:
         json.dump(state, fh, indent=1, sort_keys=True)
     os.replace(tmp, os.environ["FAKELAB_STATE"])
@@ -540,7 +541,12 @@ def main():
                "dom0-ssh": dom0_ssh}.get(name)
     if handler is None:
         fail(f"fakelab: no fake for {name}", 2)
-    handler(sys.argv[1:])
+    # One fake command at a time: a play over several hosts (the VM agent play, B-86) runs them
+    # in parallel, and load -> change -> save from two processes lost updates or raced on the
+    # temp file. The lock is released on exit, and on exec (Python opens it close-on-exec).
+    with open(os.environ["FAKELAB_STATE"] + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        handler(sys.argv[1:])
 
 
 if __name__ == "__main__":

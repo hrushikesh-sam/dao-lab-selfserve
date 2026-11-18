@@ -156,7 +156,8 @@
 </div>
 
 <script>
-const TOKEN_KEY = "daolab_token";
+// Own key per page: the two pages share the origin (see user.html).
+const TOKEN_KEY = "daolab_token_admin";
 const getToken  = () => localStorage.getItem(TOKEN_KEY);
 let ME = null, SETUPS = [], SELECTED = null, POLL_MS = 15000, FAST_MS = 4000;
 let SEL_RES = null, BUSY = false;               // the reservation whose detail is open; any job running

@@ -28,27 +28,35 @@ daolab add-user <name> ~/.ssh/<their key>.pub     # one per user; prints their d
 ```
 
 For a demo on the real board, `scripts/run/showcase.sh` does all of the above in one go: the
-ansible runner, DPU only unless started with `DAOLAB_DEPLOY_VMS=true`, VPP and SmartNIC as the
-deployable use cases (`DAOLAB_DEPLOYABLE=vpp,smartnic`), one-minute slots so a click deploys
+ansible runner, DPU only unless started with `DAOLAB_DEPLOY_VMS=true`, VPP, SmartNIC and the TLS proxy as the
+deployable use cases (`DAOLAB_DEPLOYABLE=vpp,smartnic,tls-proxy-nginx`), one-minute slots so a click deploys
 within seconds, its own DB in `var/showcase.db`. It needs SSH as `dao-test` to the board and, for its sudo, a file holding only
 that password (`~/.daolab-become-dao-test`, chmod 600). `scripts/run/xo.sh` runs Xen Orchestra in
 a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its UI).
 
 ## Status and pending work
 
-Done: 69 of 71 tasks of the backend tasksheet ([plan/10](plan/10-backend-tasksheet.md)); CI runs
+Done: 71 of 72 tasks of the backend tasksheet ([plan/10](plan/10-backend-tasksheet.md)); CI runs
 the whole suite on every push. On the real lab, from the dashboard:
 
 - **VPP** end to end, DPU only and with its VMs (tgen + sink created through Xen Orchestra on
   E810 VFs, leased addresses, ping to VPP with 0% loss), cleaned up to an empty testbed.
+- **Telemetry and health** (B-86, 2026-11-14): the OTel agent on the DPU and in every VM, the
+  central collector, Prometheus and Jaeger; the reservation goes ready -> **healthy** (VMs up,
+  SSH, VPP up, packets through VPP) and its deploy is one trace in Jaeger.
 - **SmartNIC** end to end on the DPU; its `tgen` VM comes up, its host VM needs SDP VFs.
+- **TLS proxy** (B-102, 2026-11-17, reservations 4-7): nginx-tls on the DPU with the CPT offload,
+  a backend VM over the management network and a client VM on an E810 VF; `verify` fetches five
+  payloads through the proxy, the reservation goes **healthy** with telemetry on, and cleanup puts
+  nginx-tls back on its resting config.
 - Password-mode access (login during the slot, refused after End now).
 
 Pending:
 
-- **B-85 / B-86** — SDP VFs on `dpu-01-xcp` (`mistakes.md` F2): SmartNIC's host VM and the TLS
-  proxy's backend VM need them; the board owner's approval and a dom0 reboot.
-- Known gaps: SmartNIC cleanup leaves its 6 × 512 MB hugepages reserved; SmartNIC's `verify` is a
+- **B-85** — SDP VFs on `dpu-01-xcp` (`mistakes.md` F2, [docs/sdp-blocker.md](docs/sdp-blocker.md)):
+  SmartNIC's host VM needs them (the TLS proxy does not: its backend uses the management network,
+  `mistakes.md` Q10); the board owner's approval and a dom0 reboot.
+- Known gaps: SmartNIC's `verify` is a
   placeholder until its host VM can be wired.
 
 History: [COMPLETION_LOG.md](COMPLETION_LOG.md); open findings: [mistakes.md](mistakes.md).
@@ -120,7 +128,7 @@ daolab/
 |---|---|---|
 | **vpp** | FD.io VPP with crypto/IO acceleration | **deployable on tb-01** (DPU + VMs) |
 | **smartnic** | DAO SmartNIC offload app | **deployable on tb-01** (DPU; host VM needs SDP VFs) |
-| **tls-proxy-nginx** | NGINX TLS termination proxy, RSA/ECDSA offloaded to CPT | YAML ready, not yet deployable on tb-01 (backend VM needs SDP VFs) |
+| **tls-proxy-nginx** | NGINX TLS termination proxy, RSA/ECDSA offloaded to CPT | **deployable on tb-01** (DPU + VMs; backend over the management network, no SDP) |
 | virtio-l2fwd | L2 forwarding between host virtio devices and wire | planned |
 | ovs-offload | OVS packet-processing offload for wire↔VM | planned |
 | crypto-agent | standalone crypto service with host interaction | planned |
@@ -141,26 +149,31 @@ this table live — adding a YAML flips a row to available, no frontend change.
 ## Current use case — tls-proxy-nginx (separate backend)
 
 NGINX runs **on the OCTEON** as TLS termination proxy (crypto → CPT VFs via the DPDK OpenSSL
-engine). The decrypted upstream is a **separate backend web-server VM** on the DPU node's XCP-ng
-host. The client is a VM on the TG node with an E810 VF, requesting the payload over HTTPS.
+engine). The decrypted upstream is a **separate backend web-server VM**, reached over the
+**management network** (DAO_Setups TLS_Proxy_ansible "Setup 2"; no SDP VF, `mistakes.md` Q10).
+The client is a VM on the TG node with an E810 VF, requesting the payloads over HTTPS.
 
 ```
-client VM (ab / h2load)     ──HTTPS:443──►   NGINX on OCTEON CN106      ──HTTP:80──►  backend VM (web server)
-on tg-01 XCP-ng host,          25G wire      TLS termination; RSA/ECDSA    SDP /       on dpu-01 XCP-ng host,
-E810 VF passthrough                          → CPT VFs (DPDK engine)      virtio-net   serves the payload
+client VM (curl / ab)       ──HTTPS:443──►   NGINX on OCTEON CN106      ──HTTP:80──►  backend VM (web server)
+on tg-01 XCP-ng host,          25G wire      TLS termination; RSA/ECDSA    management  on tg-01 XCP-ng host,
+E810 VF 10.65.0.36           to 10.65.0.190  → CPT VFs (DPDK engine)      network     serves /test/*.html
 ```
 
 ```yaml
-# usecases/tls-proxy-nginx.yml — the shape every use case follows
+# usecases/tls-proxy-nginx.yml — the shape every use case follows (abridged)
 name: tls-proxy-nginx
-variant: separate-backend             # docs also describe: inbuilt-server
+variant: separate-backend             # docs also describe: inbuilt-server (deferred)
 requires: [octeon-cn106, e810, wire]  # capability match only — no hostnames
 hw_class: sdp-pf1-vf8
 roles:
-  proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
-  backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
-  client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf}
-verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", match: '(?s)requests: (?P<total>\d+) total, \d+ started, \d+ done, (?P<succeeded>\d+) succeeded, (?P<failed>\d+) failed.*?status codes: (?P<s2xx>\d+) 2xx', expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}}
+  proxy:   {on: dpu,     app: nginx-tls, crypto: cpt-vfs, upstream: backend}
+  backend: {on: tg_host, vm: tpl-ubuntu2204-dao, install: [http-server], connect: mgmt}
+  client:  {on: tg_host, vm: tpl-ubuntu2204-dao, install: [ab], connect: e810-vf,
+            httpcheck: ["https://{proxy_ip}/test/1KB.html"]}
+verify:   # curl, not `ab -k`: the async CPT engine drops keep-alive after one request (Q12)
+  from: client
+  cmd: "for f in 100B 1KB 100KB 1MB 4MB; do curl -sk -o /dev/null -w '%{http_code} %{size_download}\\n' https://{proxy_ip}/test/$f.html; done"
+  expect: {c1: "== 200", s1: "== 100", ..., c5: "== 200", s5: "== 4194304"}
 ```
 
 ```yaml

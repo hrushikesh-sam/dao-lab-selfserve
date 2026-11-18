@@ -29,7 +29,8 @@ deriving `held_by`) is by definition an API responsibility — change `service/a
 ## Shared plumbing (identical in both files)
 
 **Token entry.** On load, if `localStorage` has no token, show a modal gate: one password-type
-input + Save. Save stores the pasted token under key `daolab_token`, then calls `GET /whoami`
+input + Save. Save stores the pasted token under the page's own key (`daolab_token_user` /
+`daolab_token_admin`: one shared key let the admin token replace the user's), then calls `GET /whoami`
 and shows `username (role)` in the header. Any `401 unauthorized` from any call clears the key
 and re-opens the gate (token rotated or revoked). Tokens come from `daolab add-user` — see
 [08-cli-config-ops.md](08-cli-config-ops.md).
@@ -37,7 +38,7 @@ and re-opens the gate (token rotated or revoked). Tokens come from `daolab add-u
 **API client.** One wrapper, one error type; nothing else touches `fetch`:
 
 ```js
-const TOKEN_KEY = "daolab_token";
+const TOKEN_KEY = "daolab_token_user";   // admin.html: "daolab_token_admin"
 const getToken  = () => localStorage.getItem(TOKEN_KEY);
 
 class ApiError extends Error {

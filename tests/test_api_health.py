@@ -66,7 +66,7 @@ def test_the_owner_gets_the_verdict_with_every_check(live):
 
 def test_a_degraded_and_a_down_verdict(live):
     env, rid, prom = live
-    prom.down = {"vpp_interface_rx_packets"}
+    prom.down = {"vpp_interface_rx_packets_total"}
     assert get_health(env, rid).json()["verdict"] == "degraded"
     api._health_cache.clear()
     prom.down = {"vpp_up"}

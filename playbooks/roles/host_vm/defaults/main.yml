@@ -36,3 +36,6 @@ host_vm_data_drivers:
 # waiting for the guest to come up on its address (5 min by default)
 host_vm_ip_retries: 60
 host_vm_ip_delay: 5
+# oxenstored's quota-maxsize on the XCP-ng dom0s (/etc/xen/oxenstored.conf): the largest value
+# one xenstore key may hold; a bigger seed value makes VM.start fail with E2BIG (B-86)
+host_vm_xenstore_max: 2048

@@ -1,18 +1,95 @@
 # Completion log
 
-What has been finished on `rama`, newest first, with the evidence for each. The task list is
-[plan/10](plan/10-backend-tasksheet.md); what is still open is its **P7** section (B-92…B-101)
-and [mistakes.md](mistakes.md).
+What has been finished, newest first, with the evidence for each. The task list is
+[plan/10](plan/10-backend-tasksheet.md); open findings are in [mistakes.md](mistakes.md).
 
-## Where things stand (2026-10-23)
+## Where things stand (2026-11-17)
 
 | | |
 |---|---|
-| Backend tasksheet | 59 of 61 tasks `done` (code + tests on the branch); B-85 and B-86 `blocked` on the XCP-ng hosts |
-| Pending | P7: 10 tasks, B-92…B-101 (VMs via Xen Orchestra, four correctness fixes, use-case gates, docs, ops) |
-| Tests | 861 passed (full suite, merged tree, `21961c6`) |
-| Real hardware | VPP on the DPU xeon3-oct-112 (10.68.0.190) deploys and cleans up from the dashboard |
-| Not yet on hardware | the use cases' VMs (`DAOLAB_DEPLOY_VMS=false`), VF/SDP passthrough, TLS proxy, SmartNIC, the telemetry stack |
+| Backend tasksheet | 71 of 72 tasks `done` (code + tests on `b93-xo`); B-85 `blocked` on SDP VFs |
+| Pending | B-85: SDP VFs on `dpu-01-xcp` ([docs/sdp-blocker.md](docs/sdp-blocker.md)) |
+| Tests | CI runs the whole suite on every push (B-101) |
+| Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; the TLS proxy with its backend and client VMs end to end (B-102); SmartNIC on the DPU; password-mode access |
+| Not yet on hardware | SmartNIC's host VM (SDP VFs) |
+
+## 2026-11-17 — the TLS proxy use case, without SDP
+
+- Wired as DAO_Setups TLS_Proxy_ansible "Setup 2" (verified live 2026-09-05): client VM on an E810
+  VF -> HTTPS to nginx on the DPU's enP2p4s0 (10.65.0.190, CPT offload) -> `/test/` over the
+  management network to the backend VM's HTTP :80 (`mistakes.md` Q10). Code and tests: `e4b859b`.
+- On the board (B-102), reservation 4 (alice), stack started with
+  `DAOLAB_DEPLOYABLE=vpp,smartnic,tls-proxy-nginx DAOLAB_DEPLOY_VMS=true`: the deploy succeeded on
+  attempt 1 (20 steps, `verify ok`: 100B/1KB/100KB/1MB/4MB, 200 and the exact sizes, through the
+  proxy), provisioning to ready in about 3.5 min, backend 10.68.1.0 and client 10.68.1.1. Live:
+  `proxy_pass http://10.68.1.0;`, two workers; from the client VM
+  `curl -sk https://10.65.0.190/test/1MB.html` gave `200 1048576`; the health probe re-ran `verify`
+  and succeeded (the verdict stayed unknown: the telemetry stack was off). End: released in about
+  40 s, XO `[]`, `proxy_pass http://10.68.0.194;`, nginx-tls active, 2 hugepages, 24 CPT VFs on
+  vfio-pci, `https 200`.
+- `544a2bc` made it deployable by default in `scripts/run/showcase.sh`.
+- That run left `/opt/async_nginx.conf.daolab-rest` behind (cleanup restored it but kept it), so a
+  later hand edit of the resting config would have been undone by the next cleanup; cleanup now
+  drops the copy once nginx-tls is back up on it (`mistakes.md` Q11); proven on reservation 5.
+- With the telemetry stack on (reservation 6, Jaeger trace `a1f7f3c9`): `vms_up`, `ssh_reachable`
+  and `backend_up` passed, `https_ok` failed: the client agent's httpcheck reused its connection,
+  which the async CPT engine never answers (`mistakes.md` Q12). With `Connection: close` on the
+  check (patched on the live VM, then in the agent template) the reservation went `healthy` with
+  all four checks passing.
+- Reservation 7, with `4775164` and no hand patch: the deploy wrote `Connection: close` into the
+  client agent's config and the reservation went `healthy`, all four checks passing. Its attempt 1
+  failed on the client VM's agent download (`Temporary failure in name resolution` just after
+  boot); the engine's retry succeeded, and the download now retries itself (`mistakes.md` Q13).
+
+## 2026-11-17 — nginx-tls back at rest; resting hugepage count is 2
+
+- nginx-tls had failed at rest since the 2026-10-17 reboot (`mistakes.md` Q9): no CPT VFs. Rebuilt
+  on the board with the vendor script (24 VFs on vfio-pci): `CPT HW Offload Configured!!!`, one
+  worker, `https 200` from the DPU.
+- Its CPT engine maps two 512 MB pages and dies with one (`rte_errno=12`); it never reserves them
+  itself. `ea4e733` set the count to 0 and `a6aa0e8` to 1 before restarting it; cleanup and
+  reconcile now set it to 2 (`daolab_hugepages_baseline`) and clear engine files on both hugetlbfs
+  mounts (`/dev/hugepages`, `/mnt/huge`). Board after: 512 MB 2 reserved / 0 free, 2 MB 0.
+
+## 2026-11-15 — DPU hugepages given back
+
+- The board had six 512 MB hugepages (3 GB) reserved since SmartNIC's last run, one of them held
+  by a file a failed nginx-tls engine start left (`e_cpt_engine82558map_0`, no process mapping it;
+  first blamed on VPP); nothing reserves any at boot. `ea4e733`: cleanup (VPP and SmartNIC) and force-clean remove unmapped hugepage files and
+  set the 512 MB count back to the baseline (0); `verify_clean` reports leftovers as
+  `dpu_hugepages:<n>`.
+- On the board: VPP reserves 2 itself and runs healthy from 0 (it never depended on the leak),
+  End now -> 0; SmartNIC reserves 6 -> its cleanup (`release_hugepages`) -> 0, no files, clean.
+
+## 2026-11-14 — B-86 on the real lab
+
+- **The run** (reservation 5, alice): one click on `vpp` → lease → VPP on xeon3-oct-112 → sink
+  and tgen through XO → the OTel agent on the DPU and both VMs → `verify ok: received = 4 (== 4)`
+  → ready → **healthy** (`vms_up`, `ssh_reachable`, `dpu_app`, `datapath`) → End now → cleanup
+  clean → released. Jaeger trace `898db8a9` (daolab-engine + daolab-ansible, 287 spans); demo
+  recorded. Bob being refused was not shown live; the mock-runner test covers it.
+- **Fixed on the way**, each found only once telemetry ran on hardware:
+  - `156c8ab` — the VM template has no OTel agent; the deploy now installs and starts it on every
+    VM after boot. The central collector is pinned to 0.160.0 (0.115.0 does not exist).
+  - `df16daa` — the agent config (2228 bytes as base64) was over xenstore's `quota-maxsize` (2048),
+    so `VM.start` failed with `Xs_protocol.Error("E2BIG")` and left the VM paused; it is written
+    over SSH instead. A failed or paused VM now stops the deploy with its own error.
+  - `ee82a6e` — the 0.160 collector's remote-write stores `tcpcheck_status_ratio` and
+    `vpp_interface_rx_packets_total`; the health rules read those names.
+  - `1e09ae9` — the freshness query `timestamp({…})` failed on series that differ only by name;
+    it reads `timestamp(up{…})`.
+- Then: the two dashboards keep their tokens under their own keys (the shared key had the user
+  page deploy as dev-admin), and `daolab-xo` exits 3 on a 404.
+
+## 2026-11-01 … 2026-11-04 — P7 (Akshay)
+
+- B-93 VMs through Xen Orchestra (`85377e3`); B-92 the real lab in the inventory (`d1335ef`);
+  B-96 a DPU-only functional gate and a playbook timeout (`ec768e5`); B-97 `/internal/vm-ip`
+  takes only the leased address, arping before use (`072451b`); B-99 SmartNIC on the real board
+  (`3cc37fb`, launch fix `3a5de69`); B-100 password-mode login verified on the board (2026-11-03).
+- B-94 `failed` is terminal, not held (`4190966`); B-95 `verify` checks exit code and parsed
+  numbers, TLS gates (`953ffda`); B-98 docs folded into plan/09 (`4082745`); B-101 CI, nightly DB
+  backup, token expiry (`f0cbc1a`).
 
 ## 2026-10-23
 

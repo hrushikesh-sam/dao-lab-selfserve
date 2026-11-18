@@ -66,9 +66,11 @@ class RunResult:
 #   dpu_session:lab         processes of the shared DPU login are still running
 #   dpu_app:<unit>          a use-case app unit is still active on the DPU
 #   ip:10.30.0.101          a leased address still answers ping
-RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "ip")
+#   dpu_hugepages:6         512 MB hugepages still reserved above the board's baseline
+RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "ip")
 CHECK_FOR_KIND = {"vm": "check_vms", "vf": "check_vfs", "dpu_session": "check_sessions",
-                  "dpu_app": "check_sessions", "ip": "check_ips"}
+                  "dpu_app": "check_sessions", "dpu_hugepages": "check_sessions",
+                  "ip": "check_ips"}
 
 
 def residue_item(kind: str, ident: str) -> str:
@@ -157,10 +159,12 @@ class MockExporter:
     # The series the use-case health rules read (usecases/*.yml `health:`), so a mock deploy
     # reads `healthy` end to end; Prometheus adds `up` itself. App series carry the DPU's
     # host label like the rules do. Counters grow at a steady rate so rate() is > 0.
-    GAUGES = (("tcpcheck_status", {"port": "22"}), ("httpcheck_status", {"http_status_class": "2xx"}),
+    # Names as the 0.160 collector's remote-write stores them (B-86): unit `1` gauges get
+    # `_ratio`, counters get `_total`.
+    GAUGES = (("tcpcheck_status_ratio", {"port": "22"}), ("httpcheck_status", {"http_status_class": "2xx"}),
               ("vpp_up", {"host": "dpu-01"}), ("nginx_up", {"host": "dpu-01"}),
               ("smartnic_up", {"host": "dpu-01"}))
-    COUNTERS = (("vpp_interface_rx_packets", {"host": "dpu-01"}, 1000.0),
+    COUNTERS = (("vpp_interface_rx_packets_total", {"host": "dpu-01"}, 1000.0),
                 ("smartnic_offload_pps", {"host": "dpu-01"}, 500.0))
 
     def _metrics_text(self) -> str:

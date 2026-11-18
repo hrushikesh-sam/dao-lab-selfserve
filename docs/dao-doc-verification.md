@@ -2,7 +2,8 @@
 
 Date: 2026-11-18. Scope: every page of Marvell's DAO documentation that constrains the lab
 (`gsg/`, `howtoguides/`, `applications/`), cross-checked against this repo's use-case YAMLs,
-inventory, catalog and blocker doc. Live facts are from the 2026-11-14 check recorded in
+inventory, catalog and blocker doc. Includes Akshay's `origin/akshay` `02b6b3d` (TLS proxy
+without SDP, B-102) merged the same day. Live facts are from the 2026-11-14 check recorded in
 `docs/sdp-blocker.md` and from `dao-smartnic/Clean reinstall ...md`; no new root login was taken
 during this pass, so items marked **UNVERIFIED** need one command on the board.
 
@@ -47,7 +48,7 @@ Doc base used: <https://marvellembeddedprocessors.github.io/dao/guides/>. The ca
 |---|---|---|---|
 | `vpp` | `usecases/vpp.yml:4-11`: DPU VPP on `sdp-pf1-vf8`, tgen+sink on tg host with `e810-vf` | Doc demo is **host offload over PCIe**: SDP (<=50G) or virtio (100G), host `octeon_ep`/`octep_vdpa_pci`, DPU `octep_cp_plugin`. No E810 in the datapath. | Mismatch in framing; lab demo is VPP-on-RPM with an external E810 tgen, not the documented host-offload demo. `hw_class` is unused by the roles. |
 | `smartnic` | `usecases/smartnic.yml:5-9`: `hw_class: sdp-pf1-vf8`, host VM `connect: virtio` | Doc SmartNIC = DPU graph app with RPM + **SDP VFs**; host reaches it through the **SDP PF netdev** (`octeon_ep`), not virtio. | Partly wrong: host VM should get an **SDP VF** with `octeon_ep_vf`, not a virtio NIC. Verify command is a placeholder. |
-| `tls-proxy-nginx` | `usecases/tls-proxy-nginx.yml:5-9`: `crypto: cpt-vfs`, backend on `dpu_host` over `connect: sdp` | Doc: NGINX on OCTEON with **CPT VFs = nproc** (24); backend is any IP via `proxy_pass`. SDP is not part of the documented solution. | CPT side matches (24 VFs already bound, `dpu-01.yml:25-50`). The SDP backend hop is **self-imposed**, not a doc requirement. |
+| `tls-proxy-nginx` | `usecases/tls-proxy-nginx.yml:11-16`: `crypto: cpt-vfs`; backend on `tg_host` over `connect: mgmt`; client on an E810 VF | Doc: NGINX on OCTEON with **CPT VFs = nproc** (24); backend is any IP via `proxy_pass`. No SDP. | Matches after Akshay's 2026-11-17 change (`e4b859b`, B-102); CPT VFs already bound (`dpu-01.yml:25-50`). Doc-conformant. |
 | `ovs-offload` (planned) | Not implemented | Requires `octep_cp_agent` running, 1 SDP VF + 1 RPM VF + ESW VF per interface | No conflict between CP agent and OVS is documented; see §3. |
 | `crypto-agent` (planned) | Catalog summary says "on the Liquid Crypto Card" | Correct, but the lab has no Liquid Crypto Card | Keep planned. |
 | 11 remaining planned apps | catalog.py:36-121, verbatim doc intros | Intros match the doc text | Catalog text is faithful. |
@@ -92,12 +93,13 @@ PF hidden by pciback, **zero VFs** (`sriov_numvfs = 0`). VFs can only be created
 supported `octeon_ep` is loaded in dom0 (or pre-created on the DPU, which the docs do not
 describe for the host side).
 
-### E5. TLS proxy does not need SDP; the dependency is a lab design choice
+### E5. TLS proxy does not need SDP — fixed in `e4b859b`
 
-`usecases/tls-proxy-nginx.yml` sends decrypted HTTP to a backend VM over SDP. The doc only
-requires an HTTP(S) upstream reachable by IP (`proxy_pass http://10.21.0.2:80` in our config
-is ours). A `variant` over the E810 wire would let the documented CPT-offload demo run without
-any host SDP VFs and without the EBF personality.
+The original `usecases/tls-proxy-nginx.yml` sent decrypted HTTP to a backend VM over SDP. The
+doc only requires an HTTP(S) upstream reachable by IP. Akshay's 2026-11-17 change moves the
+backend to a `tg_host` VM on the management network (`connect: mgmt`), so the CPT-offload demo
+no longer needs host SDP VFs. `plan/07` still carries the old SDP path in its body with a top
+note marking it as the original plan; only the note is current.
 
 ### E6. SmartNIC's `connect: virtio` is the wrong guest model
 
@@ -148,14 +150,13 @@ cat /etc/daolab/hw_class
 
 1. Rewrite `docs/sdp-blocker.md` (done in the same commit as this report): kernel/driver cause,
    correct PCI-function roles, answerable questions only.
-2. Fix the wording in `plan/07` §"SDP connectivity" and `README.md` current-use-case section
-   (SDP PF netdev, not virtio-net; VFs not yet created).
-3. `usecases/smartnic.yml`: `connect: sdp` for `hostvm`; verify via the SDP interface; keep the
+2. `usecases/smartnic.yml`: `connect: sdp` for `hostvm`; verify via the SDP interface; keep the
    placeholder clearly marked until VFs exist.
-4. `usecases/tls-proxy-nginx.yml`: add `sdp` to `requires`, or add a wire-backed backend
-   variant to unblock the CPT demo without host SDP.
-5. `usecases/vpp.yml`: decide whether the demo is "VPP on DPU" (drop `hw_class`, keep E810
+3. `usecases/vpp.yml`: decide whether the demo is "VPP on DPU" (drop `hw_class`, keep E810
    tgen) or "documented host offload" (add `sdp`, host VM with SDP VF, `octep_cp_plugin`).
-6. Resolve the `smartnic-turnkey` / `smartnic` duplicate (rename the seed row or drop it and
+4. Resolve the `smartnic-turnkey` / `smartnic` duplicate (rename the seed row or drop it and
    update `tests/test_api.py`).
-7. Older pending items: B-60 otel tag/`tcpcheck` fix; B-102 device-allocation schema.
+5. `plan/07` body still describes the SDP backend; trim it or keep the historical note.
+6. Proposed device-allocation schema task is **B-103** (B-102 is now Akshay's TLS end-to-end).
+7. B-60's otel issues are resolved on this branch: `otel-collector-contrib:0.160.0` exists
+   (verified with `docker manifest inspect`), and `tcpcheck` is a contrib receiver in that line.
