@@ -189,6 +189,34 @@ AΓÇôP). Owner `ΓÇö` = not assigned yet.
 | B-101 | Operations: CI running the tests on every push; a DB backup timer; token expiry | `.github/workflows/`, `deploy/`, `service/models.py` | ΓÇö | `mistakes.md` K6, J15, J13 closed | Akshay | done (`f0cbc1a` on `b93-xo`; CI on every push; the 3 tests that failed on run #4 were the open B-94 / B-95 findings, fixed by `4190966` and `953ffda`) |
 | B-102 | The TLS proxy (`tls-proxy-nginx`) end to end on the real board, without SDP: client VM -> HTTPS to nginx-tls on the DPU (CPT offload) -> backend VM over mgmt (DAO_Setups Setup 2) | `usecases/tls-proxy-nginx.yml`, `playbooks/apps/nginx-tls/` | B-81 | deploy, `verify`, End on tb-01, board back at rest | Akshay | done (`e4b859b`, `544a2bc` on `b93-xo`; 2026-11-17, reservation 4 on xeon3-oct-112: ready in ~3.5 min, `verify ok` for 100B-4MB, `200 1048576` from the client VM, released with XO `[]` and nginx-tls back on `proxy_pass http://10.68.0.194`; `mistakes.md` Q10, Q11) |
 
+## P8 - Per-user workspace snapshots
+
+At slot end the owner's `/home/lab` and allowlisted board state (driver bindings, VFs,
+hugepages) are sealed into an archive only the owner's token can open, and wiped from the
+board; in a later slot the owner restores it. Design: "Per-user workspace snapshots - design
+and implementation plan" (shared doc). Track A = service code (mock runner is enough);
+track B = playbooks and the real board.
+
+| ID | Task | Files | Depends | Done when | Owner | Status |
+|---|---|---|---|---|---|---|
+| B-103 | Crypto module: user key (X25519, private half wrapped under HKDF(token)), per-snapshot data key, chunked AES-256-GCM file format, re-wrap for token renewal, `seal` / `open` CLI | `service/snapshot.py`, `pyproject.toml`, `tests/test_snapshot_crypto.py` | - | round trip; wrong token / context / DEK refused; tampered, truncated, reordered, extended files refused; re-wrap keeps old snapshots readable | Akshay | done (branch `snapshots`) |
+| B-104 | Migrations 12 (`user_keys`, `snapshots`, `reservations.save_snapshot`, `setups.snapshot_bdfs`) + 13 (`jobs.kind` accepts `restore`, `jobs.snapshot_id`, `jobs.secret`); model functions; `transition_job` clears `secret` on finish | `service/migrations.py`, `service/models.py`, `tests/test_snapshot_models.py` | - | fresh / v11 / current DB upgrade; 13 keeps job rows and FKs and fails loudly on unexpected CHECK text; secret wiped on succeeded and failed | Akshay | done (branch `snapshots`); `restore` joins `JOB_KINDS` in B-109 |
+| B-105 | User key on booking; `save_snapshot` in `POST /reservations`; raw token reaches the handlers; self-service token renewal that re-wraps the key | `service/api.py`, `service/cli.py` | B-103, B-104 | first booking creates `user_keys` once; renewal with a valid token keeps old snapshots readable; admin rotate warns that snapshots are lost | | todo |
+| B-106 | Capture + seal + wipe in `cleanup.yml` (new play between revoke and the app cleanup); `snapshot_bdfs:` in setup YAML, loaded by `daolab sync` | `playbooks/roles/snapshot/`, `playbooks/cleanup.yml`, `setups/*.yml`, `service/catalog.py` | B-103 | on the board: slot end leaves `/home/lab` = `/etc/skel` and a `.snap`; the SDP RVU PF is never in a manifest | | todo |
+| B-107 | `check_home` residue in `verify_clean.yml`; `stash_home` in `reconcile.yml` (move to `/var/lib/daolab/unsaved/r<id>/`, never delete) | `playbooks/verify_clean.yml`, `playbooks/reconcile.yml` | - | a leftover file yields `home:lab`; reconcile stashes it | | todo |
+| B-108 | Engine + runner record the snapshot (`saving` before, `saved` / `failed` after, prune); a snapshot failure never changes the clean / residue decision; a `saving` row left by a crashed engine goes `failed` | `service/engine.py`, `service/runner.py` | B-104, B-106 | mock: `saved` on success; `DAOLAB_MOCK_FAIL=snapshot` still releases the setup | | todo |
+| B-109 | `restore` job end to end, files only: `POST /reservations/{id}/restore` (owner, slot live by the clock, one pending restore per reservation), `restore.yml`, runner + engine; `restore` added to `JOB_KINDS` / `MUTATING_JOB_KINDS` | `service/api.py`, `service/engine.py`, `service/runner.py`, `service/models.py`, `playbooks/restore.yml` | B-105, B-108 | files back in a new slot; `jobs.secret` NULL after every outcome | | todo |
+| B-110 | State replay: hugepages, `sriov_numvfs`, driver bindings for allowlisted BDFs only; only when `hw_class` and use case match; skip devices the running app holds open; read back every write | `playbooks/roles/snapshot/tasks/restore_state.yml` | B-109 | same `hw_class`: board matches the manifest; different: skipped with a reason | | todo |
+| B-111 | `GET /snapshots`, `DELETE /snapshots/{id}`, `GET /admin/unsaved`; retention (`DAOLAB_SNAPSHOT_KEEP`); purge of unsaved stashes (`DAOLAB_UNSAVED_DAYS`) | `service/api.py`, `service/config.py`, `deploy/` | B-104 | only own snapshots listed; retention enforced | | todo |
+| B-112 | Dashboard: "Save my workspace" in the Deploy dialog; Snapshots panel (Restore / Delete); admin unsaved list - built with DOM APIs, not `esc()` (validation report V4) | `dashboard/user.html`, `dashboard/admin.html` | B-109, B-111 | Restore enabled only in a live slot on the same setup | | todo |
+| B-113 | Real-board acceptance run: A saves, B sees an empty home and gets 403 on A's snapshot, A restores; then `DAOLAB_SNAPSHOTS=true` | - | all above | recorded run on xeon3-oct-112 | | todo |
+| B-114 | Plan docs: plan/01, 02, 04, 05, 06, 08, 09 section 7 | `plan/`, `README.md` | - | reviewed by the supervisor | | todo |
+
+Isolation caveat: wiping `/home/lab` stops files leaking to the next user, but `lab` keeps
+`NOPASSWD:ALL` and cleanup leaves root-owned files (validation report V1). Snapshots are
+private only once the DPU's root-level state is reset between slots too; B-113 is not
+signed off as "isolated" before that.
+
 ---
 
 ## Critical path and totals

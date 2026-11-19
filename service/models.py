@@ -434,6 +434,9 @@ def save_health_snapshot(conn, res_id: int, verdict: dict) -> str | None:
 
 # ---- jobs (B-20) -------------------------------------------------------------
 
+# The DB already accepts a fifth kind, `restore` (migration 13, B-104); it joins these two
+# lists in B-109, together with the runner method and engine handler that execute it
+# (tests/test_runner.py insists every kind listed here has a runner method).
 JOB_KINDS = ("deploy", "cleanup", "health_probe", "reconcile")
 MUTATING_JOB_KINDS = ("deploy", "cleanup", "reconcile")   # health probes are read-only (B-24)
 JOB_STATES = ("pending", "running", "succeeded", "failed")
@@ -580,7 +583,9 @@ def transition_job(conn, job_id: int, new_state: str, error: str | None = None) 
     Raises JobError for an unknown job, an illegal move, or if another writer changed the
     state between our read and our write (the UPDATE only matches the state we validated).
     `started_at` is stamped on running, `finished_at` on succeeded/failed; `error` is
-    recorded only for a failed job."""
+    recorded only for a failed job. Finishing a job (either way) also clears `secret` in the
+    same UPDATE (B-104): a restore job's data key never outlives the job, whatever path
+    finished it."""
     job = job_by_id(conn, job_id)
     if job is None:
         raise JobError(f"no job {job_id}")
@@ -596,6 +601,7 @@ def transition_job(conn, job_id: int, new_state: str, error: str | None = None) 
         changes["started_at"] = now
     else:
         changes["finished_at"] = now
+        changes["secret"] = None
     if new_state == "failed":
         changes["error"] = error
     assign = ", ".join(f"{k} = ?" for k in changes)
@@ -631,6 +637,190 @@ def append_job_step(conn, job_id: int, name: str, state: str = "ok",
         if cur.rowcount == 1:
             return step
     raise JobError(f"job {job_id}: could not append step {name!r} (too much contention)")
+
+
+# ---- workspace snapshots (B-104) ---------------------------------------------
+#
+# A snapshot is born `saving` when the cleanup job starts sealing, and ends `saved` (sealed
+# file on disk, data key wrapped to the owner) or `failed` (with a reason). The owner or an
+# admin can delete a saved or failed one; retention deletes the oldest saved ones. A deleted
+# row keeps its metadata for the audit trail but loses its wrapped data key, so even a
+# leftover file can no longer be opened.
+
+SNAPSHOT_STATES = ("saving", "saved", "failed", "deleted")
+SNAPSHOT_TRANSITIONS = {
+    "saving": ("saved", "failed"),
+    "saved": ("deleted",),
+    "failed": ("deleted",),
+    "deleted": (),
+}
+
+
+class SnapshotStateError(Exception):
+    """An illegal snapshot change, or the row changed under us."""
+
+
+def user_key(conn, user_id: int):
+    """The user's snapshot key (`snapshot.UserKey`), or None if they have none yet."""
+    from . import snapshot
+    row = conn.execute("SELECT * FROM user_keys WHERE user_id = ?", (user_id,)).fetchone()
+    if row is None:
+        return None
+    return snapshot.UserKey(row["public_key"], row["wrapped_private_key"], row["kdf_salt"])
+
+
+def ensure_user_key(conn, user_id: int, token: str):
+    """The user's snapshot key, created on first use (B-105 calls this while handling a
+    request, the only time the token is at hand). Two concurrent first calls are safe: the
+    INSERT is OR IGNORE on the primary key, and both return the row that won."""
+    from . import snapshot
+    existing = user_key(conn, user_id)
+    if existing is not None:
+        return existing
+    key = snapshot.new_user_key(token)
+    now = utcnow()
+    conn.execute(
+        "INSERT OR IGNORE INTO user_keys (user_id, public_key, wrapped_private_key, kdf_salt, "
+        "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, key.public_key, key.wrapped_private_key, key.kdf_salt, now, now))
+    return user_key(conn, user_id)
+
+
+def replace_user_key_wrapping(conn, user_id: int, old, new) -> bool:
+    """Store a re-wrapped key (token renewal, B-105) — compare-and-set on the old wrapping, and
+    only for the same public key, so a concurrent renewal or a swapped keypair is refused
+    (returns False) instead of silently making snapshots unreadable."""
+    if old.public_key != new.public_key:
+        raise SnapshotStateError("a re-wrap must keep the same public key")
+    cur = conn.execute(
+        "UPDATE user_keys SET wrapped_private_key = ?, kdf_salt = ?, "
+        "key_version = key_version + 1, updated_at = ? "
+        "WHERE user_id = ? AND public_key = ? AND wrapped_private_key = ? AND kdf_salt = ?",
+        (new.wrapped_private_key, new.kdf_salt, utcnow(), user_id, old.public_key,
+         old.wrapped_private_key, old.kdf_salt))
+    return cur.rowcount == 1
+
+
+def snapshot_by_id(conn, snap_id: int):
+    return conn.execute("SELECT * FROM snapshots WHERE id = ?", (snap_id,)).fetchone()
+
+
+def snapshot_context(snap) -> str:
+    """The context string a snapshot's file and data key are bound to (service/snapshot.py):
+    a sealed file or wrapped key moved to another row no longer opens."""
+    return f"user:{int(snap['user_id'])}|snapshot:{int(snap['id'])}"
+
+
+def dpu_hw_class(conn, setup_id: int) -> str | None:
+    """The setup's current DPU personality (the member `set_dpu_hw_class` writes)."""
+    row = conn.execute(
+        "SELECT hw_class FROM resources WHERE setup_id = ? AND kind = 'dpu' "
+        "ORDER BY name LIMIT 1", (setup_id,)).fetchone()
+    return row["hw_class"] if row else None
+
+
+def snapshot_bdfs(conn, setup_id: int) -> list[str]:
+    """The PCI devices a snapshot on this setup may record and a restore may rebind."""
+    row = conn.execute("SELECT snapshot_bdfs FROM setups WHERE id = ?", (setup_id,)).fetchone()
+    return from_json(row["snapshot_bdfs"]) if row else []
+
+
+def create_snapshot(conn, res_id: int) -> int:
+    """A `saving` row for this reservation, stamped with its owner, setup, use case and the
+    DPU's current hw_class (what a restore compares against, plan/01 invariant 6)."""
+    r = reservation_by_id(conn, res_id)
+    if r is None:
+        raise SnapshotStateError(f"no reservation {res_id}")
+    return insert(conn, "snapshots", {
+        "user_id": r["user_id"], "setup_id": r["setup_id"], "reservation_id": r["id"],
+        "usecase_id": r["usecase_id"], "hw_class": dpu_hw_class(conn, r["setup_id"])})
+
+
+def _move_snapshot(conn, snap_id: int, new_state: str, changes: dict) -> None:
+    snap = snapshot_by_id(conn, snap_id)
+    if snap is None:
+        raise SnapshotStateError(f"no snapshot {snap_id}")
+    if new_state not in SNAPSHOT_TRANSITIONS[snap["state"]]:
+        raise SnapshotStateError(f"snapshot {snap_id}: cannot go {snap['state']} -> {new_state}")
+    changes = {**changes, "state": new_state, "updated_at": utcnow()}
+    assign = ", ".join(f"{k} = ?" for k in changes)
+    cur = conn.execute(f"UPDATE snapshots SET {assign} WHERE id = ? AND state = ?",
+                       [*changes.values(), snap_id, snap["state"]])
+    if cur.rowcount != 1:
+        raise SnapshotStateError(
+            f"snapshot {snap_id}: state changed concurrently (expected {snap['state']})")
+
+
+def mark_snapshot_saved(conn, snap_id: int, *, path: str, size_bytes: int, sha256: str,
+                        wrapped_dek: str, header: dict | None = None) -> None:
+    """saving -> saved, with what the seal reported (service/snapshot.py SealResult)."""
+    _move_snapshot(conn, snap_id, "saved", {
+        "path": path, "size_bytes": int(size_bytes), "sha256": sha256,
+        "wrapped_dek": wrapped_dek, "header": to_json(header or {})})
+
+
+def mark_snapshot_failed(conn, snap_id: int, reason: str) -> None:
+    """saving -> failed. Never blocks the cleanup it belongs to (plan: section 6)."""
+    _move_snapshot(conn, snap_id, "failed", {"failure_reason": reason or "failed"})
+
+
+def mark_snapshot_deleted(conn, snap_id: int) -> str | None:
+    """saved/failed -> deleted. Forgets the wrapped data key; returns the sealed file's path
+    for the caller to remove (None if there was none)."""
+    snap = snapshot_by_id(conn, snap_id)
+    if snap is None:
+        raise SnapshotStateError(f"no snapshot {snap_id}")
+    _move_snapshot(conn, snap_id, "deleted", {"wrapped_dek": None})
+    return snap["path"]
+
+
+def snapshots_for(conn, user_id: int, setup_id: int | None = None,
+                  states: tuple[str, ...] = ("saving", "saved", "failed")):
+    """A user's snapshots, newest first, optionally on one setup."""
+    marks = ", ".join("?" for _ in states)
+    sql = f"SELECT * FROM snapshots WHERE user_id = ? AND state IN ({marks})"
+    args: list = [user_id, *states]
+    if setup_id is not None:
+        sql += " AND setup_id = ?"
+        args.append(setup_id)
+    return conn.execute(sql + " ORDER BY created_at DESC, id DESC", args).fetchall()
+
+
+def snapshot_for_reservation(conn, res_id: int):
+    """The newest snapshot taken at the end of this reservation, or None."""
+    return conn.execute(
+        "SELECT * FROM snapshots WHERE reservation_id = ? ORDER BY id DESC LIMIT 1",
+        (res_id,)).fetchone()
+
+
+def prune_snapshots(conn, user_id: int, setup_id: int, keep: int) -> list[str]:
+    """Retention (DAOLAB_SNAPSHOT_KEEP): keep the newest `keep` saved snapshots of this user
+    on this setup, delete the rest. Returns the sealed-file paths the caller must remove."""
+    if keep < 1:
+        raise SnapshotStateError("keep must be at least 1")
+    paths: list[str] = []
+    for snap in snapshots_for(conn, user_id, setup_id, states=("saved",))[keep:]:
+        path = mark_snapshot_deleted(conn, snap["id"])
+        if path:
+            paths.append(path)
+    return paths
+
+
+def restore_refusal(snap, res, user_id: int) -> str | None:
+    """Why `snap` cannot be restored into reservation `res` by `user_id`, or None if it can.
+    The API (B-109) maps a reason to its HTTP status; the clock check (the slot must have
+    started, report V13) is the API's, since this function has no clock."""
+    if snap is None or snap["user_id"] != user_id:
+        return "no such snapshot"                     # not yours = does not exist (no oracle)
+    if res is None or res["user_id"] != user_id:
+        return "no such reservation"
+    if snap["state"] != "saved":
+        return f"snapshot is {snap['state']}"
+    if snap["setup_id"] != res["setup_id"]:
+        return "snapshot was taken on another setup"
+    if res["state"] not in ("ready", "active"):
+        return f"reservation is {res['state']}"
+    return None
 
 
 # ---- reservation state machine (B-21) ----------------------------------------

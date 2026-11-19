@@ -255,6 +255,90 @@ def _m11_token_expiry(conn: sqlite3.Connection) -> None:
     add_column(conn, "users", "token_expires_at", "TEXT")
 
 
+def _m12_snapshots(conn: sqlite3.Connection) -> None:
+    """B-104 (workspace snapshots): the per-user key and the snapshots themselves.
+
+    `user_keys` holds one X25519 keypair per user (service/snapshot.py): the public half in
+    the clear (the cleanup job seals with it, no token needed), the private half encrypted
+    under a key derived from the user's bearer token. `snapshots` is one sealed archive of a
+    reservation's `/home/lab` plus its board-state manifest; `wrapped_dek` is that archive's
+    data key, wrapped to the owner's public key. Nothing here can be read without the
+    owner's token. `reservations.save_snapshot` is the owner's choice in the Deploy dialog
+    (on by default); `setups.snapshot_bdfs` is the JSON allowlist of PCI devices a snapshot
+    may record and a restore may rebind (the setup YAML's `snapshot_bdfs:`)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_keys (
+            user_id             INTEGER PRIMARY KEY REFERENCES users(id),
+            public_key          TEXT    NOT NULL,          -- X25519, base64
+            wrapped_private_key TEXT    NOT NULL,          -- AES-256-GCM under HKDF(token)
+            kdf_salt            TEXT    NOT NULL,          -- 16 random bytes, base64
+            key_version         INTEGER NOT NULL DEFAULT 1,
+            created_at          TEXT    NOT NULL,
+            updated_at          TEXT    NOT NULL
+        )""")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS snapshots (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id        INTEGER NOT NULL REFERENCES users(id),
+            setup_id       INTEGER NOT NULL REFERENCES setups(id),
+            reservation_id INTEGER NOT NULL REFERENCES reservations(id),
+            usecase_id     INTEGER NOT NULL REFERENCES usecases(id),
+            hw_class       TEXT,                           -- the DPU personality when saved
+            state          TEXT    NOT NULL DEFAULT 'saving'
+                           CHECK (state IN ('saving', 'saved', 'failed', 'deleted')),
+            path           TEXT,                           -- the sealed file
+            size_bytes     INTEGER,
+            sha256         TEXT,                           -- of the sealed file
+            wrapped_dek    TEXT,                           -- the data key, wrapped to the owner
+            header         TEXT    NOT NULL DEFAULT '{}',  -- plaintext JSON summary
+            failure_reason TEXT,                           -- set only in state 'failed'
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL
+        )""")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_owner "
+        "ON snapshots(user_id, setup_id, created_at)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_reservation ON snapshots(reservation_id)")
+    add_column(conn, "reservations", "save_snapshot",
+               "INTEGER NOT NULL DEFAULT 1 CHECK (save_snapshot IN (0, 1))")
+    add_column(conn, "setups", "snapshot_bdfs", "TEXT NOT NULL DEFAULT '[]'")
+
+
+_OLD_JOB_KINDS = "'deploy', 'cleanup', 'health_probe', 'reconcile')"
+_NEW_JOB_KINDS = "'deploy', 'cleanup', 'health_probe', 'reconcile', 'restore')"
+
+
+def _m13_restore_jobs(conn: sqlite3.Connection) -> None:
+    """B-104: a new job kind, `restore` (the owner puts a snapshot back into a live slot).
+    The `jobs.kind` CHECK from migration 5 lists the four existing kinds and SQLite cannot
+    ALTER a CHECK, so the table definition is rewritten in place exactly as migration 6 does
+    for reservations (relaxing a constraint: no data copied, no foreign keys touched; fails
+    loudly if the expected text is not there). `jobs.snapshot_id` is the snapshot a restore
+    job puts back; `jobs.secret` is that snapshot's data key while the job is unfinished and
+    is cleared whenever the job finishes (`models.transition_job`), so it never outlives
+    the job."""
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+    ).fetchone()[0]
+    if "'restore'" not in sql:
+        if _OLD_JOB_KINDS not in sql:
+            raise RuntimeError(
+                "migration 13: cannot find the jobs.kind CHECK to rewrite "
+                f"(expected {_OLD_JOB_KINDS!r} in the table definition)")
+        version = conn.execute("PRAGMA schema_version").fetchone()[0]
+        conn.execute("PRAGMA writable_schema = ON")
+        conn.execute(
+            "UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = 'jobs'",
+            (sql.replace(_OLD_JOB_KINDS, _NEW_JOB_KINDS, 1),))
+        conn.execute(f"PRAGMA schema_version = {int(version) + 1}")
+        conn.execute("PRAGMA writable_schema = OFF")
+    add_column(conn, "jobs", "snapshot_id", "INTEGER REFERENCES snapshots(id)")
+    add_column(conn, "jobs", "secret", "TEXT")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -267,6 +351,8 @@ MIGRATIONS: list[Migration] = [
     Migration(9, "health_snapshots", _m9_health_snapshots),
     Migration(10, "reservation_access", _m10_reservation_access),
     Migration(11, "token_expiry", _m11_token_expiry),
+    Migration(12, "snapshots", _m12_snapshots),
+    Migration(13, "restore_jobs", _m13_restore_jobs),
 ]
 
 
