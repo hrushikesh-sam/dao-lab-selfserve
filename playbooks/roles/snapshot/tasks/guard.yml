@@ -1,0 +1,17 @@
+# The paths this role empties or moves must be what they claim: an absolute home folder that is
+# not / nor the skel it is restored from. A typo in an extra var must stop the play, not empty
+# the wrong directory.
+- name: the home folder paths are sane
+  ansible.builtin.assert:
+    that:
+      - snapshot_home is string and snapshot_home is match('^/[^/]')
+      - snapshot_home | regex_replace('/+$', '') not in ['', '/', '/root', '/etc', '/home']
+      - "'..' not in snapshot_home"
+      - snapshot_skel is match('^/[^/]')
+      - snapshot_home | regex_replace('/+$', '') != snapshot_skel | regex_replace('/+$', '')
+      - snapshot_unsaved_dir is match('^/[^/]')
+      - snapshot_home_policy in ['keep', 'wipe', 'snapshot']
+    fail_msg: >-
+      refusing to touch the home folder: home={{ snapshot_home }} skel={{ snapshot_skel }}
+      unsaved={{ snapshot_unsaved_dir }} policy={{ snapshot_home_policy }}
+    quiet: true

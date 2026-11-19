@@ -11,3 +11,8 @@ diagram: |
   graph LR
     C[client VM · tg-01-xcp] -- HTTPS 443 / 25G p0 --> P[DPU · OCTEON CN106]
     P -- 25G p1 --> B[backend VM · dpu-01-xcp]
+# B-106: the DPU devices a workspace snapshot records (driver, driver_override, sriov_numvfs)
+# and a restore may rebind (B-110). Fill from `dpdk-devbind.py -s` on xeon3-oct-112 with only
+# the devices the use cases bind - NEVER the SDP RVU PF (the OVS mailbox needs it on rvu_af).
+# Empty: a snapshot records the home folder and the hugepage counts only.
+snapshot_bdfs: []

@@ -4,6 +4,10 @@
 #   play 1   the DPU    revoke the owner's access FIRST (sessions killed, key emptied, password
 #                       scrambled, account locked + expired: access ends at end_at whatever
 #                       else happens - plan/09 §7), stop the reservation's telemetry agent
+#   play 1b  the DPU    the lab home folder, unless the home policy is `keep` (B-106,
+#                       roles/snapshot): seal it with the allowlisted board state into the
+#                       owner's snapshot, then empty it; a failed snapshot stashes it instead.
+#                       Before apps/: their cleanup resets the PCI drivers worth recording.
 #   apps/    the DPU    the app's cleanup by its runbook (apps/<app>/cleanup.yml: VPP stopped
 #                       and its port given back to the kernel, SmartNIC stopped and its devices
 #                       rebound, nginx-tls left running as the board's resting state)
@@ -31,6 +35,16 @@
       become: true
       ansible.builtin.shell: systemctl disable --now daolab-otel 2>/dev/null || true
       changed_when: false
+
+- name: the owner's workspace (B-106)
+  hosts: r_dpu
+  gather_facts: false
+  tasks:
+    - name: save and empty the lab home folder
+      ansible.builtin.include_role:
+        name: snapshot
+        tasks_from: end_of_slot
+      when: (daolab_home_policy | default('keep')) != 'keep'
 
 - name: the DAO app's cleanup
   ansible.builtin.import_playbook: "apps/{{ daolab_app | default('none') }}/cleanup.yml"

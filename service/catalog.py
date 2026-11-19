@@ -17,6 +17,7 @@ ROLE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)_ip\}")
 EXPECT = re.compile(r"^(==|!=|>=|<=|>|<)\s*-?\d+(\.\d+)?$")
 KINDS = ("dpu", "gpu", "nic", "compute")
+BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")   # PCI domain:bus:dev.fn
 ON_VALUES = ("dpu", "dpu_host", "tg_host")
 SEVERITIES = ("critical", "degraded")
 DEFAULT_IP_POOL = ipam.DEFAULT_POOL   # the single DAOLAB_IP_POOL-backed pool (B-43)
@@ -391,7 +392,8 @@ def load_setups(dir_path: str, known_hosts: set[str]) -> tuple[list[dict], list[
         if not isinstance(doc, dict):
             errors.append(f"{fname}: document: must be a mapping")
             continue
-        _check_keys(doc, {"name", "pool", "members", "links", "diagram"}, fname, "", errors)
+        _check_keys(doc, {"name", "pool", "members", "links", "diagram", "snapshot_bdfs"},
+                    fname, "", errors)
         name = doc.get("name")
         if name != stem or not (isinstance(name, str) and KEBAB.match(name)):
             errors.append(f"{fname}: name: must equal the file stem and be kebab-case")
@@ -441,6 +443,16 @@ def load_setups(dir_path: str, known_hosts: set[str]) -> tuple[list[dict], list[
         diagram = doc.get("diagram")
         if not (isinstance(diagram, str) and diagram.strip()):
             errors.append(f"{fname}: diagram: required non-empty mermaid source")
+        # B-106: the DPU devices a workspace snapshot records (driver, driver_override,
+        # sriov_numvfs) and a restore may rebind (B-110). An allowlist, never inferred: on the
+        # CN10K board the SDP RVU PF must stay off it (the OVS mailbox needs it on rvu_af).
+        bdfs = doc.get("snapshot_bdfs", [])
+        if not (isinstance(bdfs, list) and all(isinstance(b, str) and BDF.match(b) for b in bdfs)):
+            errors.append(f"{fname}: snapshot_bdfs: must be a list of PCI addresses "
+                          "like 0002:01:00.1 (lowercase hex)")
+            bdfs = []
+        elif len(set(bdfs)) != len(bdfs):
+            errors.append(f"{fname}: snapshot_bdfs: lists an address twice")
         union: set = set()
         for spec in members.values():
             if isinstance(spec, dict) and isinstance(spec.get("capabilities"), list):
@@ -450,6 +462,7 @@ def load_setups(dir_path: str, known_hosts: set[str]) -> tuple[list[dict], list[
         out.append({
             "name": stem, "pool": doc.get("pool"), "members": members, "links": links,
             "capabilities": sorted(union), "diagram": diagram or "", "yaml_path": fname,
+            "snapshot_bdfs": bdfs,
         })
     return out, errors
 
@@ -510,7 +523,8 @@ def sync(conn: sqlite3.Connection, usecases_dir: str | None = None,
             row = models.setup_by_name(conn, s["name"])
             fields = {"pool_id": pool_id, "capabilities": models.to_json(s["capabilities"]),
                       "links": models.to_json(s["links"]), "diagram": s["diagram"],
-                      "yaml_path": s["yaml_path"]}
+                      "yaml_path": s["yaml_path"],
+                      "snapshot_bdfs": models.to_json(s["snapshot_bdfs"])}
             setup_id = row["id"] if row else models.insert(conn, "setups", {"name": s["name"], **fields})
             if row:
                 models.update(conn, "setups", setup_id, fields)

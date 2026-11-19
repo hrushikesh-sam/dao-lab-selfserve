@@ -227,3 +227,43 @@ def test_shipped_usecases_use_parsed_verify_checks():
     tls = next(u for u in ucs if u["name"] == "tls-proxy-nginx")
     assert tls["roles"]["client"]["httpcheck"] == ["https://{proxy_ip}/test/1KB.html"]
     assert any('http_status_class="2xx"' in r["promql"] for r in tls["health"])
+
+
+# ---- B-106: snapshot_bdfs ------------------------------------------------------------------
+
+def _setup_with(tmp_path, bdfs_line):
+    st = tmp_path / "setups"
+    st.mkdir(parents=True)
+    text = open(os.path.join(ST_DIR, "tb-01.yml")).read()
+    text = "\n".join(l for l in text.splitlines() if not l.startswith("snapshot_bdfs"))
+    (st / "tb-01.yml").write_text(text + "\n" + bdfs_line + "\n")
+    return str(st)
+
+
+def test_snapshot_bdfs_default_to_none(conn):
+    catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    setup = models.setup_by_name(conn, "tb-01")
+    assert models.snapshot_bdfs(conn, setup["id"]) == []
+
+
+def test_snapshot_bdfs_are_synced(conn, tmp_path):
+    st = _setup_with(tmp_path, 'snapshot_bdfs: ["0002:01:00.1", "0002:02:00.0"]')
+    catalog.sync(conn, UC_DIR, st, INV)
+    setup = models.setup_by_name(conn, "tb-01")
+    assert models.snapshot_bdfs(conn, setup["id"]) == ["0002:01:00.1", "0002:02:00.0"]
+    st2 = _setup_with(tmp_path / "again", 'snapshot_bdfs: []')
+    catalog.sync(conn, UC_DIR, st2, INV)                          # a re-sync replaces the list
+    assert models.snapshot_bdfs(conn, setup["id"]) == []
+
+
+@pytest.mark.parametrize("line,why", [
+    ('snapshot_bdfs: "0002:01:00.1"', "list of PCI addresses"),
+    ('snapshot_bdfs: ["0002:01:00.1; reboot"]', "list of PCI addresses"),
+    ('snapshot_bdfs: ["0002:01:00.8"]', "list of PCI addresses"),       # function is 0-7
+    ('snapshot_bdfs: ["0002:01:00.1", "0002:01:00.1"]', "twice"),
+    ('snapshot_bdfs: [1]', "list of PCI addresses"),
+])
+def test_bad_snapshot_bdfs_are_refused(conn, tmp_path, line, why):
+    with pytest.raises(catalog.SyncError) as e:
+        catalog.sync(conn, UC_DIR, _setup_with(tmp_path, line), INV)
+    assert why in "\n".join(e.value.errors)

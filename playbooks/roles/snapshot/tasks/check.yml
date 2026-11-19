@@ -1,0 +1,16 @@
+# B-107, read-only: how many entries in the lab home folder are not an unchanged copy of
+# /etc/skel. Sets `snapshot_home_left` (an int); verify_clean.yml turns > 0 into the residue
+# item `dpu_home:<login>`.
+- name: guard
+  ansible.builtin.import_tasks: guard.yml
+
+- name: "step: check_home"
+  ansible.builtin.script:
+    cmd: home_leftovers.sh {{ snapshot_home | quote }} {{ snapshot_skel | quote }}
+    executable: /bin/bash
+  register: _home_left
+  changed_when: false
+
+- name: remember the count
+  ansible.builtin.set_fact:
+    snapshot_home_left: "{{ _home_left.stdout | trim | int }}"

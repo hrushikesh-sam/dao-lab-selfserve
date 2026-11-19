@@ -1,0 +1,29 @@
+# B-107: move whatever is left in the lab home folder into the root-only unsaved stash
+# (<unsaved>/r<reservation>-<UTC time>-<pid>/), then put /etc/skel back. Used by reconcile.yml
+# on `dpu_home` residue and by end_of_slot.yml when a snapshot could not be sealed. It never
+# deletes: an admin can recover the files until B-111 purges old stashes. A no-op (and no
+# change) when the folder holds nothing but skel.
+- name: count what is left
+  ansible.builtin.import_tasks: check.yml
+
+- name: "step: stash_home"
+  when: snapshot_home_left | int > 0
+  ansible.builtin.shell: |
+    set -eu
+    home={{ snapshot_home | quote }}
+    skel={{ snapshot_skel | quote }}
+    base={{ snapshot_unsaved_dir | quote }}
+    owner=$(stat -c %u:%g "$home")
+    umask 077
+    mkdir -p "$base"
+    chmod 0700 "$base"
+    dest="$base/r{{ reservation_id | int }}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    mkdir "$dest"
+    find "$home" -mindepth 1 -maxdepth 1 -exec mv -t "$dest" -- {} +
+    if [ -d "$skel" ]; then cp -a "$skel/." "$home/"; fi
+    chown -R "$owner" "$home"
+    echo "stashed {{ snapshot_home_left }} entries in $dest"
+  args:
+    executable: /bin/bash
+  register: _stash
+  changed_when: true
