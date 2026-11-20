@@ -235,13 +235,23 @@ def _setup_with(tmp_path, bdfs_line):
     st = tmp_path / "setups"
     st.mkdir(parents=True)
     text = open(os.path.join(ST_DIR, "tb-01.yml")).read()
-    text = "\n".join(l for l in text.splitlines() if not l.startswith("snapshot_bdfs"))
+    text = text.split("\nsnapshot_bdfs:")[0]                     # drop tb-01's own list
     (st / "tb-01.yml").write_text(text + "\n" + bdfs_line + "\n")
     return str(st)
 
 
-def test_snapshot_bdfs_default_to_none(conn):
+def test_tb01_snapshot_bdfs_are_the_boards_use_case_devices(conn):
+    """tb-01's list, checked on xeon3-oct-112 on 2026-11-20: ML, SmartNIC PF, VPP live port,
+    CPT PF - never the SDP RVU PF (0002:01:00.0, rvu_af) or the PEM (0001:00:10.0)."""
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
+    setup = models.setup_by_name(conn, "tb-01")
+    bdfs = models.snapshot_bdfs(conn, setup["id"])
+    assert bdfs == ["0000:00:10.0", "0002:03:00.0", "0002:04:00.0", "0002:20:00.0"]
+    assert "0002:01:00.0" not in bdfs and "0001:00:10.0" not in bdfs
+
+
+def test_snapshot_bdfs_default_to_none(conn, tmp_path):
+    catalog.sync(conn, UC_DIR, _setup_with(tmp_path, ""), INV)
     setup = models.setup_by_name(conn, "tb-01")
     assert models.snapshot_bdfs(conn, setup["id"]) == []
 

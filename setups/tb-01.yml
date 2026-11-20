@@ -12,7 +12,19 @@ diagram: |
     C[client VM · tg-01-xcp] -- HTTPS 443 / 25G p0 --> P[DPU · OCTEON CN106]
     P -- 25G p1 --> B[backend VM · dpu-01-xcp]
 # B-106: the DPU devices a workspace snapshot records (driver, driver_override, sriov_numvfs)
-# and a restore may rebind (B-110). Fill from `dpdk-devbind.py -s` on xeon3-oct-112 with only
-# the devices the use cases bind - NEVER the SDP RVU PF (the OVS mailbox needs it on rvu_af).
-# Empty: a snapshot records the home folder and the hugepage counts only.
-snapshot_bdfs: []
+# and a restore may rebind (B-110): the ones the use cases rebind on xeon3-oct-112, checked
+# against `dpdk-devbind.py -s` and sysfs on the board on 2026-11-20.
+#   0000:00:10.0  a092 ML device        ml-tvm: unbound <-> vfio-pci (ml_pci)
+#   0002:03:00.0  a063 RPM PF enP2p3s0  SmartNIC PF (smartnic_pf)
+#   0002:04:00.0  a063 RPM PF enP2p4s0  VPP live port: rvu_nicpf <-> vfio-pci (pci_live_port)
+#   0002:20:00.0  a0f2 CPT PF           TLS: sriov_numvfs 24 (its 24 a0f3 VFs on vfio-pci)
+# Deliberately NOT listed (and refused by capture_state.py even if added):
+#   0002:01:00.0  a065 rvu_af - the SDP RVU PF that owns the 9 SDP VFs; the OVS mailbox needs
+#                 it on rvu_af
+#   0001:00:10.0  a06c PEM - one digit from the ML device
+# The SDP VFs 0002:01:00.1-0002:01:01.1 (a0f7) belong to the host path (B-85, blocked).
+snapshot_bdfs:
+  - "0000:00:10.0"
+  - "0002:03:00.0"
+  - "0002:04:00.0"
+  - "0002:20:00.0"

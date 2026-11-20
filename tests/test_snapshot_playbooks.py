@@ -396,3 +396,52 @@ def test_capture_state_device_without_a_driver(tmp_path):
     d.mkdir(parents=True)
     out = json.loads(capture(tmp_path, [VFIO_VF]).stdout)
     assert out["bdfs"][VFIO_VF]["present"] is True and out["bdfs"][VFIO_VF]["driver"] is None
+
+
+def _fake_device(sysfs, bdf, vendor_device, driver=None):
+    d = sysfs / "bus" / "pci" / "devices" / bdf
+    d.mkdir(parents=True)
+    vendor, device = vendor_device.split(":")
+    (d / "vendor").write_text(f"0x{vendor}\n")
+    (d / "device").write_text(f"0x{device}\n")
+    (d / "driver_override").write_text("(null)\n")
+    if driver:
+        drv = sysfs / "bus" / "pci" / "drivers" / driver
+        drv.mkdir(parents=True, exist_ok=True)
+        (d / "driver").symlink_to(drv)
+
+
+def test_capture_state_never_records_the_rvu_af_or_a_pem(tmp_path):
+    """Listed by mistake, the SDP RVU PF and the PEM are refused, so a restore (B-110) can
+    never rebind them. Caught by driver and by device id: an address typo cannot get past it."""
+    _fake_device(tmp_path, "0002:01:00.0", "177d:a065", "rvu_af")          # the SDP RVU PF
+    _fake_device(tmp_path, "0001:00:10.0", "177d:a06c")                    # the PEM
+    _fake_device(tmp_path, "0002:09:00.0", "177d:a0f7", "rvu_af")          # any device on rvu_af
+    _fake_device(tmp_path, "0002:0a:00.0", "177d:a065", "vfio-pci")        # the AF id, rebound
+    _fake_device(tmp_path, "0000:00:10.0", "177d:a092")                    # ML: recorded
+    out = json.loads(capture(tmp_path, ["0002:01:00.0", "0001:00:10.0", "0002:09:00.0",
+                                        "0002:0a:00.0", "0000:00:10.0"]).stdout)["bdfs"]
+    for bdf in ("0002:01:00.0", "0001:00:10.0", "0002:09:00.0", "0002:0a:00.0"):
+        assert out[bdf]["refused"].startswith("never recorded"), bdf
+        assert "driver" not in out[bdf] and "sriov_numvfs" not in out[bdf]
+    assert "refused" not in out["0000:00:10.0"]
+    assert out["0000:00:10.0"]["driver"] is None and out["0000:00:10.0"]["id"] == "177d:a092"
+
+
+def test_capture_state_on_the_tb01_board_as_seen_on_2026_11_20(tmp_path):
+    """The four tb-01 devices as dpdk-devbind.py -s and sysfs showed them with nginx-tls up."""
+    _fake_device(tmp_path, "0000:00:10.0", "177d:a092")
+    _fake_device(tmp_path, "0002:03:00.0", "177d:a063", "rvu_nicpf")
+    _fake_device(tmp_path, "0002:04:00.0", "177d:a063", "rvu_nicpf")
+    (tmp_path / "bus/pci/devices/0002:04:00.0/driver_override").write_text("rvu_nicpf\n")
+    _fake_device(tmp_path, "0002:20:00.0", "177d:a0f2", "rvu_cptpf")
+    for bdf, n, total in (("0002:03:00.0", 0, 3), ("0002:04:00.0", 0, 3), ("0002:20:00.0", 24, 64)):
+        (tmp_path / "bus/pci/devices" / bdf / "sriov_numvfs").write_text(f"{n}\n")
+        (tmp_path / "bus/pci/devices" / bdf / "sriov_totalvfs").write_text(f"{total}\n")
+    out = json.loads(capture(tmp_path, ["0000:00:10.0", "0002:03:00.0", "0002:04:00.0",
+                                        "0002:20:00.0"]).stdout)["bdfs"]
+    assert out["0002:04:00.0"]["driver"] == "rvu_nicpf"
+    assert out["0002:04:00.0"]["driver_override"] == "rvu_nicpf"
+    assert (out["0002:20:00.0"]["sriov_numvfs"], out["0002:20:00.0"]["sriov_totalvfs"]) == (24, 64)
+    assert out["0000:00:10.0"]["driver"] is None
+    assert not any("refused" in v for v in out.values())

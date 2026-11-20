@@ -3,7 +3,8 @@
 workspace snapshot records (B-106), as JSON on stdout. Read-only.
 
 For each allowlisted PCI device (setups.snapshot_bdfs): whether it exists, its driver and
-driver_override, its vendor:device, and for an SR-IOV PF its sriov_numvfs / sriov_totalvfs.
+driver_override, its vendor:device, and for an SR-IOV PF its sriov_numvfs / sriov_totalvfs -
+except the RVU admin function and the PEMs, which are marked `refused` and not recorded.
 For each hugepage size: the total and per-NUMA-node counts. A restore (B-110) replays only
 what differs, only on the same hw_class, and only for these devices.
 
@@ -16,6 +17,16 @@ import re
 import sys
 
 BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
+
+# Devices a snapshot never records, whatever the allowlist says - so a restore (B-110), which
+# replays only what was recorded, can never rebind them. Checked on the live board, not by
+# address, so a typo in a setup YAML cannot get past it.
+#   rvu_af / 177d:a065  the RVU admin function: every RVU PF and VF depends on it; on the CN10K
+#                       board it is the SDP RVU PF the OVS mailbox needs (0002:01:00.0)
+#   177d:a06c           a PEM (PCIe controller), one digit from the ML device (0001:00:10.0)
+NEVER_DRIVERS = {"rvu_af": "the RVU admin function (every RVU PF/VF depends on it)"}
+NEVER_IDS = {"177d:a065": "the RVU admin function (every RVU PF/VF depends on it)",
+             "177d:a06c": "a PEM (PCIe controller)"}
 
 
 def read(path):
@@ -38,13 +49,18 @@ def device(sysfs, bdf):
     if not os.path.isdir(d):
         return {"present": False}
     link = os.path.join(d, "driver")
+    driver = os.path.basename(os.readlink(link)) if os.path.islink(link) else None
+    pci_id = (f"{(read(os.path.join(d, 'vendor')) or '0x?')[2:]}:"
+              f"{(read(os.path.join(d, 'device')) or '0x?')[2:]}")
+    why = NEVER_DRIVERS.get(driver) or NEVER_IDS.get(pci_id)
+    if why:
+        return {"present": True, "id": pci_id, "refused": f"never recorded: {why}"}
     override = read(os.path.join(d, "driver_override"))
     return {
         "present": True,
-        "driver": os.path.basename(os.readlink(link)) if os.path.islink(link) else None,
+        "driver": driver,
         "driver_override": None if override in (None, "", "(null)") else override,
-        "id": f"{(read(os.path.join(d, 'vendor')) or '?')[2:]}:"
-              f"{(read(os.path.join(d, 'device')) or '?')[2:]}",
+        "id": pci_id,
         "sriov_numvfs": as_int(read(os.path.join(d, "sriov_numvfs"))),
         "sriov_totalvfs": as_int(read(os.path.join(d, "sriov_totalvfs"))),
     }
