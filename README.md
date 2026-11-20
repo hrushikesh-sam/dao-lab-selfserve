@@ -28,8 +28,8 @@ daolab add-user <name> ~/.ssh/<their key>.pub     # one per user; prints their d
 ```
 
 For a demo on the real board, `scripts/run/showcase.sh` does all of the above in one go: the
-ansible runner, DPU only unless started with `DAOLAB_DEPLOY_VMS=true`, VPP, SmartNIC and the TLS proxy as the
-deployable use cases (`DAOLAB_DEPLOYABLE=vpp,smartnic,tls-proxy-nginx`), one-minute slots so a click deploys
+ansible runner, DPU only unless started with `DAOLAB_DEPLOY_VMS=true`, VPP, SmartNIC, the TLS proxy and ML as the
+deployable use cases (`DAOLAB_DEPLOYABLE=vpp,smartnic,tls-proxy-nginx,ml-tvm`), one-minute slots so a click deploys
 within seconds, its own DB in `var/showcase.db`. It needs SSH as `dao-test` to the board and, for its sudo, a file holding only
 that password (`~/.daolab-become-dao-test`, chmod 600). `scripts/run/xo.sh` runs Xen Orchestra in
 a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its UI).
@@ -49,6 +49,10 @@ the whole suite on every push. On the real lab, from the dashboard:
   a backend VM over the management network and a client VM on an E810 VF; `verify` fetches five
   payloads through the proxy, the reservation goes **healthy** with telemetry on, and cleanup puts
   nginx-tls back on its resting config.
+- **ML on the MLIP** (2026-11-20): `ml-tvm` booked from the user dashboard; deploy binds the ML
+  device and adds two 512 MB hugepages beside nginx-tls's, the smoke inference verifies from the
+  DPU, the user ran ResNet50 INT8 as `lab` (2.45 ms, 408 inf/s, `Result: Success`), and End now
+  left the board identical to its pre-booking snapshot. Details: [COMPLETION_LOG.md](COMPLETION_LOG.md).
 - Password-mode access (login during the slot, refused after End now).
 
 Pending:
@@ -136,7 +140,7 @@ daolab/
 | virtio-blkio | block-device emulation to VMs via virtio | planned |
 | secgw-graph | security gateway: IPv4 routing + IPsec | planned |
 | smartnic-turnkey | universal SmartNIC turnkey app | planned |
-| ml-tvm | ML model inference via TVM | planned |
+| **ml-tvm** | ML model inference on the MLIP (Marvell's shipped ResNet50 models) | **deployable on tb-01** (DPU only, no VMs) |
 | snort-vectorscan | Snort IDS with VectorScan pattern matching | planned |
 | k8s-cni-offload | Kubernetes CNI networking offload | planned |
 | envoy | Envoy with accelerated TLS handshakes/crypto | planned |

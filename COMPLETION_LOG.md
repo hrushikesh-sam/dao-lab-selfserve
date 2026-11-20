@@ -13,6 +13,30 @@ What has been finished, newest first, with the evidence for each. The task list 
 | Real hardware | VPP with its VMs end to end (DPU + tgen/sink through XO), healthy, released, traced in Jaeger; the TLS proxy with its backend and client VMs end to end (B-102); SmartNIC on the DPU; password-mode access |
 | Not yet on hardware | SmartNIC's host VM (SDP VFs) |
 
+## 2026-11-20 — ML on the MLIP (`ml-tvm`), end to end through the dashboard
+
+- Manual bring-up on xeon3-oct-112 (2026-11-18): ML device `0000:00:10.0` (`177d:a092`) bound to
+  vfio-pci through sysfs (the board's `/usr/bin/dpdk-devbind.py` is Ubuntu DPDK 21.11, older than
+  DPDK's ML device support, and rejects it), two 512 MB hugepages added beside nginx-tls's,
+  `dpdk-test-mldev` (DPDK 25.11, static) with firmware `mlip-fw-0.1.24.11-7f268f876`. Marvell's
+  shipped models: ResNet50 FP16 5.72 ms / 174 inf/s, output bit-identical to the shipped
+  reference; INT8 2.45 ms / 408 inf/s; LUCID (DDoS) FP16/INT8 2.2 us / ~453k inf/s with a
+  placeholder input (speed only: no reference I/O ships for it).
+- Code: `9134632` (use case, playbooks, smoke test, exporter `--app ml`, DPU-side verify,
+  `verify_clean` residue), `c736d4b` and `f9ac36b` (two bugs found on the board:
+  dpdk-test-mldev colours its verdict even into files; Ansible's shell is dash).
+- Playbooks on the board by hand (2026-11-18): deploy, a second deploy changes nothing, cleanup
+  returns the board to the pre-deploy snapshot.
+- Through the dashboard (2026-11-20), `DAOLAB_DEPLOYABLE=...,ml-tvm scripts/run/showcase.sh`:
+  alice's reservation went active (`ml_up 1`, `ml_last_smoke_ok 1`); as `lab` she ran ResNet50
+  INT8 (2.45 ms, 408 inf/s, `Result: Success`); End now left only PIDs in the board snapshot
+  diff, nginx-tls untouched throughout. `/home/lab` kept her files: the home policy is `keep`
+  until `DAOLAB_SNAPSHOTS` (B-108).
+- Open: B-110 must decide how a restore treats the ML device (`snapshot_bdfs` lists it; a
+  snapshot records no hugepages); ML outputs are root-owned (users run with sudo), so the
+  snapshot tar/wipe must run as root; the guide's own compile-on-host flow (TVM/MMLC, MNIST)
+  needs an x86 build machine.
+
 ## 2026-11-17 — the TLS proxy use case, without SDP
 
 - Wired as DAO_Setups TLS_Proxy_ansible "Setup 2" (verified live 2026-09-05): client VM on an E810
