@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import urllib.error
 import urllib.request
+from datetime import timedelta
 from typing import NoReturn, cast
 
 from . import catalog, config, migrations, models
@@ -76,10 +77,11 @@ def cmd_add_user(args) -> int:
     except OSError as e:
         _die(f"cannot read {args.pubkey_path}: {e}")
     token = secrets.token_urlsafe(32)
+    expires = _token_expiry()
     conn = models.connect(config.settings.db_path)
     try:
         fields = {"role": args.role, "token_hash": hashlib.sha256(token.encode()).hexdigest(),
-                  "ssh_pubkey": pubkey}
+                  "ssh_pubkey": pubkey, "token_expires_at": expires}
         row = conn.execute("SELECT id FROM users WHERE username = ?", (args.username,)).fetchone()
         if args.rotate and row:
             # same user, new token (and key, role): the old token stops working, but the user's
@@ -90,6 +92,29 @@ def cmd_add_user(args) -> int:
     except sqlite3.IntegrityError:
         _die(f"duplicate user: {args.username} (pass --rotate to replace it)")
     print(f"token: {token}")
+    print(f"expires: {expires or 'never (DAOLAB_TOKEN_TTL_DAYS=0)'}")
+    return 0
+
+
+def _token_expiry() -> str | None:
+    """B-101 (J13): when a token issued now stops working; None when DAOLAB_TOKEN_TTL_DAYS=0."""
+    days = config.settings.token_ttl_days
+    if days <= 0:
+        return None
+    return models.format_ts(models.parse_ts(models.utcnow()) + timedelta(days=days))
+
+
+def cmd_revoke_token(args) -> int:
+    """B-101 (J13): the user's token stops working now. The row stays (reservations and audit
+    events reference it); `add-user --rotate` issues a new token later."""
+    conn = models.connect(config.settings.db_path)
+    row = conn.execute("SELECT id FROM users WHERE username = ?", (args.username,)).fetchone()
+    if row is None:
+        _die(f"unknown user: {args.username}")
+    models.update(conn, "users", row["id"], {
+        "token_hash": hashlib.sha256(secrets.token_bytes(32)).hexdigest(),   # nobody holds it
+        "token_expires_at": models.utcnow()})
+    print(f"revoked: {args.username}")
     return 0
 
 
@@ -159,6 +184,9 @@ def main() -> None:
                    help="if the user exists, give them a new token (and this key and role); "
                         "their reservations are kept (dev seeding)")
 
+    p = sub.add_parser("revoke-token", help="make a user's token stop working now")
+    p.add_argument("username")
+
     p = sub.add_parser("reserve", help="reserve a use case (or diy) via the API")
     p.add_argument("usecase")
     p.add_argument("start", help="YYYY-MM-DDTHH:MM[:SS] (UTC) or 'now'")
@@ -176,6 +204,7 @@ def main() -> None:
 
     args = parser.parse_args()
     handler = {"init": cmd_init, "sync": cmd_sync, "add-user": cmd_add_user,
+               "revoke-token": cmd_revoke_token,
                "reserve": cmd_reserve, "status": cmd_status}[args.command]
     sys.exit(handler(args))
 

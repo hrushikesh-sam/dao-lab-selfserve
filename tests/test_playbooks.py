@@ -9,6 +9,8 @@ Skipped unless ansible-playbook is available: `pip install -e .[ansible]`, or po
 DAOLAB_TEST_ANSIBLE_PLAYBOOK at one.
 """
 import json
+import time
+from pathlib import Path
 import os
 import shutil
 import stat
@@ -24,21 +26,42 @@ ANSIBLE = (os.environ.get("DAOLAB_TEST_ANSIBLE_PLAYBOOK") or shutil.which("ansib
 pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed "
                                                     "(pip install -e .[ansible])")
 
-FAKES = ("xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping",
+FAKES = ("daolab-xo", "xe", "xl", "pgrep", "pkill", "loginctl", "systemctl", "ping", "arping",
          "pktgen", "h2load", "which", "vppctl", "dpdk-devbind.py", "fakeproc", "getent",
-         "useradd", "usermod", "chpasswd", "chage", "visudo", "sshd")
+         "useradd", "usermod", "chpasswd", "chage", "visudo", "sshd", "dom0-ssh")
 E810_VFS = ["0000:5e:01.0", "0000:5e:01.1"]
 SDP_VFS = ["0000:03:02.0", "0000:03:02.1"]
 TPL_UUID = "11111111-tpl0-0000-0000-000000000000"
 NET_UUID = "22222222-net0-0000-0000-000000000000"
+SRIOV_UUID = "44444444-sriov-0000-0000-000000000000"
 MEMBERS = [{"name": "dpu-01", "kind": "dpu", "host": "tb-01-xcp"},
            {"name": "tg-01", "kind": "nic", "host": "tb-01-xcp"}]
 
 
+def _can_become() -> bool:
+    """Can a `become: true` task run here without a password prompt? True as root and with
+    passwordless sudo (CI); False on a laptop where sudo asks for a password."""
+    if os.geteuid() == 0:
+        return True
+    try:
+        return subprocess.run(["sudo", "-n", "true"], stdin=subprocess.DEVNULL,
+                              capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+# Where sudo needs a password, every play runs with become off (the extra var overrides the
+# tasks' `become: true`). Nothing here needs root: the hosts are local, the commands are the
+# fakelab script and every path is a temp dir. Root and CI keep become on, as before.
+CAN_BECOME = _can_become()
+
+
 def clean_state():
     return {"vms": {}, "templates": {"tpl-ubuntu2204-dao": TPL_UUID},
-            "networks": {"Pool-wide network associated with eth0": NET_UUID},
-            "assignable": E810_VFS + SDP_VFS, "lab_procs": 0, "units": {}, "pingable": [],
+            "networks": {"Pool-wide network associated with eth0": NET_UUID,
+                         "SRIOV-E810": SRIOV_UUID},
+            "assignable": E810_VFS + SDP_VFS, "sriov_vfs": E810_VFS,
+            "lab_procs": 0, "units": {}, "pingable": [],
             "files": {}}
 
 
@@ -62,9 +85,12 @@ class Lab:
                                 "ansible_python_interpreter": "{{ ansible_playbook_python }}"},
                        "children": {
                            "xcp_hosts": {"hosts": {"tb-01-xcp": {
+                               "ansible_host": "10.68.0.52", "mgmt_bridge": "xenbr0",
                                "e810_vfs": E810_VFS, "sdp_vfs": SDP_VFS,
                                "mgmt_network": "Pool-wide network associated with eth0",
-                               "sr_uuid": "33333333-sr00"}}},
+                               "sr_uuid": "33333333-sr00", "xo_pool": "pool-tb01",
+                               "sriov_networks": {"e810-vf": "SRIOV-E810",
+                                                  "sdp": "SRIOV-E810"}}}},
                            "dpus": {"hosts": {"dpu-01": {"ansible_host": "10.68.0.190"}}}}}}
         self.inventory = tmp_path / "hosts.json"
         self.inventory.write_text(json.dumps(inv))
@@ -82,7 +108,12 @@ class Lab:
     def run(self, playbook, roles_path=None, **extravars):
         ev = {"reservation_id": 12, "setup": "tb-01", "usecase": "vpp", "user": "alice",
               "ssh_pubkey": "ssh-ed25519 AAAAalice alice@laptop", "diy": False,
-              "daolab_members": MEMBERS, "daolab_output_file": str(self.out_path)}
+              "daolab_members": MEMBERS, "daolab_output_file": str(self.out_path),
+              "daolab_xo": "daolab-xo", "daolab_dom0_ssh": "dom0-ssh",
+              # never the test machine's own /sys or /dev/hugepages (release_hugepages writes)
+              "daolab_sysfs": str(self.dir / "sys"), "daolab_hugetlbfs": str(self.dir / "hugepages")}
+        if not CAN_BECOME:
+            ev["ansible_become"] = False
         ev.update(extravars)
         evfile = self.dir / "extravars.json"
         evfile.write_text(json.dumps(ev))
@@ -130,14 +161,15 @@ def dirty(state, rid=12):
 def test_verify_clean_on_a_clean_testbed_reports_nothing(lab):
     assert lab.run("verify_clean.yml", daolab_leases=["10.30.0.100"]) == 0, lab.stdout
     assert lab.output() == []
-    assert lab.calls("xe") and lab.calls("xl") and lab.calls("ping")      # it did look
+    assert lab.calls("daolab-xo") and lab.calls("ping")                # it did look (XO, B-93)
+    assert not lab.calls("xe") and not lab.calls("xl")                  # never on the dom0
 
 
 def test_verify_clean_reports_every_kind_of_residue(lab):
     lab.set(dirty(clean_state()))
     assert lab.run("verify_clean.yml", daolab_leases=["10.30.0.100", "10.30.0.101"]) == 0, lab.stdout
     assert sorted(lab.output()) == sorted([
-        "vm:daolab-r12-sink", "vf:0000:5e:01.1", "dpu_session:lab",
+        "vm:daolab-r12-sink", "dpu_session:lab",       # its VF goes with the VM (SR-IOV VIF)
         "dpu_app:daolab-app-dao-vpp.service", "ip:10.30.0.101"])
 
 
@@ -159,6 +191,26 @@ def test_verify_clean_is_read_only(lab):
     assert lab.state() == before
 
 
+def _hugepages(lab, n):
+    """A fake sysfs with n 512 MB hugepages reserved (SmartNIC's launch takes six)."""
+    d = lab.dir / "sys" / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "nr_hugepages").write_text(f"{n}\n")
+    return d / "nr_hugepages"
+
+
+def test_verify_clean_reports_hugepages_left_reserved(lab):
+    _hugepages(lab, 6)
+    assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
+    assert lab.output() == ["dpu_hugepages:6"]
+
+
+def test_verify_clean_accepts_hugepages_at_the_baseline(lab):
+    _hugepages(lab, 2)                                    # nginx-tls's two pages are the baseline
+    assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
+    assert lab.output() == []
+
+
 # ---- B-72: reconcile.yml ---------------------------------------------------------------
 
 def test_reconcile_destroys_every_kind_of_residue_and_verify_then_agrees(lab):
@@ -175,20 +227,26 @@ def test_reconcile_destroys_every_kind_of_residue_and_verify_then_agrees(lab):
     assert lab.output() == []
 
 
-def test_reconcile_rebinds_a_vf_that_lost_pciback(lab):
-    st = clean_state()
-    st["assignable"].remove("0000:03:02.0")                           # e.g. a crash rebinding it
-    lab.set(st)
+def test_reconcile_gives_the_hugepages_back(lab):
+    nr = _hugepages(lab, 6)
+    assert lab.run("reconcile.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
+    assert nr.read_text().strip() == "2"
+    assert lab.run("verify_clean.yml", daolab_sysfs=str(lab.dir / "sys")) == 0, lab.stdout
+    assert lab.output() == []
+
+
+def test_reconcile_destroys_through_xen_orchestra_and_never_logs_in_to_a_dom0(lab):
+    lab.set(dirty(clean_state()))
     assert lab.run("reconcile.yml") == 0, lab.stdout
-    assert "0000:03:02.0" in lab.state()["assignable"]
-    assert ["xl", "pci-assignable-add", "0000:03:02.0"] in lab.calls("xl")
+    assert ["daolab-xo", "destroy", "--vm", "vm-sink"] in lab.calls("daolab-xo")
+    assert not lab.calls("xe") and not lab.calls("xl")                 # B-93: XO only
 
 
 def test_reconcile_is_safe_on_a_clean_testbed_and_changes_nothing(lab):
     before = lab.state()
     assert lab.run("reconcile.yml") == 0, lab.stdout
     assert lab.state() == before
-    assert not [c for c in lab.calls("xe") if c[1] in ("vm-shutdown", "vm-uninstall")]
+    assert not [c for c in lab.calls("daolab-xo") if c[1] == "destroy"]
     assert not lab.calls("loginctl") and not lab.calls("pkill")
 
 
@@ -281,6 +339,16 @@ def run_role(lab, path):
     return lab.run(str(path))
 
 
+def test_otel_agent_retries_a_failed_download_before_failing(lab):
+    """mistakes.md Q13: a just-booted VM may not resolve github.com yet; the download is retried."""
+    path = _role_play(lab, "otel_agent", **_agent_vars(
+        lab, otel_agent_home=str(lab.dir / "lib"),
+        otel_agent_download_url="http://127.0.0.1:9/otelcol-contrib.tar.gz",
+        otel_agent_download_retries=2, otel_agent_download_delay=0))
+    assert run_role(lab, path) != 0
+    assert lab.stdout.count("FAILED - RETRYING") == 2, lab.stdout[-2000:]
+
+
 def test_otel_agent_renders_the_daolab_attributes_and_starts_the_unit(lab):
     import yaml
     (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")        # "installed" already
@@ -325,8 +393,34 @@ def test_otel_agent_render_only_for_cloud_init(lab):
     assert run_role(lab, path) == 0, lab.stdout
     cfg = yaml.safe_load((lab.dir / "rendered.yaml").read_text())
     assert cfg["receivers"]["httpcheck"]["targets"][0]["endpoint"] == "https://10.30.0.100/"
+    assert cfg["receivers"]["httpcheck"]["targets"][0]["headers"] == {"Connection": "close"}
     assert "httpcheck" in cfg["service"]["pipelines"]["metrics"]["receivers"]
     assert not lab.calls("systemctl")                               # nothing installed
+
+
+def test_otel_agent_on_a_vm_writes_its_config_and_starts_the_agent(lab):
+    """B-86: host_vm renders the VM's config; vm.yml writes it over SSH (too big for xenstore)."""
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
+    path = _role_play(lab, "otel_agent", tasks_from="vm",
+                      **_agent_vars(lab, otel_agent_vm_config="# rendered by host_vm\n"))
+    assert run_role(lab, path) == 0, lab.stdout
+    assert (lab.dir / "etc" / "otelcol.yaml").read_text() == "# rendered by host_vm\n"
+    assert lab.state()["units"]["daolab-otel.service"] == "active"
+    assert f"--config {lab.dir / 'etc' / 'otelcol.yaml'}" in (lab.dir / "daolab-otel.service").read_text()
+
+
+def test_otel_agent_on_a_vm_without_a_rendered_config_says_so(lab):
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
+    path = _role_play(lab, "otel_agent", tasks_from="vm", **_agent_vars(lab))
+    assert run_role(lab, path) != 0
+    assert "host_vm did not render one" in lab.stdout
+    assert not lab.calls("systemctl")
+
+
+def test_otel_agent_on_a_vm_without_a_collector_does_nothing(lab):
+    path = _role_play(lab, "otel_agent", tasks_from="vm", **_agent_vars(lab, otel_agent_collector=""))
+    assert run_role(lab, path) == 0, lab.stdout
+    assert not lab.calls("systemctl")
 
 
 def test_otel_agent_accepts_a_single_url_for_httpcheck(lab):
@@ -479,11 +573,13 @@ def test_deploy_vpp_end_to_end(lab, api, books):
     assert sorted(st["vms"]) == ["daolab-r12-sink", "daolab-r12-tgen"]
     sink, tgen = st["vms"]["daolab-r12-sink"], st["vms"]["daolab-r12-tgen"]
     assert (sink["power"], sink["ip"], tgen["ip"]) == ("running", "10.30.0.100", "10.30.0.101")
-    # deterministic VFs: k-th e810-vf role on tb-01-xcp takes e810_vfs[k]
-    assert (sink["other_config"]["pci"], tgen["other_config"]["pci"]) == \
-        ("0/0000:5e:01.0", "0/0000:5e:01.1")
+    # B-93: each e810-vf role gets a VIF on the SR-IOV network; xapi hands it a free VF on start
+    assert [v["network"] for v in sink["vifs"]] == ["template", SRIOV_UUID]
+    assert {sink["other_config"]["pci"], tgen["other_config"]["pci"]} == \
+        {"0/0000:5e:01.0", "0/0000:5e:01.1"}
     assert sorted(st["assignable"]) == sorted(SDP_VFS)
-    assert [v["device"] for v in sink["vifs"]] == ["0"]
+    assert all(vm["memory_fixed"] and "daolab-r12" in vm["tags"] for vm in st["vms"].values())
+    assert not lab.calls("xe") and not lab.calls("xl")                 # never on the dom0
     # the cloud-init seed: owner key on the owner's login only, the service key elsewhere
     ud = yaml.safe_load(seed(sink, "user-data"))
     users = {u["name"]: u["ssh_authorized_keys"] for u in ud["users"]}
@@ -492,7 +588,7 @@ def test_deploy_vpp_end_to_end(lab, api, books):
     assert ud["packages"] == ["iperf3"]
     net = yaml.safe_load(seed(sink, "network-config"))
     assert net["ethernets"]["mgmt0"]["addresses"] == ["10.30.0.100/24"]
-    assert net["ethernets"]["data0"] == {"match": {"driver": "iavf"}, "set-name": "data0",
+    assert net["ethernets"]["data0"] == {"match": {"driver": "iavf"},
                                          "addresses": ["10.65.0.37/24"]}
     assert "pktgen-dpdk" in yaml.safe_load(seed(tgen, "user-data"))["packages"]
     # the DPU app: Akshay's VPP runbook steps for a board at rest, then its health exporter
@@ -509,6 +605,57 @@ def test_deploy_vpp_end_to_end(lab, api, books):
     assert all(secret == "s3" for _, secret, _ in api["calls"])
     # verify ran pktgen against the sink's DATA address
     assert ["pktgen", "-t", "10.65.0.37", "--rate", "10mpps"] in lab.calls("pktgen")
+
+
+def test_deploy_with_a_collector_starts_the_agent_on_every_vm(lab, api, books):
+    """B-86: the VM health rules (vms_up, ssh_reachable) need an agent inside each VM."""
+    with_traffic(lab, pktgen="tx 1000 rx 1000: rx == tx")
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
+    assert deploy(lab, api, books, daolab_otel_collector="10.10.1.111:4317",
+                  otel_agent_bin=str(lab.dir / "otelcol-contrib"),
+                  otel_agent_config=str(lab.dir / "{{ inventory_hostname }}.yaml"),
+                  otel_agent_unit_dir=str(lab.dir)) == 0, lab.stdout[-3000:]
+    assert "step: otel_agent_vm" in lab.stdout
+    recap = {l.split()[0] for l in lab.stdout.splitlines() if " : ok=" in l}
+    for vm in ("daolab-r12-sink", "daolab-r12-tgen"):
+        assert vm in recap, recap                                  # the VM play reached it
+        assert seed(lab.state()["vms"][vm], "otel") == ""          # E2BIG: never in xenstore
+        cfg = yaml.safe_load((lab.dir / f"{vm}.yaml").read_text())     # written over SSH
+        assert cfg["exporters"]["otlp"]["endpoint"] == "10.10.1.111:4317"
+        roles = {a["key"]: a["value"] for a in cfg["processors"]["resource"]["attributes"]}
+        assert roles["daolab.role"] == vm.rsplit("-", 1)[1] and roles["host"] == vm
+    assert lab.state()["units"]["daolab-otel.service"] == "active"
+
+
+def test_every_seed_value_fits_the_xenstore_quota(lab, api, books):
+    """B-86: a value over oxenstored's quota-maxsize (2048) fails VM.start with E2BIG."""
+    with_traffic(lab, pktgen="rx == tx")
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")
+    assert deploy(lab, api, books, daolab_otel_collector="10.10.1.111:4317",
+                  otel_agent_bin=str(lab.dir / "otelcol-contrib"),
+                  otel_agent_config=str(lab.dir / "{{ inventory_hostname }}.yaml"),
+                  otel_agent_unit_dir=str(lab.dir)) == 0, lab.stdout[-3000:]
+    for vm in lab.state()["vms"].values():
+        sizes = {k: len(v) for k, v in vm["xenstore"].items()}
+        assert all(n < 2048 for n in sizes.values()), sizes
+
+
+def test_a_paused_vm_stops_the_deploy_instead_of_another_start(lab, api, books):
+    """B-86: a start that failed half way leaves the VM paused; starting it again cannot work."""
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
+    st = lab.state()
+    st["vms"]["daolab-r12-sink"]["power"] = "paused"
+    lab.set(st)
+    assert deploy(lab, api, books) != 0
+    assert "daolab-r12-sink is paused, not Running or Halted" in lab.stdout
+    assert "step: verify" not in lab.stdout.split("daolab-r12-sink is paused")[1]
+
+
+def test_deploy_without_a_collector_reaches_no_vm(lab, api, books):
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
+    assert "step: otel_agent_vm" not in lab.stdout
 
 
 def test_deploy_twice_changes_nothing(lab, api, books):
@@ -533,6 +680,21 @@ def test_a_conflicting_address_is_swapped_before_use(lab, api, books):
     assert deploy(lab, api, books) == 0, lab.stdout[-3000:]
     assert api["blocked"] == {"10.30.0.100"}
     assert {v["ip"] for v in lab.state()["vms"].values()} == {"10.30.0.101", "10.30.0.102"}
+    # B-97: the check is ARP from the VM's dom0, on its management bridge; never ICMP
+    probes = lab.calls("dom0-ssh")
+    assert probes and all(c[1] == "10.68.0.52" and c[2:6] == ["arping", "-c", "2", "-w"]
+                          and c[7:9] == ["-I", "xenbr0"] for c in probes)
+    assert {c[-1] for c in lab.calls("arping")} >= {"10.30.0.100", "10.30.0.101"}
+    assert not lab.calls("ping")
+
+
+def test_an_unreachable_dom0_fails_the_lease_instead_of_passing_as_free(lab, api, books):
+    st = clean_state()
+    st["dom0_down"] = True
+    lab.set(st)
+    assert deploy(lab, api, books) != 0
+    assert "Connection timed out" in lab.stdout
+    assert lab.state()["vms"] == {}                       # nothing created on an unchecked address
 
 
 def test_a_failed_verify_fails_the_deploy_and_says_why(lab, api, books):
@@ -559,7 +721,8 @@ def test_a_missing_template_is_named(lab, api, books):
 def test_running_out_of_vfs_is_named(lab, api, books):
     assert deploy(lab, api, books, daolab_roles={**VPP_ROLES, "extra": {
         "on": "tg_host", "vm": "tpl-ubuntu2204-dao", "install": [], "connect": "e810-vf"}}) != 0
-    assert "has no VF #2 in e810_vfs" in lab.stdout
+    # B-93: the SR-IOV network has no third VF; XO refuses the start and the deploy says so
+    assert "step: start_vm extra" in lab.stdout and "SRIOV" in lab.stdout
 
 
 def test_an_unknown_install_id_is_refused(lab, api, books):
@@ -675,7 +838,7 @@ def test_vpp_cleanup_gives_the_board_back(lab, books):
     assert ["systemctl", "start", "nginx-tls.service"] in lab.calls("systemctl")
 
 
-def _cleanup(lab, books, app):
+def _cleanup(lab, books, app, **over):
     wrapper = lab.dir / f"cleanup-{app}.yml"
     wrapper.write_text(yaml.safe_dump([
         {"hosts": "localhost", "gather_facts": False, "tasks": [
@@ -684,7 +847,7 @@ def _cleanup(lab, books, app):
         {"ansible.builtin.import_playbook": os.path.join(REPO, "playbooks", "apps", app,
                                                           "cleanup.yml")}]))
     return lab.run(str(wrapper), allow_destructive_changes=True, allow_cleanup=True,
-                   daolab_roles=VPP_ROLES, **books.vars)
+                   daolab_roles=VPP_ROLES, **{**books.vars, **over})
 
 
 def test_vpp_cleanup_of_a_board_at_rest_only_makes_sure_nginx_runs(lab, books):
@@ -718,13 +881,157 @@ def test_smartnic_cleanup_runs_the_runbook_cleanup(lab, books):
     assert books.ran() == ["03_cleanup"] and "dao-smart-nic" not in lab.state()["procs"]
 
 
+def test_smartnic_cleanup_gives_back_the_six_512mb_hugepages(lab, books):
+    """The launch reserves six 512 MB pages; the runbook cleanup never released them."""
+    d = Path(books.vars["daolab_sysfs"]) / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
+    d.mkdir(parents=True)
+    (d / "nr_hugepages").write_text("6\n")
+    board(lab, procs=["dao-smart-nic"])
+    assert _cleanup(lab, books, "dao-smartnic") == 0, lab.stdout[-2000:]
+    assert (d / "nr_hugepages").read_text().strip() == "2"          # nginx-tls keeps its pages
+    assert "step: release_hugepages" in lab.stdout
+
+
+def test_cleanup_removes_a_hugepage_file_nothing_maps_and_keeps_one_in_use(lab, books, tmp_path):
+    """VPP left e_cpt_engine<pid>map_0 on the hugetlbfs mount (2026-11-14): its page cannot be
+    released while the file exists. A file a live process maps is kept."""
+    huge = tmp_path / "hugepages"
+    huge.mkdir()
+    (huge / "e_cpt_engine82558map_0").write_text("x")
+    held = huge / "held_map_0"
+    held.write_text("x")
+    keeper = subprocess.Popen(["python3", "-c", f"import mmap,time;f=open({str(held)!r},'r+b');"
+                               "m=mmap.mmap(f.fileno(),0);time.sleep(120)"])
+    try:
+        time.sleep(0.5)
+        board(lab)
+        assert _cleanup(lab, books, "dao-smartnic", daolab_hugetlbfs=str(huge)) == 0, lab.stdout[-2000:]
+    finally:
+        keeper.kill()
+    assert sorted(p.name for p in huge.iterdir()) == ["held_map_0"]
+    assert "removed: " in lab.stdout and "in use: " in lab.stdout
+
+
+def test_smartnic_cleanup_leaves_hugepages_at_the_baseline_alone(lab, books):
+    d = Path(books.vars["daolab_sysfs"]) / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
+    d.mkdir(parents=True)
+    (d / "nr_hugepages").write_text("2\n")
+    board(lab)
+    assert _cleanup(lab, books, "dao-smartnic") == 0, lab.stdout[-2000:]
+    assert "step: release_hugepages" in lab.stdout
+    assert (d / "nr_hugepages").read_text() == "2\n"                 # not rewritten
+
+
+def test_cleanup_gives_nginx_tls_its_pages_back_when_none_are_left(lab, books):
+    """2026-11-17: below two 512 MB pages nginx-tls's CPT engine dies at start (rte_errno=12)."""
+    d = Path(books.vars["daolab_sysfs"]) / "kernel" / "mm" / "hugepages" / "hugepages-524288kB"
+    d.mkdir(parents=True)
+    (d / "nr_hugepages").write_text("0\n")
+    board(lab, procs=["vpp_main"])
+    assert _cleanup(lab, books, "dao-vpp") == 0, lab.stdout[-2000:]
+    assert (d / "nr_hugepages").read_text().strip() == "2"
+
+
+def test_cleanup_clears_engine_files_on_every_hugetlbfs_mount(lab, books, tmp_path):
+    """openssl-engine-dpdk-cn10k.sh mounts /mnt/huge next to /dev/hugepages."""
+    a, b = tmp_path / "dev-hugepages", tmp_path / "mnt-huge"
+    for d in (a, b):
+        d.mkdir()
+        (d / "e_cpt_engine100532map_0").write_text("x")
+    board(lab, procs=["vpp_main"])
+    assert _cleanup(lab, books, "dao-vpp", daolab_hugetlbfs=f"{a} {b}") == 0, lab.stdout[-2000:]
+    assert list(a.iterdir()) == [] and list(b.iterdir()) == []
+
+
+def test_vpp_cleanup_removes_the_hugepage_file_vpp_left(lab, books, tmp_path):
+    huge = tmp_path / "hugepages"
+    huge.mkdir()
+    (huge / "e_cpt_engine82558map_0").write_text("x")
+    board(lab, procs=["vpp_main"])
+    assert _cleanup(lab, books, "dao-vpp", daolab_hugetlbfs=str(huge)) == 0, lab.stdout[-2000:]
+    assert list(huge.iterdir()) == []
+
+
+REST_NGINX = """worker_processes 1;
+http {
+    server {
+        listen 443 ssl default_server;
+        location /test/ {
+            proxy_pass http://10.68.0.194;
+        }
+    }
+}
+"""
+TLS_ROLES = {"proxy": {"on": "dpu", "app": "nginx-tls", "upstream": "backend"},
+             "backend": {"on": "tg_host", "vm": "tpl-ubuntu2204-dao", "install": ["http-server"],
+                         "connect": "mgmt"}}
+
+
+def _tls(lab):
+    conf = lab.dir / "async_nginx.conf"
+    conf.write_text(REST_NGINX)
+    return conf, {"nginx_tls_conf": str(conf), "nginx_tls_manage_crypto": False,
+                  "nginx_tls_check": False}
+
+
 def test_tls_proxy_deploy_keeps_nginx_tls_running(lab, books):
     board(lab)
+    conf, tv = _tls(lab)
     assert vpp_deploy(lab, books, daolab_app="nginx-tls", usecase="tls-proxy-nginx",
-                      daolab_roles={"proxy": {"on": "dpu", "app": "nginx-tls"}}) == 0, \
+                      daolab_roles={"proxy": {"on": "dpu", "app": "nginx-tls"}}, **tv) == 0, \
         lab.stdout[-2000:]
     assert ["systemctl", "start", "nginx-tls.service"] in lab.calls("systemctl")
     assert "--app nginx" in (lab.dir / "daolab-app-exporter.service").read_text()
+    assert conf.read_text() == REST_NGINX                # no upstream role: resting backend
+
+
+def test_tls_proxy_points_nginx_at_the_reservations_backend_and_cleanup_restores_it(lab, books):
+    """DAO_Setups TLS_Proxy_ansible Setup 2: /test/ goes to the backend VM over mgmt."""
+    board(lab)
+    conf, tv = _tls(lab)
+    assert app_run(lab, books, "deploy.yml", daolab_app="nginx-tls", usecase="tls-proxy-nginx",
+                   daolab_roles=TLS_ROLES, daolab_deploy_vms=False, hw_class="",
+                   daolab_api_url="http://127.0.0.1:1", daolab_internal_secret="x",
+                   reservation_id=0, daolab_ips={"backend": "10.68.1.7"}, **tv) == 0, \
+        lab.stdout[-2000:]
+    assert "proxy_pass http://10.68.1.7;" in conf.read_text()
+    assert (lab.dir / "async_nginx.conf.daolab-rest").read_text() == REST_NGINX
+    assert "step: backend backend 10.68.1.7" in lab.stdout
+    assert _cleanup(lab, books, "nginx-tls", **tv) == 0, lab.stdout[-2000:]
+    assert conf.read_text() == REST_NGINX
+    starts = [c for c in lab.calls("systemctl") if c[:2] == ["systemctl", "start"]]
+    assert starts[-1] == ["systemctl", "start", "nginx-tls.service"]
+    assert not (lab.dir / "async_nginx.conf.daolab-rest").exists()
+
+
+def test_tls_proxy_cleanup_keeps_a_hand_edit_of_the_resting_config(lab, books):
+    """The saved copy goes with each cleanup, so the next deploy saves the config as it is then
+    (here hand-edited between reservations) and its cleanup puts that back, not the older one."""
+    board(lab)
+    conf, tv = _tls(lab)
+    run = dict(daolab_app="nginx-tls", usecase="tls-proxy-nginx", daolab_roles=TLS_ROLES,
+               daolab_deploy_vms=False, hw_class="", daolab_api_url="http://127.0.0.1:1",
+               daolab_internal_secret="x", reservation_id=0, daolab_ips={"backend": "10.68.1.7"},
+               **tv)
+    assert app_run(lab, books, "deploy.yml", **run) == 0, lab.stdout[-2000:]
+    assert _cleanup(lab, books, "nginx-tls", **tv) == 0, lab.stdout[-2000:]
+    edited = REST_NGINX.replace("10.68.0.194", "10.68.0.195")
+    conf.write_text(edited)
+    assert app_run(lab, books, "deploy.yml", **run) == 0, lab.stdout[-2000:]
+    assert "proxy_pass http://10.68.1.7;" in conf.read_text()
+    assert _cleanup(lab, books, "nginx-tls", **tv) == 0, lab.stdout[-2000:]
+    assert conf.read_text() == edited
+    assert not (lab.dir / "async_nginx.conf.daolab-rest").exists()
+
+
+def test_tls_proxy_deploy_gives_the_engine_its_hugepages(lab, books):
+    board(lab)
+    conf, tv = _tls(lab)
+    nr = _hugepages(lab, 0)
+    assert vpp_deploy(lab, books, daolab_app="nginx-tls", usecase="tls-proxy-nginx",
+                      daolab_roles=TLS_ROLES, daolab_sysfs=str(lab.dir / "sys"), **tv) == 0, \
+        lab.stdout[-2000:]
+    assert nr.read_text().strip() == "2"
 
 
 def test_a_board_without_a_personality_marker_is_assumed_to_match(lab, books):
@@ -866,7 +1173,7 @@ def test_cleanup_is_safe_on_a_clean_testbed(lab, books):
     before = lab.state()
     assert cleanup(lab, books) == 0, lab.stdout[-2000:]
     assert lab.state()["vms"] == before["vms"]
-    assert not [c for c in lab.calls("xe") if c[1] in ("vm-shutdown", "vm-uninstall")]
+    assert not [c for c in lab.calls("daolab-xo") if c[1] == "destroy"]
 
 
 def test_verify_clean_sees_an_app_process_left_running(lab):
@@ -906,7 +1213,7 @@ def test_without_vms_verify_cleanup_and_reconcile_never_touch_the_dom0(lab, book
     assert cleanup(lab, books, daolab_deploy_vms=False) == 0, lab.stdout[-2000:]
     assert lab.run("reconcile.yml", daolab_deploy_vms=False, daolab_app="none",
                    **books.vars) == 0, lab.stdout[-2000:]
-    assert not lab.calls("xe") and not lab.calls("xl")
+    assert not lab.calls("xe") and not lab.calls("xl") and not lab.calls("daolab-xo")
     assert "daolab-r12-sink" in lab.state()["vms"]    # untouched
 
 
@@ -1018,3 +1325,74 @@ def test_ansible_cfg_keeps_pipelining_off():
     cfg = configparser.ConfigParser()
     cfg.read(os.path.join(REPO, "playbooks", "ansible.cfg"))
     assert cfg["ssh_connection"].getboolean("pipelining") is False
+
+
+# ---- B-96: a DPU-only deploy has a functional gate (mistakes.md I10, P3) ------------------
+
+def test_a_dpu_only_vpp_deploy_checks_eth0_is_up_with_its_address(lab, api, books):
+    assert deploy(lab, api, books, daolab_deploy_vms=False) == 0, lab.stdout[-3000:]
+    assert "VPP eth0 is up with 10.65.0.192/24" in lab.stdout
+    assert ["vppctl", "-s", "/run/vpp/cli.sock", "show", "interface", "address"] in lab.calls("vppctl")
+
+
+def test_a_dpu_only_vpp_deploy_fails_when_eth0_is_down(lab, api, books):
+    st = lab.state()
+    st["vpp_ifaddr"] = "eth0 (dn):\nlocal0 (dn):"
+    lab.set(st)
+    assert deploy(lab, api, books, daolab_deploy_vms=False) != 0
+    assert "VPP is running but its live port is not ready" in lab.stdout
+
+
+def test_a_dpu_only_vpp_deploy_fails_when_eth0_has_no_address(lab, api, books):
+    st = lab.state()
+    st["vpp_ifaddr"] = "eth0 (up):\nlocal0 (dn):"
+    lab.set(st)
+    assert deploy(lab, api, books, daolab_deploy_vms=False) != 0
+    assert "expected 'eth0 (up)' with L3 10.65.0.192/24" in lab.stdout
+
+
+
+# ---- B-95 (mistakes.md I9, P2): parsed verify checks; the VM agent's httpcheck targets ------
+
+PARSED = {"from": "tgen", "cmd": "pktgen -t {sink_ip}",
+          "match": r"tx (?P<tx>\d+) rx (?P<rx>\d+)", "expect": {"tx": "== 1000", "rx": ">= 1000"}}
+
+
+def test_parsed_verify_passes_on_the_right_numbers(lab, api, books):
+    with_traffic(lab, pktgen="run 7: tx 1000 rx 1000")
+    assert deploy(lab, api, books, daolab_verify=PARSED) == 0, lab.stdout[-3000:]
+    assert "verify ok: rx = 1000 (>= 1000)" in lab.stdout
+
+
+def test_parsed_verify_names_the_number_that_is_wrong(lab, api, books):
+    with_traffic(lab, pktgen="tx 1000 rx 3 (rx 1000 expected)")   # a stray 1000 cannot pass it
+    assert deploy(lab, api, books, daolab_verify=PARSED) != 0
+    assert "verify failed: rx = 3, expected >= 1000" in lab.stdout
+
+
+def test_verify_fails_on_a_nonzero_exit_even_with_the_right_text(lab, api, books):
+    with_traffic(lab, pktgen="tx 1000 rx 1000")
+    v = {**PARSED, "cmd": "pktgen -t {sink_ip}; exit 3"}
+    assert deploy(lab, api, books, daolab_verify=v) != 0
+    assert "verify failed: `pktgen -t 10.65.0.37; exit 3` exited 3" in lab.stdout
+
+
+def test_verify_says_when_the_output_does_not_match(lab, api, books):
+    with_traffic(lab, pktgen="connection refused")
+    assert deploy(lab, api, books, daolab_verify=PARSED) != 0
+    assert "does not match" in lab.stdout and "connection refused" in lab.stdout
+
+
+def test_httpcheck_urls_reach_the_vm_agent_with_data_plane_addresses(lab, api, books):
+    (lab.dir / "otelcol-contrib").write_text("#!/bin/sh\n")         # "installed" on the DPU
+    roles = {**VPP_ROLES, "tgen": {**VPP_ROLES["tgen"], "httpcheck": ["https://{vpp_ip}/"]}}
+    with_traffic(lab, pktgen="rx == tx")
+    assert deploy(lab, api, books, daolab_roles=roles, daolab_otel_collector="otel.lab:4317",
+                  otel_agent_bin=str(lab.dir / "otelcol-contrib"),
+                  otel_agent_config=str(lab.dir / "{{ inventory_hostname }}.yaml"),
+                  otel_agent_unit_dir=str(lab.dir)) == 0, lab.stdout[-3000:]
+    tgen = yaml.safe_load((lab.dir / "daolab-r12-tgen.yaml").read_text())
+    assert tgen["receivers"]["httpcheck"]["targets"][0]["endpoint"] == "https://10.65.0.192/"
+    assert "httpcheck" in tgen["service"]["pipelines"]["metrics"]["receivers"]
+    sink = yaml.safe_load((lab.dir / "daolab-r12-sink.yaml").read_text())
+    assert "httpcheck" not in sink["receivers"]                     # only the role that asks

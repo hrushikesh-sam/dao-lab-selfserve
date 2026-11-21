@@ -37,6 +37,9 @@
   hosts: dpu
   gather_facts: false
   tasks:
+    - name: hugepages back to the resting count (two, for nginx-tls's engine) before it starts
+      ansible.builtin.include_tasks: ../../tasks/release_hugepages.yml
+
     - name: "step: stop_app"
       become: true
       ansible.builtin.command: systemctl start {{ nginx_service }}

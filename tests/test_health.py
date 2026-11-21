@@ -17,7 +17,7 @@ RULES = [
     {"name": "datapath", "promql": 'rate(rx{daolab_reservation="$RID"}[1m])', "expect": "> 0",
      "severity": "degraded"},
 ]
-FRESH = 'max(timestamp({daolab_reservation="7"}))'
+FRESH = 'max(timestamp(up{daolab_reservation="7"}))'
 T0 = NOW.timestamp()
 
 
@@ -226,3 +226,10 @@ def test_end_to_end_through_the_client(prom):
     routes['rate(rx{daolab_reservation="7"}[1m])'] = vec(3)
     v = health.evaluate(RULES, RID, health.prometheus(url), NOW, 120)
     assert v.verdict == "down" and v.reason == "failing: dpu_app"
+
+
+def test_freshness_reads_up_so_series_that_differ_only_by_name_do_not_collide():
+    """B-86: timestamp() drops __name__; on real agents `timestamp({daolab_reservation=..})`
+    fails ("vector cannot contain metrics with the same labelset"). `up` series never collide."""
+    q = health.substitute(health.FRESHNESS_QUERY, 4)
+    assert q == 'max(timestamp(up{daolab_reservation="4"}))'

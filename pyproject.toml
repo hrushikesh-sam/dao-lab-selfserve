@@ -22,8 +22,10 @@ dependencies = [
 [project.optional-dependencies]
 # The real runner (B-84) and the playbook tests (tests/test_playbooks.py); not needed for
 # DAOLAB_RUNNER=mock or the rest of the test suite.
+# The floor is 2.18: playbooks/roles/otel_agent uses `meta: end_role`, added in
+# ansible-core 2.18. Anything older aborts the role. Tested on 2.21.5.
 ansible = [
-    "ansible-core>=2.16",
+    "ansible-core>=2.18",
     "ansible-runner>=2.3",
 ]
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """A fake testbed for running the real playbooks in tests (tests/test_playbooks.py).
 
-Installed under the names of the commands the playbooks call (xe, xl, pgrep, pkill, loginctl,
-systemctl, ping, arping), it answers from one JSON state file ($FAKELAB_STATE) and appends
+Installed under the names of the commands the playbooks call (daolab-xo, the B-93 Xen
+Orchestra client; xe, xl; pgrep, pkill, loginctl, systemctl, ping, arping, dom0-ssh), it answers from one JSON state file ($FAKELAB_STATE) and appends
 every call to $FAKELAB_LOG. Only the command forms the playbooks use are implemented; anything
 else exits 2 so a playbook that drifts from them fails loudly.
 
@@ -16,6 +16,7 @@ State:
   pingable   [ip, ...]                  addresses something answers on
   files      {path: text}               files the DPU-side commands are asked about
 """
+import fcntl
 import json
 import os
 import re
@@ -29,7 +30,7 @@ def load():
 
 
 def save(state):
-    tmp = os.environ["FAKELAB_STATE"] + ".tmp"
+    tmp = f'{os.environ["FAKELAB_STATE"]}.{os.getpid()}.tmp'      # own name per process
     with open(tmp, "w") as fh:
         json.dump(state, fh, indent=1, sort_keys=True)
     os.replace(tmp, os.environ["FAKELAB_STATE"])
@@ -299,6 +300,9 @@ def vppctl(args):
     state = load()
     if not any(re.fullmatch("vpp|vpp_main", n) for n in state.get("procs", [])):
         fail("clib_socket_init: connect: No such file or directory")
+    if "address" in args:                                  # show interface address (B-96 gate)
+        print(state.get("vpp_ifaddr", "eth0 (up):\n  L3 10.65.0.192/24\nlocal0 (dn):"))
+        return
     print("vpp v24.09.0-cn10k built by fakelab")
 
 
@@ -407,6 +411,124 @@ def arping(args):
     ping(args)
 
 
+def dom0_ssh(args):
+    """`dom0-ssh <host> <cmd...>`: the lease step's login to a dom0 (B-97). Runs <cmd> here,
+    where the other fakes answer it; the host is in the call log. `dom0_down` in the state
+    makes it fail as ssh does when it cannot log in (255)."""
+    if load().get("dom0_down"):
+        fail(f"ssh: connect to host {args[0]} port 22: Connection timed out", 255)
+    os.execvp(args[1], args[1:])
+
+
+def _opts(args):
+    """argparse-style --key value pairs (repeatable --tag kept as a list)."""
+    out, i = {"tag": []}, 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("--") and i + 1 < len(args):
+            k = a[2:]
+            if k == "tag":
+                out["tag"].append(args[i + 1])
+            else:
+                out[k] = args[i + 1]
+            i += 2
+        else:
+            i += 1
+    return out
+
+
+_POWER = {"running": "Running", "halted": "Halted"}
+
+
+def daolab_xo(args):
+    """The B-93 Xen Orchestra client (service/xo.py), faked on the same state as xe: every
+    subcommand the playbooks use, with the real one's output shapes and exit codes."""
+    state = load()
+    cmd, o = args[0], _opts(args[1:])
+    if cmd == "template":
+        u = state["templates"].get(o.get("name"))
+        if not u:
+            fail(f"daolab-xo: template {o.get('name')!r} is not in pool {o.get('pool')}", 3)
+        print(u)
+        return
+    if cmd == "network":
+        u = state["networks"].get(o.get("name"))
+        if not u:
+            fail(f"daolab-xo: network {o.get('name')!r} is not in pool {o.get('pool')}", 3)
+        print(u)
+        return
+    if cmd == "vms":
+        rows = []
+        for n, vm in sorted(state["vms"].items()):
+            if "name" in o and n != o["name"]:
+                continue
+            if "prefix" in o and not n.startswith(o["prefix"]):
+                continue
+            rows.append({"id": vm["uuid"], "name": n, "power": _POWER.get(vm["power"], vm["power"]),
+                         "ip": vm.get("ip") or "", "tags": vm.get("tags", [])})
+        print(json.dumps(rows))
+        return
+    if cmd == "create":
+        tpl = state["templates"].get(o["template"])
+        if not tpl:
+            fail(f"daolab-xo: template {o['template']!r} is not in pool {o.get('pool')}", 3)
+        name = o["name"]
+        if name in state["vms"]:
+            fail(f"fakelab: a VM named {name} already exists", 2)
+        vifs = [{"device": "0", "network": "template"}]
+        if o.get("sriov-network"):
+            net = state["networks"].get(o["sriov-network"])
+            if not net:
+                fail(f"daolab-xo: network {o['sriov-network']!r} is not in pool {o.get('pool')}", 3)
+            vifs.append({"device": "1", "network": net})
+        u = str(uuidlib.uuid4())
+        state["vms"][name] = {"uuid": u, "power": "halted", "other_config": {}, "xenstore": {},
+                              "vifs": vifs, "ip": None, "tags": o["tag"], "memory_fixed": True,
+                              "template": tpl}
+        save(state)
+        print(json.dumps({"id": u}))
+        return
+    if cmd == "seed":
+        _, vm = vm_by_uuid(state, o["vm"])
+        with open(o["file"]) as fh:
+            vm["xenstore"].update(json.load(fh))
+        save(state)
+        return
+    if cmd == "start":
+        _, vm = vm_by_uuid(state, o["vm"])
+        if vm["power"] == "running":
+            fail("XO POST /vms/x/actions/start: HTTP 500 VM_BAD_POWER_STATE")
+        if any(v["network"] != "template" for v in vm["vifs"]):     # an SR-IOV VIF takes a VF
+            free = [b for b in state["assignable"] if b in state.get("sriov_vfs", state["assignable"])]
+            if not free:
+                fail("XO POST /vms/x/actions/start: HTTP 500 NETWORK_SRIOV_INSUFFICIENT_CAPACITY")
+            state["assignable"].remove(free[0])
+            vm["other_config"]["pci"] = "0/" + free[0]
+        vm["power"] = "running"
+        # first boot: a seed-aware template applies the static address it was given (B-80)
+        vm["ip"] = (vm["xenstore"].get("vm-data/ip") if not state.get("template_ignores_seed")
+                    else None) or state.get("dhcp_ip")
+        save(state)
+        return
+    if cmd == "power":
+        _, vm = vm_by_uuid(state, o["vm"])
+        print(_POWER.get(vm["power"], vm["power"]))
+        return
+    if cmd == "ip":
+        _, vm = vm_by_uuid(state, o["vm"])
+        if not vm.get("ip"):
+            fail(f"daolab-xo: VM {o['vm']} reports no IPv4 address yet")
+        print(vm["ip"])
+        return
+    if cmd == "destroy":
+        name, vm = vm_by_uuid(state, o["vm"])
+        _release_vf(state, vm)
+        del state["vms"][name]
+        save(state)
+        return
+    fail(f"fakelab: unsupported daolab-xo command {args}", 2)
+
+
 def main():
     name = os.path.basename(sys.argv[0])
     log([name, *sys.argv[1:]])
@@ -415,10 +537,16 @@ def main():
                "pktgen": traffic, "h2load": traffic, "which": which, "vppctl": vppctl,
                "dpdk-devbind.py": devbind, "fakeproc": fakeproc, "getent": getent,
                "useradd": useradd, "usermod": usermod, "chpasswd": chpasswd, "chage": chage,
-               "visudo": visudo, "sshd": sshd}.get(name)
+               "visudo": visudo, "sshd": sshd, "daolab-xo": daolab_xo,
+               "dom0-ssh": dom0_ssh}.get(name)
     if handler is None:
         fail(f"fakelab: no fake for {name}", 2)
-    handler(sys.argv[1:])
+    # One fake command at a time: a play over several hosts (the VM agent play, B-86) runs them
+    # in parallel, and load -> change -> save from two processes lost updates or raced on the
+    # temp file. The lock is released on exit, and on exec (Python opens it close-on-exec).
+    with open(os.environ["FAKELAB_STATE"] + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        handler(sys.argv[1:])
 
 
 if __name__ == "__main__":

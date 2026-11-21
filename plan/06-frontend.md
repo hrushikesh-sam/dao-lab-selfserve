@@ -19,7 +19,7 @@ response. The frontend computes nothing the backend already knows.
 | Decision | Concretely | Rationale |
 |---|---|---|
 | Two single files | All CSS and JS inline in `dashboard/user.html` and `dashboard/admin.html` | Deploy = copy a file into `DAOLAB_DASHBOARD_DIR`; nothing to compile, version, or cache-bust. |
-| Vanilla JS + `fetch` | ~300 lines of script per page against 9 small JSON endpoints | A framework earns its keep managing complex client state; dumb views over the API have none. |
+| Vanilla JS + `fetch` | a few hundred lines of script per page against 14 small JSON endpoints (map below) | A framework earns its keep managing complex client state; dumb views over the API have none. |
 | mermaid via CDN `<script>` tag | The **only** external asset, present in both files (identical `<head>` plumbing) | Setup YAML ships a `diagram` block; `admin.html` renders it verbatim, so topology never lives in frontend code. |
 | No build pipeline | No npm, no bundler, no transpiler | Two files are reviewable in one sitting; the build system would outweigh the code it builds. |
 
@@ -29,7 +29,8 @@ deriving `held_by`) is by definition an API responsibility — change `service/a
 ## Shared plumbing (identical in both files)
 
 **Token entry.** On load, if `localStorage` has no token, show a modal gate: one password-type
-input + Save. Save stores the pasted token under key `daolab_token`, then calls `GET /whoami`
+input + Save. Save stores the pasted token under the page's own key (`daolab_token_user` /
+`daolab_token_admin`: one shared key let the admin token replace the user's), then calls `GET /whoami`
 and shows `username (role)` in the header. Any `401 unauthorized` from any call clears the key
 and re-opens the gate (token rotated or revoked). Tokens come from `daolab add-user` — see
 [08-cli-config-ops.md](08-cli-config-ops.md).
@@ -37,7 +38,7 @@ and re-opens the gate (token rotated or revoked). Tokens come from `daolab add-u
 **API client.** One wrapper, one error type; nothing else touches `fetch`:
 
 ```js
-const TOKEN_KEY = "daolab_token";
+const TOKEN_KEY = "daolab_token_user";   // admin.html: "daolab_token_admin"
 const getToken  = () => localStorage.getItem(TOKEN_KEY);
 
 class ApiError extends Error {
@@ -172,24 +173,23 @@ copyable `ssh` login, and `username` + "your registered SSH key" from the `auth`
 it the reservation's `diagram` (server-generated mermaid of the provisioned topology with IPs)
 is rendered via the same mermaid plumbing as admin.html.
 
-| state | badge | SSH shown | Action |
+| state | badge | SSH shown | Button |
 |---|---|---|---|
 | `queued` | grey | no (`vms` is `[]`) | **Cancel** → `released` |
-| `provisioning` | amber | no (ips filling in) | none (API would 409 `invalid_state`) |
-| `ready` | green | yes | **Cleanup** → `cleaning` |
-| `active` | green | yes | **Cleanup** → `cleaning` |
-| `cleaning` | amber | no | no |
-| `quarantined` | red | no | no (API would 409 `invalid_state`) |
-| `released` | muted | no | no |
-| `failed` | red + `failure_reason` | no | no |
+| `provisioning` | amber | no (ips filling in) | none (the API would 409 `invalid_state`) |
+| `ready` | green | yes | **End now** → `cleaning` |
+| `active` | green | yes | **End now** → `cleaning` |
+| `cleaning` | amber | no | none |
+| `quarantined` | red | no | none (an admin force-cleans the setup) |
+| `released` | muted | no | none |
+| `failed` | red + `failure_reason` | no | none (its cleanup runs automatically) |
 
-Two distinct actions, matching the API ([09-backend-system-design.md](09-backend-system-design.md) §10):
-**Cancel** = confirm dialog → `DELETE /reservations/{id}` (a `queued` booking → `released`); **Cleanup**
-= confirm dialog → `POST /reservations/{id}/cleanup` (a live `ready`/`active` slot → `cleaning`).
-Either response `{"id", "state"}` updates the row instantly, then `refresh()`.
+Cancel = confirm dialog → `DELETE /reservations/{id}` (a `queued` booking only); End now =
+confirm dialog → `POST /reservations/{id}/cleanup`. Either response `{"id", "state"}` updates the
+row instantly, then `refresh()`.
 
 Build order: (1) token gate + `api()` + banner; (2) catalog table; (3) use-case reserve modal;
-(4) DIY modal; (5) my-reservations list + cancel/cleanup; (6) polling wiring; (7) empty/error pass.
+(4) DIY modal; (5) my-reservations list + cancel; (6) polling wiring; (7) empty/error pass.
 
 ## admin.html — drill-down, topology, holds, queue
 
@@ -210,7 +210,7 @@ Build order: (1) token gate + `api()` + banner; (2) catalog table; (3) use-case 
 |                |  queue:   #13 hrushi tls-proxy-nginx queued 12:00Z->14:00Z   |
 +----------------+--------------------------------------------------------------+
 | ALL RESERVATIONS (GET /reservations?all=1)                                    |
-|  id  user    usecase          setup     state    start_at -> end_at  [action]|
+|  id  user    usecase          setup     state    start_at -> end_at   [Cancel]|
 +------------------------------------------------------------------------------+
 ```
 
@@ -246,9 +246,8 @@ async function renderDiagram(setup) {                  // setup = one GET /setup
 with the same badges as user.html — a teardown-failure reservation surfaces here in `failed`
 until an admin intervenes manually. `queue` lists the `queued` summaries ordered by `start_at`.
 The pools column marks held setups. The global **ALL RESERVATIONS** table shows every user's
-reservations with an admin action: Cancel (`DELETE /reservations/{id}`, `queued` only → `released`)
-or Cleanup (`POST /reservations/{id}/cleanup`, `ready`/`active` → `cleaning`) — same split as
-user.html, and the admin may act on any user's reservation.
+reservations with an admin Cancel (`DELETE /reservations/{id}`, allowed in
+`queued`/`ready`/`active`).
 
 **Users panel.** `GET /users` fills a table — `username`, `role` badge, `enabled` badge,
 `active_reservations` count. *Disable* (confirm dialog) and *Enable* call `PATCH /users/{id}`
@@ -258,7 +257,7 @@ answers `409 invalid_state` regardless). Disabling kills the user's token immedi
 cancel those in ALL RESERVATIONS if the hold must end.
 
 Build order: (1) role gate; (2) pools column; (3) setup detail panel; (4) mermaid render;
-(5) held_by + queue; (6) global table + admin cancel/cleanup; (7) users panel + enable/disable;
+(5) held_by + queue; (6) global table + admin cancel; (7) users panel + enable/disable;
 (8) polling + empty/error pass.
 
 ## Component-to-endpoint map
@@ -266,23 +265,25 @@ Build order: (1) role gate; (2) pools column; (3) setup detail panel; (4) mermai
 | Page | Component | Endpoint(s) | Notes |
 |---|---|---|---|
 | both | token gate / header identity | `GET /whoami` | on token save and page load |
-| both | API status indicator | `GET /health` | auth none; drives the "API unreachable" banner |
 | user.html | use-case catalog table | `GET /usecases` | polled |
-| user.html | reserve modal (use-case mode) | `POST /reservations` | on submit |
-| user.html | DIY modal | `POST /reservations`; `GET /setups` | `/setups` only for admin tokens (dropdown assist); others type the name |
-| user.html | my-reservations list | `GET /reservations` | polled; full objects incl. `vms`/`ssh` |
-| user.html | post-action row refresh | `GET /reservations/{id}` | after reserve/cancel/cleanup |
-| user.html | cancel button | `DELETE /reservations/{id}` | `queued` only (`provisioning` onward → 409) |
-| user.html | cleanup button | `POST /reservations/{id}/cleanup` | `ready`/`active` only; ends the slot early |
+| user.html | reserve / Deploy modal (use-case and DIY mode) | `POST /reservations`; `GET /setups` | `/setups` fills the DIY setup list |
+| user.html | my-reservations list | `GET /reservations` | polled; full objects incl. `vms`, `access`, `health` |
+| user.html | post-action row refresh | `GET /reservations/{id}` | after deploy / end / cancel |
+| user.html | **End now** | `POST /reservations/{id}/cleanup` | `ready` / `active` only |
+| user.html | health re-check | `POST /reservations/{id}/health/probe` | queues a `health_probe` job |
+| user.html | cancel button | `DELETE /reservations/{id}` | `queued` only (a live slot ends with End now) |
 | admin.html | role gate | `GET /whoami` | refuses render unless `role == "admin"` |
 | admin.html | pools column | `GET /pools` | polled |
-| admin.html | setup detail (members, links, diagram, held_by, queue) | `GET /setups` | polled; one call drives the whole panel |
+| admin.html | setup detail (members, links, diagram, held_by, queue, dirty) | `GET /setups` | polled; one call drives the whole panel |
 | admin.html | global reservation table | `GET /reservations?all=1` | polled; admin token required |
-| admin.html | admin cancel | `DELETE /reservations/{id}` | any user's `queued` reservation → `released` |
-| admin.html | admin cleanup | `POST /reservations/{id}/cleanup` | any user's `ready`/`active` reservation → `cleaning` |
+| admin.html | reservation detail (jobs, steps, log tail) | `GET /reservations/{id}`; `GET /reservations/{id}/jobs` | on row click |
+| admin.html | admin End now / cancel | `POST /reservations/{id}/cleanup`; `DELETE /reservations/{id}` | any user's reservation |
+| admin.html | force-clean a quarantined setup | `POST /admin/setups/{name}/force-clean` | optional `skip_verify`; audit-logged |
 | admin.html | users panel | `GET /users` | polled; enabled badge + active count |
 | admin.html | enable/disable toggle | `PATCH /users/{id}` | confirm on disable; self-row inert |
-| — | never called by the frontend | `POST /internal/vm-ip` | internal auth (`X-Daolab-Secret`); playbook callback only |
+| — | never called by the frontend | `/internal/*` | playbook callbacks (`X-Daolab-Secret`); the full endpoint table is [02-backend-api.md](02-backend-api.md) |
+
+14 distinct endpoints, read from `dashboard/user.html` and `dashboard/admin.html` (B-98).
 
 ## Admin gating
 
@@ -297,7 +298,7 @@ admin ⊇ user, so an admin token drives `user.html` fully (and unlocks the DIY 
 ## Deliberate non-goals
 
 - **No framework** (React/Vue/htmx) and **no build pipeline** (npm, bundlers, transpilers):
-  two static files against 9 endpoints; the toolchain would exceed the code it ships.
+  two static files against 14 endpoints; the toolchain would exceed the code it ships.
 - **No websockets, no SSE — polling only**: the engine ticks once per
   `DAOLAB_ENGINE_INTERVAL_SEC` (60 s), so 15 s polling already over-samples reality.
 - **No SPA/router**: two audiences, two files, two URLs.
@@ -340,7 +341,7 @@ DAOLAB_TOKEN=<user-token> daolab reserve tls-proxy-nginx 2026-09-01T10:00 --hour
    (reservation_id, role, host, template, name, ip, created_at, updated_at) VALUES
    (1,'client','tg-01-xcp','tpl-ubuntu2204-dao','daolab-r1-client','10.20.0.31',
    strftime('%Y-%m-%dT%H:%M:%SZ','now'), strftime('%Y-%m-%dT%H:%M:%SZ','now'));"` — within one
-   poll the row shows `ssh hrushi@10.20.0.31`; Cleanup is enabled again.
+   poll the row shows `ssh hrushi@10.20.0.31`; Cancel is enabled again.
 6. DIY with an unknown setup name → banner shows `not_found`; DIY on `setup-01` with only one
    `host = template` row → banner shows the `validation_error` message naming the uncovered
    host; with both `dpu-01-xcp` and `tg-01-xcp` mapped to `tpl-ubuntu2204-dao` → `201`, row

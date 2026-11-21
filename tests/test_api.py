@@ -1,5 +1,6 @@
 """API test plan from plan/02-backend-api.md — HTTP wiring over the scheduler,
 plus the admin user-management endpoints. No hardware, no engine, no ansible."""
+import re
 import dataclasses
 import hashlib
 import json
@@ -166,12 +167,12 @@ def test_8_reserve_error_matrix(env):
     assert_error(reserve(env, env.user_token, usecase="diy", setup="tb-01"), 422, "validation_error")
     err = assert_error(reserve(env, env.user_token, usecase="diy", setup="tb-01",
                                templates={}), 422, "validation_error")
-    assert "tb-01-xcp" in err["message"]
+    assert "dpu-01-xcp" in err["message"]
 
 
 def test_9_reserve_diy(env):
     r = reserve(env, env.user_token, usecase="diy", setup="tb-01",
-                templates={"tb-01-xcp": "tpl-ubuntu2204-dao"})
+                templates={"dpu-01-xcp": "tpl-ubuntu2204-dao", "tg-01-xcp": "tpl-ubuntu2204-dao"})
     assert r.status_code == 201, r.text
     assert r.json()["diy"] is True
 
@@ -204,14 +205,26 @@ def test_11_cancel_matrix(env):
 
 def _mk_vm(env, rid, role="backend"):
     return env.models.insert(env.conn, "vms", {
-        "reservation_id": rid, "role": role, "host": "tb-01-xcp",
+        "reservation_id": rid, "role": role, "host": "dpu-01-xcp",
         "template": "tpl-ubuntu2204-dao", "name": f"daolab-r{rid}-{role}"})
+
+
+S = {"X-Daolab-Secret": "test-secret"}
+
+
+def _deploying(env, rid, role="backend"):
+    """Reservation `rid` mid-deploy with its `role` VM leased; returns the leased address."""
+    env.models.update(env.conn, "reservations", rid, {"state": "provisioning"})
+    r = env.client.post("/internal/leases", json={"reservation_id": rid, "role": role}, headers=S)
+    assert r.status_code == 200, r.text
+    return r.json()["ip"]
 
 
 def test_12_vm_ip_callback(env, monkeypatch):
     rid = reserve(env, env.user_token).json()["id"]
     _mk_vm(env, rid)
-    body = {"reservation_id": rid, "role": "backend", "ip": "10.20.0.21"}
+    ip = _deploying(env, rid)
+    body = {"reservation_id": rid, "role": "backend", "ip": ip}
     assert_error(env.client.post("/internal/vm-ip", json=body,
                                  headers={"X-Daolab-Secret": "wrong"}), 401, "unauthorized")
     from service import config
@@ -226,16 +239,62 @@ def test_12_vm_ip_callback(env, monkeypatch):
     assert ok.json() == {"ok": True}
     obj = env.client.get(f"/reservations/{rid}", headers=H(env.user_token)).json()
     vm = obj["vms"][0]
-    assert vm["ip"] == "10.20.0.21" and vm["ssh"] == "ssh hrushi@10.20.0.21"
+    assert vm["ip"] == ip and vm["ssh"] == f"ssh hrushi@{ip}"
 
 
 def test_13_callback_idempotent(env):
     rid = reserve(env, env.user_token).json()["id"]
     _mk_vm(env, rid)
-    body = {"reservation_id": rid, "role": "backend", "ip": "10.20.0.21"}
+    body = {"reservation_id": rid, "role": "backend", "ip": _deploying(env, rid)}
     for _ in range(2):
         assert env.client.post("/internal/vm-ip", json=body,
                                headers={"X-Daolab-Secret": "test-secret"}).status_code == 200
+
+
+def test_13b_callback_takes_only_the_roles_own_address(env):
+    """B-97 (mistakes.md J10, P5): a VM role may post only its leased address, only while the
+    reservation is deploying or live; nothing else reaches vms.ip."""
+    rid = reserve(env, env.user_token).json()["id"]
+    _mk_vm(env, rid)
+    _mk_vm(env, rid, role="frontend")
+    ip = _deploying(env, rid)
+    other = env.client.post("/internal/leases", json={"reservation_id": rid, "role": "frontend"},
+                            headers=S).json()["ip"]
+    post = lambda **b: env.client.post("/internal/vm-ip", headers=S,
+                                       json={"reservation_id": rid, "role": "backend", **b})
+    err = assert_error(post(ip="10.99.0.5"), 403, "ip_mismatch")
+    assert err["detail"] == {"reservation_id": rid, "role": "backend",
+                             "expected": ip, "posted": "10.99.0.5"}
+    assert_error(post(ip=other), 403, "ip_mismatch")             # the sibling role's lease
+    assert_error(post(ip="not-an-ip"), 422, "validation_error")
+    # the frontend's lease released: it has no address to report
+    env.conn.execute("UPDATE ip_leases SET state = 'released' WHERE ip = ?", (other,))
+    assert_error(env.client.post("/internal/vm-ip", headers=S, json={
+        "reservation_id": rid, "role": "frontend", "ip": other}), 409, "no_lease")
+    for st in ("queued", "cleaning", "released", "failed", "quarantined"):
+        env.models.update(env.conn, "reservations", rid, {"state": st})
+        assert_error(post(ip=ip), 409, "invalid_state")
+    for st in ("provisioning", "ready", "active"):
+        env.models.update(env.conn, "reservations", rid, {"state": st})
+        assert post(ip=ip).json() == {"ok": True}
+    assert {v["role"]: v["ip"] for v in
+            env.client.get(f"/reservations/{rid}", headers=H(env.user_token)).json()["vms"]
+            } == {"backend": ip, "frontend": None}
+
+
+def test_13c_dpu_role_posts_only_the_setups_dpu_address(env):
+    from service.api import _dpu_address
+    rid = reserve(env, env.user_token).json()["id"]
+    res = env.models.reservation_by_id(env.conn, rid)
+    dpu_ip = _dpu_address(env.conn, res["setup_id"])
+    assert dpu_ip
+    env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": "dpu", "host": "dpu-01",
+                                        "template": None, "name": None})
+    env.models.update(env.conn, "reservations", rid, {"state": "provisioning"})
+    post = lambda ip: env.client.post("/internal/vm-ip", headers=S,
+                                      json={"reservation_id": rid, "role": "dpu", "ip": ip})
+    assert_error(post("10.68.1.7"), 403, "ip_mismatch")
+    assert post(dpu_ip).json() == {"ok": True}
 
 
 def test_14_dashboards_served(env):
@@ -243,6 +302,16 @@ def test_14_dashboards_served(env):
         r = env.client.get(path)
         assert r.status_code == 200
         assert "<!DOCTYPE html>" in r.text
+
+
+def test_the_two_dashboards_keep_their_tokens_apart(env):
+    """B-86: one shared localStorage key on one origin let the admin token replace the user's,
+    so the user page deployed as dev-admin. Each page now has its own key."""
+    keys = {}
+    for path in ("/user.html", "/admin.html"):
+        m = re.search(r'const TOKEN_KEY = "([^"]+)"', env.client.get(path).text)
+        keys[path] = m.group(1)
+    assert keys == {"/user.html": "daolab_token_user", "/admin.html": "daolab_token_admin"}
 
 
 # ---- admin user management (this iteration's addition) ----------------------
@@ -283,8 +352,8 @@ def test_18_reservation_diagram_and_credentials(env):
     rid = reserve(env, env.user_token).json()["id"]
     for role, host, tpl, name, ip in [
             ("proxy", "dpu-01", None, None, "10.20.0.10"),
-            ("backend", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21"),
-            ("client", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-client", "10.20.0.31")]:
+            ("backend", "dpu-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21"),
+            ("client", "tg-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-client", "10.20.0.31")]:
         env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": role, "host": host,
                                             "template": tpl, "name": name, "ip": ip})
     obj = env.client.get(f"/reservations/{rid}", headers=H(env.user_token)).json()
@@ -295,7 +364,7 @@ def test_18_reservation_diagram_and_credentials(env):
     d = obj["diagram"]
     assert d.startswith("graph LR")
     assert "ssh hrushi@10.20.0.31" in d              # client VM credentials in the diagram
-    assert "upstream · sdp" in d                     # proxy -> backend edge
+    assert "upstream · mgmt" in d                    # proxy -> backend edge (management network)
     assert "e810-vf" in d                            # client -> proxy edge
     queued = reserve(env, env.user_token).json()
     assert queued["diagram"] is None                 # no vms yet -> no diagram
@@ -308,7 +377,7 @@ def test_19_owner_only_credentials(env):
     rid = reserve(env, alice).json()["id"]
     for role, host, tpl, name, ip in [
             ("proxy", "dpu-01", None, None, "10.20.0.10"),
-            ("backend", "tb-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21")]:
+            ("backend", "dpu-01-xcp", "tpl-ubuntu2204-dao", f"daolab-r{rid}-backend", "10.20.0.21")]:
         env.models.insert(env.conn, "vms", {"reservation_id": rid, "role": role, "host": host,
                                             "template": tpl, "name": name, "ip": ip})
     # the owner sees the credentials
@@ -519,3 +588,17 @@ def test_29_jobs_and_events(env):
     assert "event: step" in body
     assert "lease IP" in body and "DPU app: tls-proxy-nginx" in body
     assert_error(env.client.get(f"/reservations/{rid}/events", headers=H(bob)), 403, "forbidden")
+
+
+def test_b101_an_expired_token_is_refused(env):
+    """B-101 (mistakes.md J13): past users.token_expires_at the token is 401, like an unknown
+    one; before it (or with NULL, the pre-v11 tokens) it works and /whoami shows the date."""
+    tok = env.add_user("carol")
+    uid = env.conn.execute("SELECT id FROM users WHERE username = 'carol'").fetchone()["id"]
+    assert env.client.get("/whoami", headers=H(tok)).json()["token_expires_at"] is None
+    env.models.update(env.conn, "users", uid, {"token_expires_at": "2099-01-01T00:00:00Z"})
+    r = env.client.get("/whoami", headers=H(tok))
+    assert r.status_code == 200 and r.json()["token_expires_at"] == "2099-01-01T00:00:00Z"
+    env.models.update(env.conn, "users", uid, {"token_expires_at": "2000-01-01T00:00:00Z"})
+    err = assert_error(env.client.get("/whoami", headers=H(tok)), 401, "unauthorized")
+    assert err["detail"] == {"reason": "token_expired", "expired_at": "2000-01-01T00:00:00Z"}

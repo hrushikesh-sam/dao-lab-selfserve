@@ -1,10 +1,47 @@
-# playbooks/apps/nginx-tls/cleanup.yml — nginx-tls is the board's resting state: it keeps
-# running; only the health exporter of the reservation goes.
-- name: TLS proxy cleanup
+# playbooks/apps/nginx-tls/cleanup.yml — nginx-tls is the board's resting state: it goes back to
+# the config deploy.yml kept (/test/ to the resting backend) and keeps running; the reservation's
+# health exporter goes.
+- name: TLS proxy cleanup - nginx-tls back to its resting config
   hosts: dpu
   gather_facts: false
   tasks:
     - name: "step: stop_app"
-      become: true
       ansible.builtin.shell: systemctl disable --now daolab-app-exporter 2>/dev/null || true
       changed_when: false
+
+    - name: the resting config deploy.yml kept
+      ansible.builtin.stat:
+        path: "{{ nginx_tls_conf | default('/opt/async_nginx.conf') }}.daolab-rest"
+      register: _rest
+
+    - name: back to it (nginx-tls restarted below)
+      when: _rest.stat.exists
+      block:
+        - name: stop nginx-tls
+          ansible.builtin.command: systemctl stop {{ nginx_service | default('nginx-tls.service') }}
+          changed_when: true
+
+        - name: restore the resting config
+          ansible.builtin.copy:
+            src: "{{ nginx_tls_conf | default('/opt/async_nginx.conf') }}.daolab-rest"
+            dest: "{{ nginx_tls_conf | default('/opt/async_nginx.conf') }}"
+            remote_src: true
+            mode: "0644"
+
+        - name: hugepages for the engine, and its old map files gone
+          ansible.builtin.include_tasks: ../../tasks/release_hugepages.yml
+
+        - name: start nginx-tls
+          ansible.builtin.command: systemctl start {{ nginx_service | default('nginx-tls.service') }}
+          changed_when: true
+
+        - name: nginx-tls serves TLS through the CPT engine
+          ansible.builtin.include_tasks: ../../tasks/nginx_tls_ready.yml
+          when: nginx_tls_check | default(true) | bool
+
+        # Only once nginx-tls is back up on it: a failed restart keeps the copy for the retry.
+        # Kept, a later hand edit of the resting config would be undone by the next cleanup.
+        - name: "step: drop_rest_copy"
+          ansible.builtin.file:
+            path: "{{ nginx_tls_conf | default('/opt/async_nginx.conf') }}.daolab-rest"
+            state: absent

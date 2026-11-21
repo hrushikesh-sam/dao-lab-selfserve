@@ -223,6 +223,35 @@ def _check_keys(doc: dict, allowed: set[str], fname: str, ctx: str, errors: list
             errors.append(f"{fname}: {ctx}{key}: unknown key")
 
 
+def _check_verify_expect(verify: dict, fname: str, errors: list[str]) -> None:
+    """B-95 (mistakes.md I9). With `match` (a regex with named groups), `expect` maps each
+    group to a check '<op> <number>' on the number it captured, e.g.
+    {match: '(?P<ok>\\d+) succeeded', expect: {ok: "== 1000"}}. Without `match`, `expect` is
+    the legacy substring. Either way the command must also exit 0 (roles/verify)."""
+    match, expect = verify.get("match"), verify.get("expect")
+    if match is None:
+        if not (isinstance(expect, str) and expect):
+            errors.append(f"{fname}: verify.expect: a non-empty string, or a map with verify.match")
+        return
+    try:
+        groups = re.compile(match).groupindex if isinstance(match, str) else None
+    except re.error as e:
+        errors.append(f"{fname}: verify.match: not a regex: {e}")
+        return
+    if not groups:
+        errors.append(f"{fname}: verify.match: needs at least one named group (?P<name>...)")
+        return
+    if not (isinstance(expect, dict) and expect):
+        errors.append(f"{fname}: verify.expect: with verify.match, a map of group -> '<op> <number>'")
+        return
+    for key, check in expect.items():
+        if key not in groups:
+            errors.append(f"{fname}: verify.expect.{key}: no group (?P<{key}>...) in verify.match")
+        elif not (isinstance(check, str) and EXPECT.match(check.strip())):
+            errors.append(f"{fname}: verify.expect.{key}: must be '<op> <number>' "
+                          "(==, !=, <, <=, >, >=)")
+
+
 def load_usecases(dir_path: str) -> tuple[list[dict], list[str]]:
     out, errors = [], []
     for path in _yaml_files(dir_path):
@@ -261,8 +290,8 @@ def load_usecases(dir_path: str) -> tuple[list[dict], list[str]]:
             if not isinstance(spec, dict):
                 errors.append(f"{fname}: roles.{rname}: must be a map")
                 continue
-            _check_keys(spec, {"on", "app", "vm", "install", "connect", "crypto", "upstream"},
-                        fname, ctx, errors)
+            _check_keys(spec, {"on", "app", "vm", "install", "connect", "crypto", "upstream",
+                               "httpcheck"}, fname, ctx, errors)
             on = spec.get("on")
             if on not in ON_VALUES:
                 errors.append(f"{fname}: {ctx}on: must be one of {'|'.join(ON_VALUES)}")
@@ -283,16 +312,29 @@ def load_usecases(dir_path: str) -> tuple[list[dict], list[str]]:
             up = spec.get("upstream")
             if up is not None and up not in roles:
                 errors.append(f"{fname}: {ctx}upstream: must name another role in this file")
+            hc = spec.get("httpcheck")              # B-95: URLs this VM's agent probes
+            if hc is not None:
+                if not spec.get("vm"):
+                    errors.append(f"{fname}: {ctx}httpcheck: only on VM roles (their agent probes)")
+                if not (isinstance(hc, list) and hc and all(
+                        isinstance(u, str) and u.startswith(("http://", "https://")) for u in hc)):
+                    errors.append(f"{fname}: {ctx}httpcheck: a non-empty list of http(s) URLs")
+                else:
+                    for ref in PLACEHOLDER.findall(" ".join(hc)):
+                        if ref not in roles:
+                            errors.append(f"{fname}: {ctx}httpcheck: placeholder {{{ref}_ip}} "
+                                          "names no role")
         verify = doc.get("verify")
         if not (isinstance(verify, dict) and all(k in verify for k in ("from", "cmd", "expect"))):
             errors.append(f"{fname}: verify: must be a map with from, cmd, expect")
         else:
-            _check_keys(verify, {"from", "cmd", "expect"}, fname, "verify.", errors)
+            _check_keys(verify, {"from", "cmd", "match", "expect"}, fname, "verify.", errors)
             if verify["from"] not in roles:
                 errors.append(f"{fname}: verify.from: must name a role in this file")
             for ref in PLACEHOLDER.findall(str(verify.get("cmd", ""))):
                 if ref not in roles:
                     errors.append(f"{fname}: verify.cmd: placeholder {{{ref}_ip}} names no role")
+            _check_verify_expect(verify, fname, errors)
         health = doc.get("health")
         if health is None:
             health = []

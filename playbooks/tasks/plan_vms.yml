@@ -52,6 +52,7 @@
                       else ([item.value.install] if item.value.install is string
                             else item.value.install | default([])),
            'data_ip': _dp[item.key] if (_dp[item.key] | default(None)) is string else None,
+           'httpcheck': [] if (diy | default(false) | bool) else item.value.httpcheck | default([]),
            'vf_family': None if (diy | default(false) | bool)
                         else _families[item.value.connect | default('')] | default(None)
          }] }}
@@ -96,3 +97,14 @@
            | sort(attribute='key') | map(attribute='value') | list + [''])[0]).split('/')[0]
          if (daolab_dpu_role and (_dp[daolab_dpu_role] | default(None)) is mapping)
          else (hostvars[daolab_dpu].ansible_host | default(daolab_dpu) if daolab_dpu_role else '') }}
+
+
+# B-95: what `{<role>_ip}` means in a VM's httpcheck URLs (host_vm resolves them): the DPU
+# role's wire address, a VM role's data-plane address (vars/dataplane.yml), as in verify.
+- name: the data-plane address of every role that has one
+  ansible.builtin.set_fact:
+    daolab_role_data_ips: >-
+      {{ (daolab_role_data_ips | default({})) | combine({item: (
+           daolab_dpu_data_ip if item == daolab_dpu_role else
+           (_dp[item].split('/')[0] if (_dp[item] | default(None)) is string else ''))}) }}
+  loop: "{{ (daolab_roles | default({})) | list }}"

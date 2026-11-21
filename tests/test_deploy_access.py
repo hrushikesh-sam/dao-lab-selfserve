@@ -143,7 +143,7 @@ def test_the_card_shows_the_latest_job(api_env):
 def test_diy_has_no_dpu_access_block(api_env):
     r = api_env.client.post("/reservations", headers=H(api_env.tokens["alice"]), json={
         "usecase": "diy", "hours": 1, "setup": "tb-01",
-        "templates": {"tb-01-xcp": "tpl-ubuntu2204-dao"}})
+        "templates": {"dpu-01-xcp": "tpl-ubuntu2204-dao", "tg-01-xcp": "tpl-ubuntu2204-dao"}})
     assert r.status_code == 201, r.text
     assert r.json()["access"] is None
 

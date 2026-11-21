@@ -1,0 +1,19 @@
+# The CPT crypto VFs nginx-tls's OpenSSL engine needs: one per CPU, on vfio-pci, the CPT PF on
+# rvu_cptpf. A reboot wipes them (mistakes.md Q9); the vendor script rebuilds them
+# (DAO_Setups TLS_Proxy setup_guide, Stage 4 and the Stage 7 note). It also reserves one 512 MB
+# hugepage per CPU (12 GB on this board): release_hugepages.yml, run next, takes that back to
+# the resting count. Root comes from the DPU's inventory.
+- name: "step: crypto_setup"
+  ansible.builtin.shell: |
+    want=$(nproc)
+    have=$(dpdk-devbind.py -s | grep -c 'a0f3.*vfio-pci' || true)
+    if [ "$have" -ge "$want" ]; then echo "cpt vfs: $have of $want"; exit 0; fi
+    systemctl stop {{ nginx_service | default('nginx-tls.service') }} || true
+    bash {{ nginx_tls_cpt_script | default('/usr/share/openssl-engine-dpdk/openssl-engine-dpdk-cn10k.sh') }} "$(command -v dpdk-devbind.py)" > /dev/null
+    have=$(dpdk-devbind.py -s | grep -c 'a0f3.*vfio-pci' || true)
+    echo "rebuilt: cpt vfs $have of $want"
+    [ "$have" -ge "$want" ]
+  args:
+    executable: /bin/bash
+  register: _cpt
+  changed_when: "'rebuilt' in _cpt.stdout"

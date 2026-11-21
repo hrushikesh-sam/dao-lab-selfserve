@@ -182,7 +182,9 @@
 </div>
 
 <script>
-const TOKEN_KEY = "daolab_token";
+// Own key per page: the two pages share the origin, so one key let the admin token replace the
+// user's and the user page then deployed as dev-admin (B-86, reservations 1-4).
+const TOKEN_KEY = "daolab_token_user";
 const getToken  = () => localStorage.getItem(TOKEN_KEY);
 let ME = null, SETUPS = null, POLL_MS = 15000, FAST_MS = 4000, FAST = false;
 

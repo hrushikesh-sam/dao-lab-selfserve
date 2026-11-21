@@ -1,18 +1,56 @@
-# playbooks/apps/nginx-tls/deploy.yml — B-81: the TLS proxy. On the board it is the resting
-# state (nginx-tls.service, which the VPP runbook stops and restarts), so deploying it means
-# making sure it runs and exporting its health.
-- name: TLS proxy - nginx-tls running
+# playbooks/apps/nginx-tls/deploy.yml — B-81, then 2026-11-17: the TLS proxy on the DPU, as
+# DAO_Setups/TLS_Proxy_ansible ("Setup 2", verified live 2026-09-05) runs it. nginx-tls.service is
+# the board's resting state: nginx 1.22 with the CPT OpenSSL engine (crypto_cn10k on 24 CPT VFs)
+# terminates TLS on :443 and forwards /test/ to a backend over the management network; `/` is
+# served from the DPU's own /var/www/html. Deploying points /test/ at this reservation's backend
+# VM (the role named by the proxy role's `upstream:`); cleanup.yml puts the resting config back.
+#   - the CPT VFs: a reboot wipes them and nothing rebuilds them (mistakes.md Q9), so they are
+#     checked and, when short, rebuilt with the vendor script (TLS setup_guide, Stage 7 note)
+#   - hugepages: tasks/release_hugepages.yml before the start (the engine maps two 512 MB pages
+#     and every exit leaves its map files behind)
+- name: TLS proxy - nginx-tls with this reservation's backend
   hosts: dpu
   gather_facts: false
+  vars:
+    _proxy: "{{ (daolab_roles | default({}) | dict2items | selectattr('value.app', 'defined')
+                 | selectattr('value.app', 'equalto', 'nginx-tls') | list + [{}])[0] }}"
+    _backend_role: "{{ _proxy.value.upstream | default('') if _proxy else '' }}"
+    _backend_ip: "{{ (hostvars['localhost'].daolab_ips | default({}))[_backend_role] | default('')
+                     if _backend_role else '' }}"
   tasks:
-    - name: "step: dpu_app"
-      become: true
-      ansible.builtin.command: systemctl start {{ nginx_service | default('nginx-tls.service') }}
-      changed_when: false
+    - name: the CPT crypto VFs the engine needs (rebuilt after a reboot)
+      ansible.builtin.include_tasks: ../../tasks/nginx_tls_crypto.yml
+      when: nginx_tls_manage_crypto | default(true) | bool
 
-    - name: it stays up
-      ansible.builtin.command: systemctl is-active {{ nginx_service | default('nginx-tls.service') }}
-      changed_when: false
+    - name: stop nginx-tls (its engine must not hold pages or VFs while the config changes)
+      ansible.builtin.command: systemctl stop {{ nginx_service | default('nginx-tls.service') }}
+      changed_when: true
+
+    - name: keep the resting config, once, for cleanup.yml
+      ansible.builtin.copy:
+        src: "{{ nginx_tls_conf | default('/opt/async_nginx.conf') }}"
+        dest: "{{ nginx_tls_conf | default('/opt/async_nginx.conf') }}.daolab-rest"
+        remote_src: true
+        force: false
+        mode: "0644"
+
+    - name: "step: backend {{ _backend_role or '-' }} {{ _backend_ip or '(resting backend)' }}"
+      ansible.builtin.replace:
+        path: "{{ nginx_tls_conf | default('/opt/async_nginx.conf') }}"
+        regexp: 'proxy_pass http://[^;]+;'
+        replace: "proxy_pass http://{{ _backend_ip }};"
+      when: _backend_ip | length > 0
+
+    - name: hugepages for the engine, and its old map files gone
+      ansible.builtin.include_tasks: ../../tasks/release_hugepages.yml
+
+    - name: "step: dpu_app"
+      ansible.builtin.command: systemctl start {{ nginx_service | default('nginx-tls.service') }}
+      changed_when: true
+
+    - name: nginx-tls serves TLS through the CPT engine
+      ansible.builtin.include_tasks: ../../tasks/nginx_tls_ready.yml
+      when: nginx_tls_check | default(true) | bool
 
     - name: health exporter
       ansible.builtin.include_tasks: ../../tasks/app_exporter.yml

@@ -1,0 +1,81 @@
+# playbooks/apps/ml-tvm/cleanup.yml — give the board back after ml-tvm: exactly the state
+# deploy.yml saved in ml_state_dir/state.json, nothing more.
+#
+#   1. stop the health exporter
+#   2. stop every process still holding the ML device. The owner had sudo, so a run they
+#      started as root outlives the `lab` session kill. Only holders of the ML device's
+#      /dev/vfio group are touched: nginx-tls holds a CPT VF's group, never this one.
+#   3. remove ML DPDK leftovers: /var/run/dpdk/<prefix>* and <prefix>*map_* hugepage files
+#      (the owner's own runs may not have used --huge-unlink)
+#   4. hugepages back to the saved count. Pages in use (nginx-tls's) are never freed by this.
+#   5. the ML device back to its saved driver: unbound + override cleared when it had none
+#   6. remove the saved state
+# Safe on a clean board (no state file: steps 4-6 do nothing). Not gated on
+# DAOLAB_ALLOW_DESTRUCTIVE: it only undoes what deploy.yml did under that sign-off.
+- name: ML cleanup
+  hosts: dpu
+  gather_facts: false
+  vars:
+    _sys: "{{ daolab_sysfs | default('/sys') }}"
+    _hp: "{{ daolab_sysfs | default('/sys') }}/kernel/mm/hugepages/hugepages-{{ ml_hugepage_kb }}kB"
+  tasks:
+    - name: stop the health exporter
+      become: true
+      ansible.builtin.shell: systemctl disable --now daolab-app-exporter 2>/dev/null || true
+      changed_when: false
+
+    - name: "step: stop_app"
+      become: true
+      ansible.builtin.shell: |
+        g=$(readlink {{ _sys }}/bus/pci/devices/{{ ml_pci }}/iommu_group 2>/dev/null); g=${g##*/}
+        [ -n "$g" ] || exit 0
+        pids=""
+        for fd in /proc/[0-9]*/fd/*; do
+          if [ "$(readlink "$fd" 2>/dev/null)" = "/dev/vfio/$g" ]; then p=${fd#/proc/}; pids="$pids ${p%%/*}"; fi
+        done
+        pids=$(echo $pids | tr ' ' '\n' | sort -u | tr '\n' ' ')
+        [ -n "$(echo $pids)" ] || exit 0
+        echo "stopping ML device holders:$pids"
+        kill $pids 2>/dev/null; sleep 3; kill -9 $pids 2>/dev/null || true
+      register: _ml_stop
+      changed_when: "'stopping' in _ml_stop.stdout"
+
+    - name: "step: ml_leftovers"
+      become: true
+      ansible.builtin.shell: |
+        rm -rfv /var/run/dpdk/{{ ml_file_prefix }} /var/run/dpdk/{{ ml_file_prefix }}-* 2>/dev/null | grep -c . || true
+        find /dev/hugepages /mnt/huge -maxdepth 1 -name '{{ ml_file_prefix }}*map_*' -print -delete 2>/dev/null
+      register: _ml_left
+      changed_when: false
+
+    - name: read the saved state
+      ansible.builtin.slurp:
+        src: "{{ ml_state_dir }}/state.json"
+      register: _ml_state
+      failed_when: false
+
+    - name: what to give back
+      ansible.builtin.set_fact:
+        _ml_saved: "{{ (_ml_state.content | b64decode | from_json) if _ml_state.content is defined else {} }}"
+
+    - name: "step: ml_hugepages_back"
+      become: true
+      ansible.builtin.shell: |
+        echo {{ _ml_saved.saved_nr_hugepages }} > {{ _hp }}/nr_hugepages
+        echo "nr=$(cat {{ _hp }}/nr_hugepages) free=$(cat {{ _hp }}/free_hugepages)"
+      when: (_ml_saved.added_hugepages | default('0') | int) > 0
+      register: _ml_pages_back
+
+    - name: "step: ml_unbind"
+      become: true
+      ansible.builtin.shell: |
+        d=$(readlink {{ _sys }}/bus/pci/devices/{{ ml_pci }}/driver 2>/dev/null); d=${d##*/}
+        [ "$d" = vfio-pci ] && echo {{ ml_pci }} > {{ _sys }}/bus/pci/drivers/vfio-pci/unbind
+        echo "{{ _ml_saved.saved_override | default('') }}" > {{ _sys }}/bus/pci/devices/{{ ml_pci }}/driver_override
+      when: _ml_saved | length > 0 and (_ml_saved.saved_driver | default('')) == ''
+
+    - name: forget the saved state
+      become: true
+      ansible.builtin.file:
+        path: "{{ ml_state_dir }}/state.json"
+        state: absent

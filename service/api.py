@@ -73,16 +73,20 @@ def db_conn():
 
 
 def current_user(authorization: str | None = Header(None),
-                 conn: sqlite3.Connection = Depends(db_conn)) -> sqlite3.Row:
-    if not authorization or not authorization.startswith("Bearer "):
+                conn: sqlite3.Connection = Depends(db_conn)) -> sqlite3.Row:
+    if not authorization or not authorization.lower().startswith("bearer "):
         raise DaolabError("unauthorized", 401, "missing bearer token")
     token_hash = hashlib.sha256(authorization[len("Bearer "):].encode()).hexdigest()
     user = models.user_by_token_hash(conn, token_hash)
     if user is None:
         raise DaolabError("unauthorized", 401, "invalid bearer token")
     if not user["enabled"]:
-        raise DaolabError("forbidden", 403, f"user {user['username']} is disabled",
-                          {"reason": "user_disabled"})
+        raise DaolabError("forbidden", 403, "user disabled", {"reason": "user_disabled"})
+    # B-101 (J13): a token past its expiry is refused like an unknown one
+    exp = user["token_expires_at"]
+    if exp is not None and models.utcnow() >= exp:
+        raise DaolabError("unauthorized", 401, "token expired; ask an admin for a new one",
+                          {"reason": "token_expired", "expired_at": exp})
     return user
 
 
@@ -422,7 +426,8 @@ def health():
 @app.get("/whoami")
 def whoami(user: sqlite3.Row = Depends(current_user)):
     return {"id": user["id"], "username": user["username"], "role": user["role"],
-            "created_at": user["created_at"], "ssh_pubkey": user["ssh_pubkey"]}
+            "created_at": user["created_at"], "ssh_pubkey": user["ssh_pubkey"],
+            "token_expires_at": user["token_expires_at"]}
 
 
 def _deployable(uc) -> bool:
@@ -1000,12 +1005,45 @@ def reservation_events(res_id: int, user: sqlite3.Row = Depends(current_user),
 @app.post("/internal/vm-ip")
 def vm_ip_callback(body: VmIpCallback, _: None = Depends(require_internal),
                    conn: sqlite3.Connection = Depends(db_conn)):
+    """The playbook reports the address a role came up on (B-97, mistakes.md J10/P5). Only
+    while the reservation is deploying or live, and only the address daolab gave that role:
+    a VM role's own `leased` address, the DPU role the setup's static DPU address. Anything
+    else is refused, so a wrong post cannot redirect the user's SSH line or the proxy."""
+    try:
+        ip = str(ipaddress.ip_address(body.ip))
+    except ValueError:
+        raise DaolabError("validation_error", 422, f"ip: not an IP address: {body.ip}")
+    res = models.reservation_by_id(conn, body.reservation_id)
+    if res is None:
+        raise DaolabError("not_found", 404,
+                          f"unknown reservation {body.reservation_id}",
+                          {"reservation_id": body.reservation_id})
     vm = models.vm_by_role(conn, body.reservation_id, body.role)
     if vm is None:
         raise DaolabError("not_found", 404,
                           f"no vm for reservation {body.reservation_id} role {body.role}",
                           {"reservation_id": body.reservation_id, "role": body.role})
-    models.set_vm_ip(conn, vm["id"], body.ip)     # idempotent: re-posting is a harmless UPDATE
+    if res["state"] not in _LEASE_STATES:
+        raise DaolabError("invalid_state", 409,
+                          f"reservation {body.reservation_id} is {res['state']}; addresses are "
+                          f"recorded only while {', '.join(_LEASE_STATES)}",
+                          {"reservation_id": body.reservation_id, "state": res["state"]})
+    if vm["name"] is None:                       # the DPU role: its static inventory address
+        expected = _dpu_address(conn, res["setup_id"])
+    else:
+        lease = models.ip_lease_by_role(conn, body.reservation_id, body.role)
+        if lease is None:
+            raise DaolabError("no_lease", 409,
+                              f"role {body.role} of reservation {body.reservation_id} has no "
+                              f"leased address", {"reservation_id": body.reservation_id,
+                                                  "role": body.role})
+        expected = lease["ip"]
+    if ip != expected:
+        raise DaolabError("ip_mismatch", 403,
+                          f"{ip} is not the address daolab gave role {body.role}",
+                          {"reservation_id": body.reservation_id, "role": body.role,
+                           "expected": expected, "posted": ip})
+    models.set_vm_ip(conn, vm["id"], ip)         # idempotent: re-posting is a harmless UPDATE
     return {"ok": True}
 
 
@@ -1066,8 +1104,8 @@ def lease_ip(body: LeaseRequest, _: None = Depends(require_internal),
 @app.post("/internal/leases/conflict")
 def lease_conflict(body: LeaseConflict, _: None = Depends(require_internal),
                    conn: sqlite3.Connection = Depends(db_conn)):
-    """Something outside daolab answers on a leased address (the playbook pings / arpings it
-    before use). The address is quarantined so it is never issued again, and the same
+    """Something outside daolab answers on a leased address (the playbook arpings it from the
+    VM's dom0 before use). The address is quarantined so it is never issued again, and the same
     (reservation, role) gets a new one, returned here."""
     try:
         ip = str(ipaddress.ip_address(body.ip))

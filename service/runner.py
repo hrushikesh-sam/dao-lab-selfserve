@@ -66,9 +66,11 @@ class RunResult:
 #   dpu_session:lab         processes of the shared DPU login are still running
 #   dpu_app:<unit>          a use-case app unit is still active on the DPU
 #   ip:10.30.0.101          a leased address still answers ping
-RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "ip")
+#   dpu_hugepages:6         512 MB hugepages still reserved above the board's baseline
+RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "ip")
 CHECK_FOR_KIND = {"vm": "check_vms", "vf": "check_vfs", "dpu_session": "check_sessions",
-                  "dpu_app": "check_sessions", "ip": "check_ips"}
+                  "dpu_app": "check_sessions", "dpu_hugepages": "check_sessions",
+                  "ip": "check_ips"}
 
 
 def residue_item(kind: str, ident: str) -> str:
@@ -157,10 +159,13 @@ class MockExporter:
     # The series the use-case health rules read (usecases/*.yml `health:`), so a mock deploy
     # reads `healthy` end to end; Prometheus adds `up` itself. App series carry the DPU's
     # host label like the rules do. Counters grow at a steady rate so rate() is > 0.
-    GAUGES = (("tcpcheck_status", {"port": "22"}), ("httpcheck_status", {}),
+    # Names as the 0.160 collector's remote-write stores them (B-86): unit `1` gauges get
+    # `_ratio`, counters get `_total`.
+    GAUGES = (("tcpcheck_status_ratio", {"port": "22"}), ("httpcheck_status", {"http_status_class": "2xx"}),
               ("vpp_up", {"host": "dpu-01"}), ("nginx_up", {"host": "dpu-01"}),
-              ("smartnic_up", {"host": "dpu-01"}))
-    COUNTERS = (("vpp_interface_rx_packets", {"host": "dpu-01"}, 1000.0),
+              ("smartnic_up", {"host": "dpu-01"}), ("ml_up", {"host": "dpu-01"}),
+              ("ml_last_smoke_ok", {"host": "dpu-01"}))
+    COUNTERS = (("vpp_interface_rx_packets_total", {"host": "dpu-01"}, 1000.0),
                 ("smartnic_offload_pps", {"host": "dpu-01"}, 500.0))
 
     def _metrics_text(self) -> str:
@@ -565,12 +570,19 @@ class AnsibleRunner:
                     envvars=envvars, event_handler=on_event, quiet=True, ident=kind,
                     # without a callback ansible-runner installs its own SIGTERM/SIGINT handlers
                     # for good, and the engine could no longer be stopped (systemctl stop, ^C)
-                    cancel_callback=lambda: False)
+                    cancel_callback=lambda: False,
+                    # B-96 (mistakes.md P4): a hung playbook must not block the single engine;
+                    # ansible-runner stops it after DAOLAB_JOB_TIMEOUT_SEC and reports "timeout"
+                    **({"timeout": int(self.s.job_timeout_sec)}
+                       if int(getattr(self.s, "job_timeout_sec", 0) or 0) > 0 else {}))
         finally:
             log.close()
         ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
         error = None
-        if not ok:
+        if getattr(r, "status", None) == "timeout":
+            error = (f"{self.PLAYBOOKS[playbook_key]} ran longer than DAOLAB_JOB_TIMEOUT_SEC "
+                     f"({self.s.job_timeout_sec}s) and was stopped")
+        elif not ok:
             where = f"{failure['task']} on {failure['host']}: " if failure.get("task") else ""
             error = where + (failure.get("msg") or
                              f"{self.PLAYBOOKS[playbook_key]} {getattr(r, 'status', 'failed')} "
@@ -650,6 +662,14 @@ def ansible_env(settings=None, traceparent: str | None = None) -> dict[str, str]
     become_file = (getattr(s, "become_password_file", "") or "").strip()
     if become_file:                 # sudo password for the runbooks' account, never on argv / in logs
         env["ANSIBLE_BECOME_PASSWORD_FILE"] = os.path.abspath(os.path.expanduser(become_file))
+    # B-93: the VM tasks' Xen Orchestra client (service/xo.py) reads these; the token stays in
+    # its file, never on argv / in extra vars / in logs
+    xo_url = (getattr(s, "xo_url", "") or "").strip()
+    if xo_url:
+        env["DAOLAB_XO_URL"] = xo_url
+    xo_token = (getattr(s, "xo_token_file", "") or "").strip()
+    if xo_token:
+        env["DAOLAB_XO_TOKEN_FILE"] = os.path.abspath(os.path.expanduser(xo_token))
     endpoint = (s.otel_endpoint or "").strip()
     if not endpoint:
         return env

@@ -3,15 +3,13 @@
 Reserve a **setup** — a wired group of lab nodes — pre-provisioned for a Marvell
 [DAO](https://marvellembeddedprocessors.github.io/dao/) use case. FCFS with time-share on conflict.
 
-Today there is exactly one setup: an XCP-ng host with an OCTEON CN106 DPU + an XCP-ng host with
-an Intel E810 (traffic-generator side). Tomorrow there will be many, mixing DPUs, GPUs, NICs and
-pure compute. Everything that describes hardware or a use case is **data** (YAML), so scale-out =
-more files, zero code changes.
+The lab is **two XCP-ng hosts**: `tg-01-xcp` (10.68.0.52, Intel E810 traffic-generator side) + `dpu-01-xcp` (10.68.0.53, OCTEON CN106 DPU side) with the DPU board `dpu-01` (10.68.0.190). Orchestration uses `playbooks/deploy.yml` and `playbooks/cleanup.yml` with roles. Everything that describes hardware or a use case is **data** (YAML), so scale-out = more files, zero code changes.
 
 ## Running it — one click on the dashboard deploys on the lab board
 
 The lab today: **tb-01** = the CN10K DPU **xeon3-oct-112** (static, `10.68.0.190`, operated as
-`dao-test`) plus an XCP-ng host for the use cases' VMs, which get addresses from
+`dao-test`) plus two XCP-ng hosts for the use cases' VMs (`tg-01-xcp` 10.68.0.52 with the E810
+VFs, `dpu-01-xcp` 10.68.0.53), driven through Xen Orchestra; the VMs get addresses from
 **`10.68.1.0`–`10.68.2.200`**. A user opens the dashboard, clicks **Deploy** on a use case,
 gives their SSH public key (pre-filled) or asks for a generated password, and gets
 `ssh lab@10.68.0.190` once the slot is live; at the end of the slot the login is revoked and the
@@ -23,34 +21,49 @@ scripts/run/dev.sh --fresh          # venv + deps (incl. ansible), .env, DB, cat
 # in .env, for the real board:
 #   DAOLAB_RUNNER=ansible            the real playbooks (DAOLAB_RUNNER=mock: no hardware)
 #   DAOLAB_ALLOW_DESTRUCTIVE=true    after the board owner's sign-off (VPP stops nginx-tls, rebinds PCI)
-#   DAOLAB_DEPLOY_VMS=false          until the XCP-ng host is in inventory/hosts.yml
-ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 -e daolab_deploy_vms=false
+#   DAOLAB_DEPLOY_VMS=true           create the use cases' VMs through Xen Orchestra (false: DPU only)
+#   DAOLAB_XO_TOKEN_FILE=~/.config/daolab/xo-token   a file holding only the XO API token
+ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 -e daolab_deploy_vms=true
 daolab add-user <name> ~/.ssh/<their key>.pub     # one per user; prints their dashboard token
 ```
 
 For a demo on the real board, `scripts/run/showcase.sh` does all of the above in one go: the
-ansible runner, DPU only (`DAOLAB_DEPLOY_VMS=false`), VPP as the only deployable use case
-(`DAOLAB_DEPLOYABLE=vpp`), one-minute slots so a click deploys within seconds, its own DB in
-`var/showcase.db`. It needs SSH as `dao-test` to the board and, for its sudo, a file holding only
+ansible runner, DPU only unless started with `DAOLAB_DEPLOY_VMS=true`, VPP, SmartNIC, the TLS proxy and ML as the
+deployable use cases (`DAOLAB_DEPLOYABLE=vpp,smartnic,tls-proxy-nginx,ml-tvm`), one-minute slots so a click deploys
+within seconds, its own DB in `var/showcase.db`. It needs SSH as `dao-test` to the board and, for its sudo, a file holding only
 that password (`~/.daolab-become-dao-test`, chmod 600). `scripts/run/xo.sh` runs Xen Orchestra in
 a container on `https://127.0.0.1:8443/` for the XCP-ng pools (add them in its UI).
 
 ## Status and pending work
 
-Done: the backend tasksheet (59 of 61 tasks, [plan/10](plan/10-backend-tasksheet.md)), and VPP on
-the real DPU end to end from the dashboard. History: [COMPLETION_LOG.md](COMPLETION_LOG.md).
-Pending (tasksheet **P7**, B-92…B-101, from the re-check in [mistakes.md](mistakes.md)):
+Done: 71 of 72 tasks of the backend tasksheet ([plan/10](plan/10-backend-tasksheet.md)); CI runs
+the whole suite on every push. On the real lab, from the dashboard:
 
-- **The VMs.** Put the lab's two XCP-ng hosts (10.68.0.52 / .53) in the inventory (B-92), then
-  create the use cases' VMs through Xen Orchestra (B-93). Until then deploys are DPU-only.
-- **Correctness.**
-  - A booking can start over a failed reservation whose cleanup is pending (B-94).
-  - DPU-only deploys have no functional gate, and a hung playbook blocks the engine (B-96).
-  - `/internal/vm-ip` trusts any IP (B-97).
-- **Use cases.** The TLS proxy's verify string and health rule (B-95); SmartNIC on the board
-  (B-99); a password-mode deploy recorded on the board (B-100).
-- **Docs and operations.** Fold plan/09 into the rest of the docs (B-98); CI, backups and token
-  expiry (B-101).
+- **VPP** end to end, DPU only and with its VMs (tgen + sink created through Xen Orchestra on
+  E810 VFs, leased addresses, ping to VPP with 0% loss), cleaned up to an empty testbed.
+- **Telemetry and health** (B-86, 2026-11-14): the OTel agent on the DPU and in every VM, the
+  central collector, Prometheus and Jaeger; the reservation goes ready -> **healthy** (VMs up,
+  SSH, VPP up, packets through VPP) and its deploy is one trace in Jaeger.
+- **SmartNIC** end to end on the DPU; its `tgen` VM comes up, its host VM needs SDP VFs.
+- **TLS proxy** (B-102, 2026-11-17, reservations 4-7): nginx-tls on the DPU with the CPT offload,
+  a backend VM over the management network and a client VM on an E810 VF; `verify` fetches five
+  payloads through the proxy, the reservation goes **healthy** with telemetry on, and cleanup puts
+  nginx-tls back on its resting config.
+- **ML on the MLIP** (2026-11-20): `ml-tvm` booked from the user dashboard; deploy binds the ML
+  device and adds two 512 MB hugepages beside nginx-tls's, the smoke inference verifies from the
+  DPU, the user ran ResNet50 INT8 as `lab` (2.45 ms, 408 inf/s, `Result: Success`), and End now
+  left the board identical to its pre-booking snapshot. Details: [COMPLETION_LOG.md](COMPLETION_LOG.md).
+- Password-mode access (login during the slot, refused after End now).
+
+Pending:
+
+- **B-85** — SDP VFs on `dpu-01-xcp` (`mistakes.md` F2, [docs/sdp-blocker.md](docs/sdp-blocker.md)):
+  SmartNIC's host VM needs them (the TLS proxy does not: its backend uses the management network,
+  `mistakes.md` Q10); the board owner's approval and a dom0 reboot.
+- Known gaps: SmartNIC's `verify` is a
+  placeholder until its host VM can be wired.
+
+History: [COMPLETION_LOG.md](COMPLETION_LOG.md); open findings: [mistakes.md](mistakes.md).
 
 Then `http://<daolab host>:8080/` (users) and `/admin.html` (admins). What runs where:
 `playbooks/deploy.yml` → `playbooks/apps/<app>/` (Akshay's runbook playbooks in `VPP_ansible/`
@@ -69,29 +82,36 @@ and `dao-smartnic/`, imported unchanged) → `roles/dpu_access` (the `lab` login
   must offer) and `roles` (what to provision where: a DAO app on the DPU, VMs from templates on
   the hosts). Scheduler matches `usecase.requires` ↔ `setup.capabilities`; nothing else couples them.
 - **Reservation** — user + use case (or DIY) + matched setup + time slot.
-  Lifecycle: queued→provisioning→ready→active→cleaning→released (quarantined if cleanup leaves residue).
+  Lifecycle: queued→provisioning→ready→active→cleaning→released (quarantined if cleanup leaves
+  residue; failed if the deploy fails after its retries, then cleaned up automatically).
 
 ```
 daolab/
-├── usecases/            one YAML per DAO use-case variant (requires, roles, verify)
+├── usecases/            one YAML per DAO use-case variant (requires, roles, verify, health)
 ├── setups/              one YAML per reservable setup (members, links, mermaid diagram)
-├── inventory/           Ansible inventory; host_vars hold PCI BDFs + current hw_class
-├── playbooks/           dpu_prepare / host_vm / verify / teardown + roles/ebf_set (stub)
+├── inventory/           Ansible inventory; host_vars hold PCI BDFs, XO pools, SR-IOV networks
+├── playbooks/           deploy.yml / cleanup.yml + roles/ (lease_ip, ebf_set, dpu_access, host_vm,
+│                        verify, otel_agent), apps/<app>/, verify_clean / reconcile / orphans / bringup
 ├── service/
 │   ├── config.py        env-driven settings (.env.example)
-│   ├── schema.sql       users / pools / setups / resources / usecases / reservations / vms
+│   ├── schema.sql       frozen baseline DDL; migrations.py adds the rest (12 tables, schema v11)
 │   ├── models.py        sqlite helpers
 │   ├── catalog.py       load usecases/ + setups/ YAML, mirror into DB (`daolab sync`)
-│   ├── scheduler.py     pure placement (FCFS, slot-shift, capability match, hw_class lead time)
-│   ├── runner.py        ansible-runner wrapper, one fn per transition
-│   ├── engine.py        lifecycle loop: queued→provisioning→ready→active→cleaning→released
-│   ├── api.py           FastAPI: catalog / setups / reservations + internal IP callback; serves dashboard/
-│   └── cli.py           `daolab init | sync | add-user | reserve | status`
-├── scripts/run/dev.sh   one-shot dev runner: venv + init + sync + dev users (prints tokens) + serve
+│   ├── scheduler.py     pure placement (asap / at, slot grid, capability match, hw_class lead)
+│   ├── ipam.py          management-address leases (B-41)
+│   ├── access.py        who may log in where, when (B-50)
+│   ├── health.py        health verdicts from the use case's PromQL rules (B-65)
+│   ├── runner.py        mock / ansible runner, one job per deploy / cleanup / reconcile
+│   ├── engine.py        lifecycle loop: queued→provisioning→ready→active→cleaning→released/quarantined/failed
+│   ├── xo.py            Xen Orchestra REST client the VM tasks call (B-93)
+│   ├── api.py           FastAPI: catalog / setups / reservations / jobs / health / internal/* + dashboard
+│   └── cli.py           `daolab init | sync | add-user | revoke-token | reserve | status`
+├── scripts/run/         dev.sh (venv + DB + tokens + serve), showcase.sh (the real board), xo.sh
+├── deploy/              otel/ (collector, Prometheus, Jaeger), backup/ (nightly DB backup)
 ├── dashboard/
-│   ├── user.html        full use-case catalog + request (auto-match or DIY) + my reservations
-│   └── admin.html       pools → setups → resources drill-down, topology diagrams, holds, queue, users
-└── tests/               scheduler unit tests (run without hardware)
+│   ├── user.html        use-case catalog, Deploy (auto-match or DIY), my reservations, End now
+│   └── admin.html       pools → setups → resources, topology, holds, quarantine, jobs, users
+└── tests/               ~900 tests, no hardware (the playbooks run against tests/fakelab.py)
 ```
 
 ## Frontend — two pages, both dumb views over the API
@@ -110,7 +130,9 @@ daolab/
 
 | use case | what it is | status |
 |---|---|---|
-| **tls-proxy-nginx** | NGINX TLS termination proxy, RSA/ECDSA offloaded to CPT | **active — separate-backend variant** |
+| **vpp** | FD.io VPP with crypto/IO acceleration | **deployable on tb-01** (DPU + VMs) |
+| **smartnic** | DAO SmartNIC offload app | **deployable on tb-01** (DPU; host VM needs SDP VFs) |
+| **tls-proxy-nginx** | NGINX TLS termination proxy, RSA/ECDSA offloaded to CPT | **deployable on tb-01** (DPU + VMs; backend over the management network, no SDP) |
 | virtio-l2fwd | L2 forwarding between host virtio devices and wire | planned |
 | ovs-offload | OVS packet-processing offload for wire↔VM | planned |
 | crypto-agent | standalone crypto service with host interaction | planned |
@@ -118,8 +140,7 @@ daolab/
 | virtio-blkio | block-device emulation to VMs via virtio | planned |
 | secgw-graph | security gateway: IPv4 routing + IPsec | planned |
 | smartnic-turnkey | universal SmartNIC turnkey app | planned |
-| vpp | FD.io VPP with crypto/IO acceleration | planned |
-| ml-tvm | ML model inference via TVM | planned |
+| **ml-tvm** | ML model inference on the MLIP (Marvell's shipped ResNet50 models) | **deployable on tb-01** (DPU only, no VMs) |
 | snort-vectorscan | Snort IDS with VectorScan pattern matching | planned |
 | k8s-cni-offload | Kubernetes CNI networking offload | planned |
 | envoy | Envoy with accelerated TLS handshakes/crypto | planned |
@@ -132,26 +153,31 @@ this table live — adding a YAML flips a row to available, no frontend change.
 ## Current use case — tls-proxy-nginx (separate backend)
 
 NGINX runs **on the OCTEON** as TLS termination proxy (crypto → CPT VFs via the DPDK OpenSSL
-engine). The decrypted upstream is a **separate backend web-server VM** on the DPU node's XCP-ng
-host. The client is a VM on the TG node with an E810 VF, requesting the payload over HTTPS.
+engine). The decrypted upstream is a **separate backend web-server VM**, reached over the
+**management network** (DAO_Setups TLS_Proxy_ansible "Setup 2"; no SDP VF, `mistakes.md` Q10).
+The client is a VM on the TG node with an E810 VF, requesting the payloads over HTTPS.
 
 ```
-client VM (ab / h2load)     ──HTTPS:443──►   NGINX on OCTEON CN106      ──HTTP:80──►  backend VM (web server)
-on tg-01 XCP-ng host,          25G wire      TLS termination; RSA/ECDSA    SDP /       on dpu-01 XCP-ng host,
-E810 VF passthrough                          → CPT VFs (DPDK engine)      virtio-net   serves the payload
+client VM (curl / ab)       ──HTTPS:443──►   NGINX on OCTEON CN106      ──HTTP:80──►  backend VM (web server)
+on tg-01 XCP-ng host,          25G wire      TLS termination; RSA/ECDSA    management  on tg-01 XCP-ng host,
+E810 VF 10.65.0.36           to 10.65.0.190  → CPT VFs (DPDK engine)      network     serves /test/*.html
 ```
 
 ```yaml
-# usecases/tls-proxy-nginx.yml — the shape every use case follows
+# usecases/tls-proxy-nginx.yml — the shape every use case follows (abridged)
 name: tls-proxy-nginx
-variant: separate-backend             # docs also describe: inbuilt-server
+variant: separate-backend             # docs also describe: inbuilt-server (deferred)
 requires: [octeon-cn106, e810, wire]  # capability match only — no hostnames
 hw_class: sdp-pf1-vf8
 roles:
-  proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
-  backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
-  client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf}
-verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}
+  proxy:   {on: dpu,     app: nginx-tls, crypto: cpt-vfs, upstream: backend}
+  backend: {on: tg_host, vm: tpl-ubuntu2204-dao, install: [http-server], connect: mgmt}
+  client:  {on: tg_host, vm: tpl-ubuntu2204-dao, install: [ab], connect: e810-vf,
+            httpcheck: ["https://{proxy_ip}/test/1KB.html"]}
+verify:   # curl, not `ab -k`: the async CPT engine drops keep-alive after one request (Q12)
+  from: client
+  cmd: "for f in 100B 1KB 100KB 1MB 4MB; do curl -sk -o /dev/null -w '%{http_code} %{size_download}\\n' https://{proxy_ip}/test/$f.html; done"
+  expect: {c1: "== 200", s1: "== 100", ..., c5: "== 200", s5: "== 4194304"}
 ```
 
 ```yaml
@@ -170,6 +196,10 @@ diagram: |                            # mermaid, rendered verbatim on admin.html
 ```
 
 ## Implementation pipeline
+
+The original product pipeline. The backend was built against [plan/09](plan/09-backend-system-design.md)'s
+phases, tracked as P0–P7 in [plan/10](plan/10-backend-tasksheet.md); how the two ladders map:
+[plan/README.md](plan/README.md#implementation-roadmap).
 
 Each phase is independently useful. Do not start phase N+1 until phase N's checkpoint passes.
 
@@ -225,7 +255,7 @@ admin.html shows setup-01 as held; at end_at it goes back to free.
 ### Phase 4 — harden and scale out
 - Add remaining use-case YAMLs (copy `tls-proxy-nginx.yml`; change `requires`, `roles`, `verify`).
 - Add a second setup YAML (even with fake resources) to prove N-setup capability matching.
-- `verify.yml`: per-use-case traffic smoke driven by the YAML's `verify` block.
+- `roles/verify`: per-use-case traffic smoke driven by the YAML's `verify` block (exit code + parsed numbers, B-95).
 - Webhook on `ready` (one `httpx.post` in engine) so external automation can react.
 - Move sqlite → Postgres only if you get >1 API worker.
 

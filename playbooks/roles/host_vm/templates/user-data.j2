@@ -27,5 +27,7 @@ runcmd:
 {% if 'http-server' in vm.install %}
   - [sh, -c, "echo 'daolab reservation {{ reservation_id | int }}' > /var/www/html/index.html"]
   - [sh, -c, "test -f /var/www/html/payload-64k.bin || dd if=/dev/urandom of=/var/www/html/payload-64k.bin bs=1024 count=64"]
+  # the TLS proxy's test payloads (TLS setup_guide Stage 2): nginx forwards /test/ here
+  - [sh, -c, "mkdir -p /var/www/html/test && cd /var/www/html/test && for s in 100B:100 1KB:1024 100KB:102400 1MB:1048576 4MB:4194304; do head -c ${s#*:} /dev/zero | tr '\\0' A > ${s%%:*}.html; done"]
 {% endif %}
   - [sh, -c, "test -s /etc/daolab/otelcol.yaml && systemctl enable --now daolab-otel || true"]

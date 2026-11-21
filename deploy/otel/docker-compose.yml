@@ -3,7 +3,7 @@
 # Prometheus (remote-write) and traces to Jaeger. Versions are pinned.
 services:
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.115.0
+    image: otel/opentelemetry-collector-contrib:0.160.0
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro

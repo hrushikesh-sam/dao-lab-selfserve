@@ -1,0 +1,185 @@
+# playbooks/apps/ml-tvm/deploy.yml — the MLIP on the DPU (ml-tvm use case), as validated by hand
+# on xeon3-oct-112 on 2026-11-18. deploy.yml imports this for a use case whose `on: dpu` role has
+# `app: ml-tvm`.
+#
+# What it changes, and nothing else (the resting nginx-tls, its CPT VF and its hugepages are
+# never touched):
+#   1. the ML device (ml_pci) -> vfio-pci, through sysfs. The board's /usr/bin/dpdk-devbind.py is
+#      Ubuntu's DPDK 21.11, older than DPDK's ML device support (23.03), and rejects the device.
+#   2. ml_hugepages_extra more pages of ml_hugepage_kb, on top of what is there (nginx-tls holds
+#      its own). Not the guide's 4096 x 2 MB on /mnt/huge: /mnt/huge is a 512 MB mount here.
+# The state before (driver, override, page count) is saved once in ml_state_dir; cleanup.yml
+# restores exactly that. A redeploy reads the saved state and changes nothing twice.
+# Both changes need the owner's sign-off: allow_destructive_changes (DAOLAB_ALLOW_DESTRUCTIVE).
+- name: ML - read the board
+  hosts: dpu
+  gather_facts: false
+  vars:
+    _sys: "{{ daolab_sysfs | default('/sys') }}"
+    _hp: "{{ daolab_sysfs | default('/sys') }}/kernel/mm/hugepages/hugepages-{{ ml_hugepage_kb }}kB"
+  tasks:
+    - name: which driver holds the ML device
+      ansible.builtin.shell: l=$(readlink {{ _sys }}/bus/pci/devices/{{ ml_pci }}/driver 2>/dev/null); echo "${l##*/}"
+      register: _ml_drv
+      changed_when: false
+
+    - name: and its driver override
+      ansible.builtin.command: cat {{ _sys }}/bus/pci/devices/{{ ml_pci }}/driver_override
+      register: _ml_override
+      changed_when: false
+      failed_when: false
+
+    - name: the hugepage pool
+      ansible.builtin.shell: echo "$(cat {{ _hp }}/nr_hugepages) $(cat {{ _hp }}/free_hugepages)"
+      register: _ml_pages
+      changed_when: false
+
+    - name: was this board already set up for ML (saved state)
+      ansible.builtin.stat:
+        path: "{{ ml_state_dir }}/state.json"
+      register: _ml_state
+
+    - name: the tools, firmware and smoke model are there
+      ansible.builtin.shell: |
+        for f in /usr/bin/dpdk-test-mldev {{ ml_fw }} \
+                 {{ ml_smoke_dir }}/{{ ml_smoke_model }}.bin \
+                 {{ ml_smoke_dir }}/{{ ml_smoke_model }}-input.bin \
+                 {{ ml_smoke_dir }}/{{ ml_smoke_model }}-output.bin; do
+          [ -r "$f" ] || echo "missing: $f"
+        done
+      register: _ml_missing
+      changed_when: false
+
+    - name: nothing is missing
+      ansible.builtin.assert:
+        that: _ml_missing.stdout | trim | length == 0
+        fail_msg: "the board is not ready for ml-tvm: {{ _ml_missing.stdout_lines | join(', ') }}"
+
+    - name: what this deploy has to do
+      ansible.builtin.set_fact:
+        daolab_ml_driver: "{{ _ml_drv.stdout | trim }}"
+        daolab_ml_nr: "{{ (_ml_pages.stdout.split() | first) | int }}"
+        daolab_ml_free: "{{ (_ml_pages.stdout.split() | last) | int }}"
+        daolab_ml_saved: "{{ _ml_state.stat.exists }}"
+        daolab_ml_bind: "{{ (_ml_drv.stdout | trim) != 'vfio-pci' }}"
+        daolab_ml_add_pages: >-
+          {{ not _ml_state.stat.exists
+             and ((_ml_pages.stdout.split() | last) | int) < (ml_hugepages_extra | int) }}
+
+    - name: "step: ml_board_state"
+      ansible.builtin.debug:
+        msg: >-
+          ML device {{ ml_pci }} on '{{ daolab_ml_driver or 'no driver' }}';
+          {{ ml_hugepage_kb }}kB pages nr={{ daolab_ml_nr }} free={{ daolab_ml_free }};
+          saved state={{ daolab_ml_saved }}
+
+    - name: the ML device is not on some other kernel driver
+      ansible.builtin.assert:
+        that: daolab_ml_driver in ['', 'vfio-pci']
+        fail_msg: >-
+          {{ ml_pci }} is on '{{ daolab_ml_driver }}', not unbound or vfio-pci; refusing to take it.
+          Check ml_pci in host_vars (the PEM is 0001:00:10.0, one digit away).
+
+    - name: the board changes need sign-off (DAOLAB_ALLOW_DESTRUCTIVE)
+      ansible.builtin.assert:
+        that: allow_destructive_changes | bool
+        fail_msg: >-
+          deploying ml-tvm binds {{ ml_pci }} to vfio-pci and adds {{ ml_hugepages_extra }}
+          hugepages on a shared board; it requires owner sign-off.
+          Set DAOLAB_ALLOW_DESTRUCTIVE=true on the daolab server.
+      when: daolab_ml_bind | bool or daolab_ml_add_pages | bool
+
+- name: ML - save the state cleanup gives back
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: the state directory
+      become: true
+      ansible.builtin.file:
+        path: "{{ ml_state_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: driver, override and page count before ml-tvm (written once)
+      become: true
+      ansible.builtin.copy:
+        dest: "{{ ml_state_dir }}/state.json"
+        mode: "0644"
+        force: false
+        content: >-
+          {{ {'saved_driver': daolab_ml_driver,
+              'saved_override': (_ml_override.stdout | trim)
+                                if (_ml_override.stdout | trim) != '(null)' else '',
+              'saved_nr_hugepages': daolab_ml_nr | int,
+              'added_hugepages': (ml_hugepages_extra | int) if daolab_ml_add_pages | bool else 0}
+             | to_nice_json }}
+
+- name: ML - device to vfio-pci, hugepages
+  hosts: dpu
+  gather_facts: false
+  vars:
+    _sys: "{{ daolab_sysfs | default('/sys') }}"
+    _hp: "{{ daolab_sysfs | default('/sys') }}/kernel/mm/hugepages/hugepages-{{ ml_hugepage_kb }}kB"
+  tasks:
+    - name: "step: ml_bind"
+      become: true
+      ansible.builtin.shell: |
+        echo vfio-pci > {{ _sys }}/bus/pci/devices/{{ ml_pci }}/driver_override
+        echo {{ ml_pci }} > {{ _sys }}/bus/pci/drivers/vfio-pci/bind
+      when: daolab_ml_bind | bool
+
+    - name: the ML device is on vfio-pci with an IOMMU group
+      ansible.builtin.shell: |
+        d=$(readlink {{ _sys }}/bus/pci/devices/{{ ml_pci }}/driver); g=$(readlink {{ _sys }}/bus/pci/devices/{{ ml_pci }}/iommu_group)
+        echo "${d##*/} ${g##*/}"
+      register: _ml_bound
+      changed_when: false
+      failed_when: (_ml_bound.stdout.split() | first) != 'vfio-pci' or (_ml_bound.stdout.split() | length) < 2
+
+    - name: "step: ml_hugepages"
+      become: true
+      ansible.builtin.shell: echo {{ (daolab_ml_nr | int) + (ml_hugepages_extra | int) }} > {{ _hp }}/nr_hugepages
+      when: daolab_ml_add_pages | bool
+
+    - name: enough free pages for the MLIP
+      ansible.builtin.shell: cat {{ _hp }}/free_hugepages
+      register: _ml_free_now
+      changed_when: false
+      failed_when: (_ml_free_now.stdout | int) < (ml_hugepages_extra | int)
+
+- name: ML - prove the MLIP, export its health
+  hosts: dpu
+  gather_facts: false
+  tasks:
+    - name: install the smoke test
+      become: true
+      ansible.builtin.copy:
+        src: "{{ hostvars['localhost'].daolab_playbooks }}/files/daolab-ml-smoke"
+        dest: /usr/local/bin/daolab-ml-smoke
+        mode: "0755"
+
+    - name: its board values
+      become: true
+      ansible.builtin.copy:
+        dest: /etc/default/daolab-ml
+        mode: "0644"
+        content: |
+          ML_PCI={{ ml_pci }}
+          ML_FW={{ ml_fw }}
+          ML_LCORES={{ ml_lcores }}
+          ML_PREFIX={{ ml_file_prefix }}
+          ML_SMOKE_DIR={{ ml_smoke_dir }}
+          ML_SMOKE_MODEL={{ ml_smoke_model }}
+          ML_STATE_DIR={{ ml_state_dir }}
+
+    - name: "step: dpu_app"
+      become: true
+      ansible.builtin.shell: set -a; . /etc/default/daolab-ml; set +a; /usr/local/bin/daolab-ml-smoke
+      register: _ml_smoke
+      changed_when: false
+      failed_when: "'Result: Success' not in _ml_smoke.stdout"
+
+    - name: health exporter
+      ansible.builtin.include_tasks: ../../tasks/app_exporter.yml
+      vars:
+        app_exporter_args: --app ml --ml-pci {{ ml_pci }} --ml-result {{ ml_state_dir }}/last-smoke.log

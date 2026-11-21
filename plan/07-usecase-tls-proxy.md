@@ -2,6 +2,12 @@
 
 Part of the daolab implementation plan — see [README.md](README.md) for the doc map.
 
+> **Superseded in part (2026-11-17, `mistakes.md` Q10, B-102).** The use case as built and run on
+> tb-01 forwards to the backend over the **management network** (DAO_Setups TLS_Proxy_ansible
+> "Setup 2"), not over SDP / virtio-net: the backend is `on: tg_host, connect: mgmt`, and `verify`
+> fetches five payloads with curl instead of `h2load`. `usecases/tls-proxy-nginx.yml` and the
+> README are the current shape; the SDP addressing below is the original plan.
+
 ## Goal and references
 
 The first use case daolab must run end-to-end is **`tls-proxy-nginx`**: the NGINX TLS termination
@@ -14,7 +20,7 @@ hosts, the 25G wire, the SDP path, VM provisioning on both sides, and the IP cal
 inbuilt-server variant is deferred; the last section lists exactly which YAML fields change.
 
 Everything in this document is data plus playbook content — one YAML file
-(`usecases/tls-proxy-nginx.yml`), inventory facts, and tasks inside the four shared playbooks.
+(`usecases/tls-proxy-nginx.yml`), inventory facts, and tasks inside `playbooks/deploy.yml` and `playbooks/cleanup.yml` with roles.
 Zero service-code changes (invariant: use cases and setups are data, never code). YAML schema:
 [01-domain-model.md](01-domain-model.md). Playbook and inventory mechanics:
 [05-provisioning.md](05-provisioning.md). State machine driving the runs:
@@ -187,8 +193,9 @@ hw_class: sdp-pf1-vf8                 # SDP, 1 PF, 8 VFs — the proxy->backend 
 roles:
   proxy:   {on: dpu,      app: nginx-tls, crypto: cpt-vfs, upstream: backend}
   backend: {on: dpu_host, vm: tpl-ubuntu2204-dao, install: http-server, connect: sdp}
-  client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf}
-verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}
+  client:  {on: tg_host,  vm: tpl-ubuntu2204-dao, install: [ab, h2load], connect: e810-vf,
+            httpcheck: ["https://{proxy_ip}/"]}   # the client's agent probes the proxy (B-95)
+verify: {from: client, cmd: "h2load -n1000 https://{proxy_ip}/", match: '(?s)requests: (?P<total>\d+) total, \d+ started, \d+ done, (?P<succeeded>\d+) succeeded, (?P<failed>\d+) failed.*?status codes: (?P<s2xx>\d+) 2xx', expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}}
 ```
 
 Trace: `requires` ⊆ setup-01's computed capabilities `[e810, octeon-cn106, sdp, wire]`, so the
@@ -198,7 +205,21 @@ client` exists in `roles`; after `daolab sync` this file flips the catalog row t
 
 ## Per-role playbook task mapping
 
-Which tasks each role contributes to the shared playbooks (run order top to bottom):
+> **As built (B-98).** The four playbooks in this table are now plays and roles of one
+> `playbooks/deploy.yml`, undone by `playbooks/cleanup.yml` (plan/09 §6, [05](05-provisioning.md)):
+>
+> | Old playbook | Now | Job steps on the dashboard |
+> |---|---|---|
+> | — (new) | `roles/lease_ip` — management address per VM role, arping check from its dom0 (B-97) | `lease_ips`, `lease_ip <role>` |
+> | `dpu_prepare.yml` 1 | `roles/ebf_set` | `ebf_set` |
+> | `dpu_prepare.yml` 2–8 | `playbooks/apps/nginx-tls/deploy.yml` (the DPU app), then `roles/dpu_access` (the owner's `lab` login) and the DPU's address | `<app>_board_state`, `dpu_app`, `dpu_access`, `post_dpu_ip` |
+> | `host_vm.yml` 9–16 | `roles/host_vm` — VMs through Xen Orchestra (B-93): the VF is a VIF on the host's SR-IOV network; the seed (user, key, network, agent) goes through xenstore | `create_vm`, `start_vm`, `wait_ip`, `post_vm_ip` per role |
+> | `verify.yml` 17 | `roles/verify` — exit 0 and parsed numbers (B-95) | `verify` |
+> | `teardown.yml` 18 | `playbooks/cleanup.yml`, then `verify_clean.yml` / `reconcile.yml` | the cleanup job's steps |
+>
+> The per-task detail below still describes what happens for this use case.
+
+Which tasks each role contributes (run order top to bottom):
 
 | Playbook | # | Task | Role | Idempotency guard |
 |---|---|---|---|---|
@@ -218,7 +239,7 @@ Which tasks each role contributes to the shared playbooks (run order top to bott
 | `host_vm.yml` | 14 | in-guest static data IP (10.21.0.2 / 10.20.0.30) | per role | netplan file content |
 | `host_vm.yml` | 15 | in-guest install per `install:` token | per role | apt is idempotent |
 | `host_vm.yml` | 16 | payload files under `/var/www/html/` | backend | `creates:` guards |
-| `verify.yml` | 17 | substitute `{proxy_ip}`, run `cmd` on the `from` role's VM, assert `expect` in stdout | client | read-only |
+| `verify.yml` | 17 | substitute `{proxy_ip}`, run `cmd` on the `from` role's VM; it must exit 0 and its parsed numbers pass `expect` | client | read-only |
 | `teardown.yml` | 18 | destroy VMs, stop nginx, remove reservation config | all | absent ⇒ no-op |
 
 DIY reservations run `host_vm.yml` only (no `dpu_prepare.yml`, no `verify.yml`), so tasks 1–8
@@ -228,7 +249,8 @@ and 17 never touch a DIY run.
 
 Automated (`verify.yml`, driven verbatim by the YAML `verify` block): resolve `{proxy_ip}` from
 the proxy role's `vms.ip` (10.20.0.10), then on the client VM run
-`h2load -n1000 https://10.20.0.10/` and assert the substring `200: 1000` in stdout — all 1000
+`h2load -n1000 https://10.20.0.10/`; it must exit 0, and h2load's own summary must parse to
+`1000 succeeded`, `0 failed` and `1000 2xx` (B-95) — all 1000
 requests answered 200 across the wire, through TLS termination, to the backend and back.
 
 Manual corroboration for the Phase-1 checkpoint:
@@ -242,7 +264,7 @@ Manual corroboration for the Phase-1 checkpoint:
    path per the CN10K SDK kernel, e.g. under `/sys/kernel/debug/cn10k/cpt/`) and confirm the
    delta ≈ the handshake count; additionally the NGINX error log must show `dpdk_engine`
    initialising against the CPT VF queue pairs at startup. If the counters do not move, the
-   handshakes were done in software and the run fails review even with `200: 1000`.
+   handshakes were done in software and the run fails review even with all 1000 succeeded.
 
 ## Manual Phase 1 bring-up walkthrough
 
@@ -320,7 +342,7 @@ variants stay reservable side by side. Field-by-field diff:
 | `roles.proxy` | `{on: dpu, app: nginx-tls, crypto: cpt-vfs, upstream: backend}` | drops `upstream` — NGINX serves the payload from its local root |
 | `roles.backend` | present | **deleted** — no `dpu_host` VM, no SDP hop |
 | `roles.client` | unchanged | unchanged |
-| `verify` | `{from: client, cmd: "h2load -n1000 https://{proxy_ip}/", expect: "200: 1000"}` | unchanged verbatim |
+| `verify` | `{from: client, cmd: "h2load -n1000 https://{proxy_ip}/", match: …, expect: {succeeded: "== 1000", failed: "== 0", s2xx: "== 1000"}}` (B-95) | unchanged verbatim |
 
 One playbook-template consequence, still zero service code: the `dpu_prepare.yml` nginx.conf
 template branches on whether the `on: dpu` role carries `upstream` — present ⇒ `proxy_pass` to

@@ -41,6 +41,7 @@ class Settings:
     mock_step_sec: float
     mock_fail: str
     job_timeout_sec: int
+    token_ttl_days: int
     prometheus_url: str
     reconcile_attempts: int
     authz_secret: str
@@ -50,6 +51,8 @@ class Settings:
     deploy_vms: bool
     become_password_file: str
     deployable: tuple[str, ...]
+    xo_url: str
+    xo_token_file: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -90,6 +93,7 @@ class Settings:
             mock_step_sec=float(env("DAOLAB_MOCK_STEP_SEC", "5")),
             mock_fail=env("DAOLAB_MOCK_FAIL", ""),
             job_timeout_sec=int(env("DAOLAB_JOB_TIMEOUT_SEC", "1800")),
+            token_ttl_days=int(env("DAOLAB_TOKEN_TTL_DAYS", "90")),
             prometheus_url=env("DAOLAB_PROMETHEUS_URL", "http://localhost:9090"),
             reconcile_attempts=int(env("DAOLAB_RECONCILE_ATTEMPTS", "2")),
             authz_secret=env("DAOLAB_AUTHZ_SECRET", ""),
@@ -99,6 +103,9 @@ class Settings:
             deploy_vms=flag("DAOLAB_DEPLOY_VMS", "true"),
             become_password_file=env("DAOLAB_BECOME_PASSWORD_FILE", ""),
             deployable=tuple(n.strip() for n in env("DAOLAB_DEPLOYABLE", "").split(",") if n.strip()),
+            # B-93: the use cases' VMs are made through Xen Orchestra (scripts/run/xo.sh)
+            xo_url=env("DAOLAB_XO_URL", "https://127.0.0.1:8443/rest/v0"),
+            xo_token_file=env("DAOLAB_XO_TOKEN_FILE", ""),
         )
 
 

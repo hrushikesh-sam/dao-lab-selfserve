@@ -30,7 +30,11 @@ from datetime import datetime, timezone
 from typing import Callable
 
 VERDICTS = ("healthy", "degraded", "down", "unknown")
-FRESHNESS_QUERY = 'max(timestamp({daolab_reservation="$RID"}))'
+# `up`, not every series: timestamp() drops the metric name, and real agents send series that
+# differ only by name (tcpcheck_status_ratio / tcpcheck_duration_milliseconds), so
+# `timestamp({daolab_reservation=...})` fails with "vector cannot contain metrics with the same
+# labelset" (B-86). Every agent and the mock scrape report `up`, and those series differ by job.
+FRESHNESS_QUERY = 'max(timestamp(up{daolab_reservation="$RID"}))'
 _EXPECT = re.compile(r"^\s*(==|!=|>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*$")
 _OPS = {"==": operator.eq, "!=": operator.ne, ">=": operator.ge, "<=": operator.le,
         ">": operator.gt, "<": operator.lt}
@@ -64,7 +68,7 @@ class Verdict:
     verdict: str
     checks: list[CheckResult] = field(default_factory=list)
     evaluated_at: str | None = None
-    last_seen: str | None = None    # newest sample of any series of the reservation
+    last_seen: str | None = None    # newest `up` sample of the reservation (its agents)
     reason: str | None = None       # why the verdict is unknown / down / degraded
 
 

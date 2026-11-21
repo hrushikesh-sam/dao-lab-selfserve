@@ -248,6 +248,13 @@ def _m10_reservation_access(conn: sqlite3.Connection) -> None:
     add_column(conn, "resources", "address", "TEXT")
 
 
+def _m11_token_expiry(conn: sqlite3.Connection) -> None:
+    """B-101 (mistakes.md J13): bearer tokens expire. `users.token_expires_at` is the UTC
+    time (`YYYY-MM-DDTHH:MM:SSZ`) after which the token is refused; NULL = never (tokens
+    issued before this migration, or DAOLAB_TOKEN_TTL_DAYS=0)."""
+    add_column(conn, "users", "token_expires_at", "TEXT")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -259,6 +266,7 @@ MIGRATIONS: list[Migration] = [
     Migration(8, "usecase_health", _m8_usecase_health),
     Migration(9, "health_snapshots", _m9_health_snapshots),
     Migration(10, "reservation_access", _m10_reservation_access),
+    Migration(11, "token_expiry", _m11_token_expiry),
 ]
 
 

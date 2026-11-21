@@ -35,22 +35,18 @@
 - name: the DAO app's cleanup
   ansible.builtin.import_playbook: "apps/{{ daolab_app | default('none') }}/cleanup.yml"
 
-- name: destroy the reservation's VMs
+- name: destroy the reservation's VMs (through Xen Orchestra, B-93)
   hosts: r_dom0
   gather_facts: false
   tasks:
+    - name: the reservation's VMs on this host
+      ansible.builtin.command: "{{ daolab_xo }} vms --pool {{ xo_pool }} --prefix daolab-r{{ reservation_id | int }}-"
+      register: _mine
+      changed_when: false
+
     - name: "step: destroy_vms"
-      ansible.builtin.shell: |
-        set -o pipefail
-        for name in $(xe vm-list is-control-domain=false params=name-label --minimal | tr ',' '\n' \
-                      | grep -E '^daolab-r{{ reservation_id | int }}-' || true); do
-          for uuid in $(xe vm-list name-label="$name" --minimal | tr ',' ' '); do
-            xe vm-shutdown uuid="$uuid" force=true 2>/dev/null || true
-            xe vm-uninstall uuid="$uuid" force=true
-          done
-          echo "destroyed $name"
-        done
-      args:
-        executable: /bin/bash
-      register: _destroyed
-      changed_when: "'destroyed' in _destroyed.stdout"
+      ansible.builtin.command: "{{ daolab_xo }} destroy --vm {{ item.id }}"
+      loop: "{{ _mine.stdout | from_json }}"
+      loop_control:
+        label: "{{ item.name }}"
+      changed_when: true

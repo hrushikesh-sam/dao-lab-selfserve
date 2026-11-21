@@ -55,33 +55,36 @@
              + (_dpu_missing.stdout_lines | select | list)
              + ([] if hw_class is defined else ['host_vars/' ~ inventory_hostname ~ '.yml: hw_class']) }}
 
-- name: the XCP-ng host (only with VMs)
+- name: the XCP-ng hosts (only with VMs; through Xen Orchestra, B-93)
   hosts: r_dom0
   gather_facts: false
   tasks:
-    - name: the template is there
-      ansible.builtin.shell: |
-        {% for t in templates | default(['tpl-ubuntu2204-dao']) %}
-        [ -n "$(xe template-list name-label={{ t }} --minimal)" ] || echo "missing template: {{ t }}"
-        {% endfor %}
-        true
+    - name: the templates are in the host's pool
+      ansible.builtin.command: "{{ daolab_xo }} template --pool {{ xo_pool }} --name {{ item }}"
+      loop: "{{ templates | default(['tpl-ubuntu2204-dao']) }}"
       register: _tpl
       changed_when: false
+      failed_when: false
+      when: xo_pool | default('') | length > 0
 
-    - name: every listed VF is in pciback
-      ansible.builtin.command: xl pci-assignable-list
-      register: _assignable
+    - name: the SR-IOV networks are in the host's pool
+      ansible.builtin.command: "{{ daolab_xo }} network --pool {{ xo_pool }} --name {{ item.value | quote }}"
+      loop: "{{ (sriov_networks | default({})) | dict2items }}"
+      register: _net
       changed_when: false
+      failed_when: false
+      when: xo_pool | default('') | length > 0
 
     - name: remember what is missing on the host
       ansible.builtin.set_fact:
         daolab_missing: >-
-          {{ (_tpl.stdout_lines | select | list)
-             + ((e810_vfs | default([]) + sdp_vfs | default([]))
-                | reject('in', _assignable.stdout_lines | map('trim') | list)
-                | map('regex_replace', '^', 'VF not in pciback: ') | list)
-             + ([] if (sr_uuid | default('')) else ['host_vars/' ~ inventory_hostname ~ '.yml: sr_uuid'])
-             + ([] if (e810_vfs | default([])) else ['host_vars/' ~ inventory_hostname ~ '.yml: e810_vfs']) }}
+          {{ ([] if (xo_pool | default('')) else ['host_vars/' ~ inventory_hostname ~ '.yml: xo_pool'])
+             + (_tpl.results | default([]) | rejectattr('skipped', 'defined')
+                | selectattr('rc', 'ne', 0)
+                | map(attribute='item') | map('regex_replace', '^', 'missing template: ') | list)
+             + (_net.results | default([]) | rejectattr('skipped', 'defined')
+                | selectattr('rc', 'ne', 0)
+                | map(attribute='item.value') | map('regex_replace', '^', 'missing SR-IOV network: ') | list) }}
 
 - name: report
   hosts: localhost

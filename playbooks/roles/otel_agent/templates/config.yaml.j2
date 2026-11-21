@@ -1,0 +1,38 @@
+# {{ ansible_managed }}
+# Rendered by playbooks/roles/otel_agent (B-83). Hostmetrics + daolab.* resource attributes
+# -> OTel Collector (OTLP gRPC). Debian's otelcol-contrib.service reads this file.
+receivers:
+  hostmetrics:
+    collection_interval: {{ otel_agent_interval }}
+    scrapers:
+      cpu:
+      memory:
+      disk:
+      filesystem:
+      network:
+      load:
+
+processors:
+  resource:
+    attributes:
+      - {key: service.name,       value: "{{ otel_agent_service_name }}",   action: upsert}
+      - {key: daolab.reservation, value: "{{ otel_agent_reservation }}",     action: upsert}
+      - {key: daolab.user,        value: "{{ otel_agent_user }}",            action: upsert}
+      - {key: daolab.role,        value: "{{ otel_agent_role }}",            action: upsert}
+      - {key: daolab.setup,       value: "{{ otel_agent_setup }}",           action: upsert}
+  batch: {}
+
+exporters:
+  otlp:
+    endpoint: {{ otel_agent_collector_endpoint }}
+    tls:
+      insecure: {{ otel_agent_insecure | bool | lower }}
+    retry_on_failure:
+      enabled: true
+
+service:
+  pipelines:
+    metrics:
+      receivers: [hostmetrics]
+      processors: [resource, batch]
+      exporters: [otlp]
