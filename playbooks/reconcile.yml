@@ -6,9 +6,7 @@
 #      shutdown + delete (the VM, its VIFs and VDIs; its SR-IOV VF goes back to the PF);
 #   2. on the DPU: the app's runbook cleanup again (apps/<app>/cleanup.yml), then every
 #      daolab-app-* unit stopped (hw_class untouched, plan/01 invariant);
-#   3. on the DPU: every session / process of the shared lab login killed;
-#   4. on the DPU, unless the home policy is `keep`: whatever is left in the lab home folder
-#      moved to the root-only unsaved stash and /etc/skel put back (B-107; never deleted).
+#   3. on the DPU: every session / process of the shared lab login killed.
 #
 # Every step is idempotent and safe on a clean testbed. Followed by verify_clean.yml.
 # Extra vars: reservation_id, setup (+ what play 0 reads). `daolab_vm_names` (a list of VM
@@ -70,13 +68,6 @@
         fi
       register: _kill
       changed_when: "'killed' in _kill.stdout"
-
-    # after the sessions are gone, so nothing writes into the folder while it is moved
-    - name: the lab home folder (B-107)
-      ansible.builtin.include_role:
-        name: snapshot
-        tasks_from: stash
-      when: (daolab_home_policy | default('keep')) != 'keep'
 
     - name: hugepages back to the baseline
       ansible.builtin.include_tasks: tasks/release_hugepages.yml

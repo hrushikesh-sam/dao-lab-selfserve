@@ -34,8 +34,7 @@ def test_migration_creates_jobs_table(db):
     cols = {r[1] for r in db.execute("PRAGMA table_info(jobs)")}
     assert cols == {"id", "reservation_id", "kind", "state", "attempt", "trace_id",
                     "log_path", "steps", "error", "started_at", "finished_at",
-                    "created_at", "updated_at",
-                    "snapshot_id", "secret"}                      # migration 13 (B-104)
+                    "created_at", "updated_at"}
 
 
 def test_upgrade_from_v4_keeps_rows_and_is_idempotent(tmp_path):

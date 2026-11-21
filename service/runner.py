@@ -67,11 +67,9 @@ class RunResult:
 #   dpu_app:<unit>          a use-case app unit is still active on the DPU
 #   ip:10.30.0.101          a leased address still answers ping
 #   dpu_hugepages:6         512 MB hugepages still reserved above the board's baseline
-#   dpu_home:lab            the shared login's home folder holds more than /etc/skel (B-107)
-RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "dpu_home", "ip")
+RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "ip")
 CHECK_FOR_KIND = {"vm": "check_vms", "vf": "check_vfs", "dpu_session": "check_sessions",
                   "dpu_app": "check_sessions", "dpu_hugepages": "check_sessions",
-                  "dpu_home": "check_home",          # B-107, only with a home policy != keep
                   "ip": "check_ips"}
 
 
