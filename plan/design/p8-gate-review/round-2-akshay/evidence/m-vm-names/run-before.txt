@@ -1,0 +1,130 @@
+## python 3.11
+.FF                                                                      [100%]
+=================================== FAILURES ===================================
+___ test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var ____
+tests/test_orphans_canary_DRAFT.py:57: in test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var
+    assert not canary.exists(), f"a VM name was evaluated as an extra var:\n{lab.stdout[-1500:]}"
+E   AssertionError: a VM name was evaluated as an extra var:
+E     
+E     PLAY [orphan sweep on the XCP-ng hosts (through Xen Orchestra, B-93)] **********
+E     
+E     TASK [step: list_vms] **********************************************************
+E     ok: [tb-01-xcp]
+E     
+E     TASK [keep the daolab-r<id>-* names] *******************************************
+E     ok: [tb-01-xcp]
+E     
+E     TASK [step: destroy_vms] *******************************************************
+E     changed: [tb-01-xcp] => (item=daolab-r998-y)
+E     
+E     PLAY [report] ******************************************************************
+E     
+E     TASK [write the tagged VM names for the runner] ********************************
+E     skipping: [localhost]
+E     
+E     PLAY RECAP *********************************************************************
+E     localhost                  : ok=0    changed=0    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+E     tb-01-xcp                  : ok=3    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+E     
+E     [WARNING]: Error loading plugin 'community.general.opentelemetry': No module named 'ansible_collections.community'
+E     [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E     
+E   assert not True
+E    +  where True = exists()
+E    +    where exists = PosixPath('/tmp/pytest-of-root/pytest-27/test_destroy_mode_never_evalua0/canary-destroy').exists
+_____ test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name _____
+tests/test_orphans_canary_DRAFT.py:70: in test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name
+    assert not canary.exists(), f"evaluated during the destroy half:\n{lab.stdout[-1500:]}"
+E   AssertionError: evaluated during the destroy half:
+E     
+E     PLAY [orphan sweep on the XCP-ng hosts (through Xen Orchestra, B-93)] **********
+E     
+E     TASK [step: list_vms] **********************************************************
+E     ok: [tb-01-xcp]
+E     
+E     TASK [keep the daolab-r<id>-* names] *******************************************
+E     ok: [tb-01-xcp]
+E     
+E     TASK [step: destroy_vms] *******************************************************
+E     changed: [tb-01-xcp] => (item=daolab-r998-y)
+E     
+E     PLAY [report] ******************************************************************
+E     
+E     TASK [write the tagged VM names for the runner] ********************************
+E     skipping: [localhost]
+E     
+E     PLAY RECAP *********************************************************************
+E     localhost                  : ok=0    changed=0    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+E     tb-01-xcp                  : ok=3    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+E     
+E     [WARNING]: Error loading plugin 'community.general.opentelemetry': No module named 'ansible_collections.community'
+E     [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E     
+E   assert not True
+E    +  where True = exists()
+E    +    where exists = PosixPath('/tmp/pytest-of-root/pytest-27/test_the_two_halves_chained_li0/canary-chain').exists
+2 failed, 1 passed in 5.19s
+## python 3.12
+.FF                                                                      [100%]
+=================================== FAILURES ===================================
+___ test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var ____
+tests/test_orphans_canary_DRAFT.py:57: in test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var
+    assert not canary.exists(), f"a VM name was evaluated as an extra var:\n{lab.stdout[-1500:]}"
+E   AssertionError: a VM name was evaluated as an extra var:
+E     
+E     PLAY [orphan sweep on the XCP-ng hosts (through Xen Orchestra, B-93)] **********
+E     
+E     TASK [step: list_vms] **********************************************************
+E     ok: [tb-01-xcp]
+E     
+E     TASK [keep the daolab-r<id>-* names] *******************************************
+E     ok: [tb-01-xcp]
+E     
+E     TASK [step: destroy_vms] *******************************************************
+E     changed: [tb-01-xcp] => (item=daolab-r998-y)
+E     
+E     PLAY [report] ******************************************************************
+E     
+E     TASK [write the tagged VM names for the runner] ********************************
+E     skipping: [localhost]
+E     
+E     PLAY RECAP *********************************************************************
+E     localhost                  : ok=0    changed=0    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+E     tb-01-xcp                  : ok=3    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+E     
+E     [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E     
+E   assert not True
+E    +  where True = exists()
+E    +    where exists = PosixPath('/tmp/pytest-of-root/pytest-28/test_destroy_mode_never_evalua0/canary-destroy').exists
+_____ test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name _____
+tests/test_orphans_canary_DRAFT.py:70: in test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name
+    assert not canary.exists(), f"evaluated during the destroy half:\n{lab.stdout[-1500:]}"
+E   AssertionError: evaluated during the destroy half:
+E     
+E     PLAY [orphan sweep on the XCP-ng hosts (through Xen Orchestra, B-93)] **********
+E     
+E     TASK [step: list_vms] **********************************************************
+E     ok: [tb-01-xcp]
+E     
+E     TASK [keep the daolab-r<id>-* names] *******************************************
+E     ok: [tb-01-xcp]
+E     
+E     TASK [step: destroy_vms] *******************************************************
+E     changed: [tb-01-xcp] => (item=daolab-r998-y)
+E     
+E     PLAY [report] ******************************************************************
+E     
+E     TASK [write the tagged VM names for the runner] ********************************
+E     skipping: [localhost]
+E     
+E     PLAY RECAP *********************************************************************
+E     localhost                  : ok=0    changed=0    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+E     tb-01-xcp                  : ok=3    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+E     
+E     [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E     
+E   assert not True
+E    +  where True = exists()
+E    +    where exists = PosixPath('/tmp/pytest-of-root/pytest-28/test_the_two_halves_chained_li0/canary-chain').exists
+2 failed, 1 passed in 5.51s

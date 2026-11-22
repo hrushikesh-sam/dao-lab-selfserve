@@ -1,0 +1,4 @@
+platform name, 128-char role     vm_name_ok=True  | sweep ok, destroyed [['daolab-r998-y', 'daolab-r12-a*128']]
+role starts with '-'             vm_name_ok=False | sweep ok, destroyed [['daolab-r998-y']]
+19-digit id (> int64)            vm_name_ok=False | sweep ok, destroyed [['daolab-r998-y']]
+5000-digit id                    vm_name_ok=False | sweep ok, destroyed [['daolab-r998-y']]

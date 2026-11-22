@@ -1,0 +1,14 @@
+## 3.11
+tests/test_orphans_canary.py::test_list_mode_never_evaluates_a_vm_name PASSED [ 33%]
+tests/test_orphans_canary.py::test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var FAILED [ 66%]
+tests/test_orphans_canary.py::test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name FAILED [100%]
+FAILED tests/test_orphans_canary.py::test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var
+FAILED tests/test_orphans_canary.py::test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name
+========================= 2 failed, 1 passed in 4.60s ==========================
+## 3.12
+tests/test_orphans_canary.py::test_list_mode_never_evaluates_a_vm_name PASSED [ 33%]
+tests/test_orphans_canary.py::test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var FAILED [ 66%]
+tests/test_orphans_canary.py::test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name FAILED [100%]
+FAILED tests/test_orphans_canary.py::test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var
+FAILED tests/test_orphans_canary.py::test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name
+========================= 2 failed, 1 passed in 4.28s ==========================

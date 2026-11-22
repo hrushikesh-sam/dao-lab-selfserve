@@ -1,0 +1,5 @@
+ playbooks/deploy.yml         |  3 ++-
+ playbooks/group_vars/all.yml |  6 +++++
+ service/runner.py            | 61 +++++++++++++++++++++++++++++++++++++++++++-
+ tests/test_ansible_runner.py |  5 +++-
+ 4 files changed, 72 insertions(+), 3 deletions(-)

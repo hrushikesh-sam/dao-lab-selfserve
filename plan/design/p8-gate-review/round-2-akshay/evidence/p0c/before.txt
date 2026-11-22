@@ -1,0 +1,32 @@
+## python 3.11
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[daolab-r1-a|id]
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[ daolab-r1-a]
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[name18] - Attr...
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[daolab-r9999999999999999999-a]
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[admin-scratch]
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[] - AttributeE...
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[None] - Attrib...
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[7] - Attribute...
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[daolab-r1-a]
+FAILED tests/test_vm_names_strict.py::test_the_sweep_never_hands_a_bad_name_to_the_runner
+FAILED tests/test_vm_names_strict.py::test_only_bad_names_means_no_destroy_call
+FAILED tests/test_vm_names_strict.py::test_the_runner_refuses_a_bad_name_and_runs_nothing
+FAILED tests/test_vm_names_strict.py::test_list_mode_reports_only_well_formed_names
+FAILED tests/test_vm_names_strict.py::test_the_sweep_end_to_end_on_the_fake_lab_never_evaluates_a_vm_name
+35 failed in 4.00s
+## python 3.12
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[daolab-r1-a|id]
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[ daolab-r1-a]
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[name18] - Attr...
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[daolab-r9999999999999999999-a]
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[admin-scratch]
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[] - AttributeE...
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[None] - Attrib...
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[7] - Attribute...
+FAILED tests/test_vm_names_strict.py::test_anything_else_fails[daolab-r1-a]
+FAILED tests/test_vm_names_strict.py::test_the_sweep_never_hands_a_bad_name_to_the_runner
+FAILED tests/test_vm_names_strict.py::test_only_bad_names_means_no_destroy_call
+FAILED tests/test_vm_names_strict.py::test_the_runner_refuses_a_bad_name_and_runs_nothing
+FAILED tests/test_vm_names_strict.py::test_list_mode_reports_only_well_formed_names
+FAILED tests/test_vm_names_strict.py::test_the_sweep_end_to_end_on_the_fake_lab_never_evaluates_a_vm_name
+35 failed in 4.20s

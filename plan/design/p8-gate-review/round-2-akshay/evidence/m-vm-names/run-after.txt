@@ -1,0 +1,10 @@
+## python 3.11
+/tmp/gate/tests/test_orphans_canary_DRAFT.py:57: AssertionError: a VM name was evaluated as an extra var:
+=========================== short test summary info ============================
+FAILED tests/test_orphans_canary_DRAFT.py::test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var
+1 failed, 2 passed in 5.06s
+## python 3.12
+/tmp/gate/tests/test_orphans_canary_DRAFT.py:57: AssertionError: a VM name was evaluated as an extra var:
+=========================== short test summary info ============================
+FAILED tests/test_orphans_canary_DRAFT.py::test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var
+1 failed, 2 passed in 5.20s

@@ -1,0 +1,4 @@
+platform name, 128-char role     vm_name_ok=n/a   | sweep ok, destroyed [['daolab-r998-y', 'daolab-r12-a*128']]
+role starts with '-'             vm_name_ok=n/a   | sweep ok, destroyed [['daolab-r998-y', 'daolab-r1--a']]
+19-digit id (> int64)            vm_name_ok=n/a   | SWEEP RAISED OverflowError: Python int too large to convert to SQLite INTEGER
+5000-digit id                    vm_name_ok=n/a   | SWEEP RAISED ValueError: Exceeds the limit (4300 digits) for integer string conversion: value h

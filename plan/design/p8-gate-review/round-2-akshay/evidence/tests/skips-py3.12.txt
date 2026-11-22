@@ -1,0 +1,4 @@
+SKIPPED ::tests.test_dashboard_e2e - collection skipped
+SKIPPED tests.test_daolab_keys::test_the_lab_login_is_gated_by_daolab_keys - sshd not installed
+SKIPPED tests.test_daolab_keys::test_root_keeps_its_static_keys_and_the_match_does_not_leak - sshd not installed
+SKIPPED tests.test_playbooks::test_the_access_drop_in_opens_lab_only - sshd not installed

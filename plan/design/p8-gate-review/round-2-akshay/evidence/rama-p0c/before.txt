@@ -1,0 +1,30 @@
+## 3.11
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused['daolab-r1-a\\x00']
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused['admin-scratch']
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused['daolab-notes']
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[''] - At...
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[None] - ...
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[5] - Att...
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[b'daolab-r1-a']
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[['daolab-r1-a']]
+FAILED tests/test_vm_names_strict.py::test_split_keeps_order_and_counts_the_dropped
+FAILED tests/test_vm_names_strict.py::test_the_runner_lists_only_valid_names_and_logs_a_count_only
+FAILED tests/test_vm_names_strict.py::test_destroy_hands_ansible_no_payload_and_logs_no_name
+FAILED tests/test_vm_names_strict.py::test_destroy_with_only_invalid_names_runs_nothing
+FAILED tests/test_vm_names_strict.py::test_the_sweep_skips_invalid_names_before_the_runner_and_logs_a_count_only
+46 failed, 1 passed in 4.23s
+## 3.12
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused['daolab-r1-a\\x00']
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused['admin-scratch']
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused['daolab-notes']
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[''] - At...
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[None] - ...
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[5] - Att...
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[b'daolab-r1-a']
+FAILED tests/test_vm_names_strict.py::test_invalid_names_are_refused[['daolab-r1-a']]
+FAILED tests/test_vm_names_strict.py::test_split_keeps_order_and_counts_the_dropped
+FAILED tests/test_vm_names_strict.py::test_the_runner_lists_only_valid_names_and_logs_a_count_only
+FAILED tests/test_vm_names_strict.py::test_destroy_hands_ansible_no_payload_and_logs_no_name
+FAILED tests/test_vm_names_strict.py::test_destroy_with_only_invalid_names_runs_nothing
+FAILED tests/test_vm_names_strict.py::test_the_sweep_skips_invalid_names_before_the_runner_and_logs_a_count_only
+46 failed, 1 passed in 5.20s

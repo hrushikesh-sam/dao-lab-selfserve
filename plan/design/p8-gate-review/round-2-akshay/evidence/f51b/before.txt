@@ -1,0 +1,5 @@
+E   assert ["['DAOLAB_AU... 'a-1', 't-1'] == ['[]', 'i-1', 'a-1', 't-1']
+E   assert ["['DAOLAB_AU... 'a-2', 't-2'] == ['[]', 'i-2', 'a-2', 't-2']
+E   AttributeError: module 'service.config' has no attribute 'scrub_secret_env'
+/tmp/gate/tests/test_secret_env_scrub.py:61: AttributeError: module 'service.config' has no attribute 'scrub_secret_env'
+3 failed, 1 passed in 0.38s
