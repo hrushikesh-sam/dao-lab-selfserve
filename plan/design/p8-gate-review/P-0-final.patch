@@ -1,0 +1,492 @@
+diff --git a/service/api.py b/service/api.py
+index 04741c1..94c204e 100644
+--- a/service/api.py
++++ b/service/api.py
+@@ -149,9 +149,6 @@ class UserPatch(BaseModel):
+ 
+ # ---- access: SSH key or generated password ----------------------------------
+ 
+-_PUBKEY = re.compile(r"^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521)|"
+-                     r"sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) [A-Za-z0-9+/]+={0,3}"
+-                     r"( [^\x00-\x1f]*)?$")
+ _PASSWORD_CHARS = string.ascii_letters + string.digits
+ _LIVE = ("ready", "active")
+ 
+@@ -161,17 +158,18 @@ def _deploy_access(given: str | None) -> tuple[str | None, str | None]:
+     line; a blank answer means "give me a password" (16 random letters and digits)."""
+     if given is None:
+         return None, None                             # the owner's registered key
+-    lines = [ln.strip() for ln in given.strip().splitlines() if ln.strip()]
++    lines = models.ssh_key_lines(given)               # `\n` / `\r\n` separate keys, nothing else
+     if not lines:
+         return None, "".join(secrets.choice(_PASSWORD_CHARS) for _ in range(16))
+     if len(lines) > 5 or len(given) > 8192:
+         raise DaolabError("validation_error", 422, "ssh_pubkey: at most 5 keys")
+-    bad = [ln for ln in lines if not _PUBKEY.match(ln)]
++    bad = [i for i, ln in enumerate(lines, 1) if not models.ssh_key_line_ok(ln)]
+     if bad:
++        # Not echoed back: the line is user text and may carry control characters.
+         raise DaolabError("validation_error", 422,
+-                          f"ssh_pubkey: not an SSH public key: {bad[0][:40]}...",
+-                          {"hint": "paste the contents of ~/.ssh/id_ed25519.pub, or leave it "
+-                                   "empty to get a password"})
++                          f"ssh_pubkey: line {bad[0]} is not an SSH public key",
++                          {"hint": "paste the contents of ~/.ssh/id_ed25519.pub (plain ASCII "
++                                   "comment, no braces), or leave it empty to get a password"})
+     return "\n".join(lines), None
+ 
+ 
+@@ -698,6 +696,11 @@ def create_reservation(body: ReservationCreate,
+             raise DaolabError("not_found", 404, f"unknown setup: {body.setup}",
+                               {"setup": body.setup})
+         hosts = models.setup_vm_hosts(conn, setup["id"])
++        if not all(models.template_name_ok(t) for t in body.templates.values()):
++            # the value is user text that ansible would template: plain names only
++            raise DaolabError("validation_error", 422,
++                              "templates: a template name may use letters, digits, space and "
++                              "._()+:@- only (1-128 characters)")
+         if set(body.templates.keys()) != hosts:
+             missing = sorted(hosts - set(body.templates.keys()))
+             extra = sorted(set(body.templates.keys()) - hosts)
+diff --git a/service/cli.py b/service/cli.py
+index 9b9399d..01aaee3 100644
+--- a/service/cli.py
++++ b/service/cli.py
+@@ -72,10 +72,28 @@ def cmd_sync(args) -> int:
+ 
+ 
+ def cmd_add_user(args) -> int:
++    name = args.username
++    if (not isinstance(name, str) or not name.strip() or "{{" in name or "{%" in name
++            or "{#" in name or any(c in name for c in "\x7f\x85\u2028\u2029")
++            or any(ord(c) < 0x20 for c in name)):
++        _die("username: must not be empty or contain control characters or {{ {% {#")
+     try:
+-        pubkey = open(args.pubkey_path).read().strip()
+-    except OSError as e:
+-        _die(f"cannot read {args.pubkey_path}: {e}")
++        with open(args.pubkey_path, encoding="utf-8") as fh:
++            text = fh.read()
++    except (OSError, UnicodeDecodeError) as e:
++        _die(f"cannot read {args.pubkey_path}: {type(e).__name__}")
++    keys, bad = [], []
++    for i, ln in enumerate(models.ssh_key_lines(text), 1):
++        if ln.startswith("#"):
++            continue                                 # a key file's comment line
++        if models.ssh_key_line_ok(ln):
++            keys.append(ln)
++        else:
++            bad.append(i)
++    if bad or not keys or len(keys) > 5:
++        _die(f"{args.pubkey_path}: not a valid SSH public key file (1-5 keys, ASCII comments "
++             "without braces or control characters)")
++    pubkey = "\n".join(keys)
+     token = secrets.token_urlsafe(32)
+     expires = _token_expiry()
+     conn = models.connect(config.settings.db_path)
+diff --git a/service/models.py b/service/models.py
+index 8dc35db..b5ecc92 100644
+--- a/service/models.py
++++ b/service/models.py
+@@ -1,6 +1,7 @@
+ """sqlite helpers — the only code touching JSON-in-TEXT columns and timestamps."""
+ import json
+ import os
++import re
+ import sqlite3
+ from datetime import datetime, timezone
+ 
+@@ -259,12 +260,60 @@ def create_vms(conn, res_id: int) -> int:
+ ACCESS_LOGIN = "lab"           # the DPU login users get (playbooks/roles/dpu_access)
+ 
+ 
++# ---- user-controlled text that ansible would otherwise template (P-0 / F-1) --------------------
++#
++# Extra vars are re-templated by ansible wherever a playbook renders them, so a value such as
++# `{{ lookup('pipe', ...) }}` runs on the controller. Everything a user can write that ends up in
++# the runner's extravars is therefore checked against a closed ASCII allowlist: here (shared by
++# the API, the add-user CLI and the chokepoint below).
++
++_SSH_KEY_TYPES = (r"(?:ssh-(?:ed25519|rsa)|ecdsa-sha2-nistp(?:256|384|521)"
++                  r"|sk-(?:ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)")
++# type, base64 body, optional comment of 1..128 ASCII characters that neither starts nor ends with
++# a space. No braces, no control characters, no non-ASCII: `fullmatch` only.
++_SSH_KEY_LINE = re.compile(
++    _SSH_KEY_TYPES + r" [A-Za-z0-9+/]+={0,2}"
++    r"(?: [A-Za-z0-9._@+=:/,()-](?:[A-Za-z0-9 ._@+=:/,()-]{0,126}[A-Za-z0-9._@+=:/,()-])?)?")
++_TEMPLATE_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ._()+:@-]{0,126}[A-Za-z0-9._)+:@-])?")
++_IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
++UNSAFE_TEMPLATE_NAME = "invalid-template-rejected"     # what a poisoned stored template becomes
++
++
++def ssh_key_line_ok(line) -> bool:
++    """One SSH public-key line, whole (`fullmatch`: no trailing newline or space survives)."""
++    return isinstance(line, str) and _SSH_KEY_LINE.fullmatch(line) is not None
++
++
++def ssh_key_lines(blob: str) -> list[str]:
++    """The non-blank lines of a pasted key blob. Lines end at `\\n` or `\\r\\n` only (anything
++    else, a lone CR, NEL, U+2028, ..., stays in its line and fails `ssh_key_line_ok`); spaces and
++    tabs around a line are dropped."""
++    out = (ln.strip(" \t") for ln in re.split(r"\r?\n", blob))
++    return [ln for ln in out if ln]
++
++
++def clean_ssh_keys(blob):
++    """`blob` with only its valid key lines left (comment lines go too). None stays None."""
++    if blob is None:
++        return None
++    return "\n".join(ln for ln in ssh_key_lines(blob) if ssh_key_line_ok(ln))
++
++
++def template_name_ok(value) -> bool:
++    return isinstance(value, str) and _TEMPLATE_NAME.fullmatch(value) is not None
++
++
++def ident_ok(value) -> bool:
++    return isinstance(value, str) and _IDENT.fullmatch(value) is not None
++
++
+ def access_keys(res, user) -> str:
+     """The SSH key(s) that open this reservation: the one given at deploy, else - unless the
+-    owner asked for a password instead - their registered key."""
++    owner asked for a password instead - their registered key. Only valid key lines come out,
++    whatever is stored: a row written before P-0 cannot carry text to ansible."""
+     if res["ssh_pubkey"] is not None:
+-        return res["ssh_pubkey"]
+-    return "" if res["access_password"] is not None else user["ssh_pubkey"]
++        return clean_ssh_keys(res["ssh_pubkey"])
++    return "" if res["access_password"] is not None else clean_ssh_keys(user["ssh_pubkey"])
+ 
+ 
+ def access_fields(res, user) -> dict:
+@@ -287,6 +336,21 @@ def wipe_access_passwords(conn) -> int:
+     return cur.rowcount
+ 
+ 
++def _safe_template(value):
++    """A template name as stored, or UNSAFE_TEMPLATE_NAME (which no pool has, so the deploy fails
++    at its own template check) when it is not a plain name. None (no template) stays None."""
++    return value if value is None or template_name_ok(value) else UNSAFE_TEMPLATE_NAME
++
++
++def _safe_templates(templates) -> dict:
++    """diy `templates` for the runner: host -> template name. A host that is not a plain
++    identifier is dropped (the deploy then fails on the missing VM), a bad name is neutralised."""
++    if not isinstance(templates, dict):
++        return {}
++    return {h: _safe_template(t) if t is not None else UNSAFE_TEMPLATE_NAME
++            for h, t in templates.items() if ident_ok(h)}
++
++
+ def reservation_context(conn, res_id: int) -> dict:
+     """Everything a runner needs about one reservation, read once by the engine so the runner
+     never touches the DB. Keys follow the playbook extravars (plan/04 runner contract):
+@@ -304,13 +368,14 @@ def reservation_context(conn, res_id: int) -> dict:
+         "usecase": uc["name"], "setup": setup["name"],
+         "user": user["username"],
+         "hw_class": uc["hw_class"], "diy": bool(r["diy"]),
+-        "templates": from_json(r["diy_templates"]) if r["diy_templates"] else {},
++        "templates": _safe_templates(from_json(r["diy_templates"]) if r["diy_templates"] else {}),
+         "roles": from_json(uc["roles"]) if uc["roles"] else {},
+         "verify": from_json(uc["verify"]) if uc["verify"] else {},
+         "members": [{"name": m["name"], "kind": m["kind"], "host": m["host"]}
+                     for m in setup_members(conn, r["setup_id"])],
+-        "vms": [{"role": v["role"], "host": v["host"], "template": v["template"],
+-                 "name": v["name"], "ip": v["ip"]} for v in vms_for_reservation(conn, res_id)],
++        "vms": [{"role": v["role"], "host": v["host"], "template": _safe_template(v["template"]),
++                 "name": v["name"], "ip": v["ip"]} for v in vms_for_reservation(conn, res_id)
++                if all(x is None or ident_ok(x) for x in (v["role"], v["host"], v["name"]))],
+         "leases": [l["ip"] for l in ip_leases_for_reservation(conn, res_id)
+                    if l["state"] != "released"],
+     }
+diff --git a/tests/test_deploy_access.py b/tests/test_deploy_access.py
+index db268d2..a0415f1 100644
+--- a/tests/test_deploy_access.py
++++ b/tests/test_deploy_access.py
+@@ -73,7 +73,12 @@ def test_no_key_field_means_the_registered_key(api_env):
+ 
+ 
+ @pytest.mark.parametrize("bad", ["not a key", "ssh-ed25519", "ssh-ed25519 AAA$$ x",
+-                                 'command="sh" ' + KEY, "\n".join([KEY] * 6)])
++                                 'command="sh" ' + KEY, "\n".join([KEY] * 6),
++                                 # P-0 (F-1): the comment is user text; it must not be Jinja
++                                 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeploy+Key/0 {{ lookup('pipe', 'id') }}",
++                                 KEY.rsplit(" ", 1)[0] + " {% if 1 %}x{% endif %}",
++                                 KEY.rsplit(" ", 1)[0] + " {# x #}", KEY + "\x7f", KEY + " é",
++                                 KEY + "\rssh-rsa AAAAb x"])
+ def test_a_malformed_key_is_refused(api_env, bad):
+     r = deploy(api_env, ssh_pubkey=bad)
+     assert r.status_code == 422 and r.json()["error"]["code"] == "validation_error"
+diff --git a/tests/test_pubkey_strict.py b/tests/test_pubkey_strict.py
+new file mode 100644
+index 0000000..b2ac76e
+--- /dev/null
++++ b/tests/test_pubkey_strict.py
+@@ -0,0 +1,266 @@
++"""P-0 (F-1): user-controlled text must never reach ansible as a Jinja expression.
++
++Two inputs were found to be re-templated on the controller by real ansible-playbook:
++  * the SSH public-key comment (`dpu_access` role, tasks/main.yml), and
++  * the values of `templates` of a diy reservation (`tasks/plan_vms.yml`).
++Both are closed three ways here: the API refuses them (422), the add-user CLI refuses them, and the
++context the engine hands to the runner is scrubbed, so a row stored *before* the fix cannot reach
++ansible-runner either. The canary tests run the real playbook code and look for a file the payload
++would create; the payload only ever `touch`es a file inside pytest's tmp_path.
++"""
++import argparse
++import dataclasses
++import json
++import os
++import subprocess
++
++import pytest
++
++from service import cli, config, models, runner
++from tests.test_deploy_access import KEY, deploy
++from tests.test_playbooks import ANSIBLE, REPO, Lab, access_play
++
++KEY2 = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQ== bob@laptop"
++TPL = "tpl-ubuntu2204-dao"
++
++
++def _tpls(api_env, value=TPL):
++    """One template per VM host of tb-01 (the API wants exactly the setup's hosts); the first
++    host carries `value`, the others the normal template."""
++    sid = models.setup_by_name(api_env.conn, "tb-01")["id"]
++    hosts = sorted(models.setup_vm_hosts(api_env.conn, sid))
++    return {h: (value if i == 0 else TPL) for i, h in enumerate(hosts)}
++
++
++def pipe_payload(canary) -> str:
++    return "{{ lookup('pipe', 'touch " + str(canary) + "') }}"
++
++
++# ---- the parser (unit) ----------------------------------------------------------------------
++
++GOOD_LINES = [
++    KEY, KEY2,
++    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeploy+Key/0",                       # no comment
++    "ssh-ed25519 AAAA test", "ssh-rsa AAAAwork alice@work", "ssh-ed25519 AAAAnew alice@new",
++    "ecdsa-sha2-nistp256 AAAAE2VjZHNh=", "ecdsa-sha2-nistp384 AAAAE2VjZHNh==",
++    "ecdsa-sha2-nistp521 AAAAE2VjZHNh laptop (work), 2026",
++    "sk-ssh-ed25519@openssh.com AAAAGnNr yubikey", "sk-ecdsa-sha2-nistp256@openssh.com AAAAInNr yk",
++]
++
++BAD_COMMENTS = [
++    "{{ 7*7 }}", "{% if 1 %}x{% endif %}", "{# c #}", "{", "}", "a{b", "x}y",
++    "{{ lookup('pipe', 'id') }}", "$(id)", "${HOME}", "`id`", "a;b", "a|b", "a&b", "a<b", "a>b",
++    'a"b', "a'b", "a\\b", "a%b", "a#b", "a*b", "a?b", "a[b", "a~b", "a!b",
++    "\x7f", "a\x7fb", "\x85", "a\x85b", " ", "a b", " ", "a b",
++    "é", "名前", "a b", "a​b", "x" * 129,
++] + [f"a{chr(c)}b" for c in range(0x20) if chr(c) not in "\n"] + ["a\nb"]
++
++
++@pytest.mark.parametrize("line", GOOD_LINES)
++def test_a_good_key_line_is_accepted(line):
++    assert models.ssh_key_line_ok(line)
++
++
++@pytest.mark.parametrize("comment", BAD_COMMENTS)
++def test_an_unsafe_comment_is_refused(comment):
++    assert not models.ssh_key_line_ok(f"{KEY.rsplit(' ', 1)[0]} {comment}")
++
++
++@pytest.mark.parametrize("line", [KEY + "\n", KEY + "\r", KEY + "\r\n", KEY + "\x85", KEY + " ",
++                                  KEY + " ", KEY + "\x00", "\n" + KEY, " " + KEY, KEY + " ",
++                                  KEY + "  ", "", " ", "ssh-ed25519", "ssh-ed25519 ", "not a key",
++                                  "ssh-ed25519 AAA$$ x", 'command="sh" ' + KEY, "ssh-dss AAAA x"])
++def test_the_line_parser_is_a_fullmatch(line):
++    assert not models.ssh_key_line_ok(line)
++
++
++def test_a_comment_of_128_characters_is_the_limit():
++    assert models.ssh_key_line_ok(KEY.rsplit(" ", 1)[0] + " " + "x" * 128)
++
++
++# ---- the API refuses them -----------------------------------------------------------------
++
++API_BAD = [KEY.rsplit(" ", 1)[0] + " " + c for c in BAD_COMMENTS if "\n" not in c] + [
++    KEY + "\rssh-rsa AAAAb x", KEY + "\x0bssh-rsa AAAAb x", KEY + "\x1cssh-rsa AAAAb x",
++    KEY + "\x85ssh-rsa AAAAb x", KEY + " ssh-rsa AAAAb x", KEY + " ssh-rsa AAAAb x",
++    KEY + "\x0cssh-rsa AAAAb x", KEY + "\x00", KEY + "\x7f",
++    "\n".join([KEY] * 6), KEY + "\n" + KEY2 + "\n" + KEY.rsplit(" ", 1)[0] + " {{ 7*7 }}",
++]
++
++
++@pytest.mark.parametrize("bad", API_BAD)
++def test_the_api_refuses_an_unsafe_key(api_env, bad):
++    r = deploy(api_env, ssh_pubkey=bad)
++    assert r.status_code == 422 and r.json()["error"]["code"] == "validation_error", r.text
++    assert models.list_reservations(api_env.conn) == []
++
++
++@pytest.mark.parametrize("blob,expect", [
++    (KEY, [KEY]),
++    (KEY + "\n", [KEY]),                                                # the CLI sends a file's text
++    (KEY + "\r\n", [KEY]),
++    (KEY + "\r\n" + KEY2 + "\r\n", [KEY, KEY2]),
++    ("\n\n" + KEY + "\n\n" + KEY2 + "\n", [KEY, KEY2]),
++    ("  " + KEY + "  \n\t" + KEY2 + "\t", [KEY, KEY2]),
++    ("\n".join([KEY] * 5), [KEY] * 5),
++])
++def test_blob_level_newlines_still_work(api_env, blob, expect):
++    r = deploy(api_env, ssh_pubkey=blob)
++    assert r.status_code == 201, r.text
++    row = models.reservation_by_id(api_env.conn, r.json()["id"])
++    assert row["ssh_pubkey"] == "\n".join(expect)
++
++
++@pytest.mark.parametrize("value", ["{{ 7*7 }}", "{% if 1 %}x{% endif %}", "{# c #}", "a{b", "tpl;id",
++                                   "tpl$(id)", "tpl`id`", "tpl\n", "tpl\x00", "tpl\x7f", "tpl\x85",
++                                   "tpl ", "tpl é", "", " tpl", "tpl ", "x" * 129,
++                                   "{{ lookup('pipe', 'id') }}"])
++def test_the_api_refuses_an_unsafe_diy_template(api_env, value):
++    r = api_env.client.post("/reservations", headers={"Authorization": f"Bearer {api_env.tokens['alice']}"},
++                            json={"usecase": "diy", "hours": 1, "setup": "tb-01",
++                                  "templates": _tpls(api_env, value)})
++    assert r.status_code == 422 and r.json()["error"]["code"] == "validation_error", r.text
++    assert models.list_reservations(api_env.conn) == []
++
++
++@pytest.mark.parametrize("value", [TPL, "Ubuntu Jammy Jellyfish 22.04", "tpl_a-b.c (v2)+x:1@h"])
++def test_a_normal_diy_template_name_is_accepted(api_env, value):
++    r = api_env.client.post("/reservations", headers={"Authorization": f"Bearer {api_env.tokens['alice']}"},
++                            json={"usecase": "diy", "hours": 1, "setup": "tb-01",
++                                  "templates": _tpls(api_env, value)})
++    assert r.status_code == 201, r.text
++
++
++# ---- the add-user CLI ----------------------------------------------------------------------
++
++@pytest.fixture
++def cli_db(monkeypatch, tmp_path):
++    path = str(tmp_path / "daolab.db")
++    monkeypatch.setattr(config, "settings", dataclasses.replace(config.settings, db_path=path))
++    conn = models.connect(path)
++    models.init_db(conn)
++    return conn
++
++
++def _add_user(tmp_path, text, username="carol"):
++    key = tmp_path / "k.pub"
++    key.write_bytes(text.encode("utf-8"))
++    return cli.cmd_add_user(argparse.Namespace(username=username, pubkey_path=str(key),
++                                               role="user", rotate=False))
++
++
++@pytest.mark.parametrize("text", [
++    KEY.rsplit(" ", 1)[0] + " {{ lookup('pipe', 'id') }}\n", KEY + "\x7f\n", KEY + " x\n",
++    KEY.rsplit(" ", 1)[0] + " é\n", "not a key\n", KEY + "\n" + KEY.rsplit(" ", 1)[0] + " {% x %}\n",
++])
++def test_add_user_refuses_an_unsafe_key(cli_db, tmp_path, capsys, text):
++    with pytest.raises(SystemExit):
++        _add_user(tmp_path, text)
++    assert cli_db.execute("SELECT count(*) FROM users WHERE username = 'carol'").fetchone()[0] == 0
++
++
++@pytest.mark.parametrize("text", [KEY + "\n", KEY + "\r\n", KEY + "\n" + KEY2 + "\n",
++                                  "# laptop\n" + KEY + "\n\n" + KEY2 + "\n"])
++def test_add_user_takes_a_normal_key_file(cli_db, tmp_path, capsys, text):
++    assert _add_user(tmp_path, text) == 0
++    assert cli_db.execute("SELECT count(*) FROM users WHERE username = 'carol'").fetchone()[0] == 1
++
++
++@pytest.mark.parametrize("name", ["{{ 7*7 }}", "a{%b", "a{#b", "a\nb", "a\x7fb", "a b", ""])
++def test_add_user_refuses_a_username_with_jinja_or_control_characters(cli_db, tmp_path, name):
++    with pytest.raises(SystemExit):
++        _add_user(tmp_path, KEY + "\n", username=name)
++
++
++# ---- the chokepoint: rows stored BEFORE the fix cannot reach the runner -------------------------
++
++def _diy(api_env, who="alice"):
++    r = api_env.client.post("/reservations", headers={"Authorization": f"Bearer {api_env.tokens[who]}"},
++                            json={"usecase": "diy", "hours": 1, "setup": "tb-01",
++                                  "templates": _tpls(api_env)})
++    assert r.status_code == 201, r.text
++    return r.json()["id"]
++
++
++def _poison_key(api_env, rid, value):
++    api_env.conn.execute("UPDATE reservations SET ssh_pubkey = ? WHERE id = ?", (value, rid))
++
++
++def test_a_stored_poisoned_reservation_key_is_dropped_before_the_runner(api_env, tmp_path):
++    rid = _diy(api_env)
++    bad = KEY.rsplit(" ", 1)[0] + " " + pipe_payload(tmp_path / "canary")
++    _poison_key(api_env, rid, KEY + "\n" + bad + "\n# " + pipe_payload(tmp_path / "canary") + "\n" + KEY2)
++    ctx = models.reservation_context(api_env.conn, rid)
++    assert ctx["ssh_pubkey"] == KEY + "\n" + KEY2
++    ev = runner.AnsibleRunner(config.settings).extravars(ctx)
++    assert "{{" not in json.dumps(ev["ssh_pubkey"]) and "lookup" not in json.dumps(ev["ssh_pubkey"])
++
++
++def test_a_stored_poisoned_registered_key_is_dropped_before_the_runner(api_env, tmp_path):
++    rid = _diy(api_env)
++    bad = KEY.rsplit(" ", 1)[0] + " " + pipe_payload(tmp_path / "canary")
++    uid = models.reservation_by_id(api_env.conn, rid)["user_id"]
++    models.update(api_env.conn, "users", uid, {"ssh_pubkey": bad})
++    api_env.conn.execute("UPDATE reservations SET ssh_pubkey = NULL WHERE id = ?", (rid,))
++    ctx = models.reservation_context(api_env.conn, rid)
++    assert ctx["ssh_pubkey"] == ""
++    assert models.access_keys(models.reservation_by_id(api_env.conn, rid),
++                              models.user_by_id(api_env.conn, uid)) == ""
++
++
++def test_stored_poisoned_diy_templates_are_neutralised_before_the_runner(api_env, tmp_path):
++    rid = _diy(api_env)
++    payload = pipe_payload(tmp_path / "canary")
++    api_env.conn.execute("UPDATE reservations SET diy_templates = ? WHERE id = ?",
++                         (models.to_json(_tpls(api_env, payload)), rid))
++    models.create_vms(api_env.conn, rid)
++    api_env.conn.execute("UPDATE vms SET template = ? WHERE reservation_id = ? AND role = ?",
++                         (payload, rid, sorted(_tpls(api_env))[0]))
++    ctx = models.reservation_context(api_env.conn, rid)
++    assert ctx["templates"] == _tpls(api_env, models.UNSAFE_TEMPLATE_NAME)
++    assert sorted(v["template"] for v in ctx["vms"]) == sorted(_tpls(api_env, models.UNSAFE_TEMPLATE_NAME).values())
++    ev = runner.AnsibleRunner(config.settings).extravars(ctx)
++    assert "lookup" not in json.dumps(ev) and "{{" not in json.dumps(ev["templates"])
++
++
++def test_a_clean_context_is_left_alone(api_env):
++    rid = _diy(api_env)
++    models.create_vms(api_env.conn, rid)
++    ctx = models.reservation_context(api_env.conn, rid)
++    assert ctx["templates"] == _tpls(api_env)
++    assert [v["template"] for v in ctx["vms"]] == [TPL] * len(ctx["templates"])
++
++
++# ---- the canary: real ansible code, a file the payload would create -----------------------------
++
++needs_ansible = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed")
++
++
++@needs_ansible
++def test_canary_diy_templates_never_template_in_the_real_plan_vms(api_env, tmp_path):
++    canary = tmp_path / "canary-templates"
++    rid = _diy(api_env)
++    api_env.conn.execute("UPDATE reservations SET diy_templates = ? WHERE id = ?",
++                         (models.to_json(_tpls(api_env, pipe_payload(canary))), rid))
++    ev = runner.AnsibleRunner(config.settings).extravars(models.reservation_context(api_env.conn, rid))
++    ev_path = tmp_path / "ev.json"
++    ev_path.write_text(json.dumps(ev))
++    (tmp_path / "wrap.yml").write_text(
++        "- hosts: localhost\n  gather_facts: false\n  connection: local\n  tasks:\n"
++        f"    - ansible.builtin.include_tasks: {REPO}/playbooks/tasks/plan_vms.yml\n")
++    subprocess.run([ANSIBLE, "-i", "localhost,", str(tmp_path / "wrap.yml"), "-e", f"@{ev_path}"],
++                   cwd=tmp_path, capture_output=True, timeout=300,
++                   env={**os.environ, "ANSIBLE_LOCALHOST_WARNING": "False", "ANSIBLE_NOCOLOR": "1"})
++    assert not canary.exists(), "the diy template value was evaluated on the controller"
++
++
++@needs_ansible
++def test_canary_ssh_key_comment_never_templates_in_the_real_dpu_access_role(api_env, tmp_path):
++    canary = tmp_path / "canary-key"
++    rid = _diy(api_env)
++    _poison_key(api_env, rid, KEY.rsplit(" ", 1)[0] + " " + pipe_payload(canary))
++    ev = runner.AnsibleRunner(config.settings).extravars(models.reservation_context(api_env.conn, rid))
++    (tmp_path / "lab").mkdir()
++    lab = Lab(tmp_path / "lab")
++    access_play(lab, ssh_pubkey=ev["ssh_pubkey"])
++    assert not canary.exists(), "the SSH key comment was evaluated on the controller"

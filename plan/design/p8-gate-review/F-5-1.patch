@@ -1,0 +1,294 @@
+diff --git a/playbooks/deploy.yml b/playbooks/deploy.yml
+index b0a0836..652eaee 100644
+--- a/playbooks/deploy.yml
++++ b/playbooks/deploy.yml
+@@ -18,7 +18,8 @@
+ #
+ # Extra vars (runner, B-84): reservation_id, usecase, setup, user, ssh_pubkey, hw_class, diy,
+ # templates, daolab_app, daolab_members / roles / verify / vms, daolab_api_url,
+-# daolab_internal_secret, daolab_otel_collector, daolab_deploy_vms, and the runbooks' sign-off
++# daolab_internal_secret_file (a path; the secret itself is read from it, F-5-1), daolab_otel_collector,
++# daolab_deploy_vms, and the runbooks' sign-off
+ # flags (allow_destructive_changes / allow_launch / allow_cleanup = DAOLAB_ALLOW_DESTRUCTIVE).
+ # Manual run: reservation_id=0 + manual_ips (if VMs are deployed) + daolab_app=<app>.
+ - name: resolve, plan and lease
+diff --git a/playbooks/group_vars/all.yml b/playbooks/group_vars/all.yml
+index 1fe5a3d..f8c3ba2 100644
+--- a/playbooks/group_vars/all.yml
++++ b/playbooks/group_vars/all.yml
+@@ -20,3 +20,9 @@ nginx_tls_cpt_script: /usr/share/openssl-engine-dpdk/openssl-engine-dpdk-cn10k.s
+ daolab_hugepages_baseline: 2
+ 
+ daolab_dom0_ssh: "{{ lookup('ansible.builtin.env', 'DAOLAB_DOM0_SSH') | default('ssh -o BatchMode=yes -o ConnectTimeout=5 -l root', true) }}"
++
++# F-5-1: the internal API secret is never an extra var (ansible-runner writes those to disk). The
++# runner puts it in a 0600 file for the run and passes only its path; every use is
++# `no_log: true`. An `-e daolab_internal_secret=...` (the playbook tests, a manual run) overrides
++# this, and then nothing is read.
++daolab_internal_secret: "{{ lookup('ansible.builtin.file', daolab_internal_secret_file) | trim }}"
+diff --git a/service/runner.py b/service/runner.py
+index e7ba50c..4abc748 100644
+--- a/service/runner.py
++++ b/service/runner.py
+@@ -16,6 +16,7 @@ job row. Each function returns a `RunResult`.
+ """
+ import json
+ import os
++import tempfile
+ import threading
+ import time
+ import urllib.error
+@@ -456,6 +457,7 @@ class AnsibleRunner:
+     def __init__(self, settings=None, run: Callable | None = None):
+         self.s = settings or config.settings
+         self._run = run
++        _sweep_secret_files(max_age_sec=max(2 * int(getattr(self.s, "job_timeout_sec", 0) or 0), 3600))
+ 
+     # ---- paths -----------------------------------------------------------------------
+     def job_dir(self, job_id) -> str:
+@@ -498,7 +500,6 @@ class AnsibleRunner:
+             "daolab_verify": get("verify") or {}, "daolab_vms": get("vms") or [],
+             "daolab_leases": get("leases") or [],
+             "daolab_api_url": self.s.api_url.rstrip("/"),
+-            "daolab_internal_secret": self.s.internal_secret,
+             "daolab_otel_collector": self.s.otel_agent_endpoint,
+             "daolab_app": dpu_app(get("roles") or {}) if not get("diy", False) else "none",
+             "daolab_access_login": get("access_login") or "lab",
+@@ -562,7 +563,14 @@ class AnsibleRunner:
+             # put the directory of the ansible-playbook installed next to it first on the PATH
+             # ansible-runner resolves the command with (not `binary=`: that is raw mode)
+             envvars["PATH"] = os.path.dirname(playbook_bin) + os.pathsep + os.environ.get("PATH", "")
++        secret_path = None
+         try:
++            if self.s.internal_secret:
++                # F-5-1: the secret never goes into extravars (ansible-runner persists those in
++                # env/extravars) or the environment; the playbooks read it from this 0600 file
++                # (playbooks/group_vars/all.yml) and the file is removed when the run ends.
++                secret_path = _write_secret_file(self.s.internal_secret)
++                ev["daolab_internal_secret_file"] = secret_path
+             r = run(private_data_dir=pdd, project_dir=os.path.abspath(self.s.playbooks_dir),
+                     playbook=self.PLAYBOOKS[playbook_key],
+                     inventory=os.path.abspath(self.s.inventory), extravars=ev,
+@@ -576,6 +584,7 @@ class AnsibleRunner:
+                        if int(getattr(self.s, "job_timeout_sec", 0) or 0) > 0 else {}))
+         finally:
+             log.close()
++            _remove_quietly(secret_path)
+         ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
+         error = None
+         if getattr(r, "status", None) == "timeout":
+@@ -625,6 +634,56 @@ class AnsibleRunner:
+         return self._play("orphans", "orphans", None, step, {"daolab_vm_names": list(names)})[0]
+ 
+ 
++SECRET_FILE_PREFIX = "daolab-secret-"
++
++
++def _runtime_dir() -> str:
++    """Where the per-run secret file goes: DAOLAB_RUNTIME_DIR, else systemd's RUNTIME_DIRECTORY
++    (RuntimeDirectory= gives a 0700 tmpfs dir), else the system temp dir. Point it at a 0700
++    tmpfs directory in production."""
++    d = os.environ.get("DAOLAB_RUNTIME_DIR") or os.environ.get("RUNTIME_DIRECTORY") or ""
++    return d.split(":")[0] or tempfile.gettempdir()
++
++
++def _write_secret_file(secret: str) -> str:
++    """The secret in a new file, mode 0600 (mkstemp: O_EXCL, owner only). Returns its path."""
++    fd, path = tempfile.mkstemp(prefix=SECRET_FILE_PREFIX, suffix=".txt", dir=_runtime_dir())
++    try:
++        with os.fdopen(fd, "w", encoding="utf-8") as fh:
++            fh.write(secret)
++    except BaseException:
++        _remove_quietly(path)
++        raise
++    return path
++
++
++def _remove_quietly(path: str | None) -> None:
++    if path:
++        try:
++            os.unlink(path)
++        except OSError:
++            pass
++
++
++def _sweep_secret_files(max_age_sec: int) -> None:
++    """A run killed with SIGKILL never reaches its `finally`: drop secret files older than
++    `max_age_sec` (the engine runs one job at a time, so a fresh file may be in use)."""
++    d = _runtime_dir()
++    try:
++        names = os.listdir(d)
++    except OSError:
++        return
++    cutoff = time.time() - max_age_sec
++    for name in names:
++        if name.startswith(SECRET_FILE_PREFIX):
++            path = os.path.join(d, name)
++            try:
++                if os.stat(path).st_mtime < cutoff:
++                    os.unlink(path)
++            except OSError:
++                pass
++
++
+ def ansible_playbook_path() -> str | None:
+     """The ansible-playbook of this interpreter's environment (.venv/bin), else the one on PATH."""
+     import shutil
+diff --git a/tests/test_ansible_runner.py b/tests/test_ansible_runner.py
+index d1b2dbe..7335219 100644
+--- a/tests/test_ansible_runner.py
++++ b/tests/test_ansible_runner.py
+@@ -83,7 +83,10 @@ def test_deploy_runs_deploy_yml_with_the_playbook_contract(settings, ctx):
+     assert set(e["daolab_roles"]) == {"vpp", "tgen", "sink"} and e["daolab_verify"]["from"] == "tgen"
+     assert {m["name"] for m in e["daolab_members"]} == {"dpu-01", "tg-01"}
+     assert {v["role"] for v in e["daolab_vms"]} == {"vpp", "tgen", "sink"}
+-    assert (e["daolab_api_url"], e["daolab_internal_secret"]) == ("http://10.30.0.2:8080", "s3")
++    assert e["daolab_api_url"] == "http://10.30.0.2:8080"
++    assert "daolab_internal_secret" not in e                                  # F-5-1
++    assert "s3" not in list(e.values()) + list(kw["envvars"].values())
++    assert os.path.basename(e["daolab_internal_secret_file"]).startswith("daolab-secret-")
+     assert e["daolab_otel_collector"] == "10.30.0.2:4317"
+     assert e["daolab_output_file"].endswith("output.json")
+     assert e["daolab_app"] == "dao-vpp"                        # selects playbooks/apps/dao-vpp
+diff --git a/tests/test_runner_secret.py b/tests/test_runner_secret.py
+new file mode 100644
+index 0000000..e5ac68b
+--- /dev/null
++++ b/tests/test_runner_secret.py
+@@ -0,0 +1,136 @@
++"""F-5-1: DAOLAB_INTERNAL_SECRET must not be persisted by ansible-runner.
++
++ansible-runner writes `extravars` to <private_data_dir>/env/extravars and the process environment
++and command line to artifacts/, none of it removed at the end of a run. So the runner no longer
++puts the secret in extravars or the environment: it writes it to a 0600 file for the duration of
++the run and passes only the PATH (`daolab_internal_secret_file`); playbooks/group_vars/all.yml
++defines `daolab_internal_secret` as a lazy lookup of that file.
++"""
++import dataclasses
++import os
++import shutil
++import stat
++import types
++
++import pytest
++
++from service import config, runner
++from service.runner import AnsibleRunner
++from tests.conftest import REPO
++
++CANARY = "canary-F51-0123456789abcdef-secret"
++RES = {"id": 1, "job_id": 5, "job_created_at": "2026-09-01T09:00:00Z", "usecase": "u", "setup": "s",
++       "user": "alice", "ssh_pubkey": "", "hw_class": "", "diy": False}
++
++
++def steps(name, state="ok", detail=None):
++    pass
++
++
++def settings(tmp_path, **over):
++    base = dict(artifacts_dir=str(tmp_path / "jobs"), playbooks_dir=os.path.join(REPO, "playbooks"),
++                inventory=os.path.join(REPO, "inventory", "hosts.yml"), api_url="http://127.0.0.1:1",
++                internal_secret=CANARY, otel_endpoint="", job_timeout_sec=120)
++    return dataclasses.replace(config.settings, **{**base, **over})
++
++
++@pytest.fixture
++def rt(tmp_path, monkeypatch):
++    d = tmp_path / "rt"
++    d.mkdir(mode=0o700)
++    monkeypatch.setenv("DAOLAB_RUNTIME_DIR", str(d))
++    return d
++
++
++def secret_files(d):
++    return [n for n in os.listdir(d) if n.startswith(runner.SECRET_FILE_PREFIX)]
++
++
++def test_extravars_never_carry_the_secret(tmp_path):
++    assert "daolab_internal_secret" not in AnsibleRunner(settings(tmp_path)).extravars(RES)
++
++
++def test_the_secret_is_a_0600_file_for_the_run_only(tmp_path, rt):
++    seen = {}
++
++    def fake_run(**kw):
++        path = kw["extravars"]["daolab_internal_secret_file"]
++        seen.update(path=path, mode=stat.S_IMODE(os.stat(path).st_mode), text=open(path).read(),
++                    blob=repr([kw["extravars"], kw["envvars"], kw.get("cmdline")]))
++        return types.SimpleNamespace(status="successful", rc=0)
++
++    assert AnsibleRunner(settings(tmp_path), run=fake_run).deploy(RES, steps).ok
++    assert seen["mode"] == 0o600 and seen["text"] == CANARY
++    assert os.path.dirname(seen["path"]) == str(rt)
++    assert CANARY not in seen["blob"]
++    assert not os.path.exists(seen["path"]) and secret_files(rt) == []
++
++
++def test_the_file_is_removed_when_the_run_raises(tmp_path, rt):
++    def boom(**kw):
++        raise RuntimeError("ansible-runner blew up")
++
++    with pytest.raises(RuntimeError):
++        AnsibleRunner(settings(tmp_path), run=boom).deploy(RES, steps)
++    assert secret_files(rt) == []
++
++
++def test_no_secret_configured_means_no_file_and_no_variable(tmp_path, rt):
++    seen = {}
++
++    def fake_run(**kw):
++        seen["ev"] = dict(kw["extravars"])
++        return types.SimpleNamespace(status="successful", rc=0)
++
++    AnsibleRunner(settings(tmp_path, internal_secret=""), run=fake_run).deploy(RES, steps)
++    assert "daolab_internal_secret_file" not in seen["ev"] and secret_files(rt) == []
++
++
++def test_a_stale_secret_file_from_a_killed_run_is_swept_a_fresh_one_is_not(tmp_path, rt):
++    old, fresh = rt / (runner.SECRET_FILE_PREFIX + "old.txt"), rt / (runner.SECRET_FILE_PREFIX + "new.txt")
++    for f in (old, fresh):
++        f.write_text("x")
++    os.utime(old, (1, 1))
++    AnsibleRunner(settings(tmp_path))
++    assert not old.exists() and fresh.exists()
++
++
++# ---- the real ansible-runner: nothing persisted contains the secret -------------------------------
++
++def _project(tmp_path):
++    proj = tmp_path / "proj"
++    (proj / "group_vars").mkdir(parents=True)
++    (proj / "ansible.cfg").write_text("[defaults]\nretry_files_enabled = False\n")
++    shutil.copy(os.path.join(REPO, "playbooks", "group_vars", "all.yml"), proj / "group_vars" / "all.yml")
++    (proj / "inv.yml").write_text(
++        "all:\n  hosts:\n    localhost:\n      ansible_connection: local\n"
++        "      ansible_python_interpreter: '{{ ansible_playbook_python }}'\n")
++    (proj / "deploy.yml").write_text(
++        "- hosts: localhost\n  gather_facts: false\n  tasks:\n"
++        # a use of the secret like the real uri tasks: rendered, no_log
++        "    - ansible.builtin.debug:\n        msg: \"{{ daolab_internal_secret }}\"\n      no_log: true\n"
++        # proof that the secret reached the play (only its length is written)
++        "    - ansible.builtin.copy:\n        dest: \"{{ daolab_output_file }}.seen\"\n"
++        "        content: \"{{ daolab_internal_secret | length }}\"\n")
++    return proj
++
++
++def test_the_real_runner_persists_no_trace_of_the_secret(tmp_path, rt):
++    pytest.importorskip("ansible_runner")
++    if not runner.ansible_playbook_path():
++        pytest.skip("ansible-playbook not installed")
++    proj = _project(tmp_path)
++    s = settings(tmp_path, playbooks_dir=str(proj), inventory=str(proj / "inv.yml"))
++    result = AnsibleRunner(s).deploy(RES, steps)
++    assert result.ok, result.error
++    seen = [os.path.join(d, f) for d, _, fs in os.walk(s.artifacts_dir) for f in fs if f.endswith(".seen")]
++    assert len(seen) == 1 and open(seen[0]).read() == str(len(CANARY)), "the secret did not reach the play"
++    hits, files = [], 0
++    for d, _, fs in os.walk(s.artifacts_dir):
++        for f in fs:
++            files += 1
++            with open(os.path.join(d, f), "rb") as fh:
++                if CANARY.encode() in fh.read():
++                    hits.append(os.path.relpath(os.path.join(d, f), s.artifacts_dir))
++    assert files > 3 and hits == [], f"the secret was persisted in: {hits}"
++    assert secret_files(rt) == []

@@ -1,0 +1,98 @@
+## 3.11
+FF..FFF..................                                                [100%]
+=================================== FAILURES ===================================
+____________________ test_extravars_never_carry_the_secret _____________________
+tests/test_runner_secret.py:50: in test_extravars_never_carry_the_secret
+    assert "daolab_internal_secret" not in AnsibleRunner(settings(tmp_path)).extravars(RES)
+E   AssertionError: assert 'daolab_internal_secret' not in {'reservation_id': 1, 'usecase': 'u', 'setup': 's', 'user': 'alice', ...}
+E    +  where {'reservation_id': 1, 'usecase': 'u', 'setup': 's', 'user': 'alice', ...} = extravars({'id': 1, 'job_id': 5, 'job_created_at': '2026-09-01T09:00:00Z', 'usecase': 'u', ...})
+E    +    where extravars = <service.runner.AnsibleRunner object at 0x7fb16a0e5b90>.extravars
+E    +      where <service.runner.AnsibleRunner object at 0x7fb16a0e5b90> = AnsibleRunner(Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://127.0.0.1:1', token='', internal_se...se, deploy_vms=True, become_password_file='', deployable=(), xo_url='https://127.0.0.1:8443/rest/v0', xo_token_file=''))
+E    +        where Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://127.0.0.1:1', token='', internal_se...se, deploy_vms=True, become_password_file='', deployable=(), xo_url='https://127.0.0.1:8443/rest/v0', xo_token_file='') = settings(PosixPath('/tmp/pytest-of-root/pytest-34/test_extravars_never_carry_the0'))
+_______________ test_the_secret_is_a_0600_file_for_the_run_only ________________
+tests/test_runner_secret.py:62: in test_the_secret_is_a_0600_file_for_the_run_only
+    assert AnsibleRunner(settings(tmp_path), run=fake_run).deploy(RES, steps).ok
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+service/runner.py:597: in deploy
+    return self._play("deploy", "deploy", res, step)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+service/runner.py:566: in _play
+    r = run(private_data_dir=pdd, project_dir=os.path.abspath(self.s.playbooks_dir),
+tests/test_runner_secret.py:57: in fake_run
+    path = kw["extravars"]["daolab_internal_secret_file"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'daolab_internal_secret_file'
+____ test_a_stale_secret_file_from_a_killed_run_is_swept_a_fresh_one_is_not ____
+tests/test_runner_secret.py:90: in test_a_stale_secret_file_from_a_killed_run_is_swept_a_fresh_one_is_not
+    old, fresh = rt / (runner.SECRET_FILE_PREFIX + "old.txt"), rt / (runner.SECRET_FILE_PREFIX + "new.txt")
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'service.runner' has no attribute 'SECRET_FILE_PREFIX'
+_____________ test_the_real_runner_persists_no_trace_of_the_secret _____________
+tests/test_runner_secret.py:135: in test_the_real_runner_persists_no_trace_of_the_secret
+    assert files > 3 and hits == [], f"the secret was persisted in: {hits}"
+E   AssertionError: the secret was persisted in: ['job-5/run-1-deploy/env/extravars']
+E   assert (19 > 3 and ['job-5/run-1...nv/extravars'] == []
+E     
+E     Left contains one more item: 'job-5/run-1-deploy/env/extravars'
+E     Use -v to get more diff)
+____________ test_deploy_runs_deploy_yml_with_the_playbook_contract ____________
+tests/test_ansible_runner.py:87: in test_deploy_runs_deploy_yml_with_the_playbook_contract
+    assert "daolab_internal_secret" not in e                                  # F-5-1
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert 'daolab_internal_secret' not in {'reservation_id': 1, 'usecase': 'vpp', 'setup': 'tb-01', 'user': 'alice', ...}
+=========================== short test summary info ============================
+FAILED tests/test_runner_secret.py::test_extravars_never_carry_the_secret - A...
+FAILED tests/test_runner_secret.py::test_the_secret_is_a_0600_file_for_the_run_only
+FAILED tests/test_runner_secret.py::test_a_stale_secret_file_from_a_killed_run_is_swept_a_fresh_one_is_not
+FAILED tests/test_runner_secret.py::test_the_real_runner_persists_no_trace_of_the_secret
+FAILED tests/test_ansible_runner.py::test_deploy_runs_deploy_yml_with_the_playbook_contract
+5 failed, 20 passed in 18.80s
+## 3.12
+FF..FFF..................                                                [100%]
+=================================== FAILURES ===================================
+____________________ test_extravars_never_carry_the_secret _____________________
+tests/test_runner_secret.py:50: in test_extravars_never_carry_the_secret
+    assert "daolab_internal_secret" not in AnsibleRunner(settings(tmp_path)).extravars(RES)
+E   AssertionError: assert 'daolab_internal_secret' not in {'reservation_id': 1, 'usecase': 'u', 'setup': 's', 'user': 'alice', ...}
+E    +  where {'reservation_id': 1, 'usecase': 'u', 'setup': 's', 'user': 'alice', ...} = extravars({'id': 1, 'job_id': 5, 'job_created_at': '2026-09-01T09:00:00Z', 'usecase': 'u', ...})
+E    +    where extravars = <service.runner.AnsibleRunner object at 0x7fb93643ec00>.extravars
+E    +      where <service.runner.AnsibleRunner object at 0x7fb93643ec00> = AnsibleRunner(Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://127.0.0.1:1', token='', internal_se...se, deploy_vms=True, become_password_file='', deployable=(), xo_url='https://127.0.0.1:8443/rest/v0', xo_token_file=''))
+E    +        where Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://127.0.0.1:1', token='', internal_se...se, deploy_vms=True, become_password_file='', deployable=(), xo_url='https://127.0.0.1:8443/rest/v0', xo_token_file='') = settings(PosixPath('/tmp/pytest-of-root/pytest-35/test_extravars_never_carry_the0'))
+_______________ test_the_secret_is_a_0600_file_for_the_run_only ________________
+tests/test_runner_secret.py:62: in test_the_secret_is_a_0600_file_for_the_run_only
+    assert AnsibleRunner(settings(tmp_path), run=fake_run).deploy(RES, steps).ok
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+service/runner.py:597: in deploy
+    return self._play("deploy", "deploy", res, step)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+service/runner.py:566: in _play
+    r = run(private_data_dir=pdd, project_dir=os.path.abspath(self.s.playbooks_dir),
+tests/test_runner_secret.py:57: in fake_run
+    path = kw["extravars"]["daolab_internal_secret_file"]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'daolab_internal_secret_file'
+____ test_a_stale_secret_file_from_a_killed_run_is_swept_a_fresh_one_is_not ____
+tests/test_runner_secret.py:90: in test_a_stale_secret_file_from_a_killed_run_is_swept_a_fresh_one_is_not
+    old, fresh = rt / (runner.SECRET_FILE_PREFIX + "old.txt"), rt / (runner.SECRET_FILE_PREFIX + "new.txt")
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'service.runner' has no attribute 'SECRET_FILE_PREFIX'
+_____________ test_the_real_runner_persists_no_trace_of_the_secret _____________
+tests/test_runner_secret.py:135: in test_the_real_runner_persists_no_trace_of_the_secret
+    assert files > 3 and hits == [], f"the secret was persisted in: {hits}"
+E   AssertionError: the secret was persisted in: ['job-5/run-1-deploy/env/extravars']
+E   assert (20 > 3 and ['job-5/run-1...nv/extravars'] == []
+E     
+E     Left contains one more item: 'job-5/run-1-deploy/env/extravars'
+E     Use -v to get more diff)
+____________ test_deploy_runs_deploy_yml_with_the_playbook_contract ____________
+tests/test_ansible_runner.py:87: in test_deploy_runs_deploy_yml_with_the_playbook_contract
+    assert "daolab_internal_secret" not in e                                  # F-5-1
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert 'daolab_internal_secret' not in {'reservation_id': 1, 'usecase': 'vpp', 'setup': 'tb-01', 'user': 'alice', ...}
+=========================== short test summary info ============================
+FAILED tests/test_runner_secret.py::test_extravars_never_carry_the_secret - A...
+FAILED tests/test_runner_secret.py::test_the_secret_is_a_0600_file_for_the_run_only
+FAILED tests/test_runner_secret.py::test_a_stale_secret_file_from_a_killed_run_is_swept_a_fresh_one_is_not
+FAILED tests/test_runner_secret.py::test_the_real_runner_persists_no_trace_of_the_secret
+FAILED tests/test_ansible_runner.py::test_deploy_runs_deploy_yml_with_the_playbook_contract
+5 failed, 20 passed in 20.72s

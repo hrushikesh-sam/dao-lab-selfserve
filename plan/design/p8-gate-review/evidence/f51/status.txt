@@ -1,0 +1,10 @@
+ M playbooks/deploy.yml
+ M playbooks/group_vars/all.yml
+ M service/api.py
+ M service/cli.py
+ M service/models.py
+ M service/runner.py
+ M tests/test_ansible_runner.py
+ M tests/test_deploy_access.py
+?? tests/test_pubkey_strict.py
+?? tests/test_runner_secret.py

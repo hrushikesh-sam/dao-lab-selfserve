@@ -1,0 +1,6 @@
+ service/api.py              |  19 ++--
+ service/cli.py              |  24 +++-
+ service/models.py           |  77 ++++++++++++-
+ tests/test_deploy_access.py |   7 +-
+ tests/test_pubkey_strict.py | 266 ++++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 375 insertions(+), 18 deletions(-)

@@ -1,0 +1,47 @@
+diffstat-final-corrected.txt
+Base: HEAD 40ebd6dcc8877632e0270155cf5dfa797d1012dc. Content: P-0 + F-5-1 combined, working tree vs HEAD.
+The two new test files are included because they were made visible with intent-to-add in a TEMPORARY index file
+(no commit, no change to a real index). Plain 'git diff --stat' omits untracked new files; it would list only the 8 tracked ones.
+
+## git diff --stat (tracked files + the two new test files)
+ playbooks/deploy.yml         |   3 +-
+ playbooks/group_vars/all.yml |   6 +
+ service/api.py               |  19 ++--
+ service/cli.py               |  24 +++-
+ service/models.py            |  77 ++++++++++++-
+ service/runner.py            |  61 +++++++++-
+ tests/test_ansible_runner.py |   5 +-
+ tests/test_deploy_access.py  |   7 +-
+ tests/test_pubkey_strict.py  | 266 +++++++++++++++++++++++++++++++++++++++++++
+ tests/test_runner_secret.py  | 136 ++++++++++++++++++++++
+ 10 files changed, 583 insertions(+), 21 deletions(-)
+
+## git diff --numstat
+2	1	playbooks/deploy.yml
+6	0	playbooks/group_vars/all.yml
+11	8	service/api.py
+21	3	service/cli.py
+71	6	service/models.py
+60	1	service/runner.py
+4	1	tests/test_ansible_runner.py
+6	1	tests/test_deploy_access.py
+266	0	tests/test_pubkey_strict.py
+136	0	tests/test_runner_secret.py
+
+## per patch (git apply --stat)
+--- P-0-final.patch
+ service/api.py              |   19 ++-
+ service/cli.py              |   24 +++-
+ service/models.py           |   77 +++++++++++-
+ tests/test_deploy_access.py |    7 +
+ tests/test_pubkey_strict.py |  266 +++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 375 insertions(+), 18 deletions(-)
+--- F-5-1.patch
+ playbooks/deploy.yml         |    3 +
+ playbooks/group_vars/all.yml |    6 ++
+ service/runner.py            |   61 +++++++++++++++++++
+ tests/test_ansible_runner.py |    5 +-
+ tests/test_runner_secret.py  |  136 ++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 208 insertions(+), 3 deletions(-)
+
+## files outside service/ tests/ playbooks/: none expected; playbooks/ files changed (F-5-1 only): playbooks/deploy.yml (comment), playbooks/group_vars/all.yml
