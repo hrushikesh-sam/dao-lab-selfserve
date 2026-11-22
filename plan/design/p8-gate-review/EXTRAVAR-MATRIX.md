@@ -38,7 +38,7 @@ Source of the list: `AnsibleRunner.extravars()` (`service/runner.py:~492-513`) +
 | 22 | `daolab_deploy_vms` | settings bool | NO | YES (1 line) | NO | none |
 | 23 | `allow_destructive_changes` / `allow_launch` / `allow_cleanup` | settings bool | NO | NO (0 template lines; used in `when:`) | NO | none |
 | 24 | `daolab_output_file` (added by `_play`) | path under `artifacts_dir/job-<int>/run-<n>-<key>` | NO | YES (~4 lines) | NO | none |
-| 25 | `daolab_vm_names` (added for orphan destroy) | names from `tagged_vms()` (Xen Orchestra listing) | **UNKNOWN** | YES (~2 lines) | **UNKNOWN** | **M-vm-names** (below) |
+| 25 | `daolab_vm_names` (added for orphan destroy) | names from `tagged_vms()` (Xen Orchestra listing) | **UNKNOWN for the real XO** (who can create or rename a VM there is not known) | **YES** (~2 lines) | **CONFIRMED on the fake lab** (`evidence-p9.tgz`: `evidence/m-vm-names/run.txt`, 2 failed / 1 passed on Py3.11 and Py3.12; real XO and production not tested) | **M-vm-names**; status: **P-0c draft required** (`P-0c.patch`, draft, not applied or run by its author) |
 
 Not extravars but template inputs: `inventory/` host_vars/group_vars (admin), `daolab_no_log`, and the environment
 variables read by `lookup('env', ...)` in `playbooks/group_vars/all.yml` (`DAOLAB_XO_CMD`, `DAOLAB_DOM0_SSH`):
@@ -52,8 +52,11 @@ all operator-controlled, NO.
   of `{{`, `{%`, `{#` (command in OPERATOR-RUNBOOK.md §3.4). A hit means an admin-authored template expression that
   is either intentional (then record it as such) or a vulnerability.
 * **M-vm-names:** a fake Xen Orchestra listing containing a VM name with `{{ lookup('pipe','touch <tmp>/c') }}`,
-  run through `orphans.yml` destroy with real ansible-playbook; assert no canary. A DRAFT harness exists (`test_orphans_canary_DRAFT.py`, `M-VM-NAMES-HARNESS.md`), never executed and not part of
-  the patches; row 25 stays OPEN: it is the one row where both "user-controlled" and "vulnerable" are UNKNOWN.
+  run through `orphans.yml` destroy with real ansible-playbook; assert no canary. The draft harness
+  (`test_orphans_canary_DRAFT.py`) was run by the operator: it FAILED in destroy mode (evidence above). The P-0c draft
+  promotes it to `tests/test_orphans_canary.py` (names now travel through `AnsibleRunner.destroy_vms`) and adds
+  `tests/test_vm_names_strict.py`. Row 25 stays **P-0c draft required** until the operator's red/green evidence
+  (P-0C-OPERATOR-ADDENDUM.md) is attached. "User-controlled" for the real XO remains UNKNOWN.
 * **Full matrix (optional, not provided):** for each row marked "reaches a template = YES", run each real playbook
   with the variable set to a `lookup('pipe','touch ...')` payload at every string leaf and look for the canary file.
   Rows 1, 7, 13, 14, 16, 18-24 are NO/none by the static analysis above and need not be run unless the operator wants

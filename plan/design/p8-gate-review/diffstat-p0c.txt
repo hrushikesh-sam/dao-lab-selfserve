@@ -1,0 +1,6 @@
+ service/engine.py             |  3 ++
+ service/models.py             | 16 ++++++++
+ service/runner.py             | 16 +++++++-
+ tests/test_orphans_canary.py  | 68 ++++++++++++++++++++++++++++++++
+ tests/test_vm_names_strict.py | 92 +++++++++++++++++++++++++++++++++++++++++++
+ 5 files changed, 193 insertions(+), 2 deletions(-)
