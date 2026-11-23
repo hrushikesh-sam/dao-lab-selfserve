@@ -15,11 +15,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # The controller floor is Python 3.12 (F-5-3, B-103). 3.12 and 3.13 are the design's
+    # CI pair; ansible-core 2.20+ also supports 3.14, which isn't tested here.
+    # fail-fast is off so one version's failure doesn't hide the other's result.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install
         run: |

@@ -62,7 +62,7 @@ graph TD
         CLI["daolab CLI<br/>reserve · status"]
     end
 
-    subgraph svc["service/ (Python 3.11+)"]
+    subgraph svc["service/ (Python 3.12+)"]
         API["api.py — FastAPI :8080<br/>serves dashboard/ statically"]
         SCH["scheduler.py<br/>pure placement: FCFS · slot-shift · capability match"]
         ENG["engine.py<br/>lifecycle tick loop"]
@@ -132,7 +132,7 @@ Eleven files. Each owns its decisions; everything else points at it.
 
 | Component | Choice | Rationale |
 |---|---|---|
-| Language | Python 3.11+ | Floor for all service code; modern stdlib (`tomllib`, `zoneinfo`, typing) and speed, no compatibility shims. |
+| Language | Python 3.12+ | The controller floor for all service code: ansible-core 2.20 needs Python 3.12 (F-5-3). DPU-side scripts stay on Python 3.10. Modern stdlib (`tomllib`, `zoneinfo`, typing) and speed, no compatibility shims. |
 | API | FastAPI | Typed request/response models with automatic validation for a small, well-defined API surface. |
 | Database | sqlite via stdlib `sqlite3`, WAL mode | Zero-ops single-file DB; WAL lets the `api` and `engine` processes share it safely; move to Postgres only if >1 API worker (Phase 4). |
 | Automation | ansible-runner | Programmatic playbook invocation with structured status/events — one runner function per lifecycle transition. |
