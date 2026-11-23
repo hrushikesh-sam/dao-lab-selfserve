@@ -1,0 +1,25 @@
+sqlite 3.53.1 | rama latest 11 | reverted latest 13
+
+[1] reverted v13 DB: user_version 13
+  table user_keys ['created_at', 'kdf_salt', 'key_version', 'public_key', 'updated_at', 'user_id', 'wrapped_private_key']
+  table snapshots ['created_at', 'failure_reason', 'header', 'hw_class', 'id', 'path', 'reservation_id', 'setup_id', 'sha256', 'size_bytes', 'state', 'updated_at', 'usecase_id', 'user_id', 'wrapped_dek']
+  reservations.save_snapshot ('INTEGER', 1, '1')
+  setups.snapshot_bdfs ('TEXT', 1, "'[]'")
+  jobs.snapshot_id ('INTEGER', 0, None) jobs.secret ('TEXT', 0, None)
+  jobs CHECK has 'restore': True
+  snapshots CHECK has 'saving': True
+
+[2] today's apply() + placeholders + naive 14 on reverted v13: applied [14] user_version 14
+  snapshots columns now ['created_at', 'failure_reason', 'header', 'hw_class', 'id', 'path', 'reservation_id', 'setup_id', 'sha256', 'size_bytes', 'state', 'updated_at', 'usecase_id', 'user_id', 'wrapped_dek'] (public_id missing => old table kept)
+  save_snapshot default 1 (1 = reverted, not 0)
+
+[3] reverted v12-only DB: user_version 12 user_keys True jobs.secret False
+
+[4] legacy row save_snapshot after ADD COLUMN DEFAULT 0: 0
+  CHECK (0,1) enforced: CHECK constraint failed: save_snapshot IN (0, 1)
+  FK NO ACTION blocks the sync delete: FOREIGN KEY constraint failed
+  FK SET NULL: row kept, reservation_id = None
+
+[5] ADD COLUMN jobs.snapshot_id REFERENCES ... ON DELETE SET NULL: ok
+[6] composite FK rejects another user's key: FOREIGN KEY constraint failed
+[7] partial unique index blocks a 2nd active key: UNIQUE constraint failed: keys.user_id

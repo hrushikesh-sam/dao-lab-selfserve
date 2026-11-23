@@ -1,0 +1,65 @@
+--- v2 33
++++ v3 33
+@@ -43,12 +43,30 @@
+ | insert `pending` | the CLI enrolls a new identity | the owner |
+ | `pending → active` | activation | an admin who is **not the owner** (CHECK); "is an admin" is checked in code (Q-7) |
+ | `active → retired` | rotation: same transaction as the new key's `pending → active` | rotation flow (design:58-63) |
+-| `active → revoked` | **lost-key reset, immediately on the second admin's approval** (`admin_approvals.action = 'lost_key_reset'`, §3.6) | the approval flow |
++| `active` (unchanged) + 24h hold | **lost-key reset approved by the second admin** (`admin_approvals.action = 'lost_key_reset'`, §3.6). The reset "only starts a 24h hold" (design:18, :47) | the approval flow |
++| `active → revoked` | **the hold ends**: the engine executes the approval through the `execute_after` CAS (§3.6) | the engine |
++| `pending → active` (new key) | after the old key is `revoked`; `idx_keys_one_active` blocks it while the old key is still active | an admin who is not the owner |
+ 
+-**Effects of a reset (Q-6):**
+-- In the same transaction, every `snapshots` row with `key_id` = that key gets `delete_after = now + 24h` and `delete_requested_by = <the approval's requested_by>` (inferred).
+-- The approval's `execute_after` gets the same value (§3.6).
+-- The user may enroll a new key immediately. `idx_keys_one_active` counts only `active` keys, so a `revoked` key doesn't block the new one.
++**Effects of a reset (Q-6, proposed):**
++1. **On approval** (one transaction, test T-16):
++   - the key **stays `active`**;
++   - every `saved` snapshot with `key_id` = that key gets `delete_after = now + 24h` and `delete_requested_by = <the approval's requested_by>`;
++   - the approval's `execute_after` gets the same value.
++   - Rows already under an earlier hold keep it (inferred).
++2. **During the hold:**
++   - The owner may cancel with a `cancel_delete` challenge, `target_ref = approval:<id>`, answered with the still-active key (design:112). The challenge CAS requires an active key, so this works.
++   - Cancelling sets the approval to `cancelled` and clears `delete_after`/`delete_requested_by` on the snapshots that reset held (rows where `delete_after = execute_after AND delete_requested_by = requested_by`), in one transaction (test T-19) (inferred).
++   - The user may enroll a new key as `pending` in the meantime.
++3. **When the hold ends** (one transaction, inside the execution CAS):
++   - the key goes `active → revoked`;
++   - the held snapshots are deleted (files by the engine, then the rows, with audit events);
++   - `executed_at` is set.
++   - From then on, the key's open challenges fail the CAS (it requires `state = 'active'`, §3.4), and the user's `pending` key may be activated.
++   - **Edge (inferred):** the key is still active during the hold, so a capture in those 24h is wrapped to it and would be unrecoverable after the revoke. Proposal: execution deletes **every** snapshot whose `key_id` is the revoked key, held or not. Alternatively, the API refuses snapshot-enabled bookings while a reset is pending (Q-6).
++
++**Alternative, not proposed: immediate revoke.** The key → `revoked` on approval.
++- **For:** it stops a thief using a stolen identity during the 24h.
++- **Against:** the owner can then never cancel, because their `cancel_delete` fails the active-key CAS. That contradicts the cancellable 24h hold of design:18, :47, :112.
+ 
+ **Other notes:**
+ - A `pending` key is never revoked; when superseded, it is deleted (inferred). No row references a pending key: challenges reference the key the nonce was sealed to, which is the active one, and snapshots reference the key `key.age` is wrapped to.
+--- v2 36
++++ v3 36
+@@ -55,7 +55,7 @@
+ 
+ | Action | On approval | `execute_after` | `executed_at` |
+ |---|---|---|---|
+-| `lost_key_reset` | key → `revoked` at once; its snapshots get `delete_after` (§3.3) | now + 24h, the **same value** as those `delete_after`s (one transaction; a CHECK can't span tables, so a test covers it, §6.2 T-16) | set when the held snapshots are gone |
++| `lost_key_reset` | the key **stays `active`**; its `saved` snapshots get `delete_after` and `delete_requested_by` (§3.3). The owner's `cancel_delete` (`approval:<id>`) before `execute_after` → `cancelled`, and those holds are cleared in the same transaction (T-19) | now + 24h, the **same value** as those `delete_after`s (one transaction; a CHECK can't span tables, so a test covers it, §6.2 T-16) | set by the execution CAS at the end of the hold, in the same transaction as key → `revoked` and the deletion of the held snapshots |
+ | `home_discard` | nothing yet; visible to the owner (design:112) | now + 24h | set after the engine discards the home. The owner's `cancel_delete` before then → `cancelled` |
+ | `tripwire_accept` / `tripwire_rebaseline` | quarantine may lift / the baseline is replaced (design:49, :101) | NULL (no hold stated) | set when applied |
+ 
+--- v2 q6
++++ v3 q6
+@@ -1,4 +1,9 @@
+-5. **Q-6 — Key lifecycle.** **Proposed:** states `pending / active / retired / revoked`.
+-   - A two-admin lost-key reset sets the key to `revoked` **immediately**.
+-   - That key's snapshots get `delete_after = now + 24h`.
+-   - The user may enroll a new key immediately (§3.3).
++5. **Q-6 — Key lifecycle and the lost-key reset. OPEN.**
++   **Proposed:** states `pending / active / retired / revoked`. A two-admin lost-key reset **only starts a 24h hold** (design:18, :47, :112):
++   - On the second admin's approval, the key **stays `active`**. Its `saved` snapshots get `delete_after = now + 24h` (`delete_requested_by` = the approval's `requested_by`), and `admin_approvals.execute_after` gets the same value, in one transaction.
++   - During the hold, the owner may cancel with `cancel_delete`, `target_ref = approval:<id>`. That sets the approval to `cancelled` and clears those holds, in one transaction. The user may enroll a new key as `pending`.
++   - When the hold ends, the engine executes the approval through the `execute_after` CAS: key → `revoked`, the held snapshots are deleted, and the pending key may then be activated.
++   - The challenge CAS keeps its "key must be active" condition. It is right for keys revoked at the end of a hold.
++   - Sub-point: snapshots captured during the hold are wrapped to the soon-revoked key. Proposal: execution deletes every snapshot of that key, held or not. Alternatively, refuse snapshot-enabled bookings while a reset is pending (§3.3).
++
++   **Alternative:** revoke immediately on approval. That stops a thief using a stolen identity during the 24h, but the owner can never cancel, because their `cancel_delete` fails the active-key CAS.

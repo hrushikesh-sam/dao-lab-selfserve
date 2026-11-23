@@ -1,0 +1,431 @@
+--- v1 §3
++++ v2 §3
+@@ -1,68 +1,93 @@
+-## 3. DDL for 14+
++## 3. DDL for migration 14
+ 
+-### 3.1 One migration or several
+-**Recommendation: one migration, `Migration(14, "snapshots_v1", _m14_snapshots_v1)`** (inferred).
++### 3.1 One migration (Q-5, proposed)
++`Migration(14, "snapshots_v1", _m14_snapshots_v1)` holds everything in §3.3–§3.9.
+ 
+ Why:
+-1. `apply()` gives each migration one `BEGIN IMMEDIATE` (`migrations.py:308-315`). One migration means a DB is either fully pre-snapshot or fully snapshot-capable, with no new mid-states for code or the guard to reason about.
++1. `apply()` gives each migration one `BEGIN IMMEDIATE` (`migrations.py:308-315`). One migration means a DB is either fully pre-snapshot or fully snapshot-capable, with no mid-states for code or the guard to reason about.
+ 2. The objects reference each other: `snapshots → keys`, `key_challenges → keys`, `jobs → snapshots`. They form one unit.
+-3. The design's 12/13/14 split (design:117) cannot survive E-4 anyway: those numbers are burned. The two "signed-off" deltas (design:122: `key_challenges.target_ref` plaintext and "migration-14 `admin_approvals`") both land in this migration 14.
++3. The design's 12/13/14 split (design:117) is void under E-4 (errata:13). The two deltas signed off in design:122 (`key_challenges.target_ref` plaintext; `admin_approvals`) land in this migration 14. That closes E-14 (errata:23) once this DDL is signed off.
+ 
+-The alternative (Q-5) keeps the design's grouping shifted by two: 14 keys/challenges/snapshots, 15 jobs, 16 `admin_approvals`. The guard is fine with either (§2.4).
++**Order inside `_m14_snapshots_v1`** (inferred):
++1. `keys`, `key_challenges`, `snapshots`, `admin_approvals` (FK targets first);
++2. the `add_column` calls of §3.7–§3.9;
++3. the `jobs.kind` CHECK rewrite of §3.8.
++
++`ddl-check.py` runs them in this order on a synthetic DB (§6.3).
+ 
+ ### 3.2 Conventions used below
+ - Every table has `id INTEGER PRIMARY KEY AUTOINCREMENT`, `created_at TEXT NOT NULL` and `updated_at TEXT NOT NULL`, so `models.insert`/`models.update` work unchanged (`models.py:69-83`) (inferred).
+-- Timestamps are UTC `YYYY-MM-DDTHH:MM:SSZ` (AGENTS.md). With that fixed format, text comparison equals time comparison, which the CHECKs and the CAS below rely on (inferred).
++- Timestamps are UTC `YYYY-MM-DDTHH:MM:SSZ` (AGENTS.md; `models.utcnow`, `models.py:46-47`). With that fixed format, text comparison equals time comparison, which the CHECKs and the CAS updates below rely on (inferred).
++- **Proposed in v2:** every timestamp column of the four new tables carries a shape CHECK, `GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'` (an exact 20-character match).
++  - Existing tables have none. The new ones get it so that no new TEXT column can hold an S-shaped value (§5), and so that the text-ordered comparisons above stay valid.
++  - A malformed time then fails at write, rather than comparing wrongly later.
+ - All FKs are enforced (`PRAGMA foreign_keys=ON`, `models.py:33`).
+ - All DDL is `IF NOT EXISTS` or `add_column` (header rule 2). That is only safe *because* the guard has already refused the reverted shapes.
+ - New index names never reuse `idx_snapshots_owner` or `idx_snapshots_reservation` (FINDINGS §4).
++- Nothing secret goes in any column: E-10 (errata:19) and design:72-73. Checked in §5.
+ 
+ ### 3.3 `keys`
+ Sources:
+ - design:54-57: the server stores the public recipient/fingerprint only; activation by a different admin; snapshot booking needs an *active* key.
+ - design:58-63: rotation.
+ - design:64: no token-derived keys.
+-- E-10: nothing secret in the DB.
++- design:18, :47: the lost-key reset.
++- Q-6, Q-7.
+ 
+ ```sql
+ CREATE TABLE IF NOT EXISTS keys (
+     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+     user_id      INTEGER NOT NULL REFERENCES users(id),
+     recipient    TEXT    NOT NULL UNIQUE                     -- age X25519 public recipient [design:55]
+-                 CHECK (length(recipient) = 62                -- (inferred) 'age1' + 58 bech32 chars; Q-8
++                 CHECK (length(recipient) = 62                -- (inferred) 'age1' + 58 bech32 chars; N-1
+                         AND recipient GLOB 'age1*'
+                         AND substr(recipient, 5) NOT GLOB '*[^qpzry9x8gf2tvdw0s3jn54khce6mua7l]*'),
+     fingerprint  TEXT    NOT NULL UNIQUE                     -- shown by the CLI at enrollment [design:57]
+-                 CHECK (length(fingerprint) = 64              -- Q-8: definition not settled; proposal
+-                        AND fingerprint NOT GLOB '*[^0-9a-f]*'), --   = lowercase sha256 hex of `recipient`
++                 CHECK (length(fingerprint) = 64              -- N-1: proposed lowercase sha256 hex
++                        AND fingerprint NOT GLOB '*[^0-9a-f]*'), --      of `recipient`
+     state        TEXT    NOT NULL DEFAULT 'pending'
+-                 CHECK (state IN ('pending', 'active', 'retired')),  -- pending/active [design:57];
+-                                                                     -- 'retired' (inferred, rotation); Q-6
++                 CHECK (state IN ('pending', 'active', 'retired', 'revoked')),  -- [design:57]; Q-6
+     activated_by INTEGER REFERENCES users(id),               -- the activating admin [design:57]
+     activated_at TEXT,
+     created_at   TEXT    NOT NULL,
+     updated_at   TEXT    NOT NULL,
+     UNIQUE (id, user_id),                                    -- target of the composite FKs below (inferred)
+-    CHECK (activated_by IS NULL OR activated_by <> user_id), -- an owner can't self-activate (inferred); Q-7
+-    CHECK ((state = 'pending') = (activated_by IS NULL))     -- (inferred)
++    CHECK (activated_by IS NULL OR activated_by <> user_id), -- "different admin" = not the owner (Q-7)
++    CHECK ((state = 'pending') = (activated_by IS NULL)),    -- retired/revoked keys were once active
++    CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND (activated_at IS NULL OR
++                activated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
++                                                             -- timestamp shape, §3.2 (proposed)
+ );
+ CREATE UNIQUE INDEX IF NOT EXISTS idx_keys_one_active  ON keys(user_id) WHERE state = 'active';
+ CREATE UNIQUE INDEX IF NOT EXISTS idx_keys_one_pending ON keys(user_id) WHERE state = 'pending';  -- (inferred)
+ ```
+ 
+-- "Activator is an admin" can't be a CHECK, since SQLite CHECKs can't read `users`. It is enforced in code in the same transaction (inferred). A trigger is possible: Q-7.
+-- **States (inferred lifecycle):**
+-  - `pending` → `active` when a different admin activates it.
+-  - On rotation, the new key goes `pending` → `active` and the old one `active` → `retired`, in one transaction. The partial unique index allows only one `active` key per user.
+-  - A `retired` key can still be the wrap target of some `key.age` files until the re-wrap finishes (design:61-63). `snapshots.key_id` tracks that (§3.5).
+-- What a lost-key reset does to the key row is not settled: Q-6.
+-- Verified on a synthetic DB: the partial unique index refuses a second active key (`probe-out.txt` [7]).
++**Lifecycle** (Q-6, Q-7):
++
++| From → to | When | Who |
++|---|---|---|
++| insert `pending` | the CLI enrolls a new identity | the owner |
++| `pending → active` | activation | an admin who is **not the owner** (CHECK); "is an admin" is checked in code (Q-7) |
++| `active → retired` | rotation: same transaction as the new key's `pending → active` | rotation flow (design:58-63) |
++| `active → revoked` | **lost-key reset, immediately on the second admin's approval** (`admin_approvals.action = 'lost_key_reset'`, §3.6) | the approval flow |
++
++**Effects of a reset (Q-6):**
++- In the same transaction, every `snapshots` row with `key_id` = that key gets `delete_after = now + 24h` and `delete_requested_by = <the approval's requested_by>` (inferred).
++- The approval's `execute_after` gets the same value (§3.6).
++- The user may enroll a new key immediately. `idx_keys_one_active` counts only `active` keys, so a `revoked` key doesn't block the new one.
++
++**Other notes:**
++- A `pending` key is never revoked; when superseded, it is deleted (inferred). No row references a pending key: challenges reference the key the nonce was sealed to, which is the active one, and snapshots reference the key `key.age` is wrapped to.
++- A `retired` key can still be the wrap target of some `key.age` files until the re-wrap finishes (design:61-63); `snapshots.key_id` tracks that (§4.1).
+ 
+ ### 3.4 `key_challenges`
+ Sources:
+ - design:66-68: hash construction, TTL 10 min, single-use CAS, at most 3 open per user, purposes, `target_ref` in plaintext.
+-- design:1 item 4 (line 14), design:122: `target_ref` plaintext signed off.
++- design:14 (v1.1 item 4), design:122: `target_ref` plaintext signed off.
+ - design:76: ciphertext returned once, never stored.
++- Q-10, Q-12.
+ 
+ ```sql
+ CREATE TABLE IF NOT EXISTS key_challenges (
+@@ -78,160 +103,219 @@
+                                                                         -- Q-10 widens the charset (LIKE ignores ASCII case)
+     nonce_sha256 TEXT    NOT NULL UNIQUE                     -- hash only, never the nonce [design:67]
+                  CHECK (length(nonce_sha256) = 64 AND nonce_sha256 NOT GLOB '*[^0-9a-f]*'),
+-    expires_at   TEXT    NOT NULL,                           -- created + 10 min [design:66]; it is
+-                                                             -- one of the hashed fields, so its exact text counts
++    expires_at   TEXT    NOT NULL,                           -- created + 10 min [design:66]; one of the
++                                                             -- hashed fields, so its exact text counts
+     consumed_at  TEXT,                                       -- NULL = open; set once by CAS [design:66]
+     created_at   TEXT    NOT NULL,
+     updated_at   TEXT    NOT NULL,
+     FOREIGN KEY (key_id, user_id) REFERENCES keys(id, user_id),   -- the key must be the user's own (inferred)
+     CHECK (expires_at > created_at),
+-    CHECK (consumed_at IS NULL OR consumed_at <= expires_at)
++    CHECK (consumed_at IS NULL OR consumed_at <= expires_at),
++    CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND expires_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND (consumed_at IS NULL OR
++                consumed_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+ );
+ CREATE INDEX IF NOT EXISTS idx_key_challenges_open
+     ON key_challenges(user_id, expires_at) WHERE consumed_at IS NULL;
+ ```
+ 
+-- **Single-use consume** (code, the same transaction as the action it authorises, design:60):
+-  ```sql
+-  UPDATE key_challenges SET consumed_at = :now, updated_at = :now
+-   WHERE id = :id AND user_id = :uid AND purpose = :purpose AND target_ref = :target
+-     AND consumed_at IS NULL AND expires_at > :now;          -- rowcount must be exactly 1
+-  ```
+-  The caller first recomputes `nonce_sha256` from the answered nonce plus the row's fields, and compares it in constant time (inferred).
+-- **At most 3 open** (`consumed_at IS NULL AND expires_at > now`) is a count across rows, so a CHECK can't express it. Proposal: count inside `BEGIN IMMEDIATE` before the insert. An optional `BEFORE INSERT` trigger can back it up: Q-12.
+-- Composite FK verified: it refuses another user's key (`probe-out.txt` [6]).
++**Single-use consume** (code, the same transaction as the action it authorises, design:60):
++
++```sql
++UPDATE key_challenges SET consumed_at = :now, updated_at = :now
++ WHERE id = :id AND user_id = :uid AND purpose = :purpose AND target_ref = :target
++   AND consumed_at IS NULL AND expires_at > :now
++   AND key_id IN (SELECT id FROM keys WHERE state = 'active');   -- a revoked/retired key's open
++                                                                 -- challenges die with it (inferred)
++-- rowcount must be exactly 1
++```
++
++- The caller first recomputes `nonce_sha256` from the answered nonce plus the row's fields, and compares it in constant time (inferred).
++- **At most 3 open** (`consumed_at IS NULL AND expires_at > now`) is a code check: count inside `BEGIN IMMEDIATE` before the insert, with no trigger (Q-12).
++- Consumed and expired rows are kept. They hold only hashes and public refs. Pruning them is a later, separate decision (Q-12).
+ 
+ ### 3.5 `snapshots`
+ Sources:
+ - design:91: paths `<snapshot_root>/u<user_id>/<public_id>.{age,key.age,hdr.json}`.
+ - design:92: commit `capturing→saved` before exit 0.
+ - design:96, :121: 3 per (user, setup).
+-- design:119-120: `public_id`; states `capturing` and `saved`.
++- design:112: 24h holds; an unsaved purge has hold 0; the engine physically deletes.
++- design:119-120: `public_id`; states.
+ - D-7-4 (design:134): a retry reuses the failed row.
+-- E-10.
++- Q-9, Q-13, Q-15, Q-16.
+ 
+ ```sql
+ CREATE TABLE IF NOT EXISTS snapshots (
+-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+-    public_id      TEXT    NOT NULL UNIQUE                   -- [design:119]; used in file and ticket names
+-                   CHECK (length(public_id) = 32             -- Q-9: proposal 32 lowercase hex, no '-'
+-                          AND public_id NOT GLOB '*[^0-9a-f]*'),
+-    user_id        INTEGER NOT NULL REFERENCES users(id),    -- owner; path u<user_id> [design:91]
+-    setup_id       INTEGER NOT NULL REFERENCES setups(id),   -- retention key [design:96]; NO ACTION: see Q-20
+-    reservation_id INTEGER UNIQUE                            -- the slot it was captured from (inferred);
+-                   REFERENCES reservations(id) ON DELETE SET NULL,  -- sync deletes released reservations
++    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
++    public_id           TEXT    NOT NULL UNIQUE              -- [design:119]; used in file and ticket names
++                        CHECK (length(public_id) = 32        -- Q-9: 32 lowercase hex, no '-'
++                               AND public_id NOT GLOB '*[^0-9a-f]*'),
++    user_id             INTEGER NOT NULL REFERENCES users(id),    -- owner; path u<user_id> [design:91]
++    setup_id            INTEGER NOT NULL REFERENCES setups(id),   -- retention key [design:96]; NO ACTION (Q-20)
++    reservation_id      INTEGER UNIQUE                       -- the slot it was captured from (inferred);
++                        REFERENCES reservations(id) ON DELETE SET NULL,  -- sync deletes released reservations
+                                                              -- (catalog.py:564, :578); UNIQUE = D-7-4 row reuse
+-    key_id         INTEGER NOT NULL,                         -- the key key.age is wrapped to (inferred; §4.1)
+-    state          TEXT    NOT NULL DEFAULT 'capturing'
+-                   CHECK (state IN ('capturing', 'saved', 'failed')),  -- capturing/saved [design:120];
+-                                                                       -- failed (inferred, D-7-4); Q-15
+-    created_at     TEXT    NOT NULL,
+-    updated_at     TEXT    NOT NULL,
+-    FOREIGN KEY (key_id, user_id) REFERENCES keys(id, user_id)
++    key_id              INTEGER NOT NULL,                    -- the key key.age is wrapped to (inferred; §4.1)
++    state               TEXT    NOT NULL DEFAULT 'capturing'
++                        CHECK (state IN ('capturing', 'saved', 'failed')),   -- [design:120]; Q-15
++    delete_after        TEXT,                                -- end of a 24h delete hold; NULL = not held (Q-13)
++    delete_requested_by INTEGER REFERENCES users(id),        -- who started the hold (Q-13)
++    created_at          TEXT    NOT NULL,
++    updated_at          TEXT    NOT NULL,
++    FOREIGN KEY (key_id, user_id) REFERENCES keys(id, user_id),
++    CHECK ((delete_after IS NULL) = (delete_requested_by IS NULL)),
++    CHECK (delete_after IS NULL OR state = 'saved'),         -- only saved rows are held; unsaved ones
++                                                             -- purge with hold 0 [design:112] (inferred)
++    CHECK (delete_after IS NULL OR delete_after > created_at),
++    CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND (delete_after IS NULL OR
++                delete_after GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+ );
+ CREATE INDEX IF NOT EXISTS idx_snapshots_user_setup ON snapshots(user_id, setup_id, state, created_at);
+ CREATE INDEX IF NOT EXISTS idx_snapshots_key        ON snapshots(key_id);
++CREATE INDEX IF NOT EXISTS idx_snapshots_delete_due ON snapshots(delete_after) WHERE delete_after IS NOT NULL;
+ ```
+ 
++**Holds (Q-13):**
++- A user delete (`delete` challenge) or an admin delete sets `delete_after = now + 24h` and `delete_requested_by` = that user.
++- A lost-key reset does the same for every snapshot of the revoked key (§3.3).
++- `cancel_delete` clears both columns.
++- When `delete_after` has passed, the engine deletes the three files and then the row (Q-15). `audit_events` keeps the record (`models.audit`, `models.py:535-546`).
++
++**States (Q-15):**
++- `capturing → saved | failed`; `failed → capturing` on a force-clean retry (D-7-4).
++- The engine marks a `capturing` row whose job is gone or timed out as `failed` (inferred).
++- `restore_incomplete` is **not** a state. It is a residue item only (§4.4).
++
++**Retention (Q-16):** the prune step after a save (design:96) counts `saved` rows per (user, setup) and deletes the oldest `saved` first. This is code, not a constraint: a 4th row exists briefly before the prune. `idx_snapshots_user_setup` serves the query.
++
+ **Deliberately absent:**
+-- No `path` column: paths are derived from `snapshot_root`, `user_id` and `public_id` (design:91). A stored path could drift from the real file (inferred).
++- No `path` column: paths are derived from `snapshot_root`, `user_id` and `public_id` (design:91).
+ - No `wrapped_dek` or any key column: `key.age` lives only in the file (design:55, :73).
+-- No `size_bytes`, `sha256`, `hw_class`, `usecase_id` or `header`: whether any metadata goes in the DB rather than `hdr.json` is Q-21.
+-- No deletion-hold columns: Q-13.
+-
+-**Behaviour notes:**
+-- **Retention of 3** per (user, setup) is the prune step after save (design:96). It is code, not a constraint, because a 4th row exists briefly before the prune. Which states count is Q-16.
+-- **`restore_incomplete`** is not a snapshot state in this draft. It reads as a residue item `restore_incomplete:<public_id>` plus quarantine (design:107), the same `kind:ident` shape as `runner.py:67-73` (inferred). See §4.4 and Q-15.
+-- Verified: `ON DELETE SET NULL` keeps the snapshot row when sync deletes the reservation, while `NO ACTION` would abort the sync (`probe-out.txt` [4]).
++- No metadata columns (Q-21).
++- Verified earlier: `ON DELETE SET NULL` keeps the snapshot row when sync deletes the reservation, while `NO ACTION` would abort the sync (`probe-out.txt` [4]).
+ 
+ ### 3.6 `admin_approvals`
+ Sources:
+-- design:122: migration-14 `admin_approvals` signed off; no columns given.
+-- Two-admin actions named in the design:
++- design:122: `admin_approvals` signed off; no columns given.
++- E-9 (errata:18): more than 3 admins; the two-admin rules hold as written.
++- Two-admin actions:
+   - lost-key reset (design:18, :47, :54);
+   - tripwire accept/re-baseline (design:17, :49, :101);
+-  - unowned legacy home decision (D-7-5, design:135);
+-  - tb-01 home wipe (E-13, session record Part 12).
++  - the legacy-home wipe: E-13 (errata:22), "wipe only with explicit two-admin approval".
++- Admin home discard (design:112): 24h hold, owner-cancellable.
++- Q-11, Q-13.
+ 
+ ```sql
+ CREATE TABLE IF NOT EXISTS admin_approvals (
+-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+-    action       TEXT    NOT NULL
+-                 CHECK (action IN ('lost_key_reset', 'tripwire_accept', 'tripwire_rebaseline',
+-                                   'legacy_home', 'home_wipe')),   -- names (inferred); Q-11
+-    target_ref   TEXT    NOT NULL                                  -- user id, hw_class or setup name (inferred)
+-                 CHECK (length(target_ref) BETWEEN 1 AND 128
+-                        AND target_ref NOT GLOB '*[^a-z0-9._:-]*'
+-                        AND target_ref NOT LIKE 'age-secret-key-%'),
+-    requested_by INTEGER NOT NULL REFERENCES users(id),            -- first admin
+-    decided_by   INTEGER REFERENCES users(id),                     -- second admin
+-    state        TEXT    NOT NULL DEFAULT 'pending'
+-                 CHECK (state IN ('pending', 'approved', 'rejected', 'cancelled')),  -- (inferred); Q-11
+-    decided_at   TEXT,
+-    executed_at  TEXT,                                             -- single use (inferred)
+-    created_at   TEXT    NOT NULL,
+-    updated_at   TEXT    NOT NULL,
+-    CHECK (decided_by IS NULL OR decided_by <> requested_by),      -- two different admins [design:17-18]
+-    CHECK ((state IN ('approved', 'rejected')) = (decided_by IS NOT NULL)),
+-    CHECK (executed_at IS NULL OR state = 'approved')
++    id            INTEGER PRIMARY KEY AUTOINCREMENT,
++    action        TEXT    NOT NULL
++                  CHECK (action IN ('lost_key_reset', 'tripwire_accept', 'tripwire_rebaseline',
++                                    'home_discard')),                    -- Q-11 (proposed list)
++    target_ref    TEXT    NOT NULL                                       -- Q-11: user:<id>, hw_class, setup name
++                  CHECK (length(target_ref) BETWEEN 1 AND 128
++                         AND target_ref NOT GLOB '*[^a-z0-9._:-]*'
++                         AND target_ref NOT LIKE 'age-secret-key-%'),
++    requested_by  INTEGER NOT NULL REFERENCES users(id),                 -- first admin
++    decided_by    INTEGER REFERENCES users(id),                          -- second admin
++    state         TEXT    NOT NULL DEFAULT 'pending'
++                  CHECK (state IN ('pending', 'approved', 'rejected', 'cancelled')),
++    decided_at    TEXT,
++    execute_after TEXT,                                                  -- end of the 24h hold (Q-13); NULL = none
++    executed_at   TEXT,                                                  -- single use (inferred)
++    created_at    TEXT    NOT NULL,
++    updated_at    TEXT    NOT NULL,
++    CHECK (decided_by IS NULL OR decided_by <> requested_by),            -- two different admins [design:17-18]
++    CHECK ((decided_by IS NULL) = (decided_at IS NULL)),
++    CHECK (state <> 'pending' OR decided_by IS NULL),
++    CHECK (state NOT IN ('approved', 'rejected') OR decided_by IS NOT NULL),  -- 'cancelled' may follow an
++                                                                              -- approval (owner cancel)
++    CHECK (executed_at IS NULL OR state = 'approved'),
++    CHECK (executed_at IS NULL OR execute_after IS NULL OR executed_at >= execute_after),
++    CHECK (execute_after IS NULL OR execute_after > created_at),
++    CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
++           AND (decided_at IS NULL OR
++                decided_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
++           AND (execute_after IS NULL OR
++                execute_after GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
++           AND (executed_at IS NULL OR
++                executed_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+ );
+ CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_approvals_one_open
+-    ON admin_approvals(action, target_ref) WHERE state = 'pending';    -- (inferred)
++    ON admin_approvals(action, target_ref) WHERE state = 'pending';      -- (inferred)
++CREATE INDEX IF NOT EXISTS idx_admin_approvals_due
++    ON admin_approvals(execute_after) WHERE state = 'approved' AND executed_at IS NULL;
+ ```
+ 
+-- Both users having `role = 'admin'` is enforced in code (or a trigger, Q-7).
+-- Execution is a CAS (`... SET executed_at = :now WHERE id = :id AND state = 'approved' AND executed_at IS NULL`), so one approval runs one action (inferred).
+-- A lost-key reset "only starts a 24h hold" (design:18, :47). Where the hold lives: Q-13.
+-- Audit rows for tripwire decisions carry only class, count and baseline version (design:49); that is code in `models.audit`.
++**How each action uses it (Q-13; inferred where not stated):**
++
++| Action | On approval | `execute_after` | `executed_at` |
++|---|---|---|---|
++| `lost_key_reset` | key → `revoked` at once; its snapshots get `delete_after` (§3.3) | now + 24h, the **same value** as those `delete_after`s (one transaction; a CHECK can't span tables, so a test covers it, §6.2 T-16) | set when the held snapshots are gone |
++| `home_discard` | nothing yet; visible to the owner (design:112) | now + 24h | set after the engine discards the home. The owner's `cancel_delete` before then → `cancelled` |
++| `tripwire_accept` / `tripwire_rebaseline` | quarantine may lift / the baseline is replaced (design:49, :101) | NULL (no hold stated) | set when applied |
++
++- Both users being admins (`role = 'admin'`) is checked in code (Q-7).
++- Execution is a CAS: `UPDATE ... SET executed_at = :now WHERE id = :id AND state = 'approved' AND executed_at IS NULL AND (execute_after IS NULL OR execute_after <= :now)`.
++- Audit rows for tripwire decisions carry only class, count and baseline version (design:49).
+ 
+ ### 3.7 `reservations.save_snapshot`
+-Sources: design:20 (item 6, "migration default 0, create default 1"), design:25, :37-41, :119.
++Sources: design:20 (item 6, "migration default 0, create default 1"), design:25, :37-41, :119; E-13 (errata:22: "defaults to preserve (`save_snapshot=0`)"); Q-19.
+ 
+ ```python
+ add_column(conn, "reservations", "save_snapshot",
+            "INTEGER NOT NULL DEFAULT 0 CHECK (save_snapshot IN (0, 1))")
+ ```
+ 
+-- **Legacy rows → 0 = PRESERVE** (design:25, :38).
++- **Legacy rows → 0 = PRESERVE** (design:25, :38; E-13).
+ - **New rows:** the API writes `1` *explicitly*, and only when the setup is snapshot-enabled **and** the owner has an active key (design:38). Otherwise it writes 0 (non-enabled setup) or refuses (`snapshot_key_required`; explicit `false` refused, design:39).
+-- The **column** default stays 0. Any insert path that omits the column (scheduler, tests, future code) then lands on PRESERVE, the safe side (inferred). "Create default 1" is read as the API's default: Q-19.
+-- Verified: legacy row → 0, and `CHECK (0,1)` is enforced on `ADD COLUMN` (`probe-out.txt` [4]).
++- The **column** default stays 0. Any insert path that omits the column (scheduler, tests, future code) then lands on PRESERVE (Q-19).
+ 
+-### 3.8 Jobs changes for capture and restore
+-Sources: design:87-96 (the save sequence is end-of-slot), design:104-108 (restore), design:117 ("13 jobs rewrite/restore", pre-E-4), E-6, E-10.
++### 3.8 Jobs: `snapshot_id` and the `restore` kind
++Sources: design:87-96 (the save sequence is end-of-slot), design:104-108 (restore), design:117 ("jobs rewrite/restore"), E-5 (errata:14), E-6 (errata:15), E-10 (errata:19); Q-14.
+ 
+ ```python
+ add_column(conn, "jobs", "snapshot_id",
+-           "INTEGER REFERENCES snapshots(id) ON DELETE SET NULL")   -- (inferred) which snapshot a
+-                                                                    -- capture/restore job works on
++           "INTEGER REFERENCES snapshots(id) ON DELETE SET NULL")
+ ```
+ 
+-- **No `secret` column, ever** (E-10, design:73). A test asserts it (§6.2).
+-- **Capture:** it runs inside the existing `cleanup` job, since the save sequence is the end-of-slot cleanup (design:87-96). No new kind is needed (inferred).
+-- **Restore:** not settled (Q-14).
+-  - **Option A** (closest to design:117): add a `restore` kind with an m6-style CHECK rewrite of `jobs` (`migrations.py:167-195` method), from `'deploy', 'cleanup', 'health_probe', 'reconcile')` to `... 'reconcile', 'restore')`. It fails loudly if the text isn't found. The guard has already refused any DB where the reverted v13 put `'restore'` there.
+-  - **Option B:** restore is a step of the `deploy` job, with no CHECK change.
+-  - Either way, `models.JOB_KINDS` and `MUTATING_JOB_KINDS` (`models.py:590-591`) and the engine (Akshay-owned) change in later tasks, not in B-104 (inferred).
+-- **E-6** (capture and wipe run as root; restore preserves ownership) is playbook/helper behaviour. It needs **no** DDL.
+-- Verified: `ADD COLUMN ... REFERENCES ... ON DELETE SET NULL` works with FKs on (`probe-out.txt` [5]).
++```python
++_OLD_JOB_KINDS = "'deploy', 'cleanup', 'health_probe', 'reconcile')"
++_NEW_JOB_KINDS = "'deploy', 'cleanup', 'health_probe', 'reconcile', 'restore')"
++```
++
++**The `restore` kind (Q-14, Option A):**
++- It uses the m6 method (`migrations.py:167-195`) on `jobs`:
++  - read `sqlite_master.sql` for `jobs`;
++  - if `'restore'` is already present, skip;
++  - else require `_OLD_JOB_KINDS` and raise `RuntimeError("migration 14: cannot find the jobs.kind CHECK to rewrite ...")` if it is missing;
++  - else `writable_schema` → replace once → bump `schema_version` → `writable_schema = OFF`.
++- **It is safe to skip on `'restore'`** only because the guard already refused every DB where the reverted v13 put `'restore'` there (M2).
++- **Same text as the reverted strings:** these two strings are byte-identical to `4ec115e:service/migrations.py:310-311`. That is unavoidable, because both are derived from m5's CHECK text (`migrations.py:147-148`). The constants and function are written from m5/m6, not copied from the reverted commit.
++
++**Other job changes:**
++- **Capture stays inside `cleanup`.** There is no `capture` kind (design:87-96).
++- `jobs.snapshot_id` names the snapshot a cleanup-capture or restore job works on. It becomes NULL when the row is physically deleted (Q-15); the audit event keeps the id.
++- **No `secret` column, ever** (E-10, design:73). S reaches the DPU only over SSH stdin (E-5) (§4.1).
++- In later tasks, not B-104 (inferred): `models.JOB_KINDS` / `MUTATING_JOB_KINDS` (`models.py:590-591`) gain `restore`, and the engine (Akshay-owned) runs it.
++- **E-6** (capture and wipe run as root; restore preserves ownership) needs no DDL.
+ 
+ ### 3.9 Per-setup snapshot enable flag
+-Sources: design:38-41 ("snapshot-enabled" setup; drain before disabling the flag).
++Sources: design:38-41 ("snapshot-enabled" setup; "Drain before disabling the flag"); Q-18.
+ 
+ ```python
+ add_column(conn, "setups", "snapshot_enabled",
+-           "INTEGER NOT NULL DEFAULT 0 CHECK (snapshot_enabled IN (0, 1))")   -- name: Q-18
++           "INTEGER NOT NULL DEFAULT 0 CHECK (snapshot_enabled IN (0, 1))")
+ ```
+ 
+-**It belongs in the DB (inferred):**
+-- the API decides `save_snapshot` at booking time from this flag (design:38-39);
+-- request handlers and the engine never read YAML; m8 exists for that reason (`migrations.py:211-215`).
+-
+-**Default 0:** every existing setup stays status quo, with no snapshots and no wipe (design:39).
+-
+-**Who writes it is not settled (Q-18):**
+-- If it comes from the setup YAML, it must be added to `catalog.sync`'s `fields` (`catalog.py:520-526`).
+-- If an admin toggles it (like `availability`), it must stay out of `fields`, so sync doesn't reset it.
++- **In the DB:** the API decides `save_snapshot` from this flag at booking time (design:38-39), and handlers never read YAML (`migrations.py:211-215`).
++- **Default 0:** every existing setup stays status quo.
++- **Admin-controlled (Q-18):** it is set through an admin action (a later task), like `availability`, and is **not** in `catalog.sync`'s `fields` (`catalog.py:520-526`). Sync then never resets it, and an admin can drain the setup before disabling (design:41).
++- With E-13 (errata:22): the one-time decision at enable defaults to preserving the current home. A wipe is a two-admin `home_discard` (§3.6).
+ 
+ ---
+ 

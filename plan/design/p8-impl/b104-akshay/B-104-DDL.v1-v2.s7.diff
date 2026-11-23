@@ -1,0 +1,93 @@
+--- v1 §7
++++ v2 §7
+@@ -1,29 +1,62 @@
+-## 7. Open questions for Rama
++## 7. Decisions for sign-off
++
++Each item has a **Proposed:** answer. Items marked **OPEN** still need Rama's call; the rest are proposals to sign off as written. The numbers are kept from v1 for traceability:
++- Q-2, Q-17 and Q-22 are folded into the text (§2.3, §2.1, §2.4);
++- Q-8 → §8 N-1;
++- Q-23 → §9 N-5.
++
++1. **Q-1 — Numbering vs the signed-off text. OPEN.** design:117 planned "12 snapshots/keys/challenges; 13 jobs rewrite/restore; 14 `admin_approvals`", and design:122 signs off "migration-14 `admin_approvals`".
++   **Proposed:** E-4 (errata:13) supersedes design:117. Every delta signed off in design:122 lands in the single migration 14, and "migration-14" in design:122 now means "the B-104 migration". Rama's errata v1.2 docs PR (R-1) records this, and E-14 (errata:23) closes when this DDL is signed off.
++2. **Q-3 — Guard placement beyond `daolab init`. OPEN.**
++   **Proposed:** B-104 places it in `migrations.apply()` only (covers `daolab init`). Two follow-ups:
++   - (a) the API gains a startup check, the same `have == want` test as `engine.py:629-633`, plus the guard, in the task that owns `api.py` startup;
++   - (b) the engine calls the guard beside `engine.py:629`, as a one-line change for Akshay (the file owner) to approve separately.
++   Until then, the engine is already protected by its version check (a reverted DB is at 12/13, the code at 14).
++3. **Q-4 — Exception shape.** **Proposed:** as drafted. A new `RevertedSchema(Exception)`, caught with `SchemaTooNew` in a tuple at `cli.py:46`; `SchemaTooNew` is not reparented. (This one wasn't in the revision list; I kept the v1 proposal.)
++4. **Q-5 — One migration or several.** **Proposed:** one migration 14 (§3.1).
++5. **Q-6 — Key lifecycle.** **Proposed:** states `pending / active / retired / revoked`.
++   - A two-admin lost-key reset sets the key to `revoked` **immediately**.
++   - That key's snapshots get `delete_after = now + 24h`.
++   - The user may enroll a new key immediately (§3.3).
++6. **Q-7 — "A different admin activates".** **Proposed:** "different admin" = **not the key owner**, enforced by `CHECK (activated_by IS NULL OR activated_by <> user_id)`. The activator's `role = 'admin'` is checked in code, with no trigger. The same rule applies to both admins of an approval.
++7. **Q-9 — `public_id` format.** **Proposed:** as drafted. 32 lowercase hex from `secrets.token_hex(16)`, with no `-`, so ticket names parse unambiguously.
++8. **Q-10 — `target_ref` per purpose. OPEN.**
++   **Proposed:**
++
++   | Purpose | `target_ref` |
++   |---|---|
++   | `rotate` | the new key's fingerprint, 64 hex (design:59) |
++   | `delete` | the snapshot's `public_id` |
++   | `cancel_delete` | the held snapshot's `public_id`, or `approval:<id>` for a held `home_discard` |
++   | `discard_home` | `setup:<name>`, for the owner's own kept/quarantined home on that setup |
++
++   The charset is `[a-z0-9._:-]{1,128}` plus `NOT LIKE 'age-secret-key-%'`. It assumes setup names and `hw_class` values are lowercase; all current ones are (`tb-01`, `sdp-pf1-vf8`, checked on `origin/rama`).
++9. **Q-11 — `admin_approvals` actions and targets. OPEN.**
++   **Proposed:** actions `lost_key_reset`, `tripwire_accept`, `tripwire_rebaseline`, `home_discard`.
++   - **Admin home discard needs two admins.** It destroys user data, the same as the E-13 legacy-home wipe ("wipe only with explicit two-admin approval", errata:22). One `home_discard` action covers both: approval → `execute_after = now + 24h`, visible to the owner, cancellable by the owner's `cancel_delete` (design:112).
++   - Targets: `user:<id>` (reset), the `hw_class` (tripwire), the setup name (discard).
++   - Pending approvals don't expire. An admin can `cancel` them, and the one-open index stops duplicates.
++10. **Q-12 — At most 3 open challenges.** **Proposed:** as drafted. A count inside `BEGIN IMMEDIATE` in code, with no trigger. Consumed and expired rows are kept; pruning them is a later decision.
++11. **Q-13 — Where holds live.** **Proposed:** no fifth table.
++    - `snapshots.delete_after` + `snapshots.delete_requested_by` (FK `users`) hold the 24h user/admin delete holds, including the snapshots of a reset key.
++    - `admin_approvals.execute_after` holds the reset and discard holds.
++    - For a reset, both carry the same instant, written in one transaction (§3.6).
++12. **Q-14 — Restore job.** **Proposed:** Option A, a `restore` job kind via the m6-style CHECK rewrite (§3.8). Capture stays inside `cleanup`.
++13. **Q-15 — Snapshot states.** **Proposed:**
++    - States: `capturing / saved / failed`.
++    - After physical deletion the **row is deleted**, and `audit_events` keeps the record.
++    - `restore_incomplete` is a **residue item only**.
++    - Stale `capturing` rows are marked `failed` by the engine (inferred).
++14. **Q-16 — Retention.** **Proposed:** retention counts `saved` rows only and prunes the oldest `saved` first. A `saved` row under a delete hold still counts (it is `saved`) (inferred). Say if held rows should be excluded.
++15. **Q-18 — Enable flag.** **Proposed:** `setups.snapshot_enabled`, **admin-controlled**, and **excluded from `catalog.sync`'s `fields`**. That is needed for drain-before-disable (design:41).
++16. **Q-19 — `save_snapshot` default.** **Proposed:** as drafted. The column default is 0; "create default 1" (design:20) is the API writing 1 explicitly on enabled setups when the owner has an active key.
++17. **Q-20 — FK actions vs `daolab sync`. OPEN.**
++    **Proposed:**
++    - Keep `snapshots.reservation_id ... ON DELETE SET NULL` (sync deletes released reservations, `catalog.py:564/578`).
++    - Keep `snapshots.setup_id` as `NO ACTION`, so removing a setup that still has snapshots fails. A later `catalog.py` change makes that a clear `SyncError` ("removal blocked by N snapshots") instead of a raw FK error.
++    - Users are never deleted: user deletion (design:29) means `enabled = 0` plus held deletes of their snapshots (inferred). So `users` FKs keep `NO ACTION`.
++18. **Q-21 — Snapshot metadata in the DB. OPEN.**
++    **Proposed:** none in v1. Size, `sha256` of `.age`, `hw_class`, use case and the device profile live in `hdr.json` and the snapshot's `daolab-profile/1` (R-4, R-6). If a reader later needs a column, it is an additive migration. This keeps the DB to identifiers and states only.
++
++---
+ 
+-1. **Numbering vs the signed-off text.** design:117 planned "12 snapshots/keys/challenges; 13 jobs rewrite/restore; 14 `admin_approvals`", and design:122 signs off "migration-14 `admin_approvals`". E-4 burns 12 and 13. Confirm that all the signed-off deltas now land in the new migration 14 (or 14–16, Q-5), and that "migration-14" in design:122 now just means "the B-104 migration".
+-2. **Missing inputs.**
+-   - No B-104 row (no B-103..B-114 rows at all) in `plan/10-backend-tasksheet.md` on any branch.
+-   - `snapshot-design.md` §8 is on no branch.
+-   - The errata v1.2 file isn't in the repo or `~/notes`; this draft used the brief's summaries of E-4/E-6/E-10/E-14.
+-   - Which files may B-104 edit? Proposed: `service/migrations.py`, `tests/test_migrations.py` (or a new `tests/test_migrations_p8.py`), and `service/cli.py` for Q-4.
+-3. **Guard placement beyond `daolab init`:** should the API (no schema check today) and the engine (`engine.py:629-633`, Akshay-owned) also call the guard at startup?
+-4. **Exception shape:** a new `RevertedSchema` caught alongside `SchemaTooNew` in `cli.py:46`, or a common base `SchemaError`?
+-5. **One migration (14) or several (14/15/16)?** The recommendation is one, for atomicity (§3.1).
+-6. **Key lifecycle:** confirm `pending → active → retired`. What does a lost-key reset do to the key row (stay `active` during the 24h hold? `revoked`?), and can the user enroll a new key during the hold?
+-7. **"A different admin activates":** different from whom? The key owner (proposed CHECK), the admin who submitted the enrollment (would need an `enrolled_by` column), or both? Should admin roles be enforced by triggers, or in code only?
+-8. **Fingerprint definition and recipient type:** proposed fingerprint = lowercase SHA-256 hex of the recipient string. X25519 `age1…` recipients only (62 chars), no plugin recipients? This needs a check against real `age-keygen -y` output in B-105.
+-9. **`public_id` format:** proposed 32 lowercase hex from `secrets.token_hex(16)`. It has no `-`, so ticket names parse unambiguously.
+-10. **`target_ref` per purpose:** `rotate` = new key fingerprint (design:59); `delete` = snapshot `public_id`?; `cancel_delete` = ?; `discard_home` = setup name? And is the proposed lowercase charset `[a-z0-9._:-]{1,128}` (plus `NOT LIKE 'age-secret-key-%'`) acceptable? It assumes setup names and `hw_class` values are lowercase, as all current ones are (inferred).
+-11. **`admin_approvals`:** the action list (proposed `lost_key_reset`, `tripwire_accept`, `tripwire_rebaseline`, `legacy_home`, `home_wipe`), the `target_ref` form per action, and whether pending approvals expire. Is admin home discard (design:112) a two-admin action, or a hold only? Who answers the `discard_home` challenge: the owner (design:111) or an admin?
+-12. **At most 3 open challenges:** a code check in `BEGIN IMMEDIATE` only, or a trigger as well? How long are consumed or expired challenge rows kept?
+-13. **Holds** (24h user/admin delete, lost-key reset hold, home-discard hold, design:47, :112): which table holds them? The design names only four tables, so the options are columns on `snapshots` (e.g. `delete_after`), a row in `admin_approvals` with an `execute_after`, or a fifth table (needs your approval).
+-14. **Restore job:** Option A, a new `restore` kind (m6-style CHECK rewrite; closest to design:117), or Option B, a step of `deploy`? And capture stays inside `cleanup`, with no `capture` kind?
+-15. **Snapshot states:** confirm `failed` (implied by D-7-4). Are rows deleted after physical deletion, or kept as tombstones (`deleted`)? Is `restore_incomplete` only a residue item, or a snapshot flag too? Who handles stale `capturing` rows?
+-16. **Retention of 3:** which states count (only `saved`? `capturing`?), and is the oldest `saved` pruned first?
+-17. **`setups.snapshot_bdfs`:** confirm that this name is never reused. It is a guard marker; replay is "roles by name" (design:108).
+-18. **Enable flag:** is `setups.snapshot_enabled` the right name and home? Is it written by `daolab sync` from the setup YAML, or by an admin API (then sync must not overwrite it)?
+-19. **`save_snapshot` default:** confirm the column default is 0 and "create default 1" (design:20) means the API writes 1 explicitly on enabled setups with an active key.
+-20. **FK actions vs `daolab sync`:** `snapshots.reservation_id … ON DELETE SET NULL` (sync deletes released reservations, `catalog.py:564/578`). `snapshots.setup_id` with `NO ACTION` makes removing a setup that has snapshots fail with a raw FK error; should `catalog.sync` raise a clear `SyncError` instead (another task's file)? User deletion (design:29) never deletes the `users` row today; will it?
+-21. **Snapshot metadata in the DB:** should any of `size_bytes`, the `sha256` of `.age`, `hw_class` or `usecase_id` be columns, or only in `hdr.json`?
+-22. **A refused DB:** is the documented recovery "move it aside, `daolab init` a fresh DB" (the reverted code never ran on the board, per `9c8a089`'s message)? Does `var/showcase.db.v13-reverted-b104` stay as evidence? (I did not touch it.)
+-23. **Ticket directory:** the setting name and default (e.g. `DAOLAB_TICKET_DIR` on a tmpfs such as `/run/daolab/tickets`), and who creates it with 0700. That is outside B-104's DDL, but B-107 and B-110 both need it.
