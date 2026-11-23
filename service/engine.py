@@ -486,6 +486,9 @@ def _sweep_orphans(db, rn, out: TickResult) -> None:
         except Exception:                            # noqa: BLE001 — never stop the tick
             log.exception("orphan sweep: could not list the testbed's VMs")
             names = []
+        names, dropped = models.split_vm_names(names)        # P-0c: strict names only, count logged
+        if dropped:
+            log.warning("orphan sweep: skipped %d VM name(s) of an unexpected shape", dropped)
         doomed = [n for n in names
                   if (m := _TAGGED.match(n)) is not None and _orphan(db, int(m.group(1)))]
         if doomed:

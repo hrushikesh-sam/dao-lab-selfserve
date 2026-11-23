@@ -15,6 +15,7 @@ visible while the job is still running. `job_sink` builds a sink that writes the
 job row. Each function returns a `RunResult`.
 """
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -26,6 +27,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Mapping, Protocol
 
 from . import config, models
+
+log = logging.getLogger("daolab.runner")
 
 RUNNER_NAMES = ("ansible", "mock")
 # `health` (B-68) drops the mock's per-reservation exporter so the health badge can be
@@ -628,10 +631,19 @@ class AnsibleRunner:
         result, names = self._play("orphans", "orphans", None, lambda *a, **k: None)
         if not result.ok:
             raise RunnerError(f"could not list the testbed's VMs: {result.error}")
-        return list(names or [])
+        kept, dropped = models.split_vm_names(names)          # P-0c: the source of the names
+        if dropped:
+            log.warning("orphan sweep: dropped %d listed VM name(s) of an unexpected shape", dropped)
+        return kept
 
     def destroy_vms(self, names, step):
-        return self._play("orphans", "orphans", None, step, {"daolab_vm_names": list(names)})[0]
+        # P-0c: the final chokepoint before the extra var; a bad name never reaches ansible.
+        kept, dropped = models.split_vm_names(names)
+        if dropped:
+            log.warning("orphan sweep: refused %d VM name(s) of an unexpected shape", dropped)
+            if not kept:
+                return RunResult(ok=False, error=f"{dropped} VM name(s) refused, nothing to destroy")
+        return self._play("orphans", "orphans", None, step, {"daolab_vm_names": kept})[0]
 
 
 SECRET_FILE_PREFIX = "daolab-secret-"

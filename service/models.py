@@ -307,6 +307,25 @@ def ident_ok(value) -> bool:
     return isinstance(value, str) and _IDENT.fullmatch(value) is not None
 
 
+# P-0c (EXTRAVAR-MATRIX row 25): a VM name read back from Xen Orchestra is handed to ansible as the
+# extra var `daolab_vm_names`, which ansible re-templates. Only names of exactly this shape may travel:
+# the shape the platform makes ('daolab-r' ~ id ~ '-' ~ role, plan_vms.yml; a role is an `_IDENT`).
+# P-0e: the id is bounded to 18 ASCII digits, so int(id) always fits SQLite's 64-bit INTEGER and
+# Python's int-from-string limit; an unbounded id made the orphan sweep raise on every tick.
+VM_NAME = re.compile(r"daolab-r[0-9]{1,18}-[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+
+def vm_name_ok(name) -> bool:
+    return isinstance(name, str) and VM_NAME.fullmatch(name) is not None
+
+
+def split_vm_names(names) -> tuple[list[str], int]:
+    """(the valid names in order, how many were dropped). Callers log the count, never a name."""
+    names = list(names or [])
+    kept = [n for n in names if vm_name_ok(n)]
+    return kept, len(names) - len(kept)
+
+
 def access_keys(res, user) -> str:
     """The SSH key(s) that open this reservation: the one given at deploy, else - unless the
     owner asked for a password instead - their registered key. Only valid key lines come out,
