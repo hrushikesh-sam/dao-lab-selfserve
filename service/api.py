@@ -149,9 +149,6 @@ class UserPatch(BaseModel):
 
 # ---- access: SSH key or generated password ----------------------------------
 
-_PUBKEY = re.compile(r"^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp(256|384|521)|"
-                     r"sk-(ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com) [A-Za-z0-9+/]+={0,3}"
-                     r"( [^\x00-\x1f]*)?$")
 _PASSWORD_CHARS = string.ascii_letters + string.digits
 _LIVE = ("ready", "active")
 
@@ -161,17 +158,18 @@ def _deploy_access(given: str | None) -> tuple[str | None, str | None]:
     line; a blank answer means "give me a password" (16 random letters and digits)."""
     if given is None:
         return None, None                             # the owner's registered key
-    lines = [ln.strip() for ln in given.strip().splitlines() if ln.strip()]
+    lines = models.ssh_key_lines(given)               # `\n` / `\r\n` separate keys, nothing else
     if not lines:
         return None, "".join(secrets.choice(_PASSWORD_CHARS) for _ in range(16))
     if len(lines) > 5 or len(given) > 8192:
         raise DaolabError("validation_error", 422, "ssh_pubkey: at most 5 keys")
-    bad = [ln for ln in lines if not _PUBKEY.match(ln)]
+    bad = [i for i, ln in enumerate(lines, 1) if not models.ssh_key_line_ok(ln)]
     if bad:
+        # Not echoed back: the line is user text and may carry control characters.
         raise DaolabError("validation_error", 422,
-                          f"ssh_pubkey: not an SSH public key: {bad[0][:40]}...",
-                          {"hint": "paste the contents of ~/.ssh/id_ed25519.pub, or leave it "
-                                   "empty to get a password"})
+                          f"ssh_pubkey: line {bad[0]} is not an SSH public key",
+                          {"hint": "paste the contents of ~/.ssh/id_ed25519.pub (plain ASCII "
+                                   "comment, no braces), or leave it empty to get a password"})
     return "\n".join(lines), None
 
 
@@ -698,6 +696,11 @@ def create_reservation(body: ReservationCreate,
             raise DaolabError("not_found", 404, f"unknown setup: {body.setup}",
                               {"setup": body.setup})
         hosts = models.setup_vm_hosts(conn, setup["id"])
+        if not all(models.template_name_ok(t) for t in body.templates.values()):
+            # the value is user text that ansible would template: plain names only
+            raise DaolabError("validation_error", 422,
+                              "templates: a template name may use letters, digits, space and "
+                              "._()+:@- only (1-128 characters)")
         if set(body.templates.keys()) != hosts:
             missing = sorted(hosts - set(body.templates.keys()))
             extra = sorted(set(body.templates.keys()) - hosts)
