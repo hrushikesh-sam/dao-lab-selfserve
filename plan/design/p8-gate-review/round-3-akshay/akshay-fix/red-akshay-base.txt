@@ -1,0 +1,32 @@
+2026-11-23T06:43:13Z
+tree: 9c8a089, no patches, CAN_BECOME=False
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_real_verify_clean_and_reconcile_round_trip ________________
+
+lab = <tests.test_playbooks.Lab object at 0x78bb0b8e10a0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-16/test_real_verify_clean_and_rec0')
+
+    def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
+        from tests.test_playbooks import MEMBERS, clean_state, dirty
+        lab.set(dirty(clean_state()))
+        rn = real_runner(lab, tmp_path)
+        handlers = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+        ctx = {"id": 12, "job_id": 1, "setup": "tb-01", "usecase": "vpp", "members": MEMBERS,
+               "leases": ["10.30.0.101"]}
+        steps = Steps()
+        dirty_result = rn.verify_clean(ctx, steps)
+        assert dirty_result.ok is False
+>       assert sorted(dirty_result.residue) == sorted([
+            "vm:daolab-r12-sink", "dpu_session:lab",       # the VF goes with its VM (B-93)
+            "dpu_app:daolab-app-dao-vpp.service", "ip:10.30.0.101"])
+E       AssertionError: assert [] == ['dpu_app:dao...lab-r12-sink']
+E         
+E         Right contains 4 more items, first extra item: 'dpu_app:daolab-app-dao-vpp.service'
+E         Use -v to get more diff
+
+tests/test_ansible_runner.py:264: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ansible_runner.py::test_real_verify_clean_and_reconcile_round_trip
+1 failed in 2.81s
+exit=1

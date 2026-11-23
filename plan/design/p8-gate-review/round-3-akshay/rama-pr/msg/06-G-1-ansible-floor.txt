@@ -1,0 +1,28 @@
+Raise the ansible-core floor to 2.20 (G-1)
+
+What: pyproject.toml pinned ansible-core>=2.18, the floor for
+otel_agent's meta: end_role. The design floor is 2.20 (F-5-3), and
+P-0d's lookup canary (tests/test_orphans_canary.py) was proven on
+2.20.11 and 2.21.6 only. The pin is now >=2.20, and the comment above
+it gives both reasons. tests/test_platform_floor.py checks that the
+line is a plain >=2.20 floor, and that the installed ansible-core meets
+it.
+
+Why: on 2.18 or 2.19, the stack would run on a version where its
+template-safety canary was never proven.
+
+Files: pyproject.toml, tests/test_platform_floor.py (new).
+
+Verified: tests first, on Python 3.12.13 with ansible-core 2.21.6 and
+2.20.11. Red: the pin test failed ((2, 18) != (2, 20)) and the
+installed-version test passed, 1 failed / 1 passed on both. Green: 2
+passed on both. Evidence (branch akshay-p8-gate,
+plan/design/p8-gate-review/round-3-akshay/rama-pr/): G-1-red.txt and
+G-1-green.txt.
+
+Series result (all 8 commits on origin/rama 40ebd6d): full suite 1290
+passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core 2.21.6
+and 2.20.11; details in the PR description.
+
+Patch: G-1-ansible-floor.patch
+sha256 040e403eebbdb1e64bd67716791dae4fc666d4b783f07ef3947ac27ab4593508

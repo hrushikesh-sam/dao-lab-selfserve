@@ -1,0 +1,45 @@
+Accept only strictly shaped VM names in the orphan sweep (P-0c)
+
+What: the orphan sweep passed VM names from the XO listing back to
+orphans.yml as the daolab_vm_names extra var, and ansible templated
+them. So a VM named "daolab-r999-{{ lookup('pipe', ...) }}", which
+anyone with pool access can create, ran a command on the controller
+(EXTRAVAR-MATRIX row 25). models.vm_name_ok now fullmatches
+daolab-r[0-9]{1,18}-[A-Za-z0-9][A-Za-z0-9._-]{0,127}. tagged_vms drops
+other names, destroy_vms refuses them, and the engine skips them; each
+logs a count, never the name. The bounded id also fixes P-0e: a VM
+whose reservation id was too big for SQLite (over 2^63-1,
+OverflowError) or for int() (over 4300 digits, ValueError) made
+_sweep_orphans raise on every tick.
+
+Why: a controller remote code execution in the same class as F-1, and
+a sweep that a single VM name could stop.
+
+Files: service/engine.py, service/models.py, service/runner.py,
+tests/test_orphans_canary.py, tests/test_vm_names_review.py and
+tests/test_vm_names_strict.py (the three test files are new).
+
+Verified: tests first, on Python 3.11 / ansible-core 2.19.15 and Python
+3.12 / 2.21.6.
+- Red, tests only: 60 failed / 3 passed / 2 xfailed. In the canary,
+  list PASSED, destroy and chained FAILED.
+- Red, the review tests on Rama's v1 code: 6 failed. Ids of 19, 20 and
+  5000 digits were accepted, the sweep raised OverflowError or
+  ValueError on them, and a VM name with a 128-character role (the
+  longest the platform allows) was refused instead of swept.
+- Green: 101 passed, 2 xfailed.
+- Full suite at the time: 1233 passed, 4 skipped, 2 xfailed.
+Evidence (branch akshay-p8-gate,
+plan/design/p8-gate-review/round-3-akshay/p0c-combined/evidence/combined/):
+red1-tests-only.txt, red2-review-tests-vs-rama-v1.txt, green.txt,
+tests/full-combined-py3.11.txt and tests/full-combined-py3.12.txt. The
+two strict xfails mark the known limit that P-0d (next) removes.
+
+Series result (all 8 commits on origin/rama 40ebd6d): full suite 1290
+passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core 2.21.6
+and 2.20.11; details in the PR description.
+
+Patch: P-0c-combined.patch
+sha256 58a25f53353bbeabaafed9dff61786220cadb86c51f8302d52df612947079376
+
+Co-authored-by: kram2006 <kalariramakrishna12345@gmail.com>

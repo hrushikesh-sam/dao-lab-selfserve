@@ -1,0 +1,28 @@
+Scrub the secrets from os.environ after loading settings (F-5-1b)
+
+What: load_dotenv() copies the dotenv file into os.environ, and
+ansible-runner writes the whole process environment to
+artifacts/<run>/command on every run, with no switch to turn it off. So
+the secrets still reached disk with F-5-1 applied.
+config.scrub_secret_env() pops the names in config.SECRET_ENV
+(DAOLAB_INTERNAL_SECRET, DAOLAB_AUTHZ_SECRET, DAOLAB_TOKEN) right after
+Settings.from_env(). Nothing reads them from the environment again:
+the values live in `settings`, and child processes get files (F-5-1's
+secret file, DAOLAB_XO_TOKEN_FILE, the become-password file).
+
+Why: 1540 of the 1563 leaked files on the laptop were
+artifacts/<run>/command, which F-5-1 alone doesn't cover.
+
+Files: service/config.py, tests/test_secret_env_scrub.py (new).
+
+Verified: tests first. Red 3 failed / 1 passed; green 33 passed with
+the runner and secret suites, on Python 3.11 and 3.12 (branch
+akshay-p8-gate, plan/design/p8-gate-review/round-2-akshay/evidence/f51b/:
+before.txt and after.txt).
+
+Series result (all 8 commits on origin/rama 40ebd6d): full suite 1290
+passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core 2.21.6
+and 2.20.11; details in the PR description.
+
+Patch: F-5-1b.patch
+sha256 823a54bcdefd8ae52a6c3226144b93978d25583e5d37adfbc079dd78471c0f5d

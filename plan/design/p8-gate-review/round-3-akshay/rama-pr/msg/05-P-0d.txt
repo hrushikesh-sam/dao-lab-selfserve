@@ -1,0 +1,47 @@
+Destroy orphan and reconcile VMs by XO id, not by name (P-0d)
+
+What: after P-0c, the playbooks still trusted a VM-name list from their
+caller (the two strict xfails). Now only XO's own VM ids travel:
+lowercase xapi UUIDs, matching models.VM_ID. They go in a 0600
+daolab-vmids-*.json file in the F-5-1 runtime dir, passed as
+daolab_vm_ids_file, which ansible reads as data and never templates.
+- orphans.yml destroys only ids that it lists itself at that moment and
+  that match daolab_vm_id_re. daolab_vm_names is gone.
+- reconcile.yml loses its VM-name override, and destroys only
+  daolab-r<reservation_id>-* VMs from XO's own listing.
+- The engine hands the runner ids only, and the audit row gains vm_ids.
+- daolab_vm_id_re is kept in sync with models.VM_ID by a test.
+
+Why: row 25 hardening. No playbook reads a VM name or a VM list from
+its caller any more. Found along the way: before this change,
+reconcile.yml split a listed id such as "{{ 7 * 7 }}" into five
+arguments to daolab-xo destroy.
+
+Files: playbooks/group_vars/all.yml, playbooks/orphans.yml,
+playbooks/reconcile.yml, service/engine.py, service/models.py,
+service/runner.py, tests/test_ansible_runner.py, tests/test_orphans.py,
+tests/test_orphans_canary.py, tests/test_playbooks.py,
+tests/test_vm_ids.py (new), tests/test_vm_names_review.py,
+tests/test_vm_names_strict.py.
+
+Verified: tests first.
+- Red, gate set, 2.21.6: 51 failed / 36 passed, plus 2 collection
+  errors: tests/test_orphans.py and tests/test_vm_names_strict.py
+  can't import mock_vm_id from service.runner yet, so their tests
+  aren't counted.
+- Red, canary and playbook set: 17 failed / 20 passed, the same set on
+  2.21.6 and 2.20.11.
+- Green: gate set 145 passed; canary set 37 passed on both versions.
+- Full suite: 1277 passed, 4 skipped, 0 xfailed, on 2.21.6.
+Evidence (branch akshay-p8-gate,
+plan/design/p8-gate-review/round-3-akshay/p0d/): p0d-red-221.txt,
+p0d-red-canary-221.txt, p0d-red-canary-220.txt, p0d-green-221.txt,
+p0d-green-canary-221.txt, p0d-green-canary-220.txt, p0d-full-221.txt
+and p0d-apply-check.txt.
+
+Series result (all 8 commits on origin/rama 40ebd6d): full suite 1290
+passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core 2.21.6
+and 2.20.11; details in the PR description.
+
+Patch: P-0d.patch
+sha256 83264b3a71666d0585983d0513de096284905681036608105d0a395ef2e6f99a

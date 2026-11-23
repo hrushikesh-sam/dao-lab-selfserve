@@ -1,0 +1,1247 @@
+diff --git a/playbooks/group_vars/all.yml b/playbooks/group_vars/all.yml
+index f8c3ba2..19b0f3e 100644
+--- a/playbooks/group_vars/all.yml
++++ b/playbooks/group_vars/all.yml
+@@ -26,3 +26,8 @@ daolab_dom0_ssh: "{{ lookup('ansible.builtin.env', 'DAOLAB_DOM0_SSH') | default(
+ # `no_log: true`. An `-e daolab_internal_secret=...` (the playbook tests, a manual run) overrides
+ # this, and then nothing is read.
+ daolab_internal_secret: "{{ lookup('ansible.builtin.file', daolab_internal_secret_file) | trim }}"
++
++# P-0d (EXTRAVAR-MATRIX row 25): a Xen Orchestra VM id (the xapi UUID, lowercase). orphans.yml and
++# reconcile.yml destroy only ids of exactly this shape; service/models.py VM_ID is the same pattern
++# (tests/test_vm_ids.py keeps them in sync).
++daolab_vm_id_re: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+diff --git a/playbooks/orphans.yml b/playbooks/orphans.yml
+index 9c1182a..9f4eeaf 100644
+--- a/playbooks/orphans.yml
++++ b/playbooks/orphans.yml
+@@ -5,11 +5,16 @@
+ # be unknown (a VM made by hand as daolab-r999-x), so this runs over the whole `xcp_hosts`
+ # inventory group rather than one resolved setup.
+ #
+-#   without daolab_vm_names: write every daolab-r<id>-* VM name (JSON list) to
+-#                            {{ daolab_output_file }} on the control node
+-#   with daolab_vm_names:    hard-shutdown + delete each named VM wherever it lives (XO)
++#   without daolab_vm_ids_file: write every daolab-r<id>-* VM as {"id", "name"} (JSON list) to
++#                               {{ daolab_output_file }} on the control node
++#   with daolab_vm_ids_file:    hard-shutdown + delete each listed VM whose Xen Orchestra id is in
++#                               that file (a JSON list of XO VM ids, written 0600 by the runner)
+ #
+-# Read-only in list mode; destroying a name that is not there is a no-op.
++# P-0d (EXTRAVAR-MATRIX row 25): destroying is by XO VM id, never by name, and the ids come from a
++# file read with lookup(): lookup results are data and are never templated, so nothing the caller
++# hands over is evaluated. Only ids of the strict XO shape (daolab_vm_id_re) are used, and only
++# ids of VMs listed right now: an id that is not there is a no-op, and a VM re-made under the same
++# name has a new id and stays. Read-only in list mode.
+ - name: orphan sweep on the XCP-ng hosts (through Xen Orchestra, B-93)
+   hosts: xcp_hosts
+   gather_facts: false
+@@ -19,30 +24,41 @@
+       register: _listed
+       changed_when: false
+ 
+-    - name: keep the daolab-r<id>-* names
++    - name: keep the daolab-r<id>-* VMs (their XO id and name only)
+       ansible.builtin.set_fact:
+         _tagged:
+-          stdout_lines: "{{ _listed.stdout | from_json | map(attribute='name') | select('match', '^daolab-r[0-9]+-') | list }}"
++          rows: >-
++            {{ _listed.stdout | from_json | selectattr('name', 'match', '^daolab-r[0-9]+-')
++               | map('dict2items') | map('selectattr', 'key', 'in', ['id', 'name']) | map('list')
++               | map('items2dict') | list }}
++
++    - name: read the XO ids to destroy (data, never templated)
++      ansible.builtin.set_fact:
++        _ids: >-
++          {{ lookup('ansible.builtin.file', daolab_vm_ids_file) | from_json
++             | select('string') | select('match', daolab_vm_id_re) | list }}
++      when: daolab_vm_ids_file is defined
+ 
+     - name: "step: destroy_vms"
+       ansible.builtin.command: "{{ daolab_xo }} destroy --vm {{ item.id }}"
+       loop: >-
+         {{ _listed.stdout | from_json | selectattr('name', 'match', '^daolab-r[0-9]+-')
+-           | selectattr('name', 'in', daolab_vm_names) | list }}
++           | selectattr('id', 'string') | selectattr('id', 'match', daolab_vm_id_re)
++           | selectattr('id', 'in', _ids) | list }}
+       loop_control:
+-        label: "{{ item.name }}"
+-      when: daolab_vm_names is defined
++        label: "{{ item.id }}"
++      when: daolab_vm_ids_file is defined
+       changed_when: true
+ 
+ - name: report
+   hosts: localhost
+   gather_facts: false
+   tasks:
+-    - name: write the tagged VM names for the runner
++    - name: write the tagged VMs (XO id + name) for the runner
+       ansible.builtin.copy:
+         content: >-
+-          {{ groups['xcp_hosts'] | map('extract', hostvars, ['_tagged', 'stdout_lines'])
++          {{ groups['xcp_hosts'] | map('extract', hostvars, ['_tagged', 'rows'])
+              | flatten | select | unique | list | to_json }}
+         dest: "{{ daolab_output_file }}"
+         mode: "0600"
+-      when: daolab_output_file is defined and daolab_vm_names is not defined
++      when: daolab_output_file is defined and daolab_vm_ids_file is not defined
+diff --git a/playbooks/reconcile.yml b/playbooks/reconcile.yml
+index 3be9f63..d4fc8fc 100644
+--- a/playbooks/reconcile.yml
++++ b/playbooks/reconcile.yml
+@@ -9,8 +9,12 @@
+ #   3. on the DPU: every session / process of the shared lab login killed.
+ #
+ # Every step is idempotent and safe on a clean testbed. Followed by verify_clean.yml.
+-# Extra vars: reservation_id, setup (+ what play 0 reads). `daolab_vm_names` (a list of VM
+-# names) replaces step 1's name match: the orphan sweep (B-73) passes the orphans it found.
++# Extra vars: reservation_id, setup (+ what play 0 reads).
++#
++# P-0d (EXTRAVAR-MATRIX row 25): step 1 acts only on the daolab-r<reservation_id>-* VMs of Xen
++# Orchestra's own listing, by XO id, and only on ids of the strict XO shape (daolab_vm_id_re). It
++# takes no VM list from its caller (the old VM-name override is gone); the orphan sweep (B-73)
++# destroys by id through orphans.yml.
+ - name: resolve the setup
+   hosts: localhost
+   gather_facts: false
+@@ -27,19 +31,18 @@
+       register: _all_vms
+       changed_when: false
+ 
+-    - name: pick the VMs to destroy
++    - name: pick the VMs to destroy (this reservation's, by XO id)
+       ansible.builtin.set_fact:
+         _doomed: >-
+-          {{ (_all_vms.stdout | from_json | selectattr('name', 'in', daolab_vm_names) | list)
+-             if daolab_vm_names is defined else
+-             (_all_vms.stdout | from_json
+-              | selectattr('name', 'match', '^daolab-r' ~ (reservation_id | int) ~ '-') | list) }}
++          {{ _all_vms.stdout | from_json
++             | selectattr('name', 'match', '^daolab-r' ~ (reservation_id | int) ~ '-')
++             | selectattr('id', 'string') | selectattr('id', 'match', daolab_vm_id_re) | list }}
+ 
+     - name: "step: destroy_vms"
+       ansible.builtin.command: "{{ daolab_xo }} destroy --vm {{ item.id }}"
+       loop: "{{ _doomed }}"
+       loop_control:
+-        label: "{{ item.name }}"
++        label: "{{ item.id }}"
+       changed_when: true
+ 
+ - name: the DAO app's own cleanup, again (VPP / SmartNIC give their devices back)
+diff --git a/service/engine.py b/service/engine.py
+index 52c888a..6bcc937 100644
+--- a/service/engine.py
++++ b/service/engine.py
+@@ -482,24 +482,29 @@ def _sweep_orphans(db, rn, out: TickResult) -> None:
+     left_behind: set[int] = set()                    # reservations whose VMs survived
+     if lister is not None and destroyer is not None:
+         try:
+-            names = list(lister())
++            rows = list(lister())
+         except Exception:                            # noqa: BLE001 — never stop the tick
+             log.exception("orphan sweep: could not list the testbed's VMs")
+-            names = []
+-        names, dropped = models.split_vm_names(names)        # P-0c: strict names only, count logged
+-        if dropped:
+-            log.warning("orphan sweep: skipped %d VM name(s) of an unexpected shape", dropped)
+-        doomed = [n for n in names
+-                  if (m := _TAGGED.match(n)) is not None and _orphan(db, int(m.group(1)))]
++            rows = []
++        # P-0c/P-0d: a strict name AND a strict XO id, or the VM is skipped (count logged). The name stays
++        # here (it gives the reservation id); only the ids go to the runner.
++        vms, bad_names, bad_ids = models.classify_tagged_vms(rows)
++        if bad_names:
++            log.warning("orphan sweep: skipped %d VM name(s) of an unexpected shape", bad_names)
++        if bad_ids:
++            log.warning("orphan sweep: skipped %d VM id(s) of an unexpected shape", bad_ids)
++        doomed = [v for v in vms if _orphan(db, int(_TAGGED.match(v.name).group(1)))]
+         if doomed:
+-            result = _call(lambda _ctx, sink: destroyer(doomed, sink), {"id": 0},
++            ids = [v.id for v in doomed]
++            result = _call(lambda _ctx, sink: destroyer(ids, sink), {"id": 0},
+                            _sweep_log_sink, "destroy_vms")
+             if result.ok:
+                 out.orphan_vms += len(doomed)
+             else:
+-                left_behind = {int(_TAGGED.match(n).group(1)) for n in doomed}
++                left_behind = {int(_TAGGED.match(v.name).group(1)) for v in doomed}
+             models.audit(db, "engine", "orphan_sweep", None, None,
+-                         {"vms": doomed, "ok": result.ok, "error": result.error})
++                         {"vms": [v.name for v in doomed], "vm_ids": ids,
++                          "ok": result.ok, "error": result.error})
+     rows = db.execute(
+         f"""SELECT DISTINCT l.reservation_id FROM ip_leases l
+             JOIN reservations r ON r.id = l.reservation_id
+diff --git a/service/models.py b/service/models.py
+index 168c012..8ebe422 100644
+--- a/service/models.py
++++ b/service/models.py
+@@ -4,6 +4,7 @@ import os
+ import re
+ import sqlite3
+ from datetime import datetime, timezone
++from typing import NamedTuple
+ 
+ from . import migrations
+ 
+@@ -307,9 +308,10 @@ def ident_ok(value) -> bool:
+     return isinstance(value, str) and _IDENT.fullmatch(value) is not None
+ 
+ 
+-# P-0c (EXTRAVAR-MATRIX row 25): a VM name read back from Xen Orchestra is handed to ansible as the
+-# extra var `daolab_vm_names`, which ansible re-templates. Only names of exactly this shape may travel:
+-# the shape the platform makes ('daolab-r' ~ id ~ '-' ~ role, plan_vms.yml; a role is an `_IDENT`).
++# P-0c (EXTRAVAR-MATRIX row 25): a VM name read back from Xen Orchestra used to be handed back to ansible
++# as an extra var, which ansible re-templates; since P-0d only the XO id travels (below), and the name stays
++# in Python for the reservation id. Only names of exactly the shape the platform makes are accepted
++# ('daolab-r' ~ id ~ '-' ~ role, plan_vms.yml; a role is an `_IDENT`).
+ # P-0e: the id is bounded to 18 ASCII digits, so int(id) always fits SQLite's 64-bit INTEGER and
+ # Python's int-from-string limit; an unbounded id made the orphan sweep raise on every tick.
+ VM_NAME = re.compile(r"daolab-r[0-9]{1,18}-[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+@@ -326,6 +328,73 @@ def split_vm_names(names) -> tuple[list[str], int]:
+     return kept, len(names) - len(kept)
+ 
+ 
++# P-0d (row 25 hardening): the orphan sweep destroys by Xen Orchestra VM id, never by name. A name stays in
++# Python (the engine reads the reservation id from it); only the id goes to ansible, in a file the playbook
++# reads with lookup() (data, never templated). XO's VM id is the xapi UUID, lowercase. The same pattern is
++# `daolab_vm_id_re` in playbooks/group_vars/all.yml (tests/test_vm_ids.py keeps the two in sync).
++VM_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
++
++
++class TaggedVm(NamedTuple):
++    """A daolab-tagged VM as listed by Xen Orchestra: its XO id and its (strict) name."""
++    id: str
++    name: str
++
++
++def vm_id_ok(vm_id) -> bool:
++    return isinstance(vm_id, str) and VM_ID.fullmatch(vm_id) is not None
++
++
++def split_vm_ids(ids) -> tuple[list[str], int]:
++    """(the valid ids in order, each once; how many were invalid). A repeated id is kept once and not
++    counted (two hosts of one pool list the same VM). Callers log the count, never an id."""
++    ids = list(ids or [])
++    valid = [i for i in ids if vm_id_ok(i)]
++    return list(dict.fromkeys(valid)), len(ids) - len(valid)
++
++
++def split_vm_ids_detail(ids) -> tuple[list[str], int, int]:
++    """split_vm_ids, with the invalid ids counted in two kinds for the logs: (kept, not even a valid
++    VM name, a valid VM name but not an id)."""
++    ids = list(ids or [])
++    kept, _ = split_vm_ids(ids)
++    bad = [i for i in ids if not vm_id_ok(i)]
++    bad_names = sum(1 for i in bad if not vm_name_ok(i))
++    return kept, bad_names, len(bad) - bad_names
++
++
++def classify_tagged_vms(rows) -> tuple[list[TaggedVm], int, int]:
++    """(the listed VMs whose id AND name are valid, in order, each id once; how many rows have an invalid
++    name; how many have a valid name but an invalid id). A row is a TaggedVm or an {"id", "name"}
++    mapping; a bare name string (the pre-P-0d contract) has no id. A repeated id is kept once (its
++    first row) and not counted. Callers log the counts, never a row."""
++    kept: dict[str, TaggedVm] = {}
++    bad_names = bad_ids = 0
++    for r in list(rows or []):
++        if isinstance(r, TaggedVm):
++            vm_id, name = r.id, r.name
++        elif isinstance(r, dict):
++            vm_id, name = r.get("id"), r.get("name")
++        elif isinstance(r, str):
++            vm_id, name = None, r
++        else:
++            vm_id = name = None
++        if not vm_name_ok(name):
++            bad_names += 1
++        elif not vm_id_ok(vm_id):
++            bad_ids += 1
++        elif vm_id not in kept:
++            kept[vm_id] = TaggedVm(vm_id, name)
++    return list(kept.values()), bad_names, bad_ids
++
++
++def split_tagged_vms(rows) -> tuple[list[TaggedVm], int]:
++    """(the listed VMs whose id AND name are valid, in order, each id once; how many were invalid).
++    A repeated id is kept once and not counted. See classify_tagged_vms."""
++    kept, bad_names, bad_ids = classify_tagged_vms(rows)
++    return kept, bad_names + bad_ids
++
++
+ def access_keys(res, user) -> str:
+     """The SSH key(s) that open this reservation: the one given at deploy, else - unless the
+     owner asked for a password instead - their registered key. Only valid key lines come out,
+diff --git a/service/runner.py b/service/runner.py
+index bbc29dd..7bfb8fd 100644
+--- a/service/runner.py
++++ b/service/runner.py
+@@ -22,6 +22,7 @@ import threading
+ import time
+ import urllib.error
+ import urllib.request
++import uuid
+ from dataclasses import dataclass
+ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+ from typing import Callable, Mapping, Protocol
+@@ -112,9 +113,18 @@ class Runner(Protocol):
+     def probe(self, res: Mapping, step: StepSink) -> RunResult: ...
+     def verify_clean(self, res: Mapping, step: StepSink) -> RunResult: ...
+     def reconcile(self, res: Mapping, step: StepSink) -> RunResult: ...
+-    # B-73, the orphan sweep (optional: the engine skips the sweep for a runner without them)
+-    def tagged_vms(self) -> list[str]: ...
+-    def destroy_vms(self, names: list[str], step: StepSink) -> RunResult: ...
++    # B-73, the orphan sweep (optional: the engine skips the sweep for a runner without them).
++    # P-0d: listing gives (XO id, name) pairs; destroying takes XO ids only, never a name.
++    def tagged_vms(self) -> list[models.TaggedVm]: ...
++    def destroy_vms(self, ids: list[str], step: StepSink) -> RunResult: ...
++
++
++_MOCK_VM_NS = uuid.UUID("5f0d7c1e-3a2b-4c6d-9e8f-0a1b2c3d4e5f")
++
++
++def mock_vm_id(name: str) -> str:
++    """The XO-style id MockRunner gives the VM `name` (stable, so tests can compute it)."""
++    return str(uuid.uuid5(_MOCK_VM_NS, name))
+ 
+ 
+ def parse_mock_fail(text: str) -> frozenset[str]:
+@@ -346,15 +356,16 @@ class MockRunner:
+     def _vm_names(self, res: Mapping) -> set[str]:
+         return {v["name"] for v in _field(res, "vms", []) or [] if v.get("name")}
+ 
+-    def tagged_vms(self) -> list[str]:
+-        """B-73: every daolab-r<id>-* VM on the fake testbed."""
+-        return sorted(self.vms)
++    def tagged_vms(self) -> list[models.TaggedVm]:
++        """B-73: every daolab-r<id>-* VM on the fake testbed, with its id (P-0d: mock_vm_id)."""
++        return [models.TaggedVm(mock_vm_id(n), n) for n in sorted(self.vms)]
+ 
+-    def destroy_vms(self, names: list[str], step: StepSink) -> RunResult:
+-        """B-73: destroy exactly these VMs (the orphan sweep)."""
++    def destroy_vms(self, ids: list[str], step: StepSink) -> RunResult:
++        """B-73: destroy exactly the VMs with these ids (the orphan sweep; P-0d: by id, never by name)."""
+         self._sleep(self.step_sec)
+-        gone = [n for n in names if n in self.vms]
+-        self.vms.difference_update(names)
++        wanted = set(ids)
++        gone = sorted(n for n in self.vms if mock_vm_id(n) in wanted)
++        self.vms.difference_update(gone)
+         step("destroy_vms", "ok", ", ".join(gone) or None)
+         return RunResult(ok=True)
+ 
+@@ -518,8 +529,13 @@ class AnsibleRunner:
+         }
+ 
+     def _play(self, kind: str, playbook_key: str, res: Mapping | None, step: StepSink,
+-              extra: dict | None = None) -> tuple[RunResult, object]:
+-        """Run one playbook; returns (result, the JSON it wrote to daolab_output_file)."""
++              extra: dict | None = None, files: Mapping[str, object] | None = None
++              ) -> tuple[RunResult, object]:
++        """Run one playbook; returns (result, the JSON it wrote to daolab_output_file).
++
++        `files` maps an extra-var name to JSON data: each is written to a 0600 file in the runtime dir for
++        the run and only its PATH is the extra var (P-0d: a playbook reads it with lookup('file'), so the
++        data is never templated); the files are removed when the run ends, whatever happens."""
+         from . import otel
+         job_id = _field(res, "job_id") if res is not None else None
+         root = self.job_dir(job_id if job_id is not None else "sweep")
+@@ -568,7 +584,12 @@ class AnsibleRunner:
+             # ansible-runner resolves the command with (not `binary=`: that is raw mode)
+             envvars["PATH"] = os.path.dirname(playbook_bin) + os.pathsep + os.environ.get("PATH", "")
+         secret_path = None
++        data_paths: list[str] = []
+         try:
++            for var, data in (files or {}).items():
++                path = _write_json_file(VM_IDS_FILE_PREFIX, data)
++                data_paths.append(path)
++                ev[var] = path
+             if self.s.internal_secret:
+                 # F-5-1: the secret never goes into extravars (ansible-runner persists those in
+                 # env/extravars) or the environment; the playbooks read it from this 0600 file
+@@ -589,6 +610,8 @@ class AnsibleRunner:
+         finally:
+             log.close()
+             _remove_quietly(secret_path)
++            for path in data_paths:
++                _remove_quietly(path)
+         ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
+         error = None
+         if getattr(r, "status", None) == "timeout":
+@@ -629,25 +652,32 @@ class AnsibleRunner:
+     def tagged_vms(self):
+         if not self.s.deploy_vms:                    # no VMs are made: no XCP-ng host to ask
+             return []
+-        result, names = self._play("orphans", "orphans", None, lambda *a, **k: None)
++        result, rows = self._play("orphans", "orphans", None, lambda *a, **k: None)
+         if not result.ok:
+             raise RunnerError(f"could not list the testbed's VMs: {result.error}")
+-        kept, dropped = models.split_vm_names(names)          # P-0c: the source of the names
+-        if dropped:
+-            log.warning("orphan sweep: dropped %d listed VM name(s) of an unexpected shape", dropped)
++        # P-0c: the source of the names; P-0d: and of the ids (a pair needs both valid)
++        kept, bad_names, bad_ids = models.classify_tagged_vms(rows)
++        if bad_names:
++            log.warning("orphan sweep: dropped %d listed VM name(s) of an unexpected shape", bad_names)
++        if bad_ids:
++            log.warning("orphan sweep: dropped %d listed VM id(s) of an unexpected shape", bad_ids)
+         return kept
+ 
+-    def destroy_vms(self, names, step):
+-        # P-0c: the final chokepoint before the extra var; a bad name never reaches ansible.
+-        kept, dropped = models.split_vm_names(names)
+-        if dropped:
+-            log.warning("orphan sweep: refused %d VM name(s) of an unexpected shape", dropped)
+-            if not kept:
+-                return RunResult(ok=False, error=f"{dropped} VM name(s) refused, nothing to destroy")
+-        return self._play("orphans", "orphans", None, step, {"daolab_vm_names": kept})[0]
++    def destroy_vms(self, ids, step):
++        # P-0d: XO ids only, never a name; the final chokepoint before the ids file orphans.yml reads.
++        kept, bad_names, bad_ids = models.split_vm_ids_detail(ids)
++        if bad_names:
++            log.warning("orphan sweep: refused %d VM name(s) of an unexpected shape", bad_names)
++        if bad_ids:
++            log.warning("orphan sweep: refused %d VM id(s) of an unexpected shape", bad_ids)
++        if not kept:
++            dropped = bad_names + bad_ids
++            return RunResult(ok=False, error=f"{dropped} VM id(s) refused, nothing to destroy")
++        return self._play("orphans", "orphans", None, step, files={"daolab_vm_ids_file": kept})[0]
+ 
+ 
+ SECRET_FILE_PREFIX = "daolab-secret-"
++VM_IDS_FILE_PREFIX = "daolab-vmids-"                 # P-0d: the orphan sweep's ids file
+ 
+ 
+ def _runtime_dir() -> str:
+@@ -658,18 +688,28 @@ def _runtime_dir() -> str:
+     return d.split(":")[0] or tempfile.gettempdir()
+ 
+ 
+-def _write_secret_file(secret: str) -> str:
+-    """The secret in a new file, mode 0600 (mkstemp: O_EXCL, owner only). Returns its path."""
+-    fd, path = tempfile.mkstemp(prefix=SECRET_FILE_PREFIX, suffix=".txt", dir=_runtime_dir())
++def _write_runtime_file(prefix: str, suffix: str, text: str) -> str:
++    """`text` in a new file in the runtime dir, mode 0600 (mkstemp: O_EXCL, owner only). Returns its path."""
++    fd, path = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=_runtime_dir())
+     try:
+         with os.fdopen(fd, "w", encoding="utf-8") as fh:
+-            fh.write(secret)
++            fh.write(text)
+     except BaseException:
+         _remove_quietly(path)
+         raise
+     return path
+ 
+ 
++def _write_secret_file(secret: str) -> str:
++    """The secret in a new 0600 file in the runtime dir (F-5-1). Returns its path."""
++    return _write_runtime_file(SECRET_FILE_PREFIX, ".txt", secret)
++
++
++def _write_json_file(prefix: str, data) -> str:
++    """`data` as JSON in a new 0600 file in the runtime dir (P-0d: the ids file). Returns its path."""
++    return _write_runtime_file(prefix, ".json", json.dumps(data))
++
++
+ def _remove_quietly(path: str | None) -> None:
+     if path:
+         try:
+@@ -679,8 +719,8 @@ def _remove_quietly(path: str | None) -> None:
+ 
+ 
+ def _sweep_secret_files(max_age_sec: int) -> None:
+-    """A run killed with SIGKILL never reaches its `finally`: drop secret files older than
+-    `max_age_sec` (the engine runs one job at a time, so a fresh file may be in use)."""
++    """A run killed with SIGKILL never reaches its `finally`: drop secret (and P-0d ids) files older
++    than `max_age_sec` (the engine runs one job at a time, so a fresh file may be in use)."""
+     d = _runtime_dir()
+     try:
+         names = os.listdir(d)
+@@ -688,7 +728,7 @@ def _sweep_secret_files(max_age_sec: int) -> None:
+         return
+     cutoff = time.time() - max_age_sec
+     for name in names:
+-        if name.startswith(SECRET_FILE_PREFIX):
++        if name.startswith((SECRET_FILE_PREFIX, VM_IDS_FILE_PREFIX)):
+             path = os.path.join(d, name)
+             try:
+                 if os.stat(path).st_mtime < cutoff:
+diff --git a/tests/test_ansible_runner.py b/tests/test_ansible_runner.py
+index 7335219..d6c6fa1 100644
+--- a/tests/test_ansible_runner.py
++++ b/tests/test_ansible_runner.py
+@@ -158,14 +158,27 @@ def test_verify_clean_reads_the_residue_the_playbook_wrote(settings, ctx):
+     assert unverified.ok is False and unverified.residue == ()      # could not verify != clean
+ 
+ 
++_U999 = "0d5e1b3c-9a7f-4c2e-8b6d-1f2a3b4c5d6e"
++
++
+ def test_the_orphan_sweep_lists_and_destroys_through_orphans_yml(settings):
+-    fake = FakeRun(output=["daolab-r999-x"])
++    sent = []
++
++    class Recording(FakeRun):
++        def __call__(self, **kw):
++            if "daolab_vm_ids_file" in kw["extravars"]:            # read while it exists (P-0d)
++                with open(kw["extravars"]["daolab_vm_ids_file"]) as fh:
++                    sent.append(json.load(fh))
++            return super().__call__(**kw)
++
++    fake = Recording(output=[{"id": _U999, "name": "daolab-r999-x"}])
+     rn = AnsibleRunner(settings, run=fake)
+-    assert rn.tagged_vms() == ["daolab-r999-x"]
+-    assert rn.destroy_vms(["daolab-r999-x"], Steps()).ok
++    assert rn.tagged_vms() == [models.TaggedVm(_U999, "daolab-r999-x")]
++    assert rn.destroy_vms([_U999], Steps()).ok
+     assert [c["playbook"] for c in fake.calls] == ["orphans.yml", "orphans.yml"]
+-    assert "daolab_vm_names" not in fake.calls[0]["extravars"]
+-    assert fake.calls[1]["extravars"]["daolab_vm_names"] == ["daolab-r999-x"]
++    assert "daolab_vm_ids_file" not in fake.calls[0]["extravars"]
++    assert all("daolab_vm_names" not in c["extravars"] for c in fake.calls)
++    assert sent == [[_U999]]
+     assert "sweep" in fake.calls[0]["private_data_dir"]
+     with pytest.raises(RunnerError, match="could not list"):
+         AnsibleRunner(settings, run=FakeRun(status="failed", rc=2)).tagged_vms()
+@@ -282,12 +295,12 @@ def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
+ def test_real_orphan_sweep(lab, tmp_path):
+     from tests.test_playbooks import clean_state
+     st = clean_state()
+-    st["vms"]["daolab-r999-x"] = {"uuid": "u1", "power": "running", "other_config": {},
++    st["vms"]["daolab-r999-x"] = {"uuid": _U999, "power": "running", "other_config": {},
+                                  "xenstore": {}, "vifs": [], "ip": None}
+     lab.set(st)
+     rn = real_runner(lab, tmp_path)
+-    assert rn.tagged_vms() == ["daolab-r999-x"]
+-    assert rn.destroy_vms(["daolab-r999-x"], Steps()).ok
++    assert rn.tagged_vms() == [models.TaggedVm(_U999, "daolab-r999-x")]
++    assert rn.destroy_vms([_U999], Steps()).ok
+     assert lab.state()["vms"] == {}
+ 
+ 
+@@ -307,7 +320,7 @@ def test_the_sign_off_switch_and_the_app_reach_the_playbooks(settings, ctx):
+ 
+ 
+ def test_with_vms_off_the_orphan_sweep_asks_no_xcp_host(settings):
+-    fake = FakeRun(output=["daolab-r999-x"])
++    fake = FakeRun(output=[{"id": _U999, "name": "daolab-r999-x"}])
+     rn = AnsibleRunner(dataclasses.replace(settings, deploy_vms=False), run=fake)
+     assert rn.tagged_vms() == [] and fake.calls == []
+ 
+diff --git a/tests/test_orphans.py b/tests/test_orphans.py
+index 042fa90..2252087 100644
+--- a/tests/test_orphans.py
++++ b/tests/test_orphans.py
+@@ -3,7 +3,7 @@
+ import pytest
+ 
+ from service import engine, ipam, models
+-from service.runner import MockRunner, RunResult
++from service.runner import MockRunner, RunResult, mock_vm_id
+ from service.scheduler import SchedConfig
+ from tests.conftest import NOW, T, mk_res, mk_setup, mk_usecase
+ 
+@@ -36,7 +36,8 @@ def test_a_manual_vm_tagged_daolab_r999_gets_cleaned(lab):
+     rn.vms.add("daolab-r999-manual")
+     out = tick(lab, rn)
+     assert rn.vms == set() and out.orphan_vms == 1
+-    assert sweeps(lab) == [{"vms": ["daolab-r999-manual"], "ok": True, "error": None}]
++    assert sweeps(lab) == [{"vms": ["daolab-r999-manual"], "vm_ids": [mock_vm_id("daolab-r999-manual")],
++                            "ok": True, "error": None}]
+ 
+ 
+ def test_vms_of_terminal_reservations_go_and_live_ones_stay(lab):
+diff --git a/tests/test_orphans_canary.py b/tests/test_orphans_canary.py
+index 855262f..3a6f6b6 100644
+--- a/tests/test_orphans_canary.py
++++ b/tests/test_orphans_canary.py
+@@ -4,11 +4,18 @@ A VM named `daolab-r999-{{ lookup('pipe', 'touch <tmp>/canary') }}` passes the o
+ (`^daolab-r[0-9]+-` in orphans.yml and engine._TAGGED). The canary file must never appear when the names
+ travel the way production sends them: AnsibleRunner.destroy_vms() builds the extra var (the P-0c chokepoint),
+ and the same payload is what the earlier draft passed straight to the playbook (it created the canary).
+-The payload only touches a file in pytest's tmp_path. Run it on every supported interpreter / ansible-core."""
++The payload only touches a file in pytest's tmp_path. Run it on every supported interpreter / ansible-core.
++
++P-0d: what travels back is no longer a name but the XO VM ids, in a file (`daolab_vm_ids_file`); list mode
++writes {id, name} pairs and the runner keeps a pair only when both halves are valid."""
++import json
++import types
++
+ import pytest
+ 
+-from tests.test_ansible_runner import FakeRun, Steps, settings  # noqa: F401  (fixture)
+-from tests.test_playbooks import ANSIBLE, Lab, _vm, clean_state
++from tests.test_ansible_runner import Steps, settings  # noqa: F401  (fixture)
++from tests.test_playbooks import ANSIBLE, Lab, _vm, clean_state, vm_uuid
++from service import models
+ from service.runner import AnsibleRunner
+ 
+ pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed")
+@@ -32,11 +39,25 @@ def _state_with(names):
+     return st
+ 
+ 
+-def _what_the_runner_sends(settings, names):
+-    """The `daolab_vm_names` AnsibleRunner.destroy_vms really puts in the extra vars."""
+-    fake = FakeRun()
+-    AnsibleRunner(settings, run=fake).destroy_vms(list(names), Steps())
+-    return fake.calls[0]["extravars"]["daolab_vm_names"] if fake.calls else []
++def _what_the_runner_sends(settings, ids):
++    """The ids AnsibleRunner.destroy_vms really writes to its `daolab_vm_ids_file` (read during the run:
++    the file is removed when the run ends). None when it runs nothing."""
++    sent = []
++
++    def fake_run(**kw):
++        assert "daolab_vm_names" not in kw["extravars"]
++        with open(kw["extravars"]["daolab_vm_ids_file"]) as fh:
++            sent.append(json.load(fh))
++        return types.SimpleNamespace(status="successful", rc=0)
++
++    AnsibleRunner(settings, run=fake_run).destroy_vms(list(ids), Steps())
++    return sent[0] if sent else None
++
++
++def _send(lab, ids):
++    path = lab.dir / "sent-ids.json"
++    path.write_text(json.dumps(ids))
++    return str(path)
+ 
+ 
+ def test_list_mode_never_evaluates_a_vm_name(lab, tmp_path):
+@@ -49,10 +70,11 @@ def test_list_mode_never_evaluates_a_vm_name(lab, tmp_path):
+ def test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var(lab, tmp_path, settings):
+     canary = tmp_path / "canary-destroy"
+     lab.set(_state_with([BENIGN, poison_name(canary)]))
+-    sent = _what_the_runner_sends(settings, [BENIGN, poison_name(canary)])
+-    assert sent == [BENIGN]
+-    lab.run("orphans.yml", daolab_vm_names=sent)
+-    assert not canary.exists(), f"a VM name was evaluated as an extra var:\n{lab.stdout[-1500:]}"
++    sent = _what_the_runner_sends(settings, [vm_uuid(BENIGN), poison_name(canary)])
++    assert sent == [vm_uuid(BENIGN)]
++    assert lab.run("orphans.yml", daolab_vm_ids_file=_send(lab, sent)) == 0, lab.stdout[-1500:]
++    assert not canary.exists(), f"a VM name was evaluated in destroy mode:\n{lab.stdout[-1500:]}"
++    assert sorted(lab.state()["vms"]) == [poison_name(canary)]          # BENIGN went, by id
+ 
+ 
+ def test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name(lab, tmp_path, settings):
+@@ -64,5 +86,9 @@ def test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name(lab, tm
+     except (OSError, ValueError):
+         pytest.skip(f"list mode wrote no output file; see the other two tests:\n{lab.stdout[-800:]}")
+     assert not canary.exists(), "evaluated during the listing half"
+-    lab.run("orphans.yml", daolab_vm_names=_what_the_runner_sends(settings, names))   # half 2
++    pairs, dropped = models.split_tagged_vms(names)                  # what tagged_vms() keeps
++    assert [v.name for v in pairs] == [BENIGN] and dropped == 1
++    sent = _what_the_runner_sends(settings, [v.id for v in pairs])
++    assert lab.run("orphans.yml", daolab_vm_ids_file=_send(lab, sent)) == 0     # half 2
+     assert not canary.exists(), f"evaluated during the destroy half:\n{lab.stdout[-1500:]}"
++    assert sorted(lab.state()["vms"]) == [poison_name(canary)]
+diff --git a/tests/test_playbooks.py b/tests/test_playbooks.py
+index 8795f59..3d8c6ab 100644
+--- a/tests/test_playbooks.py
++++ b/tests/test_playbooks.py
+@@ -16,6 +16,7 @@ import shutil
+ import stat
+ import subprocess
+ import sys
++import uuid
+ 
+ import pytest
+ 
+@@ -56,6 +57,11 @@ def _can_become() -> bool:
+ CAN_BECOME = _can_become()
+ 
+ 
++def vm_uuid(name):
++    """A real-shaped XO VM id (xapi UUID), stable per name: P-0d only ever destroys ids of this shape."""
++    return str(uuid.uuid5(uuid.NAMESPACE_URL, name))
++
++
+ def clean_state():
+     return {"vms": {}, "templates": {"tpl-ubuntu2204-dao": TPL_UUID},
+             "networks": {"Pool-wide network associated with eth0": NET_UUID,
+@@ -146,7 +152,7 @@ def lab(tmp_path):
+ def dirty(state, rid=12):
+     """What a half-torn-down reservation 12 leaves: a running VM holding a VF, a lab session,
+     a running DPU app, and an address that still answers."""
+-    state["vms"][f"daolab-r{rid}-sink"] = {"uuid": "vm-sink", "power": "running",
++    state["vms"][f"daolab-r{rid}-sink"] = {"uuid": vm_uuid(f"daolab-r{rid}-sink"), "power": "running",
+                                            "other_config": {"pci": "0/0000:5e:01.1"},
+                                            "xenstore": {}, "vifs": [], "ip": "10.30.0.101"}
+     state["assignable"].remove("0000:5e:01.1")
+@@ -238,7 +244,7 @@ def test_reconcile_gives_the_hugepages_back(lab):
+ def test_reconcile_destroys_through_xen_orchestra_and_never_logs_in_to_a_dom0(lab):
+     lab.set(dirty(clean_state()))
+     assert lab.run("reconcile.yml") == 0, lab.stdout
+-    assert ["daolab-xo", "destroy", "--vm", "vm-sink"] in lab.calls("daolab-xo")
++    assert ["daolab-xo", "destroy", "--vm", vm_uuid("daolab-r12-sink")] in lab.calls("daolab-xo")
+     assert not lab.calls("xe") and not lab.calls("xl")                 # B-93: XO only
+ 
+ 
+@@ -253,22 +259,34 @@ def test_reconcile_is_safe_on_a_clean_testbed_and_changes_nothing(lab):
+ def test_reconcile_leaves_other_reservations_and_foreign_vms_alone(lab):
+     st = dirty(clean_state())
+     for name in ("daolab-r120-sink", "daolab-r1-tgen", "admin-scratch"):
+-        st["vms"][name] = {"uuid": f"u-{name}", "power": "halted", "other_config": {},
+-                           "xenstore": {}, "vifs": [], "ip": None}
++        st["vms"][name] = _vm(name, power="halted")
+     lab.set(st)
+     assert lab.run("reconcile.yml") == 0, lab.stdout
+     assert sorted(lab.state()["vms"]) == ["admin-scratch", "daolab-r1-tgen", "daolab-r120-sink"]
+ 
+ 
+-def test_reconcile_destroys_exactly_the_named_orphans(lab):
++def test_reconcile_ignores_a_caller_supplied_list_and_destroys_only_its_own_reservation(lab):
++    """P-0d: reconcile.yml takes no VM list from its caller (the B-73 override is gone): it destroys
++    exactly the daolab-r<reservation_id>-* VMs of XO's own listing, by XO id."""
+     st = clean_state()
+-    for name in ("daolab-r999-x", "daolab-r998-y", "daolab-r12-keep"):
+-        st["vms"][name] = {"uuid": f"u-{name}", "power": "running", "other_config": {},
+-                           "xenstore": {}, "vifs": [], "ip": None}
++    for name in ("daolab-r12-sink", "daolab-r999-x", "daolab-r998-y"):
++        st["vms"][name] = _vm(name)
+     lab.set(st)
+-    assert lab.run("reconcile.yml", reservation_id=0,
++    assert lab.run("reconcile.yml", reservation_id=12,
+                    daolab_vm_names=["daolab-r999-x", "daolab-r998-y"]) == 0, lab.stdout
+-    assert sorted(lab.state()["vms"]) == ["daolab-r12-keep"]
++    assert sorted(lab.state()["vms"]) == ["daolab-r998-y", "daolab-r999-x"]
++    assert [c for c in lab.calls("daolab-xo") if c[1] == "destroy"] == \
++        [["daolab-xo", "destroy", "--vm", vm_uuid("daolab-r12-sink")]]
++
++
++def test_reconcile_skips_a_listed_vm_whose_id_is_not_a_uuid(lab):
++    """P-0d: even ids from XO's own listing are destroyed only if they have the strict XO id shape."""
++    st = clean_state()
++    st["vms"]["daolab-r12-sink"] = _vm("daolab-r12-sink")
++    st["vms"]["daolab-r12-odd"] = {**_vm("daolab-r12-odd"), "uuid": "{{ 7 * 7 }}"}
++    lab.set(st)
++    assert lab.run("reconcile.yml") == 0, lab.stdout
++    assert sorted(lab.state()["vms"]) == ["daolab-r12-odd"]
+ 
+ 
+ def test_reconcile_twice_in_a_row(lab):
+@@ -282,28 +300,48 @@ def test_reconcile_twice_in_a_row(lab):
+ # ---- B-73: orphans.yml -------------------------------------------------------------------
+ 
+ def _vm(name, power="running"):
+-    return {"uuid": f"u-{name}", "power": power, "other_config": {}, "xenstore": {},
++    return {"uuid": vm_uuid(name), "power": power, "other_config": {}, "xenstore": {},
+             "vifs": [], "ip": None}
+ 
+ 
++def _ids_file(lab, ids):
++    path = lab.dir / "vm-ids.json"
++    path.write_text(json.dumps(list(ids)))
++    return str(path)
++
++
+ def test_orphans_lists_every_daolab_tagged_vm(lab):
+     st = clean_state()
+     for name in ("daolab-r999-x", "daolab-r12-sink", "admin-scratch", "daolab-notes"):
+         st["vms"][name] = _vm(name)
+     lab.set(st)
+     assert lab.run("orphans.yml") == 0, lab.stdout
+-    assert sorted(lab.output()) == ["daolab-r12-sink", "daolab-r999-x"]
++    assert sorted(lab.output(), key=lambda v: v["name"]) == [          # P-0d: XO id + name pairs
++        {"id": vm_uuid("daolab-r12-sink"), "name": "daolab-r12-sink"},
++        {"id": vm_uuid("daolab-r999-x"), "name": "daolab-r999-x"}]
+     assert lab.state() == st                                          # list mode is read-only
+ 
+ 
+-def test_orphans_destroys_exactly_the_named_vms(lab):
++def test_orphans_destroys_exactly_the_given_ids(lab):
+     st = clean_state()
+     for name in ("daolab-r999-x", "daolab-r998-y", "daolab-r12-sink"):
+         st["vms"][name] = _vm(name, power="halted" if name.endswith("y") else "running")
+     lab.set(st)
+-    assert lab.run("orphans.yml", daolab_vm_names=["daolab-r999-x", "daolab-r998-y",
+-                                                   "daolab-r1-not-there"]) == 0, lab.stdout
++    ids = [vm_uuid("daolab-r999-x"), vm_uuid("daolab-r998-y"), vm_uuid("daolab-r1-not-there")]
++    assert lab.run("orphans.yml", daolab_vm_ids_file=_ids_file(lab, ids)) == 0, lab.stdout
+     assert sorted(lab.state()["vms"]) == ["daolab-r12-sink"]
++    assert lab.out_path.exists() is False                             # destroy mode reports nothing
++
++
++def test_orphans_never_destroys_a_vm_that_only_shares_a_name(lab):
++    """The list and destroy halves are two runs: a VM re-made under the same name in between has a new
++    XO id, so the sweep that listed the old one leaves it alone (names could not tell them apart)."""
++    st = clean_state()
++    st["vms"]["daolab-r999-x"] = {**_vm("daolab-r999-x"), "uuid": str(uuid.uuid4())}
++    lab.set(st)
++    assert lab.run("orphans.yml", daolab_vm_ids_file=_ids_file(lab, [vm_uuid("daolab-r999-x")])) == 0, \
++        lab.stdout
++    assert sorted(lab.state()["vms"]) == ["daolab-r999-x"]
+ 
+ 
+ # ---- B-83: the otel_agent role ------------------------------------------------------------
+diff --git a/tests/test_vm_ids.py b/tests/test_vm_ids.py
+new file mode 100644
+index 0000000..7b7c334
+--- /dev/null
++++ b/tests/test_vm_ids.py
+@@ -0,0 +1,178 @@
++"""P-0d (EXTRAVAR-MATRIX row 25 hardening): the orphan sweep destroys by Xen Orchestra VM id.
++
++A VM name never reaches ansible again. `tagged_vms()` gives (id, name) pairs, both strictly checked; the engine
++reads the reservation id from the name inside Python and hands `destroy_vms()` the ids only. The ids travel in a
++0600 JSON file in the runtime dir (the F-5-1 pattern), read by orphans.yml with lookup('file'): lookup results
++are data, never templated. The file is removed when the run ends, whatever happens.
++"""
++import dataclasses
++import json
++import os
++import pathlib
++import stat
++import time
++import types
++import uuid
++
++import pytest
++import yaml
++
++from service import config, models, runner
++from service.runner import AnsibleRunner
++from tests.conftest import REPO
++
++U1 = "c2a73b7e-be6b-493b-8ce4-bb0b9af95001"                # a fixed uuid4-shaped id: stable test ids
++U2 = str(uuid.uuid5(uuid.NAMESPACE_URL, "daolab-r999-x"))
++GOOD = "daolab-r999-client"
++PAYLOAD = "{{ lookup('pipe', 'touch /tmp/p0d-canary') }}"
++
++VALID_IDS = [U1, U2, "00000000-0000-0000-0000-000000000000", "6769f0a6-7f4e-88ae-801e-648d0f5d0650"]
++INVALID_IDS = [
++    U1.upper(), "{{7*7}}", PAYLOAD, U1 + "\n", U1 + " ", " " + U1, U1.replace("-", ""), U1[:-1], U1 + "a",
++    "u-daolab-r999-x", "vm-sink", "u1", "", "6769f0a6-7f4e-88ae-801e-648d0f5d065g", "6769f0a6_7f4e_88ae_801e_648d0f5d0650",
++    None, 5, U1.encode(), [U1], {"id": U1},
++]
++
++
++# ---- the pattern --------------------------------------------------------------------------------
++
++@pytest.mark.parametrize("vm_id", VALID_IDS)
++def test_valid_ids_pass(vm_id):
++    assert models.vm_id_ok(vm_id) is True
++
++
++@pytest.mark.parametrize("vm_id", INVALID_IDS, ids=lambda v: repr(v)[:40])
++def test_invalid_ids_are_refused(vm_id):
++    assert models.vm_id_ok(vm_id) is False
++
++
++def test_split_ids_keeps_order_drops_duplicates_and_counts_the_invalid():
++    assert models.split_vm_ids([U2, PAYLOAD, U1, U2, None]) == ([U2, U1], 2)
++    assert models.split_vm_ids([]) == ([], 0) and models.split_vm_ids(None) == ([], 0)
++
++
++def test_split_tagged_vms_needs_both_halves_valid():
++    rows = [{"id": U1, "name": GOOD},                               # kept
++            {"id": U2, "name": "daolab-r999-" + PAYLOAD},          # bad name
++            {"id": PAYLOAD, "name": "daolab-r1-a"},                # bad id
++            {"id": "vm-sink", "name": "daolab-r12-sink"},          # not an XO id
++            models.TaggedVm(U2, "daolab-r1-a"),                    # already a pair: kept
++            {"id": U1, "name": "daolab-r5-dup"},                   # same id again: kept once, not counted
++            GOOD,                                                  # the old contract (a bare name)
++            {"name": GOOD}, {"id": U1}, None, 5]
++    kept, dropped = models.split_tagged_vms(rows)
++    # exactly the two valid VMs, in listing order; the repeated id U1 appears once (its first row)
++    assert kept == [models.TaggedVm(U1, GOOD), models.TaggedVm(U2, "daolab-r1-a")]
++    assert [v.id for v in kept].count(U1) == 1
++    assert models.TaggedVm(U1, "daolab-r5-dup") not in kept
++    # the rows with a bad name or a bad id, listed one by one (the repeat is not among them)
++    invalid = [{"id": U2, "name": "daolab-r999-" + PAYLOAD}, {"id": PAYLOAD, "name": "daolab-r1-a"},
++               {"id": "vm-sink", "name": "daolab-r12-sink"}, GOOD, {"name": GOOD}, {"id": U1}, None, 5]
++    assert all(r in rows for r in invalid)
++    assert dropped == len(invalid)
++    assert dropped == len(rows) - 3                                 # the repeat is not "invalid"
++    assert models.split_tagged_vms(None) == ([], 0)
++
++
++def test_the_playbook_pattern_is_the_python_pattern():
++    gv = yaml.safe_load((pathlib.Path(REPO) / "playbooks" / "group_vars" / "all.yml").read_text())
++    assert gv["daolab_vm_id_re"] == "^" + models.VM_ID.pattern + "$"
++
++
++# ---- the ids file: 0600, in the runtime dir, gone after the run -------------------------------------
++
++def _settings(tmp_path, **over):
++    base = dict(artifacts_dir=str(tmp_path / "jobs"), playbooks_dir=os.path.join(REPO, "playbooks"),
++                inventory=os.path.join(REPO, "inventory", "hosts.yml"), api_url="http://127.0.0.1:1",
++                internal_secret="s3", otel_endpoint="", job_timeout_sec=120)
++    return dataclasses.replace(config.settings, **{**base, **over})
++
++
++@pytest.fixture
++def rt(tmp_path, monkeypatch):
++    d = tmp_path / "rt"
++    d.mkdir(mode=0o700)
++    monkeypatch.setenv("DAOLAB_RUNTIME_DIR", str(d))
++    return d
++
++
++def ids_files(d):
++    return [n for n in os.listdir(d) if n.startswith(runner.VM_IDS_FILE_PREFIX)]
++
++
++def _noop(*a, **k):
++    pass
++
++
++def test_the_ids_travel_in_a_0600_file_in_the_runtime_dir(tmp_path, rt):
++    seen = {}
++
++    def fake_run(**kw):
++        path = kw["extravars"]["daolab_vm_ids_file"]
++        seen.update(path=path, mode=stat.S_IMODE(os.stat(path).st_mode), ids=json.load(open(path)),
++                    ev=json.dumps(kw["extravars"]))
++        return types.SimpleNamespace(status="successful", rc=0)
++
++    assert AnsibleRunner(_settings(tmp_path), run=fake_run).destroy_vms([U1, PAYLOAD, U2], _noop).ok
++    assert seen["mode"] == 0o600 and seen["ids"] == [U1, U2]
++    assert os.path.dirname(seen["path"]) == str(rt)
++    assert "daolab_vm_names" not in seen["ev"] and "{{" not in seen["ev"] and "lookup" not in seen["ev"]
++    assert not os.path.exists(seen["path"]) and ids_files(rt) == []
++
++
++@pytest.mark.parametrize("outcome", ["successful", "failed", "timeout"])
++def test_no_ids_file_is_left_behind_whatever_the_run_did(tmp_path, rt, outcome):
++    def fake_run(**kw):
++        assert ids_files(rt)
++        return types.SimpleNamespace(status=outcome, rc=0 if outcome == "successful" else 2)
++
++    AnsibleRunner(_settings(tmp_path), run=fake_run).destroy_vms([U1], _noop)
++    assert ids_files(rt) == []
++
++
++def test_no_ids_file_is_left_behind_when_the_run_raises(tmp_path, rt):
++    def boom(**kw):
++        raise RuntimeError("ansible-runner blew up")
++
++    with pytest.raises(RuntimeError):
++        AnsibleRunner(_settings(tmp_path), run=boom).destroy_vms([U1], _noop)
++    assert ids_files(rt) == []
++
++
++def test_only_invalid_ids_write_no_file_and_run_nothing(tmp_path, rt):
++    calls = []
++    r = AnsibleRunner(_settings(tmp_path), run=lambda **kw: calls.append(kw)).destroy_vms(
++        [PAYLOAD, "vm-sink"], _noop)
++    assert r.ok is False and calls == [] and ids_files(rt) == []
++    assert "lookup" not in (r.error or "") and "vm-sink" not in (r.error or "")
++
++
++def test_listing_writes_no_ids_file(tmp_path, rt):
++    def fake_run(**kw):
++        assert "daolab_vm_ids_file" not in kw["extravars"]
++        with open(kw["extravars"]["daolab_output_file"], "w") as fh:
++            json.dump([{"id": U1, "name": GOOD}], fh)
++        return types.SimpleNamespace(status="successful", rc=0)
++
++    assert AnsibleRunner(_settings(tmp_path), run=fake_run).tagged_vms() == [models.TaggedVm(U1, GOOD)]
++    assert ids_files(rt) == []
++
++
++def test_a_stale_ids_file_is_swept_like_a_stale_secret_file(rt):
++    stale = rt / (runner.VM_IDS_FILE_PREFIX + "x.json")
++    stale.write_text("[]")
++    old = time.time() - 3600
++    os.utime(stale, (old, old))
++    runner._sweep_secret_files(60)
++    assert not stale.exists()
++
++
++def test_the_mock_runner_destroys_by_id_and_keeps_its_names():
++    rn = runner.MockRunner()
++    rn.vms.update({GOOD, "daolab-r1-a"})
++    listed = rn.tagged_vms()
++    assert listed == [models.TaggedVm(runner.mock_vm_id(n), n) for n in sorted(rn.vms)]
++    assert all(models.vm_id_ok(v.id) for v in listed)
++    assert rn.destroy_vms([runner.mock_vm_id(GOOD)], _noop).ok
++    assert rn.vms == {"daolab-r1-a"}
++    assert rn.destroy_vms([GOOD], _noop).ok and rn.vms == {"daolab-r1-a"}     # a name is not an id
+diff --git a/tests/test_vm_names_review.py b/tests/test_vm_names_review.py
+index 8d6ed93..3fc44e0 100644
+--- a/tests/test_vm_names_review.py
++++ b/tests/test_vm_names_review.py
+@@ -4,13 +4,15 @@
+   (int() overflows SQLite's 64-bit INTEGER at 19 digits; Python refuses int() of 4300+ digits). The id is
+   now bounded to 18 ASCII digits, so such a name is dropped like any other bad name.
+ * The role half follows `_IDENT` (up to 128 characters): every name the platform makes is swept.
+-* `orphans.yml` and `reconcile.yml` trust their caller: a bad name passed straight in as the extra var is
+-  still templated (strict xfail). The service has exactly one producer of that extra var
+-  (`AnsibleRunner.destroy_vms`, which filters through `models.split_vm_names`), and the playbooks that
+-  read it are known. P-0d (destroy by XO VM id) should turn the xfail into a pass; then drop it.
++* P-0d: `orphans.yml` and `reconcile.yml` no longer read a VM name from their caller (the P-0c strict xfail,
++  "a bad name passed straight in is still templated", now passes and its mark is gone). The orphan sweep hands
++  orphans.yml XO VM ids in a file (`daolab_vm_ids_file`, read with lookup: data, never templated); reconcile.yml
++  takes no VM list at all. `AnsibleRunner.destroy_vms` is the one producer and filters through
++  `models.split_vm_ids`.
+ """
+ import inspect
+ import io
++import json
+ import pathlib
+ import tokenize
+ 
+@@ -20,7 +22,7 @@ from service import engine, models
+ from service import runner as runner_mod
+ from service.runner import MockRunner, RunResult
+ from tests.conftest import REPO
+-from tests.test_playbooks import ANSIBLE, Lab, _vm, clean_state
++from tests.test_playbooks import ANSIBLE, Lab, _vm, clean_state, vm_uuid
+ 
+ BENIGN = "daolab-r998-y"                     # no reservation 998: an orphan the sweep must still destroy
+ 
+@@ -30,18 +32,23 @@ def poison(canary) -> str:
+ 
+ 
+ class Recorder(MockRunner):
++    """Lists the given names (each with a real-shaped XO id); records the ids it is asked to destroy."""
+     def __init__(self, listed):
+         super().__init__()
+         self.listed, self.handed = list(listed), []
+ 
+     def tagged_vms(self):
+-        return list(self.listed)
++        return [models.TaggedVm(vm_uuid(n), n) for n in self.listed]
+ 
+-    def destroy_vms(self, names, step):
+-        self.handed.append(list(names))
++    def destroy_vms(self, ids, step):
++        self.handed.append(list(ids))
+         return RunResult(ok=True)
+ 
+ 
++def ids(*names):
++    return [vm_uuid(n) for n in names]
++
++
+ # ---- P-0e: the id is bounded ----------------------------------------------------------------
+ 
+ def test_an_18_digit_id_fits_sqlite_and_is_valid():
+@@ -61,7 +68,7 @@ def test_a_long_id_never_breaks_the_sweep(db, digits):
+     out = engine.TickResult()
+     engine._sweep_orphans(db, rn, out)                       # must not raise
+     expected = [BENIGN] if digits > 18 else [BENIGN, "daolab-r" + "9" * digits + "-x"]
+-    assert rn.handed == [expected] and out.orphan_vms == len(expected)
++    assert rn.handed == [ids(*expected)] and out.orphan_vms == len(expected)
+ 
+ 
+ # ---- the role half: every name the platform makes ---------------------------------------------
+@@ -71,37 +78,52 @@ def test_a_128_char_role_passes_and_its_vm_is_swept(db):
+     assert models.ident_ok("a" * 128) and models.vm_name_ok(name)
+     rn = Recorder([BENIGN, name])
+     engine._sweep_orphans(db, rn, engine.TickResult())
+-    assert rn.handed == [[BENIGN, name]]
++    assert rn.handed == [ids(BENIGN, name)]
+ 
+ 
+ def test_a_129_char_role_is_refused():
+     assert not models.ident_ok("a" * 129) and not models.vm_name_ok("daolab-r12-" + "a" * 129)
+ 
+ 
+-# ---- one producer, known readers ---------------------------------------------------------------
++# ---- P-0d: no VM name travels; one producer and one reader of the ids file ---------------------
+ 
+-def _string_uses(path) -> int:
+-    """`daolab_vm_names` in string literals of the code (comments and docstrings don't count)."""
++def _string_uses(path, word) -> int:
++    """`word` in string literals of the code (comments and docstrings don't count)."""
+     toks = list(tokenize.generate_tokens(io.StringIO(path.read_text()).readline))
+     return sum(1 for i, t in enumerate(toks)
+-               if t.type == tokenize.STRING and "daolab_vm_names" in t.string
++               if t.type == tokenize.STRING and word in t.string
+                and not (i and toks[i - 1].type in (tokenize.INDENT, tokenize.NEWLINE, tokenize.NL)))
+ 
+ 
+-def test_the_service_has_one_producer_of_daolab_vm_names_and_it_filters():
+-    hits = {p.name: _string_uses(p) for p in (pathlib.Path(REPO) / "service").glob("*.py")}
+-    assert {k: v for k, v in hits.items() if v} == {"runner.py": 1}
++def _service_uses(word):
++    hits = {p.name: _string_uses(p, word) for p in (pathlib.Path(REPO) / "service").glob("*.py")}
++    return {k: v for k, v in hits.items() if v}
++
++
++def _playbook_readers(word):
++    return sorted(p.relative_to(REPO).as_posix() for p in (pathlib.Path(REPO) / "playbooks").rglob("*.yml")
++                  if word in p.read_text())
++
++
++def test_the_service_never_produces_daolab_vm_names():
++    assert _service_uses("daolab_vm_names") == {}
++
++
++def test_the_service_has_one_producer_of_the_ids_file_and_it_filters():
++    assert _service_uses("daolab_vm_ids_file") == {"runner.py": 1}
+     src = inspect.getsource(runner_mod.AnsibleRunner.destroy_vms)
+-    assert "daolab_vm_names" in src and "split_vm_names" in src
++    assert "daolab_vm_ids_file" in src and "split_vm_ids" in src
++
+ 
++def test_no_playbook_reads_daolab_vm_names():
++    assert _playbook_readers("daolab_vm_names") == []
+ 
+-def test_the_playbooks_that_read_daolab_vm_names_are_known():
+-    readers = sorted(str(p.relative_to(REPO)) for p in (pathlib.Path(REPO) / "playbooks").rglob("*.yml")
+-                     if "daolab_vm_names" in p.read_text())
+-    assert readers == ["playbooks/orphans.yml", "playbooks/reconcile.yml"]
+ 
++def test_only_orphans_yml_reads_the_ids_file():
++    assert _playbook_readers("daolab_vm_ids_file") == ["playbooks/orphans.yml"]
+ 
+-# ---- the documented limit: a playbook trusts its caller ----------------------------------------
++
++# ---- P-0d: a playbook never evaluates what its caller passes ------------------------------------
+ 
+ @pytest.fixture
+ def xo(tmp_path):
+@@ -109,10 +131,6 @@ def xo(tmp_path):
+ 
+ 
+ @pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed")
+-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=(
+-    "Known limit of P-0c: the playbook trusts its caller, so a bad name passed straight in as the "
+-    "daolab_vm_names extra var is still templated. The only producer, AnsibleRunner.destroy_vms, filters "
+-    "such names. Destroying by XO VM id (P-0d) should make this pass: then drop the xfail."))
+ @pytest.mark.parametrize("playbook", ["orphans.yml", "reconcile.yml"])
+ def test_a_playbook_never_evaluates_a_name_passed_straight_in(xo, tmp_path, playbook):
+     canary = tmp_path / f"canary-{playbook}"
+@@ -122,3 +140,24 @@ def test_a_playbook_never_evaluates_a_name_passed_straight_in(xo, tmp_path, play
+     extra = {"reservation_id": 0} if playbook == "reconcile.yml" else {}
+     xo.run(playbook, daolab_vm_names=[BENIGN, poison(canary)], **extra)
+     assert not canary.exists(), f"{playbook} evaluated a name passed as an extra var"
++
++
++@pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed")
++@pytest.mark.parametrize("playbook", ["orphans.yml", "reconcile.yml"])
++def test_a_playbook_never_evaluates_an_id_passed_straight_in(xo, tmp_path, playbook):
++    """A poisoned id in the ids file (and, for reconcile, as a list extra var) is data: never templated.
++    orphans.yml still destroys the good id beside it; reconcile.yml takes no VM list, so BENIGN stays."""
++    canary = tmp_path / f"canary-id-{playbook}"
++    st = clean_state()
++    st["vms"][BENIGN] = _vm(BENIGN)
++    xo.set(st)
++    payload = [vm_uuid(BENIGN), "{{ lookup('pipe', 'touch " + str(canary) + "') }}"]
++    ids_file = tmp_path / "vm-ids.json"
++    ids_file.write_text(json.dumps(payload))
++    extra = {"daolab_vm_ids_file": str(ids_file)}
++    if playbook == "reconcile.yml":
++        extra.update(reservation_id=0, daolab_vm_ids=payload)
++    assert xo.run(playbook, **extra) == 0, xo.stdout[-1500:]
++    assert not canary.exists(), f"{playbook} evaluated an id passed by its caller"
++    left = sorted(xo.state()["vms"])
++    assert left == ([] if playbook == "orphans.yml" else [BENIGN]), xo.stdout[-1500:]
+diff --git a/tests/test_vm_names_strict.py b/tests/test_vm_names_strict.py
+index 06bfbb2..5d051f7 100644
+--- a/tests/test_vm_names_strict.py
++++ b/tests/test_vm_names_strict.py
+@@ -1,19 +1,24 @@
+ """P-0c (EXTRAVAR-MATRIX row 25): a VM name read back from Xen Orchestra reaches ansible as the extra var
+ `daolab_vm_names`, and ansible re-templates extra vars. Only names that fullmatch
+-daolab-r[0-9]{1,18}-[A-Za-z0-9][A-Za-z0-9._-]{0,127} may travel; the rest are dropped and only their COUNT is logged."""
++daolab-r[0-9]{1,18}-[A-Za-z0-9][A-Za-z0-9._-]{0,127} may travel; the rest are dropped and only their COUNT is logged.
++
++P-0d: the name now stays inside Python (the engine reads the reservation id from it); only the XO VM id goes to
++ansible, in a file. A listed pair is kept only when the name AND the id are valid (tests/test_vm_ids.py)."""
+ import json
+ import logging
++import types
+ 
+ import pytest
+ 
+ from service import engine, models
+-from service.runner import AnsibleRunner, MockRunner
++from service.runner import AnsibleRunner, MockRunner, mock_vm_id
+ from tests.test_ansible_runner import FakeRun, Steps, settings  # noqa: F401  (fixture)
+ from tests.test_orphans import lab, sweeps, tick  # noqa: F401  (fixture)
+ 
+ PAYLOAD = "{{ lookup('pipe', 'touch /tmp/p0c-canary') }}"
+ POISON = "daolab-r999-" + PAYLOAD
+ GOOD = "daolab-r999-client"
++U1, U2 = "3f0c9d2e-1b7a-4e5f-9c8d-7a6b5c4d3e2f", "8e7d6c5b-4a39-4f2e-8d1c-0b9a8f7e6d5c"
+ 
+ VALID = [GOOD, "daolab-r1-a", "daolab-r0-x", "daolab-r12345-A.b_c-d", "daolab-r7-" + "a" * 100, "daolab-r7-" + "a" * 128, "daolab-r" + "9" * 18 + "-x"]
+ INVALID = [
+@@ -41,32 +46,39 @@ def test_split_keeps_order_and_counts_the_dropped():
+     assert models.split_vm_names([]) == ([], 0) and models.split_vm_names(None) == ([], 0)
+ 
+ 
+-def _extravars(fake):
+-    return [json.dumps(c["extravars"], default=str) for c in fake.calls]
+-
+-
+-def test_the_runner_lists_only_valid_names_and_logs_a_count_only(settings, caplog):
+-    fake = FakeRun(output=[GOOD, POISON, "daolab-r1-a b"])
++def test_the_runner_lists_only_valid_pairs_and_logs_a_count_only(settings, caplog):
++    fake = FakeRun(output=[{"id": U1, "name": GOOD}, {"id": U2, "name": POISON},
++                           {"id": "{{x}}", "name": "daolab-r1-a"}, {"id": U2, "name": "daolab-r1-a b"}])
+     with caplog.at_level(logging.DEBUG):
+-        assert AnsibleRunner(settings, run=fake).tagged_vms() == [GOOD]
++        assert AnsibleRunner(settings, run=fake).tagged_vms() == [models.TaggedVm(U1, GOOD)]
+     assert "2 listed VM name" in caplog.text
++    assert "1 listed VM id" in caplog.text                    # P-0d: its own line, beside Rama's
+     assert "lookup" not in caplog.text and "touch" not in caplog.text and "daolab-r1-a b" not in caplog.text
++    assert "{{x}}" not in caplog.text and U2 not in caplog.text
+ 
+ 
+-def test_destroy_hands_ansible_no_payload_and_logs_no_name(settings, caplog):
+-    fake = FakeRun()
++def test_destroy_hands_ansible_ids_only_and_logs_no_payload(settings, caplog):
++    seen = []
++
++    def fake_run(**kw):
++        with open(kw["extravars"]["daolab_vm_ids_file"]) as fh:
++            seen.append((json.load(fh), json.dumps(kw["extravars"], default=str)))
++        return types.SimpleNamespace(status="successful", rc=0)
++
+     with caplog.at_level(logging.DEBUG):
+-        assert AnsibleRunner(settings, run=fake).destroy_vms([GOOD, POISON], Steps()).ok
+-    [kw] = fake.calls
+-    assert kw["extravars"]["daolab_vm_names"] == [GOOD]
+-    assert all("lookup" not in e and "{{" not in e and "touch" not in e for e in _extravars(fake))
++        assert AnsibleRunner(settings, run=fake_run).destroy_vms([U1, POISON, GOOD], Steps()).ok
++    [(sent, ev)] = seen
++    assert sent == [U1]
++    assert "daolab_vm_names" not in ev and GOOD not in ev
++    assert "lookup" not in ev and "{{" not in ev and "touch" not in ev
+     assert "1 VM name" in caplog.text
++    assert "1 VM id" in caplog.text                           # P-0d: its own line, beside Rama's
+     assert "lookup" not in caplog.text and "touch" not in caplog.text and POISON not in caplog.text
+ 
+ 
+-def test_destroy_with_only_invalid_names_runs_nothing(settings):
++def test_destroy_with_only_invalid_ids_runs_nothing(settings):
+     fake = FakeRun()
+-    r = AnsibleRunner(settings, run=fake).destroy_vms([POISON, "daolab-r1-$(id)"], Steps())
++    r = AnsibleRunner(settings, run=fake).destroy_vms([POISON, "daolab-r1-$(id)", GOOD], Steps())
+     assert r.ok is False and fake.calls == []
+     assert "lookup" not in (r.error or "") and "$(id)" not in (r.error or "")
+ 
+@@ -75,18 +87,19 @@ def test_the_sweep_skips_invalid_names_before_the_runner_and_logs_a_count_only(l
+     seen = []
+ 
+     class Hostile(MockRunner):
+-        def tagged_vms(self):
+-            return [POISON, GOOD, "daolab-r999-a b"]          # r999: no such reservation, so an orphan
++        def tagged_vms(self):                                 # r999: no such reservation, so an orphan
++            return [models.TaggedVm(U2, POISON), models.TaggedVm(mock_vm_id(GOOD), GOOD),
++                    models.TaggedVm(U1, "daolab-r999-a b")]
+ 
+-        def destroy_vms(self, names, step):
+-            seen.append(list(names))
+-            return super().destroy_vms(names, step)
++        def destroy_vms(self, ids, step):
++            seen.append(list(ids))
++            return super().destroy_vms(ids, step)
+ 
+     rn = Hostile()
+     rn.vms.add(GOOD)
+     with caplog.at_level(logging.DEBUG):
+         out = tick(lab, rn)
+-    assert seen == [[GOOD]] and out.orphan_vms == 1 and rn.vms == set()
+-    assert sweeps(lab) == [{"vms": [GOOD], "ok": True, "error": None}]          # the audit row has no bad name either
++    assert seen == [[mock_vm_id(GOOD)]] and out.orphan_vms == 1 and rn.vms == set()
++    assert sweeps(lab) == [{"vms": [GOOD], "vm_ids": [mock_vm_id(GOOD)], "ok": True, "error": None}]   # no bad name
+     assert "2 VM name" in caplog.text
+     assert "lookup" not in caplog.text and "touch" not in caplog.text and "a b" not in caplog.text

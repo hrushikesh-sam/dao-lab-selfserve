@@ -1,0 +1,40 @@
+Reject template delimiters in usecase verify.cmd (G-2, C-1)
+
+What: a usecase's verify.cmd reaches ansible as a string, so "{{", "{%"
+or "{#" in it would be templated on the controller. Until now, only a
+manual grep (C-1) kept them out. catalog.load_usecases now reports
+"verify.cmd: template delimiter ... not allowed", so daolab sync raises
+SyncError and writes nothing. The single-brace {role_ip} placeholders
+are unchanged. A comment notes that shell ${#var} contains "{#" and so
+can't be used in verify.cmd.
+
+Why: it makes the C-1 gate a CI rule, so a new or edited usecase can't
+bring the P-0 class back in through the catalog. Usecase rows are
+written only by daolab init (catalog.seed_usecases: built-in rows with
+no verify) and daolab sync (catalog.sync, from the usecases/ YAML), and
+no API route accepts a verify.cmd, so this is the only way in.
+
+Files: service/catalog.py, tests/test_catalog_template_guard.py (new).
+The tests:
+(a) a canary verify.cmd "{{ lookup('pipe','touch CANARY') }}" makes
+    load_usecases return the error and sync raise SyncError, no row is
+    written, and no CANARY file is created;
+(b) each of the three delimiters is rejected;
+(c) single-brace commands such as {r1_ip} and awk '{print $1}' are
+    still accepted;
+(d) a scan of usecases/ and setups/ finds no delimiter (the old manual
+    C-1 grep, now in CI).
+
+Verified: tests first, on Python 3.12.13 with ansible-core 2.21.6 and
+2.20.11. Red: (a) and the three (b) cases failed and (c) and (d)
+passed, 4 failed / 4 passed on both. Green: 8 passed, and 31 passed
+together with tests/test_catalog.py, on both. Evidence (branch
+akshay-p8-gate, plan/design/p8-gate-review/round-3-akshay/rama-pr/):
+G-2-red.txt and G-2-green.txt.
+
+Series result (all 8 commits on origin/rama 40ebd6d): full suite 1290
+passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core 2.21.6
+and 2.20.11; details in the PR description.
+
+Patch: G-2-catalog-template-guard.patch
+sha256 d5de53e6aeb235ece12a2d0a691350a8f04e3876abfda09378239b6f6112160b

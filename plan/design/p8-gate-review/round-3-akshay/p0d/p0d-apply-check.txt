@@ -1,0 +1,31 @@
+2026-11-22T22:22:17Z
+worktree ~/p8gate-p0d-check, HEAD 40ebd6dcc8877632e0270155cf5dfa797d1012dc
+cc3b42cf7c601bd6c414e46847f3ef78c84bf1d3e65a895ce582dd8cf51c6409  /tmp/P-0-final.patch
+0c06d643c4d371655eac4280a00b8f440106f378d729cb4625d8efee75d69f0a  /tmp/F-5-1.patch
+823a54bcdefd8ae52a6c3226144b93978d25583e5d37adfbc079dd78471c0f5d  /home/akshay/Downloads/F-5-1b.patch
+58a25f53353bbeabaafed9dff61786220cadb86c51f8302d52df612947079376  /tmp/p0c-combined/combined/P-0c-combined.patch
+83264b3a71666d0585983d0513de096284905681036608105d0a395ef2e6f99a  /tmp/P-0d.patch
+P-0-final.patch: check ok, applied
+F-5-1.patch: check ok, applied
+F-5-1b.patch: check ok, applied
+P-0c-combined.patch: check ok, applied
+P-0d.patch: check ok, applied
+changed paths: 21
+daolab_vm_names in service/ playbooks/: 0
+tree diff vs ~/p8gate-p0d (service tests playbooks):
+Only in /home/akshay/p8gate-p0d/playbooks/files: __pycache__
+diff exit=1
+2026-11-22T22:22:46Z ~/p8gate-p0d-check inspected (only patch-created files, no venv) and removed with git worktree remove --force; worktrees left: dao-lab-selfserve, p8gate, p8gate-p0d
+
+===== rerun 2026-11-22T22:37:44Z: fresh ~/p8gate-p0d-check, HEAD 40ebd6dcc8877632e0270155cf5dfa797d1012dc; diff with -x __pycache__ =====
+P-0-final.patch: check ok, applied
+F-5-1.patch: check ok, applied
+F-5-1b.patch: check ok, applied
+P-0c-combined.patch: check ok, applied
+P-0d.patch: check ok, applied
+sha256 P-0d.patch: 83264b3a71666d0585983d0513de096284905681036608105d0a395ef2e6f99a
+diff -r -q -x __pycache__ service: exit=0
+diff -r -q -x __pycache__ tests: exit=0
+diff -r -q -x __pycache__ playbooks: exit=0
+overall diff exit=0
+2026-11-22T22:37:51Z ~/p8gate-p0d-check (rerun) removed; worktrees left: dao-lab-selfserve, p8gate, p8gate-p0d

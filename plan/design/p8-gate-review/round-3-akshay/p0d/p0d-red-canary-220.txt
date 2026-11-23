@@ -1,0 +1,449 @@
+....FFFF.FFFFFFF..FF.....FF.FF.......                                    [100%]
+=================================== FAILURES ===================================
+______________ test_a_long_id_never_breaks_the_sweep[18-digit-id] ______________
+
+db = <sqlite3.Connection object at 0x7cd57274e200>, digits = 18
+
+    @pytest.mark.parametrize("digits", [18, 19, 5000], ids=lambda d: f"{d}-digit-id")
+    def test_a_long_id_never_breaks_the_sweep(db, digits):
+        """Before P-0e the 19- and 5000-digit cases raised OverflowError / ValueError out of the sweep."""
+        rn = Recorder([BENIGN, "daolab-r" + "9" * digits + "-x"])
+        out = engine.TickResult()
+        engine._sweep_orphans(db, rn, out)                       # must not raise
+        expected = [BENIGN] if digits > 18 else [BENIGN, "daolab-r" + "9" * digits + "-x"]
+>       assert rn.handed == [ids(*expected)] and out.orphan_vms == len(expected)
+E       AssertionError: assert ([] == [['c95aeca2-8...1ac86dc6b4c']]
+E         
+E         Right contains one more item: ['c95aeca2-8ec0-5dfd-9fef-fda594d29a4d', '3c5cf2cb-fec3-5df4-92b4-21ac86dc6b4c']
+E         Use -v to get more diff)
+
+tests/test_vm_names_review.py:71: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    daolab.engine:engine.py:487 orphan sweep: could not list the testbed's VMs
+Traceback (most recent call last):
+  File "/home/akshay/p8gate-p0d/service/engine.py", line 485, in _sweep_orphans
+    names = list(lister())
+                 ^^^^^^^^
+  File "/home/akshay/p8gate-p0d/tests/test_vm_names_review.py", line 41, in tagged_vms
+    return [models.TaggedVm(vm_uuid(n), n) for n in self.listed]
+            ^^^^^^^^^^^^^^^
+AttributeError: module 'service.models' has no attribute 'TaggedVm'
+______________ test_a_long_id_never_breaks_the_sweep[19-digit-id] ______________
+
+db = <sqlite3.Connection object at 0x7cd57274e7a0>, digits = 19
+
+    @pytest.mark.parametrize("digits", [18, 19, 5000], ids=lambda d: f"{d}-digit-id")
+    def test_a_long_id_never_breaks_the_sweep(db, digits):
+        """Before P-0e the 19- and 5000-digit cases raised OverflowError / ValueError out of the sweep."""
+        rn = Recorder([BENIGN, "daolab-r" + "9" * digits + "-x"])
+        out = engine.TickResult()
+        engine._sweep_orphans(db, rn, out)                       # must not raise
+        expected = [BENIGN] if digits > 18 else [BENIGN, "daolab-r" + "9" * digits + "-x"]
+>       assert rn.handed == [ids(*expected)] and out.orphan_vms == len(expected)
+E       AssertionError: assert ([] == [['c95aeca2-8...da594d29a4d']]
+E         
+E         Right contains one more item: ['c95aeca2-8ec0-5dfd-9fef-fda594d29a4d']
+E         Use -v to get more diff)
+
+tests/test_vm_names_review.py:71: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    daolab.engine:engine.py:487 orphan sweep: could not list the testbed's VMs
+Traceback (most recent call last):
+  File "/home/akshay/p8gate-p0d/service/engine.py", line 485, in _sweep_orphans
+    names = list(lister())
+                 ^^^^^^^^
+  File "/home/akshay/p8gate-p0d/tests/test_vm_names_review.py", line 41, in tagged_vms
+    return [models.TaggedVm(vm_uuid(n), n) for n in self.listed]
+            ^^^^^^^^^^^^^^^
+AttributeError: module 'service.models' has no attribute 'TaggedVm'
+_____________ test_a_long_id_never_breaks_the_sweep[5000-digit-id] _____________
+
+db = <sqlite3.Connection object at 0x7cd57274eb60>, digits = 5000
+
+    @pytest.mark.parametrize("digits", [18, 19, 5000], ids=lambda d: f"{d}-digit-id")
+    def test_a_long_id_never_breaks_the_sweep(db, digits):
+        """Before P-0e the 19- and 5000-digit cases raised OverflowError / ValueError out of the sweep."""
+        rn = Recorder([BENIGN, "daolab-r" + "9" * digits + "-x"])
+        out = engine.TickResult()
+        engine._sweep_orphans(db, rn, out)                       # must not raise
+        expected = [BENIGN] if digits > 18 else [BENIGN, "daolab-r" + "9" * digits + "-x"]
+>       assert rn.handed == [ids(*expected)] and out.orphan_vms == len(expected)
+E       AssertionError: assert ([] == [['c95aeca2-8...da594d29a4d']]
+E         
+E         Right contains one more item: ['c95aeca2-8ec0-5dfd-9fef-fda594d29a4d']
+E         Use -v to get more diff)
+
+tests/test_vm_names_review.py:71: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    daolab.engine:engine.py:487 orphan sweep: could not list the testbed's VMs
+Traceback (most recent call last):
+  File "/home/akshay/p8gate-p0d/service/engine.py", line 485, in _sweep_orphans
+    names = list(lister())
+                 ^^^^^^^^
+  File "/home/akshay/p8gate-p0d/tests/test_vm_names_review.py", line 41, in tagged_vms
+    return [models.TaggedVm(vm_uuid(n), n) for n in self.listed]
+            ^^^^^^^^^^^^^^^
+AttributeError: module 'service.models' has no attribute 'TaggedVm'
+_______________ test_a_128_char_role_passes_and_its_vm_is_swept ________________
+
+db = <sqlite3.Connection object at 0x7cd57274ef20>
+
+    def test_a_128_char_role_passes_and_its_vm_is_swept(db):
+        name = "daolab-r12-" + "a" * 128                         # the longest role models.ident_ok allows
+        assert models.ident_ok("a" * 128) and models.vm_name_ok(name)
+        rn = Recorder([BENIGN, name])
+        engine._sweep_orphans(db, rn, engine.TickResult())
+>       assert rn.handed == [ids(BENIGN, name)]
+E       AssertionError: assert [] == [['c95aeca2-8...dc37d17e042']]
+E         
+E         Right contains one more item: ['c95aeca2-8ec0-5dfd-9fef-fda594d29a4d', 'ccc27f79-bc6d-55a8-bd7b-cdc37d17e042']
+E         Use -v to get more diff
+
+tests/test_vm_names_review.py:81: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    daolab.engine:engine.py:487 orphan sweep: could not list the testbed's VMs
+Traceback (most recent call last):
+  File "/home/akshay/p8gate-p0d/service/engine.py", line 485, in _sweep_orphans
+    names = list(lister())
+                 ^^^^^^^^
+  File "/home/akshay/p8gate-p0d/tests/test_vm_names_review.py", line 41, in tagged_vms
+    return [models.TaggedVm(vm_uuid(n), n) for n in self.listed]
+            ^^^^^^^^^^^^^^^
+AttributeError: module 'service.models' has no attribute 'TaggedVm'
+_______________ test_the_service_never_produces_daolab_vm_names ________________
+
+    def test_the_service_never_produces_daolab_vm_names():
+>       assert _service_uses("daolab_vm_names") == {}
+E       AssertionError: assert {'runner.py': 1} == {}
+E         
+E         Left contains 1 more item:
+E         {'runner.py': 1}
+E         Use -v to get more diff
+
+tests/test_vm_names_review.py:109: AssertionError
+_______ test_the_service_has_one_producer_of_the_ids_file_and_it_filters _______
+
+    def test_the_service_has_one_producer_of_the_ids_file_and_it_filters():
+>       assert _service_uses("daolab_vm_ids_file") == {"runner.py": 1}
+E       AssertionError: assert {} == {'runner.py': 1}
+E         
+E         Right contains 1 more item:
+E         {'runner.py': 1}
+E         Use -v to get more diff
+
+tests/test_vm_names_review.py:113: AssertionError
+____________________ test_no_playbook_reads_daolab_vm_names ____________________
+
+    def test_no_playbook_reads_daolab_vm_names():
+>       assert _playbook_readers("daolab_vm_names") == []
+E       AssertionError: assert ['playbooks/o...econcile.yml'] == []
+E         
+E         Left contains 2 more items, first extra item: 'playbooks/orphans.yml'
+E         Use -v to get more diff
+
+tests/test_vm_names_review.py:119: AssertionError
+___________________ test_only_orphans_yml_reads_the_ids_file ___________________
+
+    def test_only_orphans_yml_reads_the_ids_file():
+>       assert _playbook_readers("daolab_vm_ids_file") == ["playbooks/orphans.yml"]
+E       AssertionError: assert [] == ['playbooks/orphans.yml']
+E         
+E         Right contains one more item: 'playbooks/orphans.yml'
+E         Use -v to get more diff
+
+tests/test_vm_names_review.py:123: AssertionError
+____ test_a_playbook_never_evaluates_a_name_passed_straight_in[orphans.yml] ____
+
+xo = <tests.test_playbooks.Lab object at 0x7cd57260f950>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_a_playbook_never_evaluate0')
+playbook = 'orphans.yml'
+
+    @pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed")
+    @pytest.mark.parametrize("playbook", ["orphans.yml", "reconcile.yml"])
+    def test_a_playbook_never_evaluates_a_name_passed_straight_in(xo, tmp_path, playbook):
+        canary = tmp_path / f"canary-{playbook}"
+        st = clean_state()
+        st["vms"][BENIGN] = _vm(BENIGN)
+        xo.set(st)
+        extra = {"reservation_id": 0} if playbook == "reconcile.yml" else {}
+        xo.run(playbook, daolab_vm_names=[BENIGN, poison(canary)], **extra)
+>       assert not canary.exists(), f"{playbook} evaluated a name passed as an extra var"
+E       AssertionError: orphans.yml evaluated a name passed as an extra var
+E       assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_a_playbook_never_evaluate0/canary-orphans.yml').exists
+
+tests/test_vm_names_review.py:142: AssertionError
+___ test_a_playbook_never_evaluates_a_name_passed_straight_in[reconcile.yml] ___
+
+xo = <tests.test_playbooks.Lab object at 0x7cd57260faa0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_a_playbook_never_evaluate1')
+playbook = 'reconcile.yml'
+
+    @pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed")
+    @pytest.mark.parametrize("playbook", ["orphans.yml", "reconcile.yml"])
+    def test_a_playbook_never_evaluates_a_name_passed_straight_in(xo, tmp_path, playbook):
+        canary = tmp_path / f"canary-{playbook}"
+        st = clean_state()
+        st["vms"][BENIGN] = _vm(BENIGN)
+        xo.set(st)
+        extra = {"reservation_id": 0} if playbook == "reconcile.yml" else {}
+        xo.run(playbook, daolab_vm_names=[BENIGN, poison(canary)], **extra)
+>       assert not canary.exists(), f"{playbook} evaluated a name passed as an extra var"
+E       AssertionError: reconcile.yml evaluated a name passed as an extra var
+E       assert not True
+E        +  where True = exists()
+E        +    where exists = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_a_playbook_never_evaluate1/canary-reconcile.yml').exists
+
+tests/test_vm_names_review.py:142: AssertionError
+____ test_a_playbook_never_evaluates_an_id_passed_straight_in[orphans.yml] _____
+
+xo = <tests.test_playbooks.Lab object at 0x7cd5725eeed0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_a_playbook_never_evaluate2')
+playbook = 'orphans.yml'
+
+    @pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed")
+    @pytest.mark.parametrize("playbook", ["orphans.yml", "reconcile.yml"])
+    def test_a_playbook_never_evaluates_an_id_passed_straight_in(xo, tmp_path, playbook):
+        """A poisoned id in the ids file (and, for reconcile, as a list extra var) is data: never templated.
+        orphans.yml still destroys the good id beside it; reconcile.yml takes no VM list, so BENIGN stays."""
+        canary = tmp_path / f"canary-id-{playbook}"
+        st = clean_state()
+        st["vms"][BENIGN] = _vm(BENIGN)
+        xo.set(st)
+        payload = [vm_uuid(BENIGN), "{{ lookup('pipe', 'touch " + str(canary) + "') }}"]
+        ids_file = tmp_path / "vm-ids.json"
+        ids_file.write_text(json.dumps(payload))
+        extra = {"daolab_vm_ids_file": str(ids_file)}
+        if playbook == "reconcile.yml":
+            extra.update(reservation_id=0, daolab_vm_ids=payload)
+        assert xo.run(playbook, **extra) == 0, xo.stdout[-1500:]
+        assert not canary.exists(), f"{playbook} evaluated an id passed by its caller"
+        left = sorted(xo.state()["vms"])
+>       assert left == ([] if playbook == "orphans.yml" else [BENIGN]), xo.stdout[-1500:]
+E       AssertionError: 
+E         PLAY [orphan sweep on the XCP-ng hosts (through Xen Orchestra, B-93)] **********
+E         
+E         TASK [step: list_vms] **********************************************************
+E         ok: [tb-01-xcp]
+E         
+E         TASK [keep the daolab-r<id>-* names] *******************************************
+E         ok: [tb-01-xcp]
+E         
+E         TASK [step: destroy_vms] *******************************************************
+E         skipping: [tb-01-xcp]
+E         
+E         PLAY [report] ******************************************************************
+E         
+E         TASK [write the tagged VM names for the runner] ********************************
+E         changed: [localhost]
+E         
+E         PLAY RECAP *********************************************************************
+E         localhost                  : ok=1    changed=1    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+E         tb-01-xcp                  : ok=2    changed=0    unreachable=0    failed=0    skipped=1    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert ['daolab-r998-y'] == []
+E         
+E         Left contains one more item: 'daolab-r998-y'
+E         Use -v to get more diff
+
+tests/test_vm_names_review.py:163: AssertionError
+___ test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var ____
+
+lab = <tests.test_playbooks.Lab object at 0x7cd5725ef680>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_destroy_mode_never_evalua0')
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...se, deploy_vms=True, become_password_file='', deployable=(), xo_url='https://127.0.0.1:8443/rest/v0', xo_token_file='')
+
+    def test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var(lab, tmp_path, settings):
+        canary = tmp_path / "canary-destroy"
+        lab.set(_state_with([BENIGN, poison_name(canary)]))
+        sent = _what_the_runner_sends(settings, [vm_uuid(BENIGN), poison_name(canary)])
+>       assert sent == [vm_uuid(BENIGN)]
+E       AssertionError: assert None == ['c95aeca2-8ec0-5dfd-9fef-fda594d29a4d']
+
+tests/test_orphans_canary.py:74: AssertionError
+------------------------------ Captured log call -------------------------------
+WARNING  daolab.runner:runner.py:643 orphan sweep: refused 2 VM name(s) of an unexpected shape
+_____ test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name _____
+
+lab = <tests.test_playbooks.Lab object at 0x7cd573865dc0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_the_two_halves_chained_li0')
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...se, deploy_vms=True, become_password_file='', deployable=(), xo_url='https://127.0.0.1:8443/rest/v0', xo_token_file='')
+
+    def test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name(lab, tmp_path, settings):
+        canary = tmp_path / "canary-chain"
+        lab.set(_state_with([BENIGN, poison_name(canary)]))
+        lab.run("orphans.yml")                                   # half 1: list, names written to the output file
+        try:
+            names = lab.output()
+        except (OSError, ValueError):
+            pytest.skip(f"list mode wrote no output file; see the other two tests:\n{lab.stdout[-800:]}")
+        assert not canary.exists(), "evaluated during the listing half"
+>       pairs, dropped = models.split_tagged_vms(names)                  # what tagged_vms() keeps
+                         ^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'service.models' has no attribute 'split_tagged_vms'
+
+tests/test_orphans_canary.py:89: AttributeError
+_ test_reconcile_ignores_a_caller_supplied_list_and_destroys_only_its_own_reservation _
+
+lab = <tests.test_playbooks.Lab object at 0x7cd57260d8e0>
+
+    def test_reconcile_ignores_a_caller_supplied_list_and_destroys_only_its_own_reservation(lab):
+        """P-0d: reconcile.yml takes no VM list from its caller (the B-73 override is gone): it destroys
+        exactly the daolab-r<reservation_id>-* VMs of XO's own listing, by XO id."""
+        st = clean_state()
+        for name in ("daolab-r12-sink", "daolab-r999-x", "daolab-r998-y"):
+            st["vms"][name] = _vm(name)
+        lab.set(st)
+        assert lab.run("reconcile.yml", reservation_id=12,
+                       daolab_vm_names=["daolab-r999-x", "daolab-r998-y"]) == 0, lab.stdout
+>       assert sorted(lab.state()["vms"]) == ["daolab-r998-y", "daolab-r999-x"]
+E       AssertionError: assert ['daolab-r12-sink'] == ['daolab-r998...aolab-r999-x']
+E         
+E         At index 0 diff: 'daolab-r12-sink' != 'daolab-r998-y'
+E         Right contains one more item: 'daolab-r999-x'
+E         Use -v to get more diff
+
+tests/test_playbooks.py:257: AssertionError
+___________ test_reconcile_skips_a_listed_vm_whose_id_is_not_a_uuid ____________
+
+lab = <tests.test_playbooks.Lab object at 0x7cd57260fc20>
+
+    def test_reconcile_skips_a_listed_vm_whose_id_is_not_a_uuid(lab):
+        """P-0d: even ids from XO's own listing are destroyed only if they have the strict XO id shape."""
+        st = clean_state()
+        st["vms"]["daolab-r12-sink"] = _vm("daolab-r12-sink")
+        st["vms"]["daolab-r12-odd"] = {**_vm("daolab-r12-odd"), "uuid": "{{ 7 * 7 }}"}
+        lab.set(st)
+>       assert lab.run("reconcile.yml") == 0, lab.stdout
+E       AssertionError: 
+E         PLAY [resolve the setup] *******************************************************
+E         
+E         TASK [load the setup YAML (manual runs only)] **********************************
+E         skipping: [localhost]
+E         
+E         TASK [build the member list from the setup YAML (manual runs only)] ************
+E         skipping: [localhost]
+E         
+E         TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+E         ok: [localhost]
+E         
+E         TASK [where the playbooks live (imported playbooks see their own playbook_dir)] ***
+E         ok: [localhost]
+E         
+E         TASK [fill in what a manual run did not pass] **********************************
+E         ok: [localhost]
+E         
+E         TASK [find the DPU member and the dom0s] ***************************************
+E         ok: [localhost]
+E         
+E         TASK [a setup must have at least one XCP-ng host] ******************************
+E         ok: [localhost] => {
+E             "changed": false,
+E             "msg": "All assertions passed"
+E         }
+E         
+E         TASK [add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)] ***
+E         ok: [localhost] => (item=tb-01-xcp)
+E         
+E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+E         ok: [localhost]
+E         
+E         PLAY [reconcile the XCP-ng hosts (through Xen Orchestra, B-93)] ****************
+E         
+E         TASK [list the daolab VMs on the host] *****************************************
+E         ok: [tb-01-xcp]
+E         
+E         TASK [pick the VMs to destroy] *************************************************
+E         ok: [tb-01-xcp]
+E         
+E         TASK [step: destroy_vms] *******************************************************
+E         [ERROR]: Task failed: Module failed: The command exited with a non-zero return code.
+E         Origin: /home/akshay/p8gate-p0d/playbooks/reconcile.yml:38:7
+E         
+E         36               | selectattr('name', 'match', '^daolab-r' ~ (reservation_id | int) ~ '-') | list) }}
+E         37
+E         38     - name: "step: destroy_vms"
+E                  ^ column 7
+E         
+E         failed: [tb-01-xcp] (item=daolab-r12-odd) => {"ansible_loop_var": "item", "changed": true, "changed_when_result": true, "cmd": ["daolab-xo", "destroy", "--vm", "{{", "7", "*", "7", "}}"], "delta": "0:00:00.031707", "end": "2026-11-23 03:29:49.342183", "item": {"id": "{{ 7 * 7 }}", "ip": "", "name": "daolab-r12-odd", "power": "Running", "tags": []}, "msg": "The command exited with a non-zero return code.", "rc": 1, "start": "2026-11-23 03:29:49.310476", "stderr": "The uuid you supplied was invalid.\ntype: VM\nuuid: {{", "stderr_lines": ["The uuid you supplied was invalid.", "type: VM", "uuid: {{"], "stdout": "", "stdout_lines": []}
+E         changed: [tb-01-xcp] => (item=daolab-r12-sink)
+E         
+E         PLAY RECAP *********************************************************************
+E         localhost                  : ok=7    changed=0    unreachable=0    failed=0    skipped=2    rescued=0    ignored=0   
+E         tb-01-xcp                  : ok=2    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = run('reconcile.yml')
+E        +    where run = <tests.test_playbooks.Lab object at 0x7cd57260fc20>.run
+
+tests/test_playbooks.py:268: AssertionError
+__________________ test_orphans_lists_every_daolab_tagged_vm ___________________
+
+lab = <tests.test_playbooks.Lab object at 0x7cd572a4a9f0>
+
+    def test_orphans_lists_every_daolab_tagged_vm(lab):
+        st = clean_state()
+        for name in ("daolab-r999-x", "daolab-r12-sink", "admin-scratch", "daolab-notes"):
+            st["vms"][name] = _vm(name)
+        lab.set(st)
+        assert lab.run("orphans.yml") == 0, lab.stdout
+>       assert sorted(lab.output(), key=lambda v: v["name"]) == [          # P-0d: XO id + name pairs
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            {"id": vm_uuid("daolab-r12-sink"), "name": "daolab-r12-sink"},
+            {"id": vm_uuid("daolab-r999-x"), "name": "daolab-r999-x"}]
+
+tests/test_playbooks.py:299: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+v = 'daolab-r12-sink'
+
+>   assert sorted(lab.output(), key=lambda v: v["name"]) == [          # P-0d: XO id + name pairs
+                                              ^^^^^^^^^
+        {"id": vm_uuid("daolab-r12-sink"), "name": "daolab-r12-sink"},
+        {"id": vm_uuid("daolab-r999-x"), "name": "daolab-r999-x"}]
+E   TypeError: string indices must be integers, not 'str'
+
+tests/test_playbooks.py:299: TypeError
+_________________ test_orphans_destroys_exactly_the_given_ids __________________
+
+lab = <tests.test_playbooks.Lab object at 0x7cd572a4a8a0>
+
+    def test_orphans_destroys_exactly_the_given_ids(lab):
+        st = clean_state()
+        for name in ("daolab-r999-x", "daolab-r998-y", "daolab-r12-sink"):
+            st["vms"][name] = _vm(name, power="halted" if name.endswith("y") else "running")
+        lab.set(st)
+        ids = [vm_uuid("daolab-r999-x"), vm_uuid("daolab-r998-y"), vm_uuid("daolab-r1-not-there")]
+        assert lab.run("orphans.yml", daolab_vm_ids_file=_ids_file(lab, ids)) == 0, lab.stdout
+>       assert sorted(lab.state()["vms"]) == ["daolab-r12-sink"]
+E       AssertionError: assert ['daolab-r12-...aolab-r999-x'] == ['daolab-r12-sink']
+E         
+E         Left contains 2 more items, first extra item: 'daolab-r998-y'
+E         Use -v to get more diff
+
+tests/test_playbooks.py:312: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_vm_names_review.py::test_a_long_id_never_breaks_the_sweep[18-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_never_breaks_the_sweep[19-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_never_breaks_the_sweep[5000-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_128_char_role_passes_and_its_vm_is_swept
+FAILED tests/test_vm_names_review.py::test_the_service_never_produces_daolab_vm_names
+FAILED tests/test_vm_names_review.py::test_the_service_has_one_producer_of_the_ids_file_and_it_filters
+FAILED tests/test_vm_names_review.py::test_no_playbook_reads_daolab_vm_names
+FAILED tests/test_vm_names_review.py::test_only_orphans_yml_reads_the_ids_file
+FAILED tests/test_vm_names_review.py::test_a_playbook_never_evaluates_a_name_passed_straight_in[orphans.yml]
+FAILED tests/test_vm_names_review.py::test_a_playbook_never_evaluates_a_name_passed_straight_in[reconcile.yml]
+FAILED tests/test_vm_names_review.py::test_a_playbook_never_evaluates_an_id_passed_straight_in[orphans.yml]
+FAILED tests/test_orphans_canary.py::test_destroy_mode_never_evaluates_a_vm_name_handed_back_as_an_extra_var
+FAILED tests/test_orphans_canary.py::test_the_two_halves_chained_like_the_engine_never_evaluate_a_vm_name
+FAILED tests/test_playbooks.py::test_reconcile_ignores_a_caller_supplied_list_and_destroys_only_its_own_reservation
+FAILED tests/test_playbooks.py::test_reconcile_skips_a_listed_vm_whose_id_is_not_a_uuid
+FAILED tests/test_playbooks.py::test_orphans_lists_every_daolab_tagged_vm - T...
+FAILED tests/test_playbooks.py::test_orphans_destroys_exactly_the_given_ids
+17 failed, 20 passed, 81 deselected in 107.57s (0:01:47)
+exit=1

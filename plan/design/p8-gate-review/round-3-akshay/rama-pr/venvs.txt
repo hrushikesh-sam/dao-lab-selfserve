@@ -1,0 +1,2 @@
+.venv: Python 3.12.13 ansible-core 2.21.6 ansible-runner 2.4.3 ansible-playbook=.venv/bin/ansible-playbook
+.venv-220: Python 3.12.13 ansible-core 2.20.11 ansible-runner 2.4.3 ansible-playbook=.venv-220/bin/ansible-playbook

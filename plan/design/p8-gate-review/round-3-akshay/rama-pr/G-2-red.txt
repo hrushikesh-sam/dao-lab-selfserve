@@ -1,0 +1,32 @@
+2026-11-23T07:02:17Z
+G-2 red: stack + G-1 + tests only; catalog.py unchanged
+## .venv ansible-core 2.21.6
+E       AssertionError: []
+E       assert []
+E       AssertionError: []
+E       assert ([])
+E       AssertionError: []
+E       assert ([])
+E       AssertionError: []
+E       assert ([])
+FAILED tests/test_catalog_template_guard.py::test_canary_lookup_in_verify_cmd_fails_sync_and_never_runs
+FAILED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{{]
+FAILED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{%]
+FAILED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{#]
+4 failed, 4 passed in 0.08s
+exit=1
+## .venv-220 ansible-core 2.20.11
+E       AssertionError: []
+E       assert []
+E       AssertionError: []
+E       assert ([])
+E       AssertionError: []
+E       assert ([])
+E       AssertionError: []
+E       assert ([])
+FAILED tests/test_catalog_template_guard.py::test_canary_lookup_in_verify_cmd_fails_sync_and_never_runs
+FAILED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{{]
+FAILED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{%]
+FAILED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{#]
+4 failed, 4 passed in 0.07s
+exit=1

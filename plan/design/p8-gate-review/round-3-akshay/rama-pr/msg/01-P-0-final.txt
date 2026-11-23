@@ -1,0 +1,39 @@
+Keep user text out of ansible templating: keys, names, DIY (P-0)
+
+What: ansible re-templates extra vars wherever a playbook renders them,
+so user text such as an SSH key comment, a username or a DIY template
+name containing "{{ lookup('pipe', ...) }}" ran a command on the
+controller as the engine user. Everything a user can write that ends up
+in the runner's extravars is now checked against a closed ASCII
+allowlist in service/models.py, shared by the API, the add-user CLI and
+the runner's chokepoint:
+- an SSH key line is fullmatched as type, base64 body and an optional
+  1-128 character ASCII comment, with no braces, control characters or
+  non-ASCII;
+- a CLI username must not contain "{{", "{%", "{#" or control
+  characters;
+- a DIY template name that isn't a plain identifier becomes
+  "invalid-template-rejected", so that deploy fails at its own template
+  check.
+The chokepoint also applies to rows stored before P-0. The API doesn't
+echo a rejected line back.
+
+Why: a controller remote code execution, reachable by any user who can
+set a key or book a DIY reservation (F-1 / gate item P-0).
+
+Files: service/api.py, service/cli.py, service/models.py,
+tests/test_deploy_access.py, tests/test_pubkey_strict.py (new).
+
+Verified: tests first. Red 189 failed / 74 passed, green 319 passed, on
+Python 3.11 and 3.12 (branch rama-p0-artifacts,
+plan/design/p8-gate-review/evidence/p0/before.txt and after.txt). The
+C-1 grep found 0 delimiters (evidence/p0/catalog-delimiters.txt, empty).
+The stored-DB audit (audit_stored_inputs.py, sha256 0f2c8f5f...) was run
+on 2026-11-22 on copies of both laptop DBs: exit 0, 0 rows flagged.
+
+Series result (all 8 commits on origin/rama 40ebd6d): full suite 1290
+passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core 2.21.6
+and 2.20.11; details in the PR description.
+
+Patch: P-0-final.patch
+sha256 cc3b42cf7c601bd6c414e46847f3ef78c84bf1d3e65a895ce582dd8cf51c6409

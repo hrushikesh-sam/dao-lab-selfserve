@@ -1,0 +1,15 @@
+2026-11-23T07:03:58Z
+G-3 red: no code change is needed (SECRET_ENV already covers every matched field), so red = proof the rule bites.
+Probe: the test's own rule, with config.SECRET_ENV minus one name (in memory only, nothing edited).
+## .venv ansible-core 2.21.6
+matched fields: ['token', 'internal_secret', 'authz_secret']
+SECRET_ENV without DAOLAB_INTERNAL_SECRET -> flagged: ['DAOLAB_INTERNAL_SECRET']
+SECRET_ENV without DAOLAB_AUTHZ_SECRET -> flagged: ['DAOLAB_AUTHZ_SECRET']
+SECRET_ENV without DAOLAB_TOKEN -> flagged: ['DAOLAB_TOKEN']
+real SECRET_ENV -> flagged: []
+## .venv-220 ansible-core 2.20.11
+matched fields: ['token', 'internal_secret', 'authz_secret']
+SECRET_ENV without DAOLAB_INTERNAL_SECRET -> flagged: ['DAOLAB_INTERNAL_SECRET']
+SECRET_ENV without DAOLAB_AUTHZ_SECRET -> flagged: ['DAOLAB_AUTHZ_SECRET']
+SECRET_ENV without DAOLAB_TOKEN -> flagged: ['DAOLAB_TOKEN']
+real SECRET_ENV -> flagged: []

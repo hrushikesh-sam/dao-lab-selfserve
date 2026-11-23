@@ -1,0 +1,22 @@
+2026-11-23T07:04:04Z
+G-3 green: stack + G-1 + G-2 + tests/test_secret_env_rule.py
+## .venv ansible-core 2.21.6
+tests/test_secret_env_rule.py::test_every_secret_setting_is_in_secret_env PASSED [ 14%]
+tests/test_secret_env_rule.py::test_secret_env_is_scrubbed_at_import_in_a_fresh_interpreter PASSED [ 28%]
+tests/test_secret_env_rule.py::test_canary_the_rule_flags_a_secret_setting_missing_from_secret_env PASSED [ 42%]
+tests/test_secret_env_scrub.py::test_secrets_from_the_real_environment_are_read_then_dropped PASSED [ 57%]
+tests/test_secret_env_scrub.py::test_secrets_from_a_dotenv_file_are_read_then_dropped PASSED [ 71%]
+tests/test_secret_env_scrub.py::test_other_settings_stay_in_the_environment PASSED [ 85%]
+tests/test_secret_env_scrub.py::test_the_real_runner_leaves_no_trace_when_the_secret_came_from_the_environment PASSED [100%]
+============================== 7 passed in 1.66s ===============================
+exit=0
+## .venv-220 ansible-core 2.20.11
+tests/test_secret_env_rule.py::test_every_secret_setting_is_in_secret_env PASSED [ 14%]
+tests/test_secret_env_rule.py::test_secret_env_is_scrubbed_at_import_in_a_fresh_interpreter PASSED [ 28%]
+tests/test_secret_env_rule.py::test_canary_the_rule_flags_a_secret_setting_missing_from_secret_env PASSED [ 42%]
+tests/test_secret_env_scrub.py::test_secrets_from_the_real_environment_are_read_then_dropped PASSED [ 57%]
+tests/test_secret_env_scrub.py::test_secrets_from_a_dotenv_file_are_read_then_dropped PASSED [ 71%]
+tests/test_secret_env_scrub.py::test_other_settings_stay_in_the_environment PASSED [ 85%]
+tests/test_secret_env_scrub.py::test_the_real_runner_leaves_no_trace_when_the_secret_came_from_the_environment PASSED [100%]
+============================== 7 passed in 1.65s ===============================
+exit=0

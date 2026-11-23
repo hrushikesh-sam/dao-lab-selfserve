@@ -1,0 +1,30 @@
+Pass the internal secret to playbooks in a 0600 file (F-5-1)
+
+What: the runner passed DAOLAB_INTERNAL_SECRET to the playbooks as an
+extra var, and ansible-runner writes extra vars to
+job-<id>/<run>/env/extravars, so every job dir kept the secret on disk.
+The runner now writes the secret to a new 0600 file (mkstemp) in
+DAOLAB_RUNTIME_DIR, or in systemd's RUNTIME_DIRECTORY tmpfs in
+production. It passes only the path, as daolab_internal_secret_file,
+and removes the file when the run ends. Stale files left by a SIGKILLed
+run are swept. playbooks/group_vars/all.yml reads the secret from the
+file, and every use is no_log: true.
+
+Why: on the controller laptop, 1563 files under var/showcase-jobs held
+the secret (23 of them env/extravars). The leaked secret was rotated and
+all old copies deleted on 2026-11-23.
+
+Files: playbooks/deploy.yml, playbooks/group_vars/all.yml,
+service/runner.py, tests/test_ansible_runner.py,
+tests/test_runner_secret.py (new).
+
+Verified: tests first. Red 5 failed / 20 passed, green 25 passed, on
+Python 3.11 and 3.12 (branch rama-p0-artifacts,
+plan/design/p8-gate-review/evidence/f51/before.txt and after.txt).
+
+Series result (all 8 commits on origin/rama 40ebd6d): full suite 1290
+passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core 2.21.6
+and 2.20.11; details in the PR description.
+
+Patch: F-5-1.patch
+sha256 0c06d643c4d371655eac4280a00b8f440106f378d729cb4625d8efee75d69f0a

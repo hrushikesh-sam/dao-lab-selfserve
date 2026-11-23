@@ -1,0 +1,59 @@
+2026-11-22T23:48:12Z
+tree: 9c8a089 + P-0-final + F-5-1 + F-5-1b + P-0c-combined + P-0d-on-akshay (988dcffc)
+...........................F............................................ [  5%]
+........................................................................ [ 11%]
+...................................................ss................... [ 16%]
+........................................................................ [ 22%]
+........................................................................ [ 28%]
+........................................................................ [ 33%]
+........................................................................ [ 39%]
+........................................................................ [ 45%]
+..............s......................................................... [ 50%]
+........................................................................ [ 56%]
+........................................................................ [ 61%]
+........................................................................ [ 67%]
+........................................................................ [ 73%]
+........................................................................ [ 78%]
+........................................................................ [ 84%]
+........................................................................ [ 90%]
+........................................................................ [ 95%]
+........................................................                 [100%]
+=================================== FAILURES ===================================
+_______________ test_real_verify_clean_and_reconcile_round_trip ________________
+
+lab = <tests.test_playbooks.Lab object at 0x7955313ff920>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-15/test_real_verify_clean_and_rec0')
+
+    def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
+        from tests.test_playbooks import MEMBERS, clean_state, dirty
+        lab.set(dirty(clean_state()))
+        rn = real_runner(lab, tmp_path)
+        handlers = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+        ctx = {"id": 12, "job_id": 1, "setup": "tb-01", "usecase": "vpp", "members": MEMBERS,
+               "leases": ["10.30.0.101"]}
+        steps = Steps()
+        dirty_result = rn.verify_clean(ctx, steps)
+        assert dirty_result.ok is False
+>       assert sorted(dirty_result.residue) == sorted([
+            "vm:daolab-r12-sink", "dpu_session:lab",       # the VF goes with its VM (B-93)
+            "dpu_app:daolab-app-dao-vpp.service", "ip:10.30.0.101"])
+E       AssertionError: assert [] == ['dpu_app:dao...lab-r12-sink']
+E         
+E         Right contains 4 more items, first extra item: 'dpu_app:daolab-app-dao-vpp.service'
+E         Use -v to get more diff
+
+tests/test_ansible_runner.py:280: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /home/akshay/akshay-gate/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_dashboard_e2e.py:17: could not import 'playwright.sync_api': No module named 'playwright'
+SKIPPED [1] tests/test_daolab_keys.py:146: sshd not installed
+SKIPPED [1] tests/test_daolab_keys.py:155: sshd not installed
+SKIPPED [1] tests/test_playbooks.py:1154: sshd not installed
+FAILED tests/test_ansible_runner.py::test_real_verify_clean_and_reconcile_round_trip
+1 failed, 1276 passed, 4 skipped, 1 warning in 882.19s (0:14:42)
+exit=1

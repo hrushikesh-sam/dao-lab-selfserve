@@ -1,0 +1,20 @@
+## 3.11
+FAILED tests/test_vm_names_review.py::test_a_long_id_is_refused[19-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_is_refused[20-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_is_refused[5000-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_never_breaks_the_sweep[19-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_never_breaks_the_sweep[5000-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_128_char_role_passes_and_its_vm_is_swept
+XFAIL tests/test_vm_names_review.py::test_a_playbook_never_evaluates_a_name_passed_straight_in[orphans.yml]
+XFAIL tests/test_vm_names_review.py::test_a_playbook_never_evaluates_a_name_passed_straight_in[reconcile.yml]
+6 failed, 5 passed, 2 xfailed in 3.68s
+## 3.12
+FAILED tests/test_vm_names_review.py::test_a_long_id_is_refused[19-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_is_refused[20-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_is_refused[5000-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_never_breaks_the_sweep[19-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_long_id_never_breaks_the_sweep[5000-digit-id]
+FAILED tests/test_vm_names_review.py::test_a_128_char_role_passes_and_its_vm_is_swept
+XFAIL tests/test_vm_names_review.py::test_a_playbook_never_evaluates_a_name_passed_straight_in[orphans.yml]
+XFAIL tests/test_vm_names_review.py::test_a_playbook_never_evaluates_a_name_passed_straight_in[reconcile.yml]
+6 failed, 5 passed, 2 xfailed in 3.51s

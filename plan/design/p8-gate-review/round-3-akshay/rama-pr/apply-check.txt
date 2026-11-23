@@ -1,0 +1,30 @@
+2026-11-23T07:20:53Z fresh check
+origin/rama=40ebd6dcc8877632e0270155cf5dfa797d1012dc
+HEAD is now at 40ebd6d Merge remote-tracking branch 'origin/akshay' into rama
+HEAD=40ebd6dcc8877632e0270155cf5dfa797d1012dc
+cc3b42cf7c601bd6c414e46847f3ef78c84bf1d3e65a895ce582dd8cf51c6409  P-0-final.patch
+  --check ok, applied
+0c06d643c4d371655eac4280a00b8f440106f378d729cb4625d8efee75d69f0a  F-5-1.patch
+  --check ok, applied
+823a54bcdefd8ae52a6c3226144b93978d25583e5d37adfbc079dd78471c0f5d  F-5-1b.patch
+  --check ok, applied
+58a25f53353bbeabaafed9dff61786220cadb86c51f8302d52df612947079376  P-0c-combined.patch
+  --check ok, applied
+83264b3a71666d0585983d0513de096284905681036608105d0a395ef2e6f99a  P-0d.patch
+  --check ok, applied
+040e403eebbdb1e64bd67716791dae4fc666d4b783f07ef3947ac27ab4593508  G-1-ansible-floor.patch
+  --check ok, applied
+d5de53e6aeb235ece12a2d0a691350a8f04e3876abfda09378239b6f6112160b  G-2-catalog-template-guard.patch
+  --check ok, applied
+3b9cf9f52c655cedfaa300d07272fb2ffbb8f495338377b25417fe0d63bcec7a  G-3-secret-env-rule.patch
+  --check ok, applied
+changed paths: 26
+## diff -r -q -x __pycache__ ~/rama-pr-check ~/rama-pr
+diff exit=0
+removed ../rama-pr-check
+/home/akshay/dao-lab-selfserve  9c8a089 [akshay]
+/home/akshay/akshay-base        9c8a089 (detached HEAD)
+/home/akshay/akshay-gate        9c8a089 (detached HEAD)
+/home/akshay/p8gate             40ebd6d (detached HEAD)
+/home/akshay/p8gate-p0d         40ebd6d (detached HEAD)
+/home/akshay/rama-pr            40ebd6d (detached HEAD)

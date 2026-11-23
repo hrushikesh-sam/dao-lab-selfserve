@@ -1,0 +1,18 @@
+2026-11-23T06:44:47Z
+tree: akshay-gate (9c8a089 + 4 patches + P-0d, working state), no A-1 fix, CAN_BECOME=False
+        steps = Steps()
+        dirty_result = rn.verify_clean(ctx, steps)
+        assert dirty_result.ok is False
+>       assert sorted(dirty_result.residue) == sorted([
+            "vm:daolab-r12-sink", "dpu_session:lab",       # the VF goes with its VM (B-93)
+            "dpu_app:daolab-app-dao-vpp.service", "ip:10.30.0.101"])
+E       AssertionError: assert [] == ['dpu_app:dao...lab-r12-sink']
+E         
+E         Right contains 4 more items, first extra item: 'dpu_app:daolab-app-dao-vpp.service'
+E         Use -v to get more diff
+
+tests/test_ansible_runner.py:280: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ansible_runner.py::test_real_verify_clean_and_reconcile_round_trip
+1 failed in 3.26s
+exit=1

@@ -1,0 +1,11 @@
+d746d3ef2f7326e3ed0d6cedf66dfd1abc00e4c23388ca7df4ace3c98a4ba778  ./P-0c-COMBINED-NOTES.md
+a7a9623e23840acfebafd6e0dd8e960dc2bb76e30e4d52c45f6263b8a56ecb64  ./P-0c-combined-vs-rama-v1.diff
+58a25f53353bbeabaafed9dff61786220cadb86c51f8302d52df612947079376  ./P-0c-combined.patch
+337e0fdbe7ea910631731cb5a8e20a03db88942900e24ad45b391c4660ac95ea  ./evidence/combined/ci/junit-combined-py3.11.xml
+4d1beb2d632ba05b8f09fb7d994df89468ffc194f4c01144a63580307e9e3111  ./evidence/combined/ci/junit-combined-py3.12.xml
+ff04b6275435d6a2d2c8cc99e5ac9b99cb31deb612f6e8a4e94ef7ffae4b8ce2  ./evidence/combined/green.txt
+3bc45a91bb39e3ad3493fd45138e8c86bb7b0259784f6fad4af047ab7775f4c1  ./evidence/combined/red1-tests-only.txt
+e0b4d5d4e109a98a27aa4f1fd4c71fcd13d657613647c8079dfa26f15b219fe2  ./evidence/combined/red2-reasons.txt
+1b6686713c767236fbafe819ebb3fbe0b9f83c4640e832983c69e9b939c9edc9  ./evidence/combined/red2-review-tests-vs-rama-v1.txt
+be165b0a0c713aaa9b7747f426ad6c02676195846677e5af2f083aec4c3f15e9  ./evidence/combined/tests/full-combined-py3.11.txt
+90f8bc9af4d50d082c68248ebc463e4021ccec9cfeab04bf4b29cab8feb337d2  ./evidence/combined/tests/full-combined-py3.12.txt
