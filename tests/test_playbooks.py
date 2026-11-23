@@ -16,6 +16,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import uuid
 
 import pytest
 
@@ -36,6 +37,11 @@ NET_UUID = "22222222-net0-0000-0000-000000000000"
 SRIOV_UUID = "44444444-sriov-0000-0000-000000000000"
 MEMBERS = [{"name": "dpu-01", "kind": "dpu", "host": "tb-01-xcp"},
            {"name": "tg-01", "kind": "nic", "host": "tb-01-xcp"}]
+
+
+def vm_uuid(name):
+    """A real-shaped XO VM id (xapi UUID), stable per name: P-0d only ever destroys ids of this shape."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, name))
 
 
 def clean_state():
@@ -126,7 +132,7 @@ def lab(tmp_path):
 def dirty(state, rid=12):
     """What a half-torn-down reservation 12 leaves: a running VM holding a VF, a lab session,
     a running DPU app, and an address that still answers."""
-    state["vms"][f"daolab-r{rid}-sink"] = {"uuid": "vm-sink", "power": "running",
+    state["vms"][f"daolab-r{rid}-sink"] = {"uuid": vm_uuid(f"daolab-r{rid}-sink"), "power": "running",
                                            "other_config": {"pci": "0/0000:5e:01.1"},
                                            "xenstore": {}, "vifs": [], "ip": "10.30.0.101"}
     state["assignable"].remove("0000:5e:01.1")
@@ -218,7 +224,7 @@ def test_reconcile_gives_the_hugepages_back(lab):
 def test_reconcile_destroys_through_xen_orchestra_and_never_logs_in_to_a_dom0(lab):
     lab.set(dirty(clean_state()))
     assert lab.run("reconcile.yml") == 0, lab.stdout
-    assert ["daolab-xo", "destroy", "--vm", "vm-sink"] in lab.calls("daolab-xo")
+    assert ["daolab-xo", "destroy", "--vm", vm_uuid("daolab-r12-sink")] in lab.calls("daolab-xo")
     assert not lab.calls("xe") and not lab.calls("xl")                 # B-93: XO only
 
 
@@ -233,22 +239,34 @@ def test_reconcile_is_safe_on_a_clean_testbed_and_changes_nothing(lab):
 def test_reconcile_leaves_other_reservations_and_foreign_vms_alone(lab):
     st = dirty(clean_state())
     for name in ("daolab-r120-sink", "daolab-r1-tgen", "admin-scratch"):
-        st["vms"][name] = {"uuid": f"u-{name}", "power": "halted", "other_config": {},
-                           "xenstore": {}, "vifs": [], "ip": None}
+        st["vms"][name] = _vm(name, power="halted")
     lab.set(st)
     assert lab.run("reconcile.yml") == 0, lab.stdout
     assert sorted(lab.state()["vms"]) == ["admin-scratch", "daolab-r1-tgen", "daolab-r120-sink"]
 
 
-def test_reconcile_destroys_exactly_the_named_orphans(lab):
+def test_reconcile_ignores_a_caller_supplied_list_and_destroys_only_its_own_reservation(lab):
+    """P-0d: reconcile.yml takes no VM list from its caller (the B-73 override is gone): it destroys
+    exactly the daolab-r<reservation_id>-* VMs of XO's own listing, by XO id."""
     st = clean_state()
-    for name in ("daolab-r999-x", "daolab-r998-y", "daolab-r12-keep"):
-        st["vms"][name] = {"uuid": f"u-{name}", "power": "running", "other_config": {},
-                           "xenstore": {}, "vifs": [], "ip": None}
+    for name in ("daolab-r12-sink", "daolab-r999-x", "daolab-r998-y"):
+        st["vms"][name] = _vm(name)
     lab.set(st)
-    assert lab.run("reconcile.yml", reservation_id=0,
+    assert lab.run("reconcile.yml", reservation_id=12,
                    daolab_vm_names=["daolab-r999-x", "daolab-r998-y"]) == 0, lab.stdout
-    assert sorted(lab.state()["vms"]) == ["daolab-r12-keep"]
+    assert sorted(lab.state()["vms"]) == ["daolab-r998-y", "daolab-r999-x"]
+    assert [c for c in lab.calls("daolab-xo") if c[1] == "destroy"] == \
+        [["daolab-xo", "destroy", "--vm", vm_uuid("daolab-r12-sink")]]
+
+
+def test_reconcile_skips_a_listed_vm_whose_id_is_not_a_uuid(lab):
+    """P-0d: even ids from XO's own listing are destroyed only if they have the strict XO id shape."""
+    st = clean_state()
+    st["vms"]["daolab-r12-sink"] = _vm("daolab-r12-sink")
+    st["vms"]["daolab-r12-odd"] = {**_vm("daolab-r12-odd"), "uuid": "{{ 7 * 7 }}"}
+    lab.set(st)
+    assert lab.run("reconcile.yml") == 0, lab.stdout
+    assert sorted(lab.state()["vms"]) == ["daolab-r12-odd"]
 
 
 def test_reconcile_twice_in_a_row(lab):
@@ -262,8 +280,14 @@ def test_reconcile_twice_in_a_row(lab):
 # ---- B-73: orphans.yml -------------------------------------------------------------------
 
 def _vm(name, power="running"):
-    return {"uuid": f"u-{name}", "power": power, "other_config": {}, "xenstore": {},
+    return {"uuid": vm_uuid(name), "power": power, "other_config": {}, "xenstore": {},
             "vifs": [], "ip": None}
+
+
+def _ids_file(lab, ids):
+    path = lab.dir / "vm-ids.json"
+    path.write_text(json.dumps(list(ids)))
+    return str(path)
 
 
 def test_orphans_lists_every_daolab_tagged_vm(lab):
@@ -272,18 +296,32 @@ def test_orphans_lists_every_daolab_tagged_vm(lab):
         st["vms"][name] = _vm(name)
     lab.set(st)
     assert lab.run("orphans.yml") == 0, lab.stdout
-    assert sorted(lab.output()) == ["daolab-r12-sink", "daolab-r999-x"]
+    assert sorted(lab.output(), key=lambda v: v["name"]) == [          # P-0d: XO id + name pairs
+        {"id": vm_uuid("daolab-r12-sink"), "name": "daolab-r12-sink"},
+        {"id": vm_uuid("daolab-r999-x"), "name": "daolab-r999-x"}]
     assert lab.state() == st                                          # list mode is read-only
 
 
-def test_orphans_destroys_exactly_the_named_vms(lab):
+def test_orphans_destroys_exactly_the_given_ids(lab):
     st = clean_state()
     for name in ("daolab-r999-x", "daolab-r998-y", "daolab-r12-sink"):
         st["vms"][name] = _vm(name, power="halted" if name.endswith("y") else "running")
     lab.set(st)
-    assert lab.run("orphans.yml", daolab_vm_names=["daolab-r999-x", "daolab-r998-y",
-                                                   "daolab-r1-not-there"]) == 0, lab.stdout
+    ids = [vm_uuid("daolab-r999-x"), vm_uuid("daolab-r998-y"), vm_uuid("daolab-r1-not-there")]
+    assert lab.run("orphans.yml", daolab_vm_ids_file=_ids_file(lab, ids)) == 0, lab.stdout
     assert sorted(lab.state()["vms"]) == ["daolab-r12-sink"]
+    assert lab.out_path.exists() is False                             # destroy mode reports nothing
+
+
+def test_orphans_never_destroys_a_vm_that_only_shares_a_name(lab):
+    """The list and destroy halves are two runs: a VM re-made under the same name in between has a new
+    XO id, so the sweep that listed the old one leaves it alone (names could not tell them apart)."""
+    st = clean_state()
+    st["vms"]["daolab-r999-x"] = {**_vm("daolab-r999-x"), "uuid": str(uuid.uuid4())}
+    lab.set(st)
+    assert lab.run("orphans.yml", daolab_vm_ids_file=_ids_file(lab, [vm_uuid("daolab-r999-x")])) == 0, \
+        lab.stdout
+    assert sorted(lab.state()["vms"]) == ["daolab-r999-x"]
 
 
 # ---- B-83: the otel_agent role ------------------------------------------------------------

@@ -3,7 +3,7 @@
 import pytest
 
 from service import engine, ipam, models
-from service.runner import MockRunner, RunResult
+from service.runner import MockRunner, RunResult, mock_vm_id
 from service.scheduler import SchedConfig
 from tests.conftest import NOW, T, mk_res, mk_setup, mk_usecase
 
@@ -36,7 +36,8 @@ def test_a_manual_vm_tagged_daolab_r999_gets_cleaned(lab):
     rn.vms.add("daolab-r999-manual")
     out = tick(lab, rn)
     assert rn.vms == set() and out.orphan_vms == 1
-    assert sweeps(lab) == [{"vms": ["daolab-r999-manual"], "ok": True, "error": None}]
+    assert sweeps(lab) == [{"vms": ["daolab-r999-manual"], "vm_ids": [mock_vm_id("daolab-r999-manual")],
+                            "ok": True, "error": None}]
 
 
 def test_vms_of_terminal_reservations_go_and_live_ones_stay(lab):

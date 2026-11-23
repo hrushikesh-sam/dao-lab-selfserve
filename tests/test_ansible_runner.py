@@ -158,14 +158,27 @@ def test_verify_clean_reads_the_residue_the_playbook_wrote(settings, ctx):
     assert unverified.ok is False and unverified.residue == ()      # could not verify != clean
 
 
+_U999 = "0d5e1b3c-9a7f-4c2e-8b6d-1f2a3b4c5d6e"
+
+
 def test_the_orphan_sweep_lists_and_destroys_through_orphans_yml(settings):
-    fake = FakeRun(output=["daolab-r999-x"])
+    sent = []
+
+    class Recording(FakeRun):
+        def __call__(self, **kw):
+            if "daolab_vm_ids_file" in kw["extravars"]:            # read while it exists (P-0d)
+                with open(kw["extravars"]["daolab_vm_ids_file"]) as fh:
+                    sent.append(json.load(fh))
+            return super().__call__(**kw)
+
+    fake = Recording(output=[{"id": _U999, "name": "daolab-r999-x"}])
     rn = AnsibleRunner(settings, run=fake)
-    assert rn.tagged_vms() == ["daolab-r999-x"]
-    assert rn.destroy_vms(["daolab-r999-x"], Steps()).ok
+    assert rn.tagged_vms() == [models.TaggedVm(_U999, "daolab-r999-x")]
+    assert rn.destroy_vms([_U999], Steps()).ok
     assert [c["playbook"] for c in fake.calls] == ["orphans.yml", "orphans.yml"]
-    assert "daolab_vm_names" not in fake.calls[0]["extravars"]
-    assert fake.calls[1]["extravars"]["daolab_vm_names"] == ["daolab-r999-x"]
+    assert "daolab_vm_ids_file" not in fake.calls[0]["extravars"]
+    assert all("daolab_vm_names" not in c["extravars"] for c in fake.calls)
+    assert sent == [[_U999]]
     assert "sweep" in fake.calls[0]["private_data_dir"]
     with pytest.raises(RunnerError, match="could not list"):
         AnsibleRunner(settings, run=FakeRun(status="failed", rc=2)).tagged_vms()
@@ -282,12 +295,12 @@ def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
 def test_real_orphan_sweep(lab, tmp_path):
     from tests.test_playbooks import clean_state
     st = clean_state()
-    st["vms"]["daolab-r999-x"] = {"uuid": "u1", "power": "running", "other_config": {},
+    st["vms"]["daolab-r999-x"] = {"uuid": _U999, "power": "running", "other_config": {},
                                  "xenstore": {}, "vifs": [], "ip": None}
     lab.set(st)
     rn = real_runner(lab, tmp_path)
-    assert rn.tagged_vms() == ["daolab-r999-x"]
-    assert rn.destroy_vms(["daolab-r999-x"], Steps()).ok
+    assert rn.tagged_vms() == [models.TaggedVm(_U999, "daolab-r999-x")]
+    assert rn.destroy_vms([_U999], Steps()).ok
     assert lab.state()["vms"] == {}
 
 
@@ -307,7 +320,7 @@ def test_the_sign_off_switch_and_the_app_reach_the_playbooks(settings, ctx):
 
 
 def test_with_vms_off_the_orphan_sweep_asks_no_xcp_host(settings):
-    fake = FakeRun(output=["daolab-r999-x"])
+    fake = FakeRun(output=[{"id": _U999, "name": "daolab-r999-x"}])
     rn = AnsibleRunner(dataclasses.replace(settings, deploy_vms=False), run=fake)
     assert rn.tagged_vms() == [] and fake.calls == []
 

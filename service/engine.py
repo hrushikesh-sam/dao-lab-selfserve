@@ -482,24 +482,29 @@ def _sweep_orphans(db, rn, out: TickResult) -> None:
     left_behind: set[int] = set()                    # reservations whose VMs survived
     if lister is not None and destroyer is not None:
         try:
-            names = list(lister())
+            rows = list(lister())
         except Exception:                            # noqa: BLE001 — never stop the tick
             log.exception("orphan sweep: could not list the testbed's VMs")
-            names = []
-        names, dropped = models.split_vm_names(names)        # P-0c: strict names only, count logged
-        if dropped:
-            log.warning("orphan sweep: skipped %d VM name(s) of an unexpected shape", dropped)
-        doomed = [n for n in names
-                  if (m := _TAGGED.match(n)) is not None and _orphan(db, int(m.group(1)))]
+            rows = []
+        # P-0c/P-0d: a strict name AND a strict XO id, or the VM is skipped (count logged). The name stays
+        # here (it gives the reservation id); only the ids go to the runner.
+        vms, bad_names, bad_ids = models.classify_tagged_vms(rows)
+        if bad_names:
+            log.warning("orphan sweep: skipped %d VM name(s) of an unexpected shape", bad_names)
+        if bad_ids:
+            log.warning("orphan sweep: skipped %d VM id(s) of an unexpected shape", bad_ids)
+        doomed = [v for v in vms if _orphan(db, int(_TAGGED.match(v.name).group(1)))]
         if doomed:
-            result = _call(lambda _ctx, sink: destroyer(doomed, sink), {"id": 0},
+            ids = [v.id for v in doomed]
+            result = _call(lambda _ctx, sink: destroyer(ids, sink), {"id": 0},
                            _sweep_log_sink, "destroy_vms")
             if result.ok:
                 out.orphan_vms += len(doomed)
             else:
-                left_behind = {int(_TAGGED.match(n).group(1)) for n in doomed}
+                left_behind = {int(_TAGGED.match(v.name).group(1)) for v in doomed}
             models.audit(db, "engine", "orphan_sweep", None, None,
-                         {"vms": doomed, "ok": result.ok, "error": result.error})
+                         {"vms": [v.name for v in doomed], "vm_ids": ids,
+                          "ok": result.ok, "error": result.error})
     rows = db.execute(
         f"""SELECT DISTINCT l.reservation_id FROM ip_leases l
             JOIN reservations r ON r.id = l.reservation_id

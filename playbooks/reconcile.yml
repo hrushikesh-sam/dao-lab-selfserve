@@ -9,8 +9,12 @@
 #   3. on the DPU: every session / process of the shared lab login killed.
 #
 # Every step is idempotent and safe on a clean testbed. Followed by verify_clean.yml.
-# Extra vars: reservation_id, setup (+ what play 0 reads). `daolab_vm_names` (a list of VM
-# names) replaces step 1's name match: the orphan sweep (B-73) passes the orphans it found.
+# Extra vars: reservation_id, setup (+ what play 0 reads).
+#
+# P-0d (EXTRAVAR-MATRIX row 25): step 1 acts only on the daolab-r<reservation_id>-* VMs of Xen
+# Orchestra's own listing, by XO id, and only on ids of the strict XO shape (daolab_vm_id_re). It
+# takes no VM list from its caller (the old VM-name override is gone); the orphan sweep (B-73)
+# destroys by id through orphans.yml.
 - name: resolve the setup
   hosts: localhost
   gather_facts: false
@@ -27,19 +31,18 @@
       register: _all_vms
       changed_when: false
 
-    - name: pick the VMs to destroy
+    - name: pick the VMs to destroy (this reservation's, by XO id)
       ansible.builtin.set_fact:
         _doomed: >-
-          {{ (_all_vms.stdout | from_json | selectattr('name', 'in', daolab_vm_names) | list)
-             if daolab_vm_names is defined else
-             (_all_vms.stdout | from_json
-              | selectattr('name', 'match', '^daolab-r' ~ (reservation_id | int) ~ '-') | list) }}
+          {{ _all_vms.stdout | from_json
+             | selectattr('name', 'match', '^daolab-r' ~ (reservation_id | int) ~ '-')
+             | selectattr('id', 'string') | selectattr('id', 'match', daolab_vm_id_re) | list }}
 
     - name: "step: destroy_vms"
       ansible.builtin.command: "{{ daolab_xo }} destroy --vm {{ item.id }}"
       loop: "{{ _doomed }}"
       loop_control:
-        label: "{{ item.name }}"
+        label: "{{ item.id }}"
       changed_when: true
 
 - name: the DAO app's own cleanup, again (VPP / SmartNIC give their devices back)

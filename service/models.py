@@ -4,6 +4,7 @@ import os
 import re
 import sqlite3
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 from . import migrations
 
@@ -307,9 +308,10 @@ def ident_ok(value) -> bool:
     return isinstance(value, str) and _IDENT.fullmatch(value) is not None
 
 
-# P-0c (EXTRAVAR-MATRIX row 25): a VM name read back from Xen Orchestra is handed to ansible as the
-# extra var `daolab_vm_names`, which ansible re-templates. Only names of exactly this shape may travel:
-# the shape the platform makes ('daolab-r' ~ id ~ '-' ~ role, plan_vms.yml; a role is an `_IDENT`).
+# P-0c (EXTRAVAR-MATRIX row 25): a VM name read back from Xen Orchestra used to be handed back to ansible
+# as an extra var, which ansible re-templates; since P-0d only the XO id travels (below), and the name stays
+# in Python for the reservation id. Only names of exactly the shape the platform makes are accepted
+# ('daolab-r' ~ id ~ '-' ~ role, plan_vms.yml; a role is an `_IDENT`).
 # P-0e: the id is bounded to 18 ASCII digits, so int(id) always fits SQLite's 64-bit INTEGER and
 # Python's int-from-string limit; an unbounded id made the orphan sweep raise on every tick.
 VM_NAME = re.compile(r"daolab-r[0-9]{1,18}-[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
@@ -324,6 +326,73 @@ def split_vm_names(names) -> tuple[list[str], int]:
     names = list(names or [])
     kept = [n for n in names if vm_name_ok(n)]
     return kept, len(names) - len(kept)
+
+
+# P-0d (row 25 hardening): the orphan sweep destroys by Xen Orchestra VM id, never by name. A name stays in
+# Python (the engine reads the reservation id from it); only the id goes to ansible, in a file the playbook
+# reads with lookup() (data, never templated). XO's VM id is the xapi UUID, lowercase. The same pattern is
+# `daolab_vm_id_re` in playbooks/group_vars/all.yml (tests/test_vm_ids.py keeps the two in sync).
+VM_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+class TaggedVm(NamedTuple):
+    """A daolab-tagged VM as listed by Xen Orchestra: its XO id and its (strict) name."""
+    id: str
+    name: str
+
+
+def vm_id_ok(vm_id) -> bool:
+    return isinstance(vm_id, str) and VM_ID.fullmatch(vm_id) is not None
+
+
+def split_vm_ids(ids) -> tuple[list[str], int]:
+    """(the valid ids in order, each once; how many were invalid). A repeated id is kept once and not
+    counted (two hosts of one pool list the same VM). Callers log the count, never an id."""
+    ids = list(ids or [])
+    valid = [i for i in ids if vm_id_ok(i)]
+    return list(dict.fromkeys(valid)), len(ids) - len(valid)
+
+
+def split_vm_ids_detail(ids) -> tuple[list[str], int, int]:
+    """split_vm_ids, with the invalid ids counted in two kinds for the logs: (kept, not even a valid
+    VM name, a valid VM name but not an id)."""
+    ids = list(ids or [])
+    kept, _ = split_vm_ids(ids)
+    bad = [i for i in ids if not vm_id_ok(i)]
+    bad_names = sum(1 for i in bad if not vm_name_ok(i))
+    return kept, bad_names, len(bad) - bad_names
+
+
+def classify_tagged_vms(rows) -> tuple[list[TaggedVm], int, int]:
+    """(the listed VMs whose id AND name are valid, in order, each id once; how many rows have an invalid
+    name; how many have a valid name but an invalid id). A row is a TaggedVm or an {"id", "name"}
+    mapping; a bare name string (the pre-P-0d contract) has no id. A repeated id is kept once (its
+    first row) and not counted. Callers log the counts, never a row."""
+    kept: dict[str, TaggedVm] = {}
+    bad_names = bad_ids = 0
+    for r in list(rows or []):
+        if isinstance(r, TaggedVm):
+            vm_id, name = r.id, r.name
+        elif isinstance(r, dict):
+            vm_id, name = r.get("id"), r.get("name")
+        elif isinstance(r, str):
+            vm_id, name = None, r
+        else:
+            vm_id = name = None
+        if not vm_name_ok(name):
+            bad_names += 1
+        elif not vm_id_ok(vm_id):
+            bad_ids += 1
+        elif vm_id not in kept:
+            kept[vm_id] = TaggedVm(vm_id, name)
+    return list(kept.values()), bad_names, bad_ids
+
+
+def split_tagged_vms(rows) -> tuple[list[TaggedVm], int]:
+    """(the listed VMs whose id AND name are valid, in order, each id once; how many were invalid).
+    A repeated id is kept once and not counted. See classify_tagged_vms."""
+    kept, bad_names, bad_ids = classify_tagged_vms(rows)
+    return kept, bad_names + bad_ids
 
 
 def access_keys(res, user) -> str:

@@ -5,11 +5,16 @@
 # be unknown (a VM made by hand as daolab-r999-x), so this runs over the whole `xcp_hosts`
 # inventory group rather than one resolved setup.
 #
-#   without daolab_vm_names: write every daolab-r<id>-* VM name (JSON list) to
-#                            {{ daolab_output_file }} on the control node
-#   with daolab_vm_names:    hard-shutdown + delete each named VM wherever it lives (XO)
+#   without daolab_vm_ids_file: write every daolab-r<id>-* VM as {"id", "name"} (JSON list) to
+#                               {{ daolab_output_file }} on the control node
+#   with daolab_vm_ids_file:    hard-shutdown + delete each listed VM whose Xen Orchestra id is in
+#                               that file (a JSON list of XO VM ids, written 0600 by the runner)
 #
-# Read-only in list mode; destroying a name that is not there is a no-op.
+# P-0d (EXTRAVAR-MATRIX row 25): destroying is by XO VM id, never by name, and the ids come from a
+# file read with lookup(): lookup results are data and are never templated, so nothing the caller
+# hands over is evaluated. Only ids of the strict XO shape (daolab_vm_id_re) are used, and only
+# ids of VMs listed right now: an id that is not there is a no-op, and a VM re-made under the same
+# name has a new id and stays. Read-only in list mode.
 - name: orphan sweep on the XCP-ng hosts (through Xen Orchestra, B-93)
   hosts: xcp_hosts
   gather_facts: false
@@ -19,30 +24,41 @@
       register: _listed
       changed_when: false
 
-    - name: keep the daolab-r<id>-* names
+    - name: keep the daolab-r<id>-* VMs (their XO id and name only)
       ansible.builtin.set_fact:
         _tagged:
-          stdout_lines: "{{ _listed.stdout | from_json | map(attribute='name') | select('match', '^daolab-r[0-9]+-') | list }}"
+          rows: >-
+            {{ _listed.stdout | from_json | selectattr('name', 'match', '^daolab-r[0-9]+-')
+               | map('dict2items') | map('selectattr', 'key', 'in', ['id', 'name']) | map('list')
+               | map('items2dict') | list }}
+
+    - name: read the XO ids to destroy (data, never templated)
+      ansible.builtin.set_fact:
+        _ids: >-
+          {{ lookup('ansible.builtin.file', daolab_vm_ids_file) | from_json
+             | select('string') | select('match', daolab_vm_id_re) | list }}
+      when: daolab_vm_ids_file is defined
 
     - name: "step: destroy_vms"
       ansible.builtin.command: "{{ daolab_xo }} destroy --vm {{ item.id }}"
       loop: >-
         {{ _listed.stdout | from_json | selectattr('name', 'match', '^daolab-r[0-9]+-')
-           | selectattr('name', 'in', daolab_vm_names) | list }}
+           | selectattr('id', 'string') | selectattr('id', 'match', daolab_vm_id_re)
+           | selectattr('id', 'in', _ids) | list }}
       loop_control:
-        label: "{{ item.name }}"
-      when: daolab_vm_names is defined
+        label: "{{ item.id }}"
+      when: daolab_vm_ids_file is defined
       changed_when: true
 
 - name: report
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: write the tagged VM names for the runner
+    - name: write the tagged VMs (XO id + name) for the runner
       ansible.builtin.copy:
         content: >-
-          {{ groups['xcp_hosts'] | map('extract', hostvars, ['_tagged', 'stdout_lines'])
+          {{ groups['xcp_hosts'] | map('extract', hostvars, ['_tagged', 'rows'])
              | flatten | select | unique | list | to_json }}
         dest: "{{ daolab_output_file }}"
         mode: "0600"
-      when: daolab_output_file is defined and daolab_vm_names is not defined
+      when: daolab_output_file is defined and daolab_vm_ids_file is not defined
