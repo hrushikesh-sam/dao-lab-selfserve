@@ -109,4 +109,18 @@ class Settings:
         )
 
 
+# F-5-1b: load_dotenv() copied .env into os.environ, and ansible-runner writes the whole process
+# environment to artifacts/<ident>/command at the start of every run (no switch for it). The
+# secret values live in `settings` from here on; nothing reads them from the environment again
+# (child processes get files instead: F-5-1's secret file, DAOLAB_XO_TOKEN_FILE, the
+# become-password file), so they leave the environment.
+SECRET_ENV = ("DAOLAB_INTERNAL_SECRET", "DAOLAB_AUTHZ_SECRET", "DAOLAB_TOKEN")
+
+
+def scrub_secret_env() -> None:
+    for name in SECRET_ENV:
+        os.environ.pop(name, None)
+
+
 settings = Settings.from_env()
+scrub_secret_env()

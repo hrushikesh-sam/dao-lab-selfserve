@@ -15,16 +15,21 @@ visible while the job is still running. `job_sink` builds a sink that writes the
 job row. Each function returns a `RunResult`.
 """
 import json
+import logging
 import os
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Mapping, Protocol
 
 from . import config, models
+
+log = logging.getLogger("daolab.runner")
 
 RUNNER_NAMES = ("ansible", "mock")
 # `health` (B-68) drops the mock's per-reservation exporter so the health badge can be
@@ -108,9 +113,18 @@ class Runner(Protocol):
     def probe(self, res: Mapping, step: StepSink) -> RunResult: ...
     def verify_clean(self, res: Mapping, step: StepSink) -> RunResult: ...
     def reconcile(self, res: Mapping, step: StepSink) -> RunResult: ...
-    # B-73, the orphan sweep (optional: the engine skips the sweep for a runner without them)
-    def tagged_vms(self) -> list[str]: ...
-    def destroy_vms(self, names: list[str], step: StepSink) -> RunResult: ...
+    # B-73, the orphan sweep (optional: the engine skips the sweep for a runner without them).
+    # P-0d: listing gives (XO id, name) pairs; destroying takes XO ids only, never a name.
+    def tagged_vms(self) -> list[models.TaggedVm]: ...
+    def destroy_vms(self, ids: list[str], step: StepSink) -> RunResult: ...
+
+
+_MOCK_VM_NS = uuid.UUID("5f0d7c1e-3a2b-4c6d-9e8f-0a1b2c3d4e5f")
+
+
+def mock_vm_id(name: str) -> str:
+    """The XO-style id MockRunner gives the VM `name` (stable, so tests can compute it)."""
+    return str(uuid.uuid5(_MOCK_VM_NS, name))
 
 
 def parse_mock_fail(text: str) -> frozenset[str]:
@@ -341,15 +355,16 @@ class MockRunner:
     def _vm_names(self, res: Mapping) -> set[str]:
         return {v["name"] for v in _field(res, "vms", []) or [] if v.get("name")}
 
-    def tagged_vms(self) -> list[str]:
-        """B-73: every daolab-r<id>-* VM on the fake testbed."""
-        return sorted(self.vms)
+    def tagged_vms(self) -> list[models.TaggedVm]:
+        """B-73: every daolab-r<id>-* VM on the fake testbed, with its id (P-0d: mock_vm_id)."""
+        return [models.TaggedVm(mock_vm_id(n), n) for n in sorted(self.vms)]
 
-    def destroy_vms(self, names: list[str], step: StepSink) -> RunResult:
-        """B-73: destroy exactly these VMs (the orphan sweep)."""
+    def destroy_vms(self, ids: list[str], step: StepSink) -> RunResult:
+        """B-73: destroy exactly the VMs with these ids (the orphan sweep; P-0d: by id, never by name)."""
         self._sleep(self.step_sec)
-        gone = [n for n in names if n in self.vms]
-        self.vms.difference_update(names)
+        wanted = set(ids)
+        gone = sorted(n for n in self.vms if mock_vm_id(n) in wanted)
+        self.vms.difference_update(gone)
         step("destroy_vms", "ok", ", ".join(gone) or None)
         return RunResult(ok=True)
 
@@ -456,6 +471,7 @@ class AnsibleRunner:
     def __init__(self, settings=None, run: Callable | None = None):
         self.s = settings or config.settings
         self._run = run
+        _sweep_secret_files(max_age_sec=max(2 * int(getattr(self.s, "job_timeout_sec", 0) or 0), 3600))
 
     # ---- paths -----------------------------------------------------------------------
     def job_dir(self, job_id) -> str:
@@ -498,7 +514,6 @@ class AnsibleRunner:
             "daolab_verify": get("verify") or {}, "daolab_vms": get("vms") or [],
             "daolab_leases": get("leases") or [],
             "daolab_api_url": self.s.api_url.rstrip("/"),
-            "daolab_internal_secret": self.s.internal_secret,
             "daolab_otel_collector": self.s.otel_agent_endpoint,
             "daolab_app": dpu_app(get("roles") or {}) if not get("diy", False) else "none",
             "daolab_access_login": get("access_login") or "lab",
@@ -513,8 +528,13 @@ class AnsibleRunner:
         }
 
     def _play(self, kind: str, playbook_key: str, res: Mapping | None, step: StepSink,
-              extra: dict | None = None) -> tuple[RunResult, object]:
-        """Run one playbook; returns (result, the JSON it wrote to daolab_output_file)."""
+              extra: dict | None = None, files: Mapping[str, object] | None = None
+              ) -> tuple[RunResult, object]:
+        """Run one playbook; returns (result, the JSON it wrote to daolab_output_file).
+
+        `files` maps an extra-var name to JSON data: each is written to a 0600 file in the runtime dir for
+        the run and only its PATH is the extra var (P-0d: a playbook reads it with lookup('file'), so the
+        data is never templated); the files are removed when the run ends, whatever happens."""
         from . import otel
         job_id = _field(res, "job_id") if res is not None else None
         root = self.job_dir(job_id if job_id is not None else "sweep")
@@ -562,7 +582,19 @@ class AnsibleRunner:
             # put the directory of the ansible-playbook installed next to it first on the PATH
             # ansible-runner resolves the command with (not `binary=`: that is raw mode)
             envvars["PATH"] = os.path.dirname(playbook_bin) + os.pathsep + os.environ.get("PATH", "")
+        secret_path = None
+        data_paths: list[str] = []
         try:
+            for var, data in (files or {}).items():
+                path = _write_json_file(VM_IDS_FILE_PREFIX, data)
+                data_paths.append(path)
+                ev[var] = path
+            if self.s.internal_secret:
+                # F-5-1: the secret never goes into extravars (ansible-runner persists those in
+                # env/extravars) or the environment; the playbooks read it from this 0600 file
+                # (playbooks/group_vars/all.yml) and the file is removed when the run ends.
+                secret_path = _write_secret_file(self.s.internal_secret)
+                ev["daolab_internal_secret_file"] = secret_path
             r = run(private_data_dir=pdd, project_dir=os.path.abspath(self.s.playbooks_dir),
                     playbook=self.PLAYBOOKS[playbook_key],
                     inventory=os.path.abspath(self.s.inventory), extravars=ev,
@@ -576,6 +608,9 @@ class AnsibleRunner:
                        if int(getattr(self.s, "job_timeout_sec", 0) or 0) > 0 else {}))
         finally:
             log.close()
+            _remove_quietly(secret_path)
+            for path in data_paths:
+                _remove_quietly(path)
         ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
         error = None
         if getattr(r, "status", None) == "timeout":
@@ -616,13 +651,89 @@ class AnsibleRunner:
     def tagged_vms(self):
         if not self.s.deploy_vms:                    # no VMs are made: no XCP-ng host to ask
             return []
-        result, names = self._play("orphans", "orphans", None, lambda *a, **k: None)
+        result, rows = self._play("orphans", "orphans", None, lambda *a, **k: None)
         if not result.ok:
             raise RunnerError(f"could not list the testbed's VMs: {result.error}")
-        return list(names or [])
+        # P-0c: the source of the names; P-0d: and of the ids (a pair needs both valid)
+        kept, bad_names, bad_ids = models.classify_tagged_vms(rows)
+        if bad_names:
+            log.warning("orphan sweep: dropped %d listed VM name(s) of an unexpected shape", bad_names)
+        if bad_ids:
+            log.warning("orphan sweep: dropped %d listed VM id(s) of an unexpected shape", bad_ids)
+        return kept
 
-    def destroy_vms(self, names, step):
-        return self._play("orphans", "orphans", None, step, {"daolab_vm_names": list(names)})[0]
+    def destroy_vms(self, ids, step):
+        # P-0d: XO ids only, never a name; the final chokepoint before the ids file orphans.yml reads.
+        kept, bad_names, bad_ids = models.split_vm_ids_detail(ids)
+        if bad_names:
+            log.warning("orphan sweep: refused %d VM name(s) of an unexpected shape", bad_names)
+        if bad_ids:
+            log.warning("orphan sweep: refused %d VM id(s) of an unexpected shape", bad_ids)
+        if not kept:
+            dropped = bad_names + bad_ids
+            return RunResult(ok=False, error=f"{dropped} VM id(s) refused, nothing to destroy")
+        return self._play("orphans", "orphans", None, step, files={"daolab_vm_ids_file": kept})[0]
+
+
+SECRET_FILE_PREFIX = "daolab-secret-"
+VM_IDS_FILE_PREFIX = "daolab-vmids-"                 # P-0d: the orphan sweep's ids file
+
+
+def _runtime_dir() -> str:
+    """Where the per-run secret file goes: DAOLAB_RUNTIME_DIR, else systemd's RUNTIME_DIRECTORY
+    (RuntimeDirectory= gives a 0700 tmpfs dir), else the system temp dir. Point it at a 0700
+    tmpfs directory in production."""
+    d = os.environ.get("DAOLAB_RUNTIME_DIR") or os.environ.get("RUNTIME_DIRECTORY") or ""
+    return d.split(":")[0] or tempfile.gettempdir()
+
+
+def _write_runtime_file(prefix: str, suffix: str, text: str) -> str:
+    """`text` in a new file in the runtime dir, mode 0600 (mkstemp: O_EXCL, owner only). Returns its path."""
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=_runtime_dir())
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    except BaseException:
+        _remove_quietly(path)
+        raise
+    return path
+
+
+def _write_secret_file(secret: str) -> str:
+    """The secret in a new 0600 file in the runtime dir (F-5-1). Returns its path."""
+    return _write_runtime_file(SECRET_FILE_PREFIX, ".txt", secret)
+
+
+def _write_json_file(prefix: str, data) -> str:
+    """`data` as JSON in a new 0600 file in the runtime dir (P-0d: the ids file). Returns its path."""
+    return _write_runtime_file(prefix, ".json", json.dumps(data))
+
+
+def _remove_quietly(path: str | None) -> None:
+    if path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _sweep_secret_files(max_age_sec: int) -> None:
+    """A run killed with SIGKILL never reaches its `finally`: drop secret (and P-0d ids) files older
+    than `max_age_sec` (the engine runs one job at a time, so a fresh file may be in use)."""
+    d = _runtime_dir()
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return
+    cutoff = time.time() - max_age_sec
+    for name in names:
+        if name.startswith((SECRET_FILE_PREFIX, VM_IDS_FILE_PREFIX)):
+            path = os.path.join(d, name)
+            try:
+                if os.stat(path).st_mtime < cutoff:
+                    os.unlink(path)
+            except OSError:
+                pass
 
 
 def ansible_playbook_path() -> str | None:

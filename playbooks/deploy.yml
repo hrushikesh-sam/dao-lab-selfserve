@@ -18,7 +18,8 @@
 #
 # Extra vars (runner, B-84): reservation_id, usecase, setup, user, ssh_pubkey, hw_class, diy,
 # templates, daolab_app, daolab_members / roles / verify / vms, daolab_api_url,
-# daolab_internal_secret, daolab_otel_collector, daolab_deploy_vms, and the runbooks' sign-off
+# daolab_internal_secret_file (a path; the secret itself is read from it, F-5-1), daolab_otel_collector,
+# daolab_deploy_vms, and the runbooks' sign-off
 # flags (allow_destructive_changes / allow_launch / allow_cleanup = DAOLAB_ALLOW_DESTRUCTIVE).
 # Manual run: reservation_id=0 + manual_ips (if VMs are deployed) + daolab_app=<app>.
 - name: resolve, plan and lease

@@ -1,8 +1,10 @@
 """sqlite helpers — the only code touching JSON-in-TEXT columns and timestamps."""
 import json
 import os
+import re
 import sqlite3
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 from . import migrations
 
@@ -259,12 +261,147 @@ def create_vms(conn, res_id: int) -> int:
 ACCESS_LOGIN = "lab"           # the DPU login users get (playbooks/roles/dpu_access)
 
 
+# ---- user-controlled text that ansible would otherwise template (P-0 / F-1) --------------------
+#
+# Extra vars are re-templated by ansible wherever a playbook renders them, so a value such as
+# `{{ lookup('pipe', ...) }}` runs on the controller. Everything a user can write that ends up in
+# the runner's extravars is therefore checked against a closed ASCII allowlist: here (shared by
+# the API, the add-user CLI and the chokepoint below).
+
+_SSH_KEY_TYPES = (r"(?:ssh-(?:ed25519|rsa)|ecdsa-sha2-nistp(?:256|384|521)"
+                  r"|sk-(?:ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)")
+# type, base64 body, optional comment of 1..128 ASCII characters that neither starts nor ends with
+# a space. No braces, no control characters, no non-ASCII: `fullmatch` only.
+_SSH_KEY_LINE = re.compile(
+    _SSH_KEY_TYPES + r" [A-Za-z0-9+/]+={0,2}"
+    r"(?: [A-Za-z0-9._@+=:/,()-](?:[A-Za-z0-9 ._@+=:/,()-]{0,126}[A-Za-z0-9._@+=:/,()-])?)?")
+_TEMPLATE_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9 ._()+:@-]{0,126}[A-Za-z0-9._)+:@-])?")
+_IDENT = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+UNSAFE_TEMPLATE_NAME = "invalid-template-rejected"     # what a poisoned stored template becomes
+
+
+def ssh_key_line_ok(line) -> bool:
+    """One SSH public-key line, whole (`fullmatch`: no trailing newline or space survives)."""
+    return isinstance(line, str) and _SSH_KEY_LINE.fullmatch(line) is not None
+
+
+def ssh_key_lines(blob: str) -> list[str]:
+    """The non-blank lines of a pasted key blob. Lines end at `\\n` or `\\r\\n` only (anything
+    else, a lone CR, NEL, U+2028, ..., stays in its line and fails `ssh_key_line_ok`); spaces and
+    tabs around a line are dropped."""
+    out = (ln.strip(" \t") for ln in re.split(r"\r?\n", blob))
+    return [ln for ln in out if ln]
+
+
+def clean_ssh_keys(blob):
+    """`blob` with only its valid key lines left (comment lines go too). None stays None."""
+    if blob is None:
+        return None
+    return "\n".join(ln for ln in ssh_key_lines(blob) if ssh_key_line_ok(ln))
+
+
+def template_name_ok(value) -> bool:
+    return isinstance(value, str) and _TEMPLATE_NAME.fullmatch(value) is not None
+
+
+def ident_ok(value) -> bool:
+    return isinstance(value, str) and _IDENT.fullmatch(value) is not None
+
+
+# P-0c (EXTRAVAR-MATRIX row 25): a VM name read back from Xen Orchestra used to be handed back to ansible
+# as an extra var, which ansible re-templates; since P-0d only the XO id travels (below), and the name stays
+# in Python for the reservation id. Only names of exactly the shape the platform makes are accepted
+# ('daolab-r' ~ id ~ '-' ~ role, plan_vms.yml; a role is an `_IDENT`).
+# P-0e: the id is bounded to 18 ASCII digits, so int(id) always fits SQLite's 64-bit INTEGER and
+# Python's int-from-string limit; an unbounded id made the orphan sweep raise on every tick.
+VM_NAME = re.compile(r"daolab-r[0-9]{1,18}-[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+
+def vm_name_ok(name) -> bool:
+    return isinstance(name, str) and VM_NAME.fullmatch(name) is not None
+
+
+def split_vm_names(names) -> tuple[list[str], int]:
+    """(the valid names in order, how many were dropped). Callers log the count, never a name."""
+    names = list(names or [])
+    kept = [n for n in names if vm_name_ok(n)]
+    return kept, len(names) - len(kept)
+
+
+# P-0d (row 25 hardening): the orphan sweep destroys by Xen Orchestra VM id, never by name. A name stays in
+# Python (the engine reads the reservation id from it); only the id goes to ansible, in a file the playbook
+# reads with lookup() (data, never templated). XO's VM id is the xapi UUID, lowercase. The same pattern is
+# `daolab_vm_id_re` in playbooks/group_vars/all.yml (tests/test_vm_ids.py keeps the two in sync).
+VM_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+class TaggedVm(NamedTuple):
+    """A daolab-tagged VM as listed by Xen Orchestra: its XO id and its (strict) name."""
+    id: str
+    name: str
+
+
+def vm_id_ok(vm_id) -> bool:
+    return isinstance(vm_id, str) and VM_ID.fullmatch(vm_id) is not None
+
+
+def split_vm_ids(ids) -> tuple[list[str], int]:
+    """(the valid ids in order, each once; how many were invalid). A repeated id is kept once and not
+    counted (two hosts of one pool list the same VM). Callers log the count, never an id."""
+    ids = list(ids or [])
+    valid = [i for i in ids if vm_id_ok(i)]
+    return list(dict.fromkeys(valid)), len(ids) - len(valid)
+
+
+def split_vm_ids_detail(ids) -> tuple[list[str], int, int]:
+    """split_vm_ids, with the invalid ids counted in two kinds for the logs: (kept, not even a valid
+    VM name, a valid VM name but not an id)."""
+    ids = list(ids or [])
+    kept, _ = split_vm_ids(ids)
+    bad = [i for i in ids if not vm_id_ok(i)]
+    bad_names = sum(1 for i in bad if not vm_name_ok(i))
+    return kept, bad_names, len(bad) - bad_names
+
+
+def classify_tagged_vms(rows) -> tuple[list[TaggedVm], int, int]:
+    """(the listed VMs whose id AND name are valid, in order, each id once; how many rows have an invalid
+    name; how many have a valid name but an invalid id). A row is a TaggedVm or an {"id", "name"}
+    mapping; a bare name string (the pre-P-0d contract) has no id. A repeated id is kept once (its
+    first row) and not counted. Callers log the counts, never a row."""
+    kept: dict[str, TaggedVm] = {}
+    bad_names = bad_ids = 0
+    for r in list(rows or []):
+        if isinstance(r, TaggedVm):
+            vm_id, name = r.id, r.name
+        elif isinstance(r, dict):
+            vm_id, name = r.get("id"), r.get("name")
+        elif isinstance(r, str):
+            vm_id, name = None, r
+        else:
+            vm_id = name = None
+        if not vm_name_ok(name):
+            bad_names += 1
+        elif not vm_id_ok(vm_id):
+            bad_ids += 1
+        elif vm_id not in kept:
+            kept[vm_id] = TaggedVm(vm_id, name)
+    return list(kept.values()), bad_names, bad_ids
+
+
+def split_tagged_vms(rows) -> tuple[list[TaggedVm], int]:
+    """(the listed VMs whose id AND name are valid, in order, each id once; how many were invalid).
+    A repeated id is kept once and not counted. See classify_tagged_vms."""
+    kept, bad_names, bad_ids = classify_tagged_vms(rows)
+    return kept, bad_names + bad_ids
+
+
 def access_keys(res, user) -> str:
     """The SSH key(s) that open this reservation: the one given at deploy, else - unless the
-    owner asked for a password instead - their registered key."""
+    owner asked for a password instead - their registered key. Only valid key lines come out,
+    whatever is stored: a row written before P-0 cannot carry text to ansible."""
     if res["ssh_pubkey"] is not None:
-        return res["ssh_pubkey"]
-    return "" if res["access_password"] is not None else user["ssh_pubkey"]
+        return clean_ssh_keys(res["ssh_pubkey"])
+    return "" if res["access_password"] is not None else clean_ssh_keys(user["ssh_pubkey"])
 
 
 def access_fields(res, user) -> dict:
@@ -287,6 +424,21 @@ def wipe_access_passwords(conn) -> int:
     return cur.rowcount
 
 
+def _safe_template(value):
+    """A template name as stored, or UNSAFE_TEMPLATE_NAME (which no pool has, so the deploy fails
+    at its own template check) when it is not a plain name. None (no template) stays None."""
+    return value if value is None or template_name_ok(value) else UNSAFE_TEMPLATE_NAME
+
+
+def _safe_templates(templates) -> dict:
+    """diy `templates` for the runner: host -> template name. A host that is not a plain
+    identifier is dropped (the deploy then fails on the missing VM), a bad name is neutralised."""
+    if not isinstance(templates, dict):
+        return {}
+    return {h: _safe_template(t) if t is not None else UNSAFE_TEMPLATE_NAME
+            for h, t in templates.items() if ident_ok(h)}
+
+
 def reservation_context(conn, res_id: int) -> dict:
     """Everything a runner needs about one reservation, read once by the engine so the runner
     never touches the DB. Keys follow the playbook extravars (plan/04 runner contract):
@@ -304,13 +456,14 @@ def reservation_context(conn, res_id: int) -> dict:
         "usecase": uc["name"], "setup": setup["name"],
         "user": user["username"],
         "hw_class": uc["hw_class"], "diy": bool(r["diy"]),
-        "templates": from_json(r["diy_templates"]) if r["diy_templates"] else {},
+        "templates": _safe_templates(from_json(r["diy_templates"]) if r["diy_templates"] else {}),
         "roles": from_json(uc["roles"]) if uc["roles"] else {},
         "verify": from_json(uc["verify"]) if uc["verify"] else {},
         "members": [{"name": m["name"], "kind": m["kind"], "host": m["host"]}
                     for m in setup_members(conn, r["setup_id"])],
-        "vms": [{"role": v["role"], "host": v["host"], "template": v["template"],
-                 "name": v["name"], "ip": v["ip"]} for v in vms_for_reservation(conn, res_id)],
+        "vms": [{"role": v["role"], "host": v["host"], "template": _safe_template(v["template"]),
+                 "name": v["name"], "ip": v["ip"]} for v in vms_for_reservation(conn, res_id)
+                if all(x is None or ident_ok(x) for x in (v["role"], v["host"], v["name"]))],
         "leases": [l["ip"] for l in ip_leases_for_reservation(conn, res_id)
                    if l["state"] != "released"],
     }

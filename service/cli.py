@@ -72,10 +72,28 @@ def cmd_sync(args) -> int:
 
 
 def cmd_add_user(args) -> int:
+    name = args.username
+    if (not isinstance(name, str) or not name.strip() or "{{" in name or "{%" in name
+            or "{#" in name or any(c in name for c in "\x7f\x85\u2028\u2029")
+            or any(ord(c) < 0x20 for c in name)):
+        _die("username: must not be empty or contain control characters or {{ {% {#")
     try:
-        pubkey = open(args.pubkey_path).read().strip()
-    except OSError as e:
-        _die(f"cannot read {args.pubkey_path}: {e}")
+        with open(args.pubkey_path, encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, UnicodeDecodeError) as e:
+        _die(f"cannot read {args.pubkey_path}: {type(e).__name__}")
+    keys, bad = [], []
+    for i, ln in enumerate(models.ssh_key_lines(text), 1):
+        if ln.startswith("#"):
+            continue                                 # a key file's comment line
+        if models.ssh_key_line_ok(ln):
+            keys.append(ln)
+        else:
+            bad.append(i)
+    if bad or not keys or len(keys) > 5:
+        _die(f"{args.pubkey_path}: not a valid SSH public key file (1-5 keys, ASCII comments "
+             "without braces or control characters)")
+    pubkey = "\n".join(keys)
     token = secrets.token_urlsafe(32)
     expires = _token_expiry()
     conn = models.connect(config.settings.db_path)

@@ -16,6 +16,11 @@ KEBAB = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ROLE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 PLACEHOLDER = re.compile(r"\{([a-z][a-z0-9_]*)_ip\}")
 EXPECT = re.compile(r"^(==|!=|>=|<=|>|<)\s*-?\d+(\.\d+)?$")
+# C-1 (G-2): verify.cmd reaches ansible as a string, so a Jinja delimiter in it would be
+# templated on the controller (`{{ lookup('pipe', ...) }}` runs a command there: the P-0
+# class). All three openers are refused. Note that shell `${#var}` (string length) contains
+# "{#", so it cannot be used in verify.cmd; use `expr length` or awk instead.
+TEMPLATE_DELIMITERS = ("{{", "{%", "{#")
 KINDS = ("dpu", "gpu", "nic", "compute")
 ON_VALUES = ("dpu", "dpu_host", "tg_host")
 SEVERITIES = ("critical", "degraded")
@@ -334,6 +339,11 @@ def load_usecases(dir_path: str) -> tuple[list[dict], list[str]]:
             for ref in PLACEHOLDER.findall(str(verify.get("cmd", ""))):
                 if ref not in roles:
                     errors.append(f"{fname}: verify.cmd: placeholder {{{ref}_ip}} names no role")
+            found = [d for d in TEMPLATE_DELIMITERS if d in str(verify.get("cmd", ""))]
+            if found:
+                errors.append(f"{fname}: verify.cmd: template delimiter "
+                              f"{', '.join(map(repr, found))} not allowed (ansible would "
+                              "evaluate it on the controller); use {role_ip} placeholders")
             _check_verify_expect(verify, fname, errors)
         health = doc.get("health")
         if health is None:

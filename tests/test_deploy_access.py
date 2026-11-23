@@ -73,7 +73,12 @@ def test_no_key_field_means_the_registered_key(api_env):
 
 
 @pytest.mark.parametrize("bad", ["not a key", "ssh-ed25519", "ssh-ed25519 AAA$$ x",
-                                 'command="sh" ' + KEY, "\n".join([KEY] * 6)])
+                                 'command="sh" ' + KEY, "\n".join([KEY] * 6),
+                                 # P-0 (F-1): the comment is user text; it must not be Jinja
+                                 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeploy+Key/0 {{ lookup('pipe', 'id') }}",
+                                 KEY.rsplit(" ", 1)[0] + " {% if 1 %}x{% endif %}",
+                                 KEY.rsplit(" ", 1)[0] + " {# x #}", KEY + "\x7f", KEY + " é",
+                                 KEY + "\rssh-rsa AAAAb x"])
 def test_a_malformed_key_is_refused(api_env, bad):
     r = deploy(api_env, ssh_pubkey=bad)
     assert r.status_code == 422 and r.json()["error"]["code"] == "validation_error"
