@@ -1,0 +1,39 @@
+Raise the Python floor to 3.12 and run CI on 3.12 and 3.13 (B-103)
+
+What: pyproject.toml allowed Python >=3.11. The controller floor is
+now >=3.12 (F-5-3, errata E-3), with a comment that DPU-side scripts
+stay on Python 3.10. CI's test job runs on a matrix of Python 3.12 and
+3.13 with fail-fast off; setup-python reads the matrix value. The
+comment notes that 3.12 and 3.13 are the design's CI pair and that
+ansible-core 2.20+ also supports 3.14, which isn't tested.
+plan/README.md now says Python 3.12+ in the architecture diagram and
+the tech-stack row, which gives the reason (ansible-core 2.20 needs
+3.12) and says DPU-side scripts stay on 3.10.
+tests/test_platform_floor.py (G-1) gains three checks: requires-python
+is a plain >=3.12 floor; ci.yml's matrix is exactly "3.12" and "3.13",
+fail-fast is false and setup-python uses it; the running interpreter
+is >=3.12.
+
+Why: ansible-core 2.20, the design floor, needs Python 3.12, so a 3.11
+install could not run the playbooks, and CI only ever tested 3.12.
+3.11 is rejected for ansible-controlled paths (F-5-3).
+
+Files: pyproject.toml, .github/workflows/ci.yml, plan/README.md,
+tests/test_platform_floor.py. No other current setup statement in the
+repo names 3.11.
+
+Verified: tests first, on Python 3.12.13 with ansible-core 2.21.6 and
+2.20.11. Red: the requires-python test failed ((3, 11) != (3, 12)) and
+the CI test failed (no matrix); the interpreter test and G-1's two
+passed, 2 failed / 3 passed on both. Green: 5 passed on both. Python
+3.13 is not installed locally; CI covers it. Evidence (branch
+akshay-p8-gate, plan/design/p8-impl/b103-akshay/): B103-1-red-220.txt,
+B103-1-red-221.txt, B103-1-green-220.txt and B103-1-green-221.txt.
+
+Series result (both B-103 commits on origin/rama 747d10d): full suite
+1303 passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core
+2.21.6 and 2.20.11: the PR #7 baseline 1290/4/0 plus the 13 new
+tests, with the same 4 skips.
+
+Patch: B103-1-python-floor-ci.patch
+sha256 2a4e5da7927550f5d110defb12858d2ac74266e55c370acde09445cc2597afd2

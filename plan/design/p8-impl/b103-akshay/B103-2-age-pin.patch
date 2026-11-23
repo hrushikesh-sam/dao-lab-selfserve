@@ -1,0 +1,352 @@
+diff --git a/deploy/age/BINARIES.sha256 b/deploy/age/BINARIES.sha256
+new file mode 100644
+index 0000000..d44cce4
+--- /dev/null
++++ b/deploy/age/BINARIES.sha256
+@@ -0,0 +1,4 @@
++0c6ddc31c276f55e9414fe27af4aada4579ce2fb824c1ec3f207873a77a49752  linux-amd64/age/age
++e279f64ccd11347e57b8d28304e3e358ae1a5ef4f19107e7a1f9c9156fdcad91  linux-amd64/age/age-keygen
++ed2e7ea49aaf9192fe7972cbcac6b866b5df776a1e48c671ae102513404908f1  linux-arm64/age/age
++5376e684ffbbc1596e6e6386531102e809ae2c98aaded8055866959d9c4c0881  linux-arm64/age/age-keygen
+diff --git a/deploy/age/README.md b/deploy/age/README.md
+new file mode 100644
+index 0000000..b77f1bf
+--- /dev/null
++++ b/deploy/age/README.md
+@@ -0,0 +1,54 @@
++# age v1.1.1 pin (B-103, errata E-1)
++
++The snapshot work uses age from the **official GitHub v1.1.1 release assets** only,
++pinned by sha256 for linux-amd64 (the controller) and linux-arm64 (the DPU).
++**No apt, no pyrage.** (Ubuntu 22.04's apt has no v1.1.1.)
++
++| File | What it pins |
++|---|---|
++| `SHA256SUMS` | the 2 release tarballs, in `sha256sum -c` format |
++| `BINARIES.sha256` | `age/age` and `age/age-keygen` inside each tarball, labelled by arch (`linux-amd64/age/age`, …) |
++| `verify-age.sh` | checks a tarball against both files |
++
++## Source
++
++- https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-amd64.tar.gz
++- https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-arm64.tar.gz
++
++Fetched 2026-11-23T11:20:50Z. The v1.1.1 release publishes no checksum or provenance
++file (its assets are the 7 archives only), so these hashes were computed locally, as
++below, and are not copied from anywhere.
++
++## How the hashes were computed
++
++1. Each tarball was downloaded twice, with `curl -fsSL`, into two separate new
++   `mktemp -d` directories. `cmp` found the two copies identical.
++2. `sha256sum` of each tarball gives `SHA256SUMS`. `sha256sum -c SHA256SUMS` passes
++   in both download directories.
++3. `tar -tvzf` lists `age/`, `age/age`, `age/age-keygen` and `age/LICENSE` in each
++   tarball. Each tarball was extracted into its own empty `mktemp -d` directory, and
++   `sha256sum age/age age/age-keygen` gives `BINARIES.sha256`. `file` reports x86-64
++   and ARM aarch64 static ELF binaries. The arm64 binaries were never run.
++
++**Independent cross-check: done 2026-11-23.** A separate download of both tarballs
++from a different machine and network (Claude's cloud workspace) gave the same 6
++hashes. The GitHub API for the release lists 7 assets with no checksum, signature or
++proof file, and every asset's digest field is empty. Both copies come from GitHub, so
++this guards against a corrupted or tampered download, not against the release itself;
++no second publisher of v1.1.1 hashes exists.
++
++## Verifying a tarball
++
++    sh deploy/age/verify-age.sh age-v1.1.1-linux-arm64.tar.gz
++
++The script is POSIX sh (it runs under dash, and on the DPU). It needs `sha256sum`,
++`tar`, `awk`, `cp` and `mktemp`. It looks up the tarball's file name in `SHA256SUMS`,
++copies the tarball into a temporary directory and checks the copy's hash, then
++extracts `age/age` and `age/age-keygen` from that same copy and checks them against
++`BINARIES.sha256`, so the file that is checked is the file that is extracted. It prints `verify-age: OK …` and
++exits 0 on a full match. On an unknown file name, any mismatch or a missing binary, it
++prints one line to stderr and exits 1.
++
++It makes no network access and installs nothing: installing the verified binaries is a
++later task. `tests/test_age_pin.py` checks the pin files' format and runs the script
++on synthetic tarballs; it never uses the network.
+diff --git a/deploy/age/SHA256SUMS b/deploy/age/SHA256SUMS
+new file mode 100644
+index 0000000..7b547af
+--- /dev/null
++++ b/deploy/age/SHA256SUMS
+@@ -0,0 +1,2 @@
++cf16cbb108fc56e2064b00ba2b65d9fb1b8d7002ca5e38260ee1cc34f6aaa8f9  age-v1.1.1-linux-amd64.tar.gz
++f0dbf4364f5ba44e37ad85af9fdd3716bd410018ce344d317b174d206b03e6fc  age-v1.1.1-linux-arm64.tar.gz
+diff --git a/deploy/age/verify-age.sh b/deploy/age/verify-age.sh
+new file mode 100755
+index 0000000..69e7ad6
+--- /dev/null
++++ b/deploy/age/verify-age.sh
+@@ -0,0 +1,79 @@
++#!/bin/sh
++# verify-age.sh <tarball> - check an age v1.1.1 release tarball (B-103, errata E-1).
++#
++# The tarball must be named in SHA256SUMS. It is copied into a temporary directory,
++# and that copy must match its hash there; then age/age and age/age-keygen are
++# extracted from the same copy and checked against
++# BINARIES.sha256 for the tarball's arch. Both pin files are read from this script's
++# directory. Exit 0 on a full match; on anything else, one line on stderr and exit 1.
++#
++# POSIX sh (runs under dash, and on the DPU). No network access and no install step:
++# installing the verified binaries is a later task.
++set -u
++
++die() {
++    printf 'verify-age: %s\n' "$*" >&2
++    exit 1
++}
++
++[ "$#" -eq 1 ] || die "usage: verify-age.sh <tarball>"
++tarball=$1
++
++here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || die "cannot find the script directory"
++sums=$here/SHA256SUMS
++bins=$here/BINARIES.sha256
++[ -f "$sums" ] || die "missing pin file: SHA256SUMS"
++[ -f "$bins" ] || die "missing pin file: BINARIES.sha256"
++command -v sha256sum >/dev/null 2>&1 || die "sha256sum not found"
++[ -f "$tarball" ] || die "not a file: $tarball"
++
++# pin FILE NAME: the one 64-hex hash pinned for NAME in FILE, or nothing.
++pin() {
++    awk -v n="$2" '$2 == n { c++; h = $1 } END { if (c == 1) print h }' "$1"
++}
++
++hash_of() {
++    sha256sum < "$1" | awk '{ print $1 }'
++}
++
++is_hash() {
++    case $1 in *[!0-9a-f]*) return 1 ;; esac
++    [ "${#1}" -eq 64 ]
++}
++
++name=$(basename -- "$tarball")
++want=$(pin "$sums" "$name")
++[ -n "$want" ] || die "unknown file name: $name (not pinned exactly once in SHA256SUMS)"
++is_hash "$want" || die "malformed SHA256SUMS entry for $name"
++
++# age-v1.1.1-linux-amd64.tar.gz -> linux-amd64
++arch=${name#age-v1.1.1-}
++arch=${arch%.tar.gz}
++[ "$arch" != "$name" ] || die "cannot read the arch from: $name"
++
++tmp=$(mktemp -d) || die "mktemp failed"
++trap 'rm -rf "$tmp"' EXIT
++trap 'exit 1' HUP INT TERM
++
++# Check and extract one private copy, so the file that is checked is the file that is
++# extracted: a change to the original after this point cannot reach the binaries.
++copy=$tmp/tarball
++cp -- "$tarball" "$copy" 2>/dev/null || die "cannot copy: $name"
++got=$(hash_of "$copy")
++[ "$got" = "$want" ] || die "tarball sha256 mismatch: $name"
++
++tar -xzf "$copy" -C "$tmp" age/age age/age-keygen 2>/dev/null \
++    || die "cannot extract age/age and age/age-keygen from: $name"
++
++for b in age age-keygen; do
++    label=$arch/age/$b
++    f=$tmp/age/$b
++    want=$(pin "$bins" "$label")
++    [ -n "$want" ] || die "no pin for $label in BINARIES.sha256"
++    is_hash "$want" || die "malformed BINARIES.sha256 entry for $label"
++    [ -f "$f" ] && [ ! -h "$f" ] || die "not a regular file in $name: age/$b"
++    got=$(hash_of "$f")
++    [ "$got" = "$want" ] || die "binary sha256 mismatch: $label"
++done
++
++printf 'verify-age: OK %s (tarball, age/age and age/age-keygen match the pins)\n' "$name"
+diff --git a/tests/test_age_pin.py b/tests/test_age_pin.py
+new file mode 100644
+index 0000000..ec39ab7
+--- /dev/null
++++ b/tests/test_age_pin.py
+@@ -0,0 +1,183 @@
++"""B-103 (errata E-1): age is the official GitHub v1.1.1 release, pinned by sha256 for
++linux-amd64 and linux-arm64, plus the binaries inside. No apt, no pyrage.
++
++deploy/age/SHA256SUMS pins the 2 tarballs, deploy/age/BINARIES.sha256 the 4 binaries, and
++deploy/age/verify-age.sh checks a tarball against both. The script tests use synthetic
++tarballs and a temporary copy of the pins and the script; nothing here touches the network
++or the real release. The script runs under dash when it is installed (the DPU's /bin/sh),
++else sh."""
++import hashlib
++import io
++import os
++import re
++import shutil
++import subprocess
++import tarfile
++
++import pytest
++
++from tests.conftest import REPO
++
++AGE_DIR = os.path.join(REPO, "deploy", "age")
++SCRIPT = os.path.join(AGE_DIR, "verify-age.sh")
++ARCHES = ("linux-amd64", "linux-arm64")
++TARBALLS = {f"age-v1.1.1-{a}.tar.gz" for a in ARCHES}
++BINARIES = {f"{a}/age/{b}" for a in ARCHES for b in ("age", "age-keygen")}
++LINE = re.compile(r"([0-9a-f]{64})  (\S+)")
++SH = shutil.which("dash") or "sh"
++
++
++def _entries(name):
++    with open(os.path.join(AGE_DIR, name)) as fh:
++        lines = fh.read().splitlines()
++    out = []
++    for line in lines:
++        m = LINE.fullmatch(line)
++        assert m, f"{name}: malformed line {line!r}"
++        out.append((m.group(1), m.group(2)))
++    return out
++
++
++# --- the pin files ---------------------------------------------------------------------
++
++def test_sha256sums_pins_exactly_the_two_tarballs():
++    entries = _entries("SHA256SUMS")
++    names = [n for _, n in entries]
++    assert len(names) == 2 and set(names) == TARBALLS, names
++    assert len({h for h, _ in entries}) == 2
++
++
++def test_binaries_pins_exactly_the_four_binaries_by_arch():
++    entries = _entries("BINARIES.sha256")
++    labels = [n for _, n in entries]
++    assert len(labels) == 4 and set(labels) == BINARIES, labels
++    assert len({h for h, _ in entries}) == 4
++
++
++def test_verify_script_is_posix_sh_with_no_network_or_install():
++    with open(SCRIPT) as fh:
++        text = fh.read()
++    assert text.startswith("#!/bin/sh\n")
++    assert os.access(SCRIPT, os.X_OK)
++    code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
++    for word in ("curl", "wget", "apt", "pip", "sudo", "install", "bash", "[["):
++        assert word not in code, word
++    p = subprocess.run([SH, "-n", SCRIPT], capture_output=True, text=True)
++    assert p.returncode == 0, p.stderr
++
++
++# --- verify-age.sh on synthetic tarballs ------------------------------------------------
++
++def _sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def _tarball(members):
++    buf = io.BytesIO()
++    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
++        for name, data in members.items():
++            info = tarfile.TarInfo(name)
++            info.size, info.mode = len(data), 0o755
++            tf.addfile(info, io.BytesIO(data))
++    return buf.getvalue()
++
++
++def _binaries(arch):
++    return {"age/age": f"fake age {arch}\n".encode(),
++            "age/age-keygen": f"fake age-keygen {arch}\n".encode(),
++            "age/LICENSE": b"license\n"}
++
++
++@pytest.fixture
++def pinned(tmp_path):
++    """A copy of verify-age.sh beside synthetic pins, and the synthetic tarballs they pin."""
++    pins = tmp_path / "age"
++    pins.mkdir()
++    shutil.copy2(SCRIPT, pins / "verify-age.sh")
++    sums, bins, tarballs = [], [], {}
++    for arch in ARCHES:
++        name = f"age-v1.1.1-{arch}.tar.gz"
++        members = _binaries(arch)
++        data = _tarball(members)
++        path = tmp_path / "in" / name
++        path.parent.mkdir(exist_ok=True)
++        path.write_bytes(data)
++        tarballs[arch] = path
++        sums.append(f"{_sha(data)}  {name}\n")
++        for b in ("age/age", "age/age-keygen"):
++            bins.append(f"{_sha(members[b])}  {arch}/{b}\n")
++    (pins / "SHA256SUMS").write_text("".join(sums))
++    (pins / "BINARIES.sha256").write_text("".join(bins))
++    return pins, tarballs
++
++
++def run(pins, *args, tmp=None):
++    env = {"PATH": os.environ["PATH"], "LC_ALL": "C"}
++    if tmp is not None:
++        env["TMPDIR"] = str(tmp)
++    return subprocess.run([SH, str(pins / "verify-age.sh"), *map(str, args)],
++                          env=env, capture_output=True, text=True, timeout=60)
++
++
++def _one_line_failure(p, needle):
++    assert p.returncode != 0, p
++    assert p.stdout == "", p.stdout
++    assert p.stderr.count("\n") == 1 and needle in p.stderr, p.stderr
++
++
++@pytest.mark.parametrize("arch", ARCHES)
++def test_accepts_a_matching_tarball_and_cleans_up(pinned, tmp_path, arch):
++    pins, tarballs = pinned
++    scratch = tmp_path / "scratch"
++    scratch.mkdir()
++    p = run(pins, tarballs[arch], tmp=scratch)
++    assert p.returncode == 0, p.stderr
++    assert "OK" in p.stdout and tarballs[arch].name in p.stdout
++    assert list(scratch.iterdir()) == []
++
++
++def test_rejects_a_modified_tarball(pinned):
++    pins, tarballs = pinned
++    path = tarballs["linux-amd64"]
++    path.write_bytes(path.read_bytes() + b"\0")
++    _one_line_failure(run(pins, path), "tarball sha256 mismatch")
++
++
++def test_rejects_an_unknown_file_name(pinned, tmp_path):
++    pins, tarballs = pinned
++    other = tmp_path / "age-v1.1.1-linux-riscv64.tar.gz"
++    shutil.copy2(tarballs["linux-amd64"], other)
++    _one_line_failure(run(pins, other), "unknown file name")
++
++
++def test_rejects_a_tarball_whose_binary_differs(pinned):
++    """The tarball itself is pinned, but age/age inside it is not the pinned binary."""
++    pins, tarballs = pinned
++    members = _binaries("linux-arm64")
++    members["age/age"] = b"tampered age\n"
++    data = _tarball(members)
++    path = tarballs["linux-arm64"]
++    path.write_bytes(data)
++    sums = (pins / "SHA256SUMS").read_text().splitlines()
++    sums = [f"{_sha(data)}  {path.name}" if line.endswith(path.name) else line for line in sums]
++    (pins / "SHA256SUMS").write_text("\n".join(sums) + "\n")
++    _one_line_failure(run(pins, path), "linux-arm64/age/age")
++
++
++def test_rejects_a_tarball_missing_a_binary(pinned):
++    pins, tarballs = pinned
++    members = _binaries("linux-amd64")
++    del members["age/age-keygen"]
++    data = _tarball(members)
++    path = tarballs["linux-amd64"]
++    path.write_bytes(data)
++    sums = (pins / "SHA256SUMS").read_text().splitlines()
++    sums = [f"{_sha(data)}  {path.name}" if line.endswith(path.name) else line for line in sums]
++    (pins / "SHA256SUMS").write_text("\n".join(sums) + "\n")
++    _one_line_failure(run(pins, path), "age-keygen")
++
++
++def test_usage_without_exactly_one_argument(pinned):
++    pins, tarballs = pinned
++    _one_line_failure(run(pins), "usage")
++    _one_line_failure(run(pins, tarballs["linux-amd64"], tarballs["linux-arm64"]), "usage")

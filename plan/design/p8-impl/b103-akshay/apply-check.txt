@@ -1,0 +1,24 @@
+2026-11-23T12:08:53Z fresh check (after review fixes)
+origin/rama=747d10d79d295e2171cce89886e7e5c669f7b747
+HEAD is now at 747d10d Merge pull request #7 from hrushikesh-sam/p8-gate
+HEAD=747d10d79d295e2171cce89886e7e5c669f7b747
+2a4e5da7927550f5d110defb12858d2ac74266e55c370acde09445cc2597afd2  B103-1-python-floor-ci.patch
+  --check ok, applied
+ac3fca870a7732e2a3cd1b3cd0c6f7f6326cab4d688df95be078856995042be3  B103-2-age-pin.patch
+  --check ok, applied
+fresh tree=e5e99c0557cbd8d3f804a7c57a8109aa41030872
+tested tree=e5e99c0557cbd8d3f804a7c57a8109aa41030872
+TREE MATCH
+changed paths: 9
+## diff -r -q -x __pycache__ -x .venv -x .venv-220 -x '*.egg-info' -x .git ~/b103-check ~/b103
+diff exit=0
+removed ../b103-check (--force: it held only the 2 applied patches, staged)
+~/dao-lab-selfserve  9c8a089 [akshay]
+~/akshay-base        9c8a089 (detached HEAD)
+~/akshay-gate        9c8a089 (detached HEAD)
+~/b103               747d10d [b103]
+~/p8-evidence        3a1a857 [akshay-p8-gate]
+~/p8-pr              5d092aa [p8-gate]
+~/p8gate             40ebd6d (detached HEAD)
+~/p8gate-p0d         40ebd6d (detached HEAD)
+~/rama-pr            40ebd6d (detached HEAD)

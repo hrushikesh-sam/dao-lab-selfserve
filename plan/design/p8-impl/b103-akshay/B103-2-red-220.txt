@@ -1,0 +1,37 @@
+## 2026-11-23T11:22:40Z B-103 change 2 RED, .venv-220 (Python 3.12.13 ansible-core 2.20.11); new tests, deploy/age/ absent; shell=/usr/bin/dash
+FFFEEEEEEE                                                               [100%]
+==================================== ERRORS ====================================
+_ ERROR at setup of test_accepts_a_matching_tarball_and_cleans_up[linux-amd64] _
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+_ ERROR at setup of test_accepts_a_matching_tarball_and_cleans_up[linux-arm64] _
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+______________ ERROR at setup of test_rejects_a_modified_tarball _______________
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+_____________ ERROR at setup of test_rejects_an_unknown_file_name ______________
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+________ ERROR at setup of test_rejects_a_tarball_whose_binary_differs _________
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+__________ ERROR at setup of test_rejects_a_tarball_missing_a_binary ___________
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+__________ ERROR at setup of test_usage_without_exactly_one_argument ___________
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+=================================== FAILURES ===================================
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/SHA256SUMS'
+/home/akshay/b103/tests/test_age_pin.py:31: FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/SHA256SUMS'
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/BINARIES.sha256'
+/home/akshay/b103/tests/test_age_pin.py:31: FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/BINARIES.sha256'
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+/home/akshay/b103/tests/test_age_pin.py:58: FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b103/deploy/age/verify-age.sh'
+=========================== short test summary info ============================
+FAILED tests/test_age_pin.py::test_sha256sums_pins_exactly_the_two_tarballs
+FAILED tests/test_age_pin.py::test_binaries_pins_exactly_the_four_binaries_by_arch
+FAILED tests/test_age_pin.py::test_verify_script_is_posix_sh_with_no_network_or_install
+ERROR tests/test_age_pin.py::test_accepts_a_matching_tarball_and_cleans_up[linux-amd64]
+ERROR tests/test_age_pin.py::test_accepts_a_matching_tarball_and_cleans_up[linux-arm64]
+ERROR tests/test_age_pin.py::test_rejects_a_modified_tarball - FileNotFoundEr...
+ERROR tests/test_age_pin.py::test_rejects_an_unknown_file_name - FileNotFound...
+ERROR tests/test_age_pin.py::test_rejects_a_tarball_whose_binary_differs - Fi...
+ERROR tests/test_age_pin.py::test_rejects_a_tarball_missing_a_binary - FileNo...
+ERROR tests/test_age_pin.py::test_usage_without_exactly_one_argument - FileNo...
+3 failed, 7 errors in 0.03s
+exit=1

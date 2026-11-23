@@ -1,0 +1,61 @@
+Pin age v1.1.1 by sha256: release tarballs and binaries (B-103)
+
+What: deploy/age/ pins age to the official GitHub v1.1.1 release
+assets (errata E-1). SHA256SUMS holds the linux-amd64 and linux-arm64
+tarballs in sha256sum -c format; BINARIES.sha256 holds age/age and
+age/age-keygen from inside each, labelled by arch. verify-age.sh
+<tarball> (POSIX sh, runs under dash and on the DPU) looks the tarball
+up in SHA256SUMS by file name, copies it into its temporary directory,
+and hashes and extracts that copy, so the file that is checked is the
+file that is extracted. It checks age/age and age/age-keygen against
+BINARIES.sha256. An unknown name, any mismatch or a missing binary
+exits 1 with a one-line reason. It makes no network access and
+installs nothing; installing is a later task. README.md gives the
+sources, the fetch date, how the hashes were computed, "no apt, no
+pyrage", and the independent cross-check.
+
+Why: Ubuntu 22.04's apt has no age v1.1.1, and the v1.1.1 release
+publishes no checksum file: the GitHub API shows 7 assets with no
+checksum, signature or proof asset, and every asset's digest field is
+empty. So the snapshot work needs its own pins, for the controller
+(amd64) and the DPU (arm64).
+
+How the hashes were made: each tarball was downloaded twice into
+separate empty directories (identical by cmp), hashed, then extracted
+into its own empty directory to hash the binaries. The arm64 binaries
+were never run. verify-age.sh accepts both real tarballs under dash and
+busybox sh.
+
+Independent cross-check, done 2026-11-23: a separate download of both
+tarballs from a different machine and network gave the same 6 hashes.
+Both copies come from GitHub, so this guards against a corrupted or
+tampered download, not against the release itself; no second
+publisher of v1.1.1 hashes exists.
+
+Files: deploy/age/SHA256SUMS, deploy/age/BINARIES.sha256,
+deploy/age/README.md, deploy/age/verify-age.sh (mode 755),
+tests/test_age_pin.py (all new).
+
+Verified: tests first, on Python 3.12.13 with ansible-core 2.21.6 and
+2.20.11, the script run with dash. The tests never use the network:
+the script runs on synthetic tarballs beside a temporary copy of
+itself and synthetic pins. Red, with deploy/age/ absent: 3 failed (the
+pin files and the script are missing) and 7 errors (the fixture cannot
+copy the script), on both. Green: 10 passed on both: the pin files are
+well formed (64-hex, exactly the 2 tarballs and 4 binaries); the script
+is #!/bin/sh with no network or install command and passes sh -n; it
+accepts a matching amd64 and arm64 tarball and leaves no temporary
+files; it rejects a modified tarball, an unknown file name, a pinned
+tarball whose age/age differs, a tarball missing age-keygen, and a
+wrong argument count. Evidence (branch akshay-p8-gate,
+plan/design/p8-impl/b103-akshay/): B103-2-red-220.txt,
+B103-2-red-221.txt, B103-2-green-220.txt, B103-2-green-221.txt and
+age-real-verify.txt.
+
+Series result (both B-103 commits on origin/rama 747d10d): full suite
+1303 passed, 4 skipped, 0 failed on Python 3.12.13 with ansible-core
+2.21.6 and 2.20.11: the PR #7 baseline 1290/4/0 plus the 13 new
+tests, with the same 4 skips.
+
+Patch: B103-2-age-pin.patch
+sha256 ac3fca870a7732e2a3cd1b3cd0c6f7f6326cab4d688df95be078856995042be3

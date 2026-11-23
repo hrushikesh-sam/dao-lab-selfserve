@@ -1,0 +1,8 @@
+## 2026-11-23T12:08:32Z B-103 change 1 GREEN (after review fixes), .venv (Python 3.12.13 ansible-core 2.21.6); tree e5e99c0557cbd8d3f804a7c57a8109aa41030872; shell=/usr/bin/dash
+tests/test_platform_floor.py::test_the_pyproject_pin_is_the_design_floor PASSED [ 20%]
+tests/test_platform_floor.py::test_the_installed_ansible_core_meets_the_floor PASSED [ 40%]
+tests/test_platform_floor.py::test_requires_python_is_the_controller_floor PASSED [ 60%]
+tests/test_platform_floor.py::test_ci_tests_on_exactly_python_3_12_and_3_13 PASSED [ 80%]
+tests/test_platform_floor.py::test_the_running_interpreter_meets_the_floor PASSED [100%]
+============================== 5 passed in 0.03s ===============================
+exit=0

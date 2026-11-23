@@ -1,0 +1,13 @@
+## 2026-11-23T12:08:09Z verify-age.sh (copy-then-check) on the real downloaded v1.1.1 tarballs (not part of the test suite; the tests never use the network)
+$ dash verify-age.sh age-v1.1.1-linux-amd64.tar.gz
+verify-age: OK age-v1.1.1-linux-amd64.tar.gz (tarball, age/age and age/age-keygen match the pins)
+exit=0
+$ busybox sh verify-age.sh age-v1.1.1-linux-amd64.tar.gz   (PATH = busybox applets only)
+verify-age: OK age-v1.1.1-linux-amd64.tar.gz (tarball, age/age and age/age-keygen match the pins)
+exit=0
+$ dash verify-age.sh age-v1.1.1-linux-arm64.tar.gz
+verify-age: OK age-v1.1.1-linux-arm64.tar.gz (tarball, age/age and age/age-keygen match the pins)
+exit=0
+$ busybox sh verify-age.sh age-v1.1.1-linux-arm64.tar.gz   (PATH = busybox applets only)
+verify-age: OK age-v1.1.1-linux-arm64.tar.gz (tarball, age/age and age/age-keygen match the pins)
+exit=0

@@ -1,0 +1,5 @@
+.venv: Python 3.12.13 ansible-core 2.21.6 ansible-runner 2.4.3 base=/home/akshay/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu ansible-playbook=.venv/bin/ansible-playbook
+home = /home/akshay/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin
+.venv-220: Python 3.12.13 ansible-core 2.20.11 ansible-runner 2.4.3 base=/home/akshay/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu ansible-playbook=.venv-220/bin/ansible-playbook
+home = /home/akshay/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin
+python3.13: not installed locally (checked /usr/bin, /usr/local/bin, ~/.pyenv, uv); CI covers 3.13

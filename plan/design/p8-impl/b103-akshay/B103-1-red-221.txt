@@ -1,0 +1,37 @@
+## 2026-11-23T11:20:08Z B-103 change 1 RED, .venv (Python 3.12.13 ansible-core 2.21.6); new tests, pyproject.toml and ci.yml unchanged
+..FF.                                                                    [100%]
+=================================== FAILURES ===================================
+_________________ test_requires_python_is_the_controller_floor _________________
+
+    def test_requires_python_is_the_controller_floor():
+        spec = _pyproject()["project"]["requires-python"]
+        m = re.fullmatch(r">=\s*([0-9.]+)", spec)
+        assert m, f"expected a plain floor, got {spec!r}"
+>       assert _version(m.group(1)) == PYTHON_FLOOR, spec
+E       AssertionError: >=3.11
+E       assert (3, 11) == (3, 12)
+E         
+E         At index 1 diff: 11 != 12
+E         Use -v to get more diff
+
+tests/test_platform_floor.py:61: AssertionError
+________________ test_ci_tests_on_exactly_python_3_12_and_3_13 _________________
+
+    def test_ci_tests_on_exactly_python_3_12_and_3_13():
+        with open(os.path.join(REPO, ".github", "workflows", "ci.yml")) as fh:
+            job = yaml.safe_load(fh)["jobs"]["test"]
+        strategy = job.get("strategy") or {}
+        matrix = strategy.get("matrix") or {}
+        # Strings, not floats: an unquoted 3.10 in YAML is the number 3.1.
+>       assert matrix.get("python-version") == CI_PYTHONS, matrix
+E       AssertionError: {}
+E       assert None == ['3.12', '3.13']
+E        +  where None = <built-in method get of dict object at 0x77c89f683ac0>('python-version')
+E        +    where <built-in method get of dict object at 0x77c89f683ac0> = {}.get
+
+tests/test_platform_floor.py:70: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_platform_floor.py::test_requires_python_is_the_controller_floor
+FAILED tests/test_platform_floor.py::test_ci_tests_on_exactly_python_3_12_and_3_13
+2 failed, 3 passed in 0.05s
+exit=1

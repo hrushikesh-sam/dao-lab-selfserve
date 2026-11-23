@@ -1,0 +1,9 @@
+# age v1.1.1, fetched 2026-11-23T11:20:50Z from https://github.com/FiloSottile/age/releases/download/v1.1.1/
+# each tarball downloaded twice into separate mktemp -d dirs: cmp identical, same sha256
+# binaries: tar -xzf into a separate empty mktemp -d per arch, sha256sum age/age age/age-keygen; arm64 binaries never run
+cf16cbb108fc56e2064b00ba2b65d9fb1b8d7002ca5e38260ee1cc34f6aaa8f9  age-v1.1.1-linux-amd64.tar.gz
+0c6ddc31c276f55e9414fe27af4aada4579ce2fb824c1ec3f207873a77a49752  age/age  [amd64]
+e279f64ccd11347e57b8d28304e3e358ae1a5ef4f19107e7a1f9c9156fdcad91  age/age-keygen  [amd64]
+f0dbf4364f5ba44e37ad85af9fdd3716bd410018ce344d317b174d206b03e6fc  age-v1.1.1-linux-arm64.tar.gz
+ed2e7ea49aaf9192fe7972cbcac6b866b5df776a1e48c671ae102513404908f1  age/age  [arm64]
+5376e684ffbbc1596e6e6386531102e809ae2c98aaded8055866959d9c4c0881  age/age-keygen  [arm64]

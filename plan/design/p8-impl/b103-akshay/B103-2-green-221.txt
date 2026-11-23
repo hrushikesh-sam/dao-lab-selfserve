@@ -1,0 +1,18 @@
+## 2026-11-23T12:08:32Z B-103 change 2 GREEN (after review fixes), .venv (Python 3.12.13 ansible-core 2.21.6); tree e5e99c0557cbd8d3f804a7c57a8109aa41030872; shell=/usr/bin/dash
+tests/test_age_pin.py::test_sha256sums_pins_exactly_the_two_tarballs PASSED [  6%]
+tests/test_age_pin.py::test_binaries_pins_exactly_the_four_binaries_by_arch PASSED [ 13%]
+tests/test_age_pin.py::test_verify_script_is_posix_sh_with_no_network_or_install PASSED [ 20%]
+tests/test_age_pin.py::test_accepts_a_matching_tarball_and_cleans_up[linux-amd64] PASSED [ 26%]
+tests/test_age_pin.py::test_accepts_a_matching_tarball_and_cleans_up[linux-arm64] PASSED [ 33%]
+tests/test_age_pin.py::test_rejects_a_modified_tarball PASSED            [ 40%]
+tests/test_age_pin.py::test_rejects_an_unknown_file_name PASSED          [ 46%]
+tests/test_age_pin.py::test_rejects_a_tarball_whose_binary_differs PASSED [ 53%]
+tests/test_age_pin.py::test_rejects_a_tarball_missing_a_binary PASSED    [ 60%]
+tests/test_age_pin.py::test_usage_without_exactly_one_argument PASSED    [ 66%]
+tests/test_platform_floor.py::test_the_pyproject_pin_is_the_design_floor PASSED [ 73%]
+tests/test_platform_floor.py::test_the_installed_ansible_core_meets_the_floor PASSED [ 80%]
+tests/test_platform_floor.py::test_requires_python_is_the_controller_floor PASSED [ 86%]
+tests/test_platform_floor.py::test_ci_tests_on_exactly_python_3_12_and_3_13 PASSED [ 93%]
+tests/test_platform_floor.py::test_the_running_interpreter_meets_the_floor PASSED [100%]
+============================== 15 passed in 0.11s ==============================
+exit=0
