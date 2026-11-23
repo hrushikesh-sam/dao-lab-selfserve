@@ -1,4 +1,4 @@
-"""B-104 draft DDL check (v2). Synthetic in-memory DB only; never opens a file DB.
+"""B-104 DDL check (v4). Synthetic in-memory DB only; never opens a file DB.
 
 Everything under test is parsed out of B-104-DDL.md itself: the ```sql CREATE TABLE blocks,
 the add_column(...) calls and the _OLD/_NEW_JOB_KINDS strings. It applies them to a fresh
@@ -25,7 +25,7 @@ print("base: rama migrations, user_version", m.current_version(c))
 
 # ---- 1. tables (FK targets first), 2. add_column calls, 3. jobs.kind CHECK rewrite ----------
 blocks = [b for b in re.findall(r"```sql\n(.*?)```", doc, re.S) if "CREATE TABLE" in b]
-order = {"keys": 0, "key_challenges": 1, "snapshots": 2, "admin_approvals": 3}
+order = {"keys": 0, "key_challenges": 1, "admin_approvals": 2, "snapshots": 3}
 blocks.sort(key=lambda b: order[re.search(r"EXISTS (\w+)", b).group(1)])
 assert len(blocks) == 4, len(blocks)
 for b in blocks:
@@ -59,7 +59,7 @@ print("jobs.kind rewrite, 2nd run:", rewrite_job_kinds())
 c.execute("COMMIT")
 print("integrity_check:", c.execute("PRAGMA integrity_check").fetchone()[0],
       "| foreign_key_check rows:", len(c.execute("PRAGMA foreign_key_check").fetchall()))
-print("draft DDL parsed:", [r[0] for r in c.execute(
+print("DDL parsed:", [r[0] for r in c.execute(
     "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
     "('keys','key_challenges','snapshots','admin_approvals') ORDER BY name")],
       "| add_column:", [f"{t}.{col}" for t, col, _ in adds])
@@ -136,6 +136,8 @@ attempt("delete_after <= created_at", "UPDATE snapshots SET delete_after=?,delet
 attempt("delete_requested_by unknown user", "UPDATE snapshots SET delete_after=?,delete_requested_by=99 WHERE id=1", (hold,))
 attempt("hold on a saved row (user delete)", "UPDATE snapshots SET delete_after=?,delete_requested_by=1 WHERE id=1", (hold,))
 attempt("cancel_delete clears the hold", "UPDATE snapshots SET delete_after=NULL,delete_requested_by=NULL WHERE id=1")
+attempt("hold_approval_id without delete_after", "UPDATE snapshots SET hold_approval_id=1 WHERE id=1")
+attempt("hold_approval_id of a non-existent approval", "UPDATE snapshots SET delete_after=?,delete_requested_by=2,hold_approval_id=99 WHERE id=1", (hold,))
 
 print("\n[admin_approvals]")
 AA = ("INSERT INTO admin_approvals(action,target_ref,requested_by,created_at,updated_at) VALUES(?,?,2,?,?)")
@@ -193,9 +195,9 @@ c.execute("UPDATE jobs SET snapshot_id=1 WHERE id=?", (jid,))
 c.execute("DELETE FROM snapshots WHERE id=1")
 print("  jobs.snapshot_id after the snapshot row is deleted:",
       c.execute("SELECT snapshot_id FROM jobs WHERE id=?", (jid,)).fetchone()[0])
-# ---- T-16 / T-19: lost-key reset = a 24h hold; the key stays active until execute_after ----------
+# ---- T-16 / T-19 / T-20: lost-key reset = a 24h hold; rows matched by hold_approval_id ------------
 # State here: key 1 active (user 1), key 2 pending (user 1); admins 2 and 3.
-print("\n[T-16/T-19 lost-key reset: hold, owner cancel, then a second reset to execute_after]")
+print("\n[T-16/T-19/T-20 lost-key reset: hold, owner cancel, then a second reset to execute_after]")
 CAS_FULL = ("UPDATE key_challenges SET consumed_at=?, updated_at=? WHERE id=? AND user_id=1 "
             "AND purpose=? AND target_ref=? AND consumed_at IS NULL AND expires_at > ? "
             "AND key_id IN (SELECT id FROM keys WHERE state='active')")
@@ -203,9 +205,9 @@ EXEC = ("UPDATE admin_approvals SET executed_at=?, updated_at=? WHERE id=? AND s
         "AND executed_at IS NULL AND (execute_after IS NULL OR execute_after <= ?)")
 own_hold = "2026-11-23T12:00:00Z"                       # an earlier hold of the user's own
 key_state = lambda: c.execute("SELECT state FROM keys WHERE id=1").fetchone()[0]
-hold_of = lambda pid: c.execute("SELECT delete_after, delete_requested_by FROM snapshots "
+hold_of = lambda pid: c.execute("SELECT delete_after, delete_requested_by, hold_approval_id FROM snapshots "
                                 "WHERE public_id=?", (pid,)).fetchone()
-pA, pB = "a" * 32, "b" * 32
+pA, pB, pC = "a" * 32, "b" * 32, "c" * 32
 for pid in (pA, pB):
     c.execute(SN, (pid, None, t0, t0))
 c.execute("UPDATE snapshots SET state='saved' WHERE public_id IN (?,?)", (pA, pB))
@@ -218,8 +220,8 @@ def approve_reset():                                    # one transaction (T-16)
     rid = c.execute("SELECT max(id) FROM admin_approvals").fetchone()[0]
     c.execute("UPDATE admin_approvals SET state='approved',decided_by=3,decided_at=?,execute_after=? "
               "WHERE id=?", (t1, hold, rid))
-    c.execute("UPDATE snapshots SET delete_after=?, delete_requested_by=2 "
-              "WHERE key_id=1 AND state='saved' AND delete_after IS NULL", (hold,))
+    c.execute("UPDATE snapshots SET delete_after=?, delete_requested_by=2, hold_approval_id=? "
+              "WHERE key_id=1 AND state='saved' AND delete_after IS NULL", (hold, rid))
     c.execute("COMMIT")
     return rid
 
@@ -232,7 +234,10 @@ def challenge(purpose, target, nonce_hex, created, expires):
 # reset 1: approve, owner cancels during the hold (T-19)
 r1 = approve_reset()
 print(f"  reset 1 approved (appr {r1}): key 1 state = {key_state()}")
-print("  pA hold == execute_after:", hold_of(pA) == (hold, 2), "| pB keeps its own hold:", hold_of(pB) == (own_hold, 1))
+print("  pA held by the approval:", hold_of(pA) == (hold, 2, r1),
+      "| pB keeps its own hold (hold_approval_id NULL):", hold_of(pB) == (own_hold, 1, None))
+attempt("clear pA's delete_after while hold_approval_id is still set",
+        "UPDATE snapshots SET delete_after=NULL, delete_requested_by=NULL WHERE public_id=?", (pA,))
 attempt("activate pending key 2 during the hold", "UPDATE keys SET state='active',activated_by=3,"
         "activated_at=? WHERE id=2", (t1,))
 ch_a = challenge("delete", pA, "c" * 63 + "1", t0, exp)
@@ -243,34 +248,61 @@ c.execute("BEGIN IMMEDIATE")
 n_cas = c.execute(CAS_FULL, (t1, t1, ch_cancel, "cancel_delete", f"approval:{r1}", t1)).rowcount
 n_appr = c.execute("UPDATE admin_approvals SET state='cancelled', updated_at=? WHERE id=? AND state='approved' "
                    "AND executed_at IS NULL", (t1, r1)).rowcount
-n_snap = c.execute("UPDATE snapshots SET delete_after=NULL, delete_requested_by=NULL, updated_at=? "
-                   "WHERE delete_after=? AND delete_requested_by=?", (t1, hold, 2)).rowcount
+n_snap = c.execute("UPDATE snapshots SET delete_after=NULL, delete_requested_by=NULL, hold_approval_id=NULL, "
+                   "updated_at=? WHERE hold_approval_id=?", (t1, r1)).rowcount
 c.execute("COMMIT")
-print(f"  owner cancel (one transaction): challenge CAS {n_cas}, approval -> cancelled {n_appr}, holds cleared {n_snap}")
+print(f"  owner cancel (one transaction, rows WHERE hold_approval_id={r1}): challenge CAS {n_cas}, "
+      f"approval -> cancelled {n_appr}, holds cleared {n_snap}")
 print("  after cancel: approval state =", c.execute("SELECT state FROM admin_approvals WHERE id=?", (r1,)).fetchone()[0],
-      "| pA hold:", hold_of(pA), "| pB own hold kept:", hold_of(pB) == (own_hold, 1), "| key 1 =", key_state())
+      "| pA hold:", hold_of(pA), "| pB own hold kept:", hold_of(pB) == (own_hold, 1, None), "| key 1 =", key_state())
 print("  execution CAS on the cancelled approval at execute_after, rowcount:",
       c.execute(EXEC, (later, later, r1, later)).rowcount)
 
-# reset 2: approve, run to execute_after (T-16)
+# reset 2: approve, a capture during the hold (unheld), run to execute_after (T-16, T-20)
 r2 = approve_reset()
-print(f"  reset 2 approved (appr {r2}): key 1 state = {key_state()} | pA hold == execute_after:",
-      hold_of(pA) == (hold, 2))
+print(f"  reset 2 approved (appr {r2}): key 1 state = {key_state()} | pA held by appr {r2}:",
+      hold_of(pA) == (hold, 2, r2))
+c.execute(SN, (pC, None, t1, t1))
+c.execute("UPDATE snapshots SET state='saved' WHERE public_id=?", (pC,))
+print("  pC captured during the hold (saved, unheld):", hold_of(pC) == (None, None, None))
 ch_late = challenge("delete", pA, "c" * 63 + "3", "2026-11-23T23:55:00Z", "2026-11-24T00:05:00Z")
 print("  execution CAS before execute_after, rowcount:", c.execute(EXEC, (t1, t1, r2, t1)).rowcount)
 c.execute("BEGIN IMMEDIATE")
 n_exec = c.execute(EXEC, (later, later, r2, later)).rowcount
 n_rev = c.execute("UPDATE keys SET state='revoked', updated_at=? WHERE id=1 AND state='active'", (later,)).rowcount
-n_del = c.execute("DELETE FROM snapshots WHERE key_id=1 AND delete_after=? AND delete_requested_by=?", (hold, 2)).rowcount
+n_del = c.execute("DELETE FROM snapshots WHERE key_id=1").rowcount            # every snapshot of the key
 c.execute("COMMIT")
-print(f"  execution at {later} (one transaction): approval executed {n_exec}, key revoked {n_rev}, held snapshots deleted {n_del}")
-print("  key 1 state:", key_state(), "| pA exists:", hold_of(pA) is not None,
-      "| pB (own earlier hold, left to the delete sweep) exists:", hold_of(pB) is not None)
+print(f"  execution at {later} (one transaction): approval executed {n_exec}, key revoked {n_rev}, "
+      f"snapshots of the key deleted {n_del} (approval-held pA, own-held pB, unheld pC)")
+print("  key 1 state:", key_state(), "| pA, pB, pC exist:",
+      [hold_of(p) is not None for p in (pA, pB, pC)],
+      "| snapshots still on key 1:", c.execute("SELECT count(*) FROM snapshots WHERE key_id=1").fetchone()[0])
 print("  open challenge of the revoked key, unexpired at", later, ":",
       c.execute("SELECT expires_at > ? FROM key_challenges WHERE id=?", (later, ch_late)).fetchone()[0] == 1,
       "| CAS rowcount:", c.execute(CAS_FULL, (later, later, ch_late, "delete", pA, later)).rowcount)
 attempt("activate pending key 2 after the revoke", "UPDATE keys SET state='active',activated_by=3,"
         "activated_at=? WHERE id=2", (later,))
+
+# ---- T-21: retention counts and prunes only unheld saved rows (query taken from the document) ---------
+print("\n[T-21 retention: a held row is neither counted nor pruned]")
+prune = re.search(r"```sql\n(-- retention prune.*?)```", doc, re.S).group(1)
+SN2 = ("INSERT INTO snapshots(public_id,user_id,setup_id,key_id,state,created_at,updated_at) "
+       "VALUES(?,1,1,2,'saved',?,?)")
+rows = [("d" * 32, "2026-11-24T01:00:00Z"),            # oldest: will carry an own hold
+        ("e" * 32, "2026-11-24T02:00:00Z"), ("f" * 32, "2026-11-24T03:00:00Z"),
+        ("0" * 31 + "1", "2026-11-24T04:00:00Z"), ("0" * 31 + "2", "2026-11-24T05:00:00Z")]
+for pid, ts in rows:
+    c.execute(SN2, (pid, ts, ts))
+c.execute("UPDATE snapshots SET delete_after=?, delete_requested_by=1 WHERE public_id=?",
+          ("2026-11-25T01:00:00Z", "d" * 32))
+unheld = lambda: c.execute("SELECT count(*) FROM snapshots WHERE user_id=1 AND setup_id=1 AND state='saved' "
+                           "AND delete_after IS NULL").fetchone()[0]
+print("  before prune: unheld saved =", unheld(), "| held =",
+      c.execute("SELECT count(*) FROM snapshots WHERE delete_after IS NOT NULL").fetchone()[0])
+n_pruned = c.execute(prune, {"uid": 1, "sid": 1}).rowcount
+left = [r[0] for r in c.execute("SELECT public_id FROM snapshots WHERE user_id=1 AND setup_id=1 ORDER BY created_at")]
+print("  prune query from §3.5 deleted:", n_pruned, "| unheld saved left:", unheld(),
+      "| held oldest row kept:", "d" * 32 in left, "| oldest unheld pruned:", "e" * 32 not in left)
 
 print("\nfinal integrity_check:", c.execute("PRAGMA integrity_check").fetchone()[0],
       "| foreign_key_check rows:", len(c.execute("PRAGMA foreign_key_check").fetchall()))

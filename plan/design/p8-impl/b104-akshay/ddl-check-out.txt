@@ -2,7 +2,7 @@ base: rama migrations, user_version 11
 jobs.kind rewrite, 1st run: rewritten
 jobs.kind rewrite, 2nd run: skipped (already rewritten)
 integrity_check: ok | foreign_key_check rows: 0
-draft DDL parsed: ['admin_approvals', 'key_challenges', 'keys', 'snapshots'] | add_column: ['reservations.save_snapshot', 'jobs.snapshot_id', 'setups.snapshot_enabled']
+DDL parsed: ['admin_approvals', 'key_challenges', 'keys', 'snapshots'] | add_column: ['reservations.save_snapshot', 'jobs.snapshot_id', 'setups.snapshot_enabled']
 
 [keys]
   recipient S-shaped: refused (CHECK constraint failed: length(recipient) = 62                -- (inferred) 'age1' + 58 bech32 chars; N-1)
@@ -38,6 +38,8 @@ draft DDL parsed: ['admin_approvals', 'key_challenges', 'keys', 'snapshots'] | a
   delete_requested_by unknown user: refused (FOREIGN KEY constraint failed)
   hold on a saved row (user delete): accepted
   cancel_delete clears the hold: accepted
+  hold_approval_id without delete_after: refused (CHECK constraint failed: hold_approval_id IS NULL OR delete_after IS NOT NULL)
+  hold_approval_id of a non-existent approval: refused (FOREIGN KEY constraint failed)
 
 [admin_approvals]
   target_ref S-shaped: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128)
@@ -102,19 +104,25 @@ draft DDL parsed: ['admin_approvals', 'key_challenges', 'keys', 'snapshots'] | a
   delete setup tb-01 with snapshots (as catalog.py:565): refused (FOREIGN KEY constraint failed)
   jobs.snapshot_id after the snapshot row is deleted: None
 
-[T-16/T-19 lost-key reset: hold, owner cancel, then a second reset to execute_after]
+[T-16/T-19/T-20 lost-key reset: hold, owner cancel, then a second reset to execute_after]
   reset 1 approved (appr 3): key 1 state = active
-  pA hold == execute_after: True | pB keeps its own hold: True
+  pA held by the approval: True | pB keeps its own hold (hold_approval_id NULL): True
+  clear pA's delete_after while hold_approval_id is still set: refused (CHECK constraint failed: hold_approval_id IS NULL OR delete_after IS NOT NULL)
   activate pending key 2 during the hold: refused (UNIQUE constraint failed: keys.user_id)
   CAS on the key's open challenge during the hold, rowcount: 1
-  owner cancel (one transaction): challenge CAS 1, approval -> cancelled 1, holds cleared 1
-  after cancel: approval state = cancelled | pA hold: (None, None) | pB own hold kept: True | key 1 = active
+  owner cancel (one transaction, rows WHERE hold_approval_id=3): challenge CAS 1, approval -> cancelled 1, holds cleared 1
+  after cancel: approval state = cancelled | pA hold: (None, None, None) | pB own hold kept: True | key 1 = active
   execution CAS on the cancelled approval at execute_after, rowcount: 0
-  reset 2 approved (appr 4): key 1 state = active | pA hold == execute_after: True
+  reset 2 approved (appr 4): key 1 state = active | pA held by appr 4: True
+  pC captured during the hold (saved, unheld): True
   execution CAS before execute_after, rowcount: 0
-  execution at 2026-11-24T00:00:01Z (one transaction): approval executed 1, key revoked 1, held snapshots deleted 1
-  key 1 state: revoked | pA exists: False | pB (own earlier hold, left to the delete sweep) exists: True
+  execution at 2026-11-24T00:00:01Z (one transaction): approval executed 1, key revoked 1, snapshots of the key deleted 3 (approval-held pA, own-held pB, unheld pC)
+  key 1 state: revoked | pA, pB, pC exist: [False, False, False] | snapshots still on key 1: 0
   open challenge of the revoked key, unexpired at 2026-11-24T00:00:01Z : True | CAS rowcount: 0
   activate pending key 2 after the revoke: accepted
+
+[T-21 retention: a held row is neither counted nor pruned]
+  before prune: unheld saved = 4 | held = 1
+  prune query from §3.5 deleted: 1 | unheld saved left: 3 | held oldest row kept: True | oldest unheld pruned: True
 
 final integrity_check: ok | foreign_key_check rows: 0
