@@ -16,6 +16,7 @@ job row. Each function returns a `RunResult`.
 """
 import json
 import os
+import tempfile
 import threading
 import time
 import urllib.error
@@ -456,6 +457,7 @@ class AnsibleRunner:
     def __init__(self, settings=None, run: Callable | None = None):
         self.s = settings or config.settings
         self._run = run
+        _sweep_secret_files(max_age_sec=max(2 * int(getattr(self.s, "job_timeout_sec", 0) or 0), 3600))
 
     # ---- paths -----------------------------------------------------------------------
     def job_dir(self, job_id) -> str:
@@ -498,7 +500,6 @@ class AnsibleRunner:
             "daolab_verify": get("verify") or {}, "daolab_vms": get("vms") or [],
             "daolab_leases": get("leases") or [],
             "daolab_api_url": self.s.api_url.rstrip("/"),
-            "daolab_internal_secret": self.s.internal_secret,
             "daolab_otel_collector": self.s.otel_agent_endpoint,
             "daolab_app": dpu_app(get("roles") or {}) if not get("diy", False) else "none",
             "daolab_access_login": get("access_login") or "lab",
@@ -562,7 +563,14 @@ class AnsibleRunner:
             # put the directory of the ansible-playbook installed next to it first on the PATH
             # ansible-runner resolves the command with (not `binary=`: that is raw mode)
             envvars["PATH"] = os.path.dirname(playbook_bin) + os.pathsep + os.environ.get("PATH", "")
+        secret_path = None
         try:
+            if self.s.internal_secret:
+                # F-5-1: the secret never goes into extravars (ansible-runner persists those in
+                # env/extravars) or the environment; the playbooks read it from this 0600 file
+                # (playbooks/group_vars/all.yml) and the file is removed when the run ends.
+                secret_path = _write_secret_file(self.s.internal_secret)
+                ev["daolab_internal_secret_file"] = secret_path
             r = run(private_data_dir=pdd, project_dir=os.path.abspath(self.s.playbooks_dir),
                     playbook=self.PLAYBOOKS[playbook_key],
                     inventory=os.path.abspath(self.s.inventory), extravars=ev,
@@ -576,6 +584,7 @@ class AnsibleRunner:
                        if int(getattr(self.s, "job_timeout_sec", 0) or 0) > 0 else {}))
         finally:
             log.close()
+            _remove_quietly(secret_path)
         ok = getattr(r, "status", None) == "successful" and getattr(r, "rc", 1) == 0
         error = None
         if getattr(r, "status", None) == "timeout":
@@ -623,6 +632,56 @@ class AnsibleRunner:
 
     def destroy_vms(self, names, step):
         return self._play("orphans", "orphans", None, step, {"daolab_vm_names": list(names)})[0]
+
+
+SECRET_FILE_PREFIX = "daolab-secret-"
+
+
+def _runtime_dir() -> str:
+    """Where the per-run secret file goes: DAOLAB_RUNTIME_DIR, else systemd's RUNTIME_DIRECTORY
+    (RuntimeDirectory= gives a 0700 tmpfs dir), else the system temp dir. Point it at a 0700
+    tmpfs directory in production."""
+    d = os.environ.get("DAOLAB_RUNTIME_DIR") or os.environ.get("RUNTIME_DIRECTORY") or ""
+    return d.split(":")[0] or tempfile.gettempdir()
+
+
+def _write_secret_file(secret: str) -> str:
+    """The secret in a new file, mode 0600 (mkstemp: O_EXCL, owner only). Returns its path."""
+    fd, path = tempfile.mkstemp(prefix=SECRET_FILE_PREFIX, suffix=".txt", dir=_runtime_dir())
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(secret)
+    except BaseException:
+        _remove_quietly(path)
+        raise
+    return path
+
+
+def _remove_quietly(path: str | None) -> None:
+    if path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def _sweep_secret_files(max_age_sec: int) -> None:
+    """A run killed with SIGKILL never reaches its `finally`: drop secret files older than
+    `max_age_sec` (the engine runs one job at a time, so a fresh file may be in use)."""
+    d = _runtime_dir()
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return
+    cutoff = time.time() - max_age_sec
+    for name in names:
+        if name.startswith(SECRET_FILE_PREFIX):
+            path = os.path.join(d, name)
+            try:
+                if os.stat(path).st_mtime < cutoff:
+                    os.unlink(path)
+            except OSError:
+                pass
 
 
 def ansible_playbook_path() -> str | None:

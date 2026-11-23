@@ -20,3 +20,9 @@ nginx_tls_cpt_script: /usr/share/openssl-engine-dpdk/openssl-engine-dpdk-cn10k.s
 daolab_hugepages_baseline: 2
 
 daolab_dom0_ssh: "{{ lookup('ansible.builtin.env', 'DAOLAB_DOM0_SSH') | default('ssh -o BatchMode=yes -o ConnectTimeout=5 -l root', true) }}"
+
+# F-5-1: the internal API secret is never an extra var (ansible-runner writes those to disk). The
+# runner puts it in a 0600 file for the run and passes only its path; every use is
+# `no_log: true`. An `-e daolab_internal_secret=...` (the playbook tests, a manual run) overrides
+# this, and then nothing is read.
+daolab_internal_secret: "{{ lookup('ansible.builtin.file', daolab_internal_secret_file) | trim }}"

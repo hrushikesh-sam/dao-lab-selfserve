@@ -83,7 +83,10 @@ def test_deploy_runs_deploy_yml_with_the_playbook_contract(settings, ctx):
     assert set(e["daolab_roles"]) == {"vpp", "tgen", "sink"} and e["daolab_verify"]["from"] == "tgen"
     assert {m["name"] for m in e["daolab_members"]} == {"dpu-01", "tg-01"}
     assert {v["role"] for v in e["daolab_vms"]} == {"vpp", "tgen", "sink"}
-    assert (e["daolab_api_url"], e["daolab_internal_secret"]) == ("http://10.30.0.2:8080", "s3")
+    assert e["daolab_api_url"] == "http://10.30.0.2:8080"
+    assert "daolab_internal_secret" not in e                                  # F-5-1
+    assert "s3" not in list(e.values()) + list(kw["envvars"].values())
+    assert os.path.basename(e["daolab_internal_secret_file"]).startswith("daolab-secret-")
     assert e["daolab_otel_collector"] == "10.30.0.2:4317"
     assert e["daolab_output_file"].endswith("output.json")
     assert e["daolab_app"] == "dao-vpp"                        # selects playbooks/apps/dao-vpp
