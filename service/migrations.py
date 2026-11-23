@@ -25,6 +25,10 @@ class SchemaTooNew(Exception):
     """The DB was migrated by newer code than this checkout."""
 
 
+class RevertedSchema(Exception):
+    """The DB has tables or columns from the reverted Phase 8 attempt (4ec115e)."""
+
+
 @dataclass(frozen=True)
 class Migration:
     version: int
@@ -255,6 +259,15 @@ def _m11_token_expiry(conn: sqlite3.Connection) -> None:
     add_column(conn, "users", "token_expires_at", "TEXT")
 
 
+def _m12_burned(conn: sqlite3.Connection) -> None:
+    """E-4: version 12 is burned. The reverted B-104 attempt (4ec115e, reverted in 9c8a089)
+    used it, so it stays a no-op forever. `refuse_reverted_schema` keeps those DBs out."""
+
+
+def _m13_burned(conn: sqlite3.Connection) -> None:
+    """E-4: version 13 is burned; see _m12_burned."""
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -267,6 +280,8 @@ MIGRATIONS: list[Migration] = [
     Migration(9, "health_snapshots", _m9_health_snapshots),
     Migration(10, "reservation_access", _m10_reservation_access),
     Migration(11, "token_expiry", _m11_token_expiry),
+    Migration(12, "burned_reverted_v12", _m12_burned),
+    Migration(13, "burned_reverted_v13", _m13_burned),
 ]
 
 
@@ -278,6 +293,42 @@ def _check_contiguous(migrations: list[Migration]) -> None:
 
 
 _check_contiguous(MIGRATIONS)
+
+
+# ---- reverted-schema guard (errata E-4) ------------------------------------
+# Schema that only the reverted v12/v13 (4ec115e:service/migrations.py) created. Any one
+# of them means refuse: a reverted DB reports user_version 12 or 13, so the loop below
+# would skip the burned 12/13 and every later migration's `IF NOT EXISTS` / `add_column`
+# would silently keep the old shapes (e.g. save_snapshot DEFAULT 1 inverts PRESERVE).
+# Later migrations must never recreate any of these (pinned by
+# tests/test_migrations_guard.py::test_g6_guard_passes_on_our_own_latest_schema).
+# The labels are fixed text: they are the only DB-derived part of the error message.
+
+def _save_snapshot_default_is_1(conn: sqlite3.Connection) -> bool:
+    return any(row[1] == "save_snapshot" and row[4] == "1"
+               for row in conn.execute("PRAGMA table_info(reservations)"))
+
+
+_REVERTED_MARKERS: tuple[tuple[str, Callable[[sqlite3.Connection], bool]], ...] = (
+    ("table user_keys", lambda c: has_table(c, "user_keys")),                        # M1
+    ("column jobs.secret", lambda c: has_column(c, "jobs", "secret")),               # M2
+    ("table snapshots without public_id",
+     lambda c: has_table(c, "snapshots") and not has_column(c, "snapshots", "public_id")),  # M3
+    ("column snapshots.wrapped_dek", lambda c: has_column(c, "snapshots", "wrapped_dek")),  # M4
+    ("column setups.snapshot_bdfs", lambda c: has_column(c, "setups", "snapshot_bdfs")),    # M5
+    ("reservations.save_snapshot default 1", _save_snapshot_default_is_1),           # M6
+)
+
+
+def refuse_reverted_schema(conn: sqlite3.Connection) -> None:
+    """Raise RevertedSchema if any marker is present. Read-only (sqlite_master and
+    PRAGMA table_info), and independent of user_version."""
+    found = [label for label, check in _REVERTED_MARKERS if check(conn)]
+    if found:
+        raise RevertedSchema(
+            "database has schema from the reverted Phase 8 snapshot attempt "
+            f"({', '.join(found)}); refusing to migrate it. Move this DB aside and start a "
+            "fresh one with `daolab init`, or ask an admin. Do not edit it by hand.")
 
 
 # ---- runner ----------------------------------------------------------------
@@ -301,6 +352,7 @@ def apply(conn: sqlite3.Connection) -> list[int]:
         raise SchemaTooNew(
             f"database schema is v{current_version(conn)} but this code only knows up to "
             f"v{latest_version()} — update the checkout before running against this DB")
+    refuse_reverted_schema(conn)       # every call, before any migration (E-4)
     applied: list[int] = []
     for m in MIGRATIONS:
         if m.version <= current_version(conn):
