@@ -1,0 +1,5 @@
+.venv: Python 3.12.13 ansible-core 2.21.6 ansible-runner 2.4.3 pytest 9.2.0 sqlite 3.53.1 base=/home/akshay/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu
+home = /home/akshay/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin
+.venv-220: Python 3.12.13 ansible-core 2.20.11 ansible-runner 2.4.3 pytest 9.2.0 sqlite 3.53.1 base=/home/akshay/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu
+home = /home/akshay/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin
+worktree: ~/b104a, branch b104a, base origin/rama a03f858ccbc55fd32848f020cf8f70db8f1ae1e1

@@ -1,0 +1,5 @@
+# trap probe, stage red-2 (placeholders, guard not wired), .venv, 2026-11-23T15:55:51Z
+latest_version() = 13; has RevertedSchema: True
+reverted v12: ACCEPTED: init_db -> [13], user_version 13; DB unchanged: False
+reverted v13: ACCEPTED: init_db -> [], user_version 13; DB unchanged: True
+reverted v13, user_version hand-set 11: ACCEPTED: init_db -> [12, 13], user_version 13; DB unchanged: False

@@ -1,0 +1,18 @@
+# engine green: new engine tests with the engine.py change; venv .venv-220; 2026-11-23T16:41:23Z
+ service/cli.py        |  2 +-
+ service/engine.py     |  5 +++++
+ service/migrations.py | 52 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 58 insertions(+), 1 deletion(-)
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.2.0, pluggy-1.7.0 -- /home/akshay/b104a/.venv-220/bin/python
+rootdir: /home/akshay/b104a
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 29 items / 25 deselected / 4 selected
+
+tests/test_migrations_guard.py::test_engine_refuses_reverted_v13_db_at_latest_version PASSED [ 25%]
+tests/test_migrations_guard.py::test_engine_starts_on_clean_fully_migrated_db_and_runs_the_guard PASSED [ 50%]
+tests/test_migrations_guard.py::test_engine_still_refuses_a_version_mismatch_first[_v11-11] PASSED [ 75%]
+tests/test_migrations_guard.py::test_engine_still_refuses_a_version_mismatch_first[_reverted_v12-12] PASSED [100%]
+
+======================= 4 passed, 25 deselected in 0.75s =======================

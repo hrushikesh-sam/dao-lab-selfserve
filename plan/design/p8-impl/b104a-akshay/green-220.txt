@@ -1,0 +1,56 @@
+# green: tests/test_migrations_guard.py (29) + tests/test_migrations.py (13), final change incl. engine.py; venv .venv-220; 2026-11-23T17:44:31Z
+ service/cli.py        |  2 +-
+ service/engine.py     |  5 +++++
+ service/migrations.py | 52 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 58 insertions(+), 1 deletion(-)
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.2.0, pluggy-1.7.0 -- /home/akshay/b104a/.venv-220/bin/python
+rootdir: /home/akshay/b104a
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 42 items
+
+tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M1] PASSED [  2%]
+tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M2] PASSED [  4%]
+tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M3] PASSED [  7%]
+tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M4] PASSED [  9%]
+tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M5] PASSED [ 11%]
+tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M6] PASSED [ 14%]
+tests/test_migrations_guard.py::test_g2_reverted_v12_is_refused PASSED   [ 16%]
+tests/test_migrations_guard.py::test_g3_reverted_v13_is_refused PASSED   [ 19%]
+tests/test_migrations_guard.py::test_g4_refusal_ignores_user_version[0] PASSED [ 21%]
+tests/test_migrations_guard.py::test_g4_refusal_ignores_user_version[11] PASSED [ 23%]
+tests/test_migrations_guard.py::test_g4_refusal_ignores_user_version[12] PASSED [ 26%]
+tests/test_migrations_guard.py::test_g4_refusal_ignores_user_version[latest] PASSED [ 28%]
+tests/test_migrations_guard.py::test_g5_message_has_fixed_labels_only PASSED [ 30%]
+tests/test_migrations_guard.py::test_g9_cli_init_refuses_reverted_db PASSED [ 33%]
+tests/test_migrations_guard.py::test_g6_guard_passes_on_our_own_latest_schema PASSED [ 35%]
+tests/test_migrations_guard.py::test_g7_v11_db_with_rows_passes_and_upgrades PASSED [ 38%]
+tests/test_migrations_guard.py::test_g8_new_code_db_stopped_at_placeholder_resumes[12] PASSED [ 40%]
+tests/test_migrations_guard.py::test_g8_new_code_db_stopped_at_placeholder_resumes[13] PASSED [ 42%]
+tests/test_migrations_guard.py::test_g10_guard_runs_on_every_call_even_when_up_to_date PASSED [ 45%]
+tests/test_migrations_guard.py::test_g10b_guard_runs_before_any_migration PASSED [ 47%]
+tests/test_migrations_guard.py::test_g11_too_new_db_still_raises_schema_too_new PASSED [ 50%]
+tests/test_migrations_guard.py::test_markers_are_a_closed_list_of_fixed_labels PASSED [ 52%]
+tests/test_migrations_guard.py::test_m6_marker_is_only_default_1 PASSED  [ 54%]
+tests/test_migrations_guard.py::test_t1_fresh_db_applies_placeholders_12_and_13 PASSED [ 57%]
+tests/test_migrations_guard.py::test_t2_placeholders_change_nothing_but_user_version PASSED [ 59%]
+tests/test_migrations_guard.py::test_engine_refuses_reverted_v13_db_at_latest_version PASSED [ 61%]
+tests/test_migrations_guard.py::test_engine_starts_on_clean_fully_migrated_db_and_runs_the_guard PASSED [ 64%]
+tests/test_migrations_guard.py::test_engine_still_refuses_a_version_mismatch_first[_v11-11] PASSED [ 66%]
+tests/test_migrations_guard.py::test_engine_still_refuses_a_version_mismatch_first[_reverted_v12-12] PASSED [ 69%]
+tests/test_migrations.py::test_fresh_db_reaches_latest PASSED            [ 71%]
+tests/test_migrations.py::test_init_twice_is_noop PASSED                 [ 73%]
+tests/test_migrations.py::test_legacy_db_upgraded_without_data_loss PASSED [ 76%]
+tests/test_migrations.py::test_new_mode_column_enforces_check PASSED     [ 78%]
+tests/test_migrations.py::test_column_already_present_is_tolerated PASSED [ 80%]
+tests/test_migrations.py::test_failed_migration_rolls_back_change_and_version PASSED [ 83%]
+tests/test_migrations.py::test_later_migration_applies_after_earlier PASSED [ 85%]
+tests/test_migrations.py::test_db_newer_than_code_is_refused PASSED      [ 88%]
+tests/test_migrations.py::test_versions_must_be_contiguous PASSED        [ 90%]
+tests/test_migrations.py::test_on_disk_wal_db_init_twice PASSED          [ 92%]
+tests/test_migrations.py::test_cli_init_twice PASSED                     [ 95%]
+tests/test_migrations.py::test_cli_init_refuses_newer_db PASSED          [ 97%]
+tests/test_migrations.py::test_audit_events_append_only PASSED           [100%]
+
+============================== 42 passed in 1.91s ==============================

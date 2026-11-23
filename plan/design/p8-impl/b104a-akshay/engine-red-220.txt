@@ -1,0 +1,64 @@
+# engine red: new engine tests, service/engine.py unchanged (current PR A patch + public rename); venv .venv-220; 2026-11-23T16:40:57Z
+ service/cli.py        |  2 +-
+ service/migrations.py | 52 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 53 insertions(+), 1 deletion(-)
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.2.0, pluggy-1.7.0 -- /home/akshay/b104a/.venv-220/bin/python
+rootdir: /home/akshay/b104a
+configfile: pyproject.toml
+plugins: anyio-4.16.0
+collecting ... collected 29 items / 25 deselected / 4 selected
+
+tests/test_migrations_guard.py::test_engine_refuses_reverted_v13_db_at_latest_version FAILED [ 25%]
+tests/test_migrations_guard.py::test_engine_starts_on_clean_fully_migrated_db_and_runs_the_guard FAILED [ 50%]
+tests/test_migrations_guard.py::test_engine_still_refuses_a_version_mismatch_first[_v11-11] PASSED [ 75%]
+tests/test_migrations_guard.py::test_engine_still_refuses_a_version_mismatch_first[_reverted_v12-12] PASSED [100%]
+
+=================================== FAILURES ===================================
+____________ test_engine_refuses_reverted_v13_db_at_latest_version _____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dc6d520a8a0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-53/test_engine_refuses_reverted_v0')
+capsys = <_pytest.capture.CaptureFixture object at 0x7dc6d520aae0>
+
+    def test_engine_refuses_reverted_v13_db_at_latest_version(monkeypatch, tmp_path, capsys):
+        path = _engine_settings(monkeypatch, tmp_path)
+        conn = _reverted_v13(models.connect(path))
+        _seed(conn)
+        assert migrations.current_version(conn) == migrations.latest_version() == 13
+        before = (_dump(conn), _rows(conn), migrations.current_version(conn))
+        conn.close()
+        ticks = _spy_tick(monkeypatch)
+>       assert engine.main([]) == 1
+E       assert 0 == 1
+E        +  where 0 = <function main at 0x7dc6d5214900>([])
+E        +    where <function main at 0x7dc6d5214900> = engine.main
+
+tests/test_migrations_guard.py:445: AssertionError
+----------------------------- Captured stdout call -----------------------------
+tick done: spied
+_______ test_engine_starts_on_clean_fully_migrated_db_and_runs_the_guard _______
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7dc6d52095e0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-53/test_engine_starts_on_clean_fu0')
+capsys = <_pytest.capture.CaptureFixture object at 0x7dc6d53737a0>
+
+    def test_engine_starts_on_clean_fully_migrated_db_and_runs_the_guard(monkeypatch, tmp_path,
+                                                                         capsys):
+        path = _engine_settings(monkeypatch, tmp_path)
+        conn = models.connect(path)
+        models.init_db(conn)
+        conn.close()
+        calls = _spy_guard(monkeypatch)
+        assert engine.main([]) == 0
+        out, err = capsys.readouterr()
+        assert "tick done" in out and err == ""
+>       assert len(calls) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_migrations_guard.py:468: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_migrations_guard.py::test_engine_refuses_reverted_v13_db_at_latest_version
+FAILED tests/test_migrations_guard.py::test_engine_starts_on_clean_fully_migrated_db_and_runs_the_guard
+================== 2 failed, 2 passed, 25 deselected in 0.95s ==================

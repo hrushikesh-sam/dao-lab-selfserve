@@ -1,0 +1,94 @@
+Burn migrations 12 and 13 and refuse reverted Phase 8 schemas (B-104)
+
+What: migrations 12 and 13 are registered no-ops (burned_reverted_v12,
+burned_reverted_v13; errata E-4). The reverted B-104 attempt (4ec115e,
+reverted in 9c8a089) used both numbers, so the B-104 migration starts at
+14, and _check_contiguous needs 12 and 13 to exist. A new public
+migrations.refuse_reverted_schema() raises a new
+RevertedSchema(Exception) if the DB has any one of six markers that only
+the reverted v12/v13 created: table user_keys; column jobs.secret; table
+snapshots without public_id; column snapshots.wrapped_dek; column
+setups.snapshot_bdfs; a reservations.save_snapshot whose declared
+default is 1. The markers are a closed list of (fixed label, check)
+pairs. The check reads only sqlite_master and PRAGMA table_info, ignores
+user_version, and changes nothing. The message names only the fixed
+labels: no row values, usernames, path, SQL text or version. It runs in
+two places. migrations.apply() calls it on every call, right after the
+SchemaTooNew check and before any migration runs; daolab init catches
+RevertedSchema together with SchemaTooNew and exits 1 with the message,
+with no traceback. Engine startup calls it right after the existing
+version check (engine.py:629-633) and refuses the same way that check
+does: "error: <message>" on stderr, exit 1, before any tick.
+SchemaTooNew is not reparented and is still checked first. Migrations
+1-11 are untouched.
+
+Why: a DB migrated by the reverted code reports user_version 12 or 13.
+With 12 and 13 burned, apply() would skip straight past them, and the
+B-104 migration's CREATE TABLE IF NOT EXISTS / add_column would
+silently keep the old shapes: a snapshots table with no public_id and
+with wrapped_dek, and save_snapshot DEFAULT 1, which inverts the
+PRESERVE default. The guard checks the schema rather than the version
+number, because a healthy DB can stop at 12 or 13 after a crash
+between two migrations, and that state must still resume. The engine
+needs the guard too: with 13 now the latest version, a reverted v13 DB
+passes the engine's current == latest check, so without it the engine
+would start on one. A refused DB is recovered by moving it aside and
+running daolab init on a fresh one. The API has no schema check; adding
+one, with the guard, stays a follow-up (Q-3).
+
+Operational note: the engine refuses to start unless the DB is at the
+latest schema version (engine.py:629-633), and that is now v13. Every
+existing DB therefore needs `daolab init` once after this lands, before
+the engine is started. On a clean v11 DB that applies the two no-ops
+and changes nothing else.
+
+Files: service/migrations.py, service/cli.py (one except line),
+service/engine.py (the guard call at startup, approved by its owner
+under Q-3), tests/test_migrations_guard.py (new). No existing test
+changed: none hard-codes version 11 or the migration list.
+
+Verified: tests first, on Python 3.12.13 with ansible-core 2.21.6 and
+2.20.11. Synthetic DBs only (:memory: and tmp_path). The reverted v12
+and v13 shapes are built from literal DDL copied from the B-104
+fingerprint; no reverted code is imported.
+Guard, 25 tests. Red, against unchanged code: 24 failed, 1 passed on
+both. The pass is G-7 (a clean v11 DB upgrades), which is already
+true. Unchanged code refuses a reverted v13 DB only by version
+(SchemaTooNew, v13 > v11), and accepts the same tables once
+user_version reads 11. Trap stage, with the placeholders but with the
+guard not called (never shipped): 16 failed, 9 passed on both. G-3
+fails "DID NOT RAISE RevertedSchema", and init_db on the reverted v13
+DB returns [] at v13. The tests cover: each marker alone on a clean
+v11 DB; the full reverted v12 and v13 shapes; user_version hand-set to
+0, 11, 12 and latest; message hygiene with canary values; daolab init
+exiting 1; the guard passing on our own fully migrated schema, on a
+v11 DB with rows, and on a DB stopped at 12 or 13; the guard running
+on every call and before any migration; SchemaTooNew still first; and
+the placeholders changing nothing but user_version.
+Engine, 4 tests. Red, with engine.py unchanged: 2 failed, 2 passed on
+both. The engine started (main returned 0 and went on to the tick) on
+a reverted v13 DB at user_version 13, and never ran the guard on a
+clean DB. The 2 passes are the unchanged version-mismatch refusals (a
+clean v11 DB and a reverted v12 DB), which still get the version
+message, before the guard.
+Green: 29 passed on both, with tests/test_migrations.py 13 passed. The
+engine refuses the reverted v13 DB with the fixed-label message and no
+tick, starts normally on a clean fully migrated DB, and still refuses
+a version mismatch as before. In-memory refusals leave sqlite_master,
+total_changes and user_version unchanged; the on-disk ones (daolab
+init, engine) leave sqlite_master, every row and user_version
+unchanged.
+Evidence (branch akshay-p8-gate, plan/design/p8-impl/b104a-akshay/):
+red-221.txt, red-220.txt, red2-trap-221.txt, red2-trap-220.txt,
+engine-red-221.txt, engine-red-220.txt, engine-green-221.txt,
+engine-green-220.txt, green-221.txt, green-220.txt,
+trap-probe-red1.txt, trap-probe-red2.txt, trap-probe-green.txt,
+full-221.txt, full-220.txt and apply-check.txt.
+
+Series result (on origin/rama a03f858): full suite 1332 passed, 4
+skipped, 0 failed on Python 3.12.13 with ansible-core 2.21.6, and the
+same with 2.20.11: the B-103 baseline 1303/4/0 plus the 29 new tests,
+with the same 4 skips.
+
+Patch: B104A-guard.patch
+sha256 4df433b112d0d5abd24810896ac4fdb03d41c5c5eb946998319addba6ff2cfd6

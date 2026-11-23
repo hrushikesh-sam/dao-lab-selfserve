@@ -1,0 +1,30 @@
+2026-11-23T16:42:29Z fresh apply check (round 2: 4 files)
+origin/rama=a03f858ccbc55fd32848f020cf8f70db8f1ae1e1
+HEAD is now at a03f858 Merge pull request #8 from hrushikesh-sam/p8-b103
+HEAD=a03f858ccbc55fd32848f020cf8f70db8f1ae1e1
+4df433b112d0d5abd24810896ac4fdb03d41c5c5eb946998319addba6ff2cfd6  B104A-guard.patch
+  --check ok
+  applied
+fresh tree=ce77b74dd5050634cec05d7f5b51424c21a3d282
+tested tree=ce77b74dd5050634cec05d7f5b51424c21a3d282
+TREE MATCH
+changed paths: 4
+M	service/cli.py
+M	service/engine.py
+M	service/migrations.py
+A	tests/test_migrations_guard.py
+## diff -r -q -x __pycache__ -x .venv -x .venv-220 -x '*.egg-info' -x .git ~/b104a-check ~/b104a
+diff exit=0
+M  service/cli.py M  service/engine.py M  service/migrations.py A  tests/test_migrations_guard.py 
+removed ../b104a-check (--force: it held only the applied patch, staged)
+~/dao-lab-selfserve  9c8a089 [akshay]
+~/akshay-base        9c8a089 (detached HEAD)
+~/akshay-gate        9c8a089 (detached HEAD)
+~/b103               747d10d [b103]
+~/b104a              a03f858 [b104a]
+~/p8-b103            ecabd11 [p8-b103]
+~/p8-evidence        b614b87 [akshay-p8-gate]
+~/p8-pr              5d092aa [p8-gate]
+~/p8gate             40ebd6d (detached HEAD)
+~/p8gate-p0d         40ebd6d (detached HEAD)
+~/rama-pr            40ebd6d (detached HEAD)

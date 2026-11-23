@@ -1,0 +1,465 @@
+# red-2 (trap stage): placeholders 12/13 + RevertedSchema + markers defined, guard NOT called in apply(), cli.py unchanged. Never shipped. venv .venv; 2026-11-23T15:55:49Z
+# service/ diff vs origin/rama:
+ service/migrations.py | 51 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 51 insertions(+)
+FFFFFFFFFFFFFF....FF.....                                                [100%]
+=================================== FAILURES ===================================
+___________________ test_g1_each_marker_alone_is_refused[M1] ___________________
+
+marker = 'M1'
+
+    @pytest.mark.parametrize("marker", sorted(MARKER_ALONE))
+    def test_g1_each_marker_alone_is_refused(marker):
+        """G-1a…f: one marker on an otherwise clean v11 DB is enough."""
+        ddls, label = MARKER_ALONE[marker]
+        conn = _v11()
+        for ddl in ddls:
+            conn.execute(ddl)
+>       _assert_refused(conn, [label])
+
+tests/test_migrations_guard.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e57f3790>
+expected_labels = ['table user_keys'], call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+___________________ test_g1_each_marker_alone_is_refused[M2] ___________________
+
+marker = 'M2'
+
+    @pytest.mark.parametrize("marker", sorted(MARKER_ALONE))
+    def test_g1_each_marker_alone_is_refused(marker):
+        """G-1a…f: one marker on an otherwise clean v11 DB is enough."""
+        ddls, label = MARKER_ALONE[marker]
+        conn = _v11()
+        for ddl in ddls:
+            conn.execute(ddl)
+>       _assert_refused(conn, [label])
+
+tests/test_migrations_guard.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e57f3a60>
+expected_labels = ['column jobs.secret'], call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+___________________ test_g1_each_marker_alone_is_refused[M3] ___________________
+
+marker = 'M3'
+
+    @pytest.mark.parametrize("marker", sorted(MARKER_ALONE))
+    def test_g1_each_marker_alone_is_refused(marker):
+        """G-1a…f: one marker on an otherwise clean v11 DB is enough."""
+        ddls, label = MARKER_ALONE[marker]
+        conn = _v11()
+        for ddl in ddls:
+            conn.execute(ddl)
+>       _assert_refused(conn, [label])
+
+tests/test_migrations_guard.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e45e0>
+expected_labels = ['table snapshots without public_id'], call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+___________________ test_g1_each_marker_alone_is_refused[M4] ___________________
+
+marker = 'M4'
+
+    @pytest.mark.parametrize("marker", sorted(MARKER_ALONE))
+    def test_g1_each_marker_alone_is_refused(marker):
+        """G-1a…f: one marker on an otherwise clean v11 DB is enough."""
+        ddls, label = MARKER_ALONE[marker]
+        conn = _v11()
+        for ddl in ddls:
+            conn.execute(ddl)
+>       _assert_refused(conn, [label])
+
+tests/test_migrations_guard.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e49a0>
+expected_labels = ['column snapshots.wrapped_dek'], call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+___________________ test_g1_each_marker_alone_is_refused[M5] ___________________
+
+marker = 'M5'
+
+    @pytest.mark.parametrize("marker", sorted(MARKER_ALONE))
+    def test_g1_each_marker_alone_is_refused(marker):
+        """G-1a…f: one marker on an otherwise clean v11 DB is enough."""
+        ddls, label = MARKER_ALONE[marker]
+        conn = _v11()
+        for ddl in ddls:
+            conn.execute(ddl)
+>       _assert_refused(conn, [label])
+
+tests/test_migrations_guard.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e4f40>
+expected_labels = ['column setups.snapshot_bdfs'], call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+___________________ test_g1_each_marker_alone_is_refused[M6] ___________________
+
+marker = 'M6'
+
+    @pytest.mark.parametrize("marker", sorted(MARKER_ALONE))
+    def test_g1_each_marker_alone_is_refused(marker):
+        """G-1a…f: one marker on an otherwise clean v11 DB is enough."""
+        ddls, label = MARKER_ALONE[marker]
+        conn = _v11()
+        for ddl in ddls:
+            conn.execute(ddl)
+>       _assert_refused(conn, [label])
+
+tests/test_migrations_guard.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e55d0>
+expected_labels = ['reservations.save_snapshot default 1'], call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+_______________________ test_g2_reverted_v12_is_refused ________________________
+
+    def test_g2_reverted_v12_is_refused():
+        conn = _reverted_v12()
+        assert migrations.current_version(conn) == 12
+>       _assert_refused(conn, V12_LABELS)
+
+tests/test_migrations_guard.py:212: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e5b70>
+expected_labels = ['table user_keys', 'table snapshots without public_id', 'column snapshots.wrapped_dek', 'column setups.snapshot_bdfs', 'reservations.save_snapshot default 1']
+call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+_______________________ test_g3_reverted_v13_is_refused ________________________
+
+    def test_g3_reverted_v13_is_refused():
+        """G-3, the trap: without the guard, a reverted v13 DB is at the latest version as far
+        as user_version goes, so apply() would run nothing and accept it."""
+        conn = _reverted_v13()
+        assert migrations.current_version(conn) == 13
+>       _assert_refused(conn, ALL_LABELS)
+
+tests/test_migrations_guard.py:221: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e5f30>
+expected_labels = ['table user_keys', 'column jobs.secret', 'table snapshots without public_id', 'column snapshots.wrapped_dek', 'column setups.snapshot_bdfs', 'reservations.save_snapshot default 1']
+call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+___________________ test_g4_refusal_ignores_user_version[0] ____________________
+
+version = 0
+
+    @pytest.mark.parametrize("version", [0, 11, 12, "latest"])
+    def test_g4_refusal_ignores_user_version(version):
+        """G-4: reverted v13 tables with user_version hand-set to any value <= latest."""
+        conn = _reverted_v13()
+        v = migrations.latest_version() if version == "latest" else version
+        conn.execute(f"PRAGMA user_version = {int(v)}")
+>       _assert_refused(conn, ALL_LABELS)
+
+tests/test_migrations_guard.py:231: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e62f0>
+expected_labels = ['table user_keys', 'column jobs.secret', 'table snapshots without public_id', 'column snapshots.wrapped_dek', 'column setups.snapshot_bdfs', 'reservations.save_snapshot default 1']
+call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+___________________ test_g4_refusal_ignores_user_version[11] ___________________
+
+version = 11
+
+    @pytest.mark.parametrize("version", [0, 11, 12, "latest"])
+    def test_g4_refusal_ignores_user_version(version):
+        """G-4: reverted v13 tables with user_version hand-set to any value <= latest."""
+        conn = _reverted_v13()
+        v = migrations.latest_version() if version == "latest" else version
+        conn.execute(f"PRAGMA user_version = {int(v)}")
+>       _assert_refused(conn, ALL_LABELS)
+
+tests/test_migrations_guard.py:231: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e66b0>
+expected_labels = ['table user_keys', 'column jobs.secret', 'table snapshots without public_id', 'column snapshots.wrapped_dek', 'column setups.snapshot_bdfs', 'reservations.save_snapshot default 1']
+call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+___________________ test_g4_refusal_ignores_user_version[12] ___________________
+
+version = 12
+
+    @pytest.mark.parametrize("version", [0, 11, 12, "latest"])
+    def test_g4_refusal_ignores_user_version(version):
+        """G-4: reverted v13 tables with user_version hand-set to any value <= latest."""
+        conn = _reverted_v13()
+        v = migrations.latest_version() if version == "latest" else version
+        conn.execute(f"PRAGMA user_version = {int(v)}")
+>       _assert_refused(conn, ALL_LABELS)
+
+tests/test_migrations_guard.py:231: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e6a70>
+expected_labels = ['table user_keys', 'column jobs.secret', 'table snapshots without public_id', 'column snapshots.wrapped_dek', 'column setups.snapshot_bdfs', 'reservations.save_snapshot default 1']
+call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+_________________ test_g4_refusal_ignores_user_version[latest] _________________
+
+version = 'latest'
+
+    @pytest.mark.parametrize("version", [0, 11, 12, "latest"])
+    def test_g4_refusal_ignores_user_version(version):
+        """G-4: reverted v13 tables with user_version hand-set to any value <= latest."""
+        conn = _reverted_v13()
+        v = migrations.latest_version() if version == "latest" else version
+        conn.execute(f"PRAGMA user_version = {int(v)}")
+>       _assert_refused(conn, ALL_LABELS)
+
+tests/test_migrations_guard.py:231: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e57f33d0>
+expected_labels = ['table user_keys', 'column jobs.secret', 'table snapshots without public_id', 'column snapshots.wrapped_dek', 'column setups.snapshot_bdfs', 'reservations.save_snapshot default 1']
+call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+____________________ test_g5_message_has_fixed_labels_only _____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-46/test_g5_message_has_fixed_labe0')
+
+    def test_g5_message_has_fixed_labels_only(tmp_path):
+        """G-5: no usernames, row values, path, SQL text or user_version in the message."""
+        path = str(tmp_path / "canary-dir-4d19" / "canary-db-8b2e.db")
+        (tmp_path / "canary-dir-4d19").mkdir()
+        conn = _reverted_v13(models.connect(path))
+        ids = _seed(conn)
+        v = CANARY_VALUES
+        conn.execute("UPDATE users SET username = ?, ssh_pubkey = ? WHERE id = ?",
+                     (CANARY_USER, v[0], ids["user"]))
+        conn.execute("INSERT INTO user_keys VALUES (?, ?, ?, ?, 1, ?, ?)",
+                     (ids["user"], v[0], v[1], v[2], "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z"))
+        conn.execute(
+            "INSERT INTO snapshots (user_id, setup_id, reservation_id, usecase_id, state, path,"
+            " sha256, wrapped_dek, created_at, updated_at) VALUES (?, ?, ?, ?, 'saved', ?, ?, ?, ?, ?)",
+            (ids["user"], ids["setup"], ids["reservation"], ids["usecase"], v[5], v[6], v[3],
+             "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z"))
+        conn.execute("UPDATE jobs SET secret = ?, kind = 'restore' WHERE id = ?", (v[4], ids["job"]))
+        conn.execute("UPDATE setups SET snapshot_bdfs = ? WHERE id = ?", (f'["{v[7]}"]', ids["setup"]))
+        conn.execute("PRAGMA user_version = 13")
+>       msg = _assert_refused(conn, ALL_LABELS)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_migrations_guard.py:253: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e57f3970>
+expected_labels = ['table user_keys', 'column jobs.secret', 'table snapshots without public_id', 'column snapshots.wrapped_dek', 'column setups.snapshot_bdfs', 'reservations.save_snapshot default 1']
+call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+_____________________ test_g9_cli_init_refuses_reverted_db _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ba2e5774500>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-46/test_g9_cli_init_refuses_rever0')
+capsys = <_pytest.capture.CaptureFixture object at 0x7ba2e56fc1a0>
+
+    def test_g9_cli_init_refuses_reverted_db(monkeypatch, tmp_path, capsys):
+        """G-9: `daolab init` on a reverted on-disk DB exits 1 with the message, no traceback,
+        and leaves the DB as it was."""
+        path = _cli_settings(monkeypatch, tmp_path)
+        conn = _reverted_v13(models.connect(path))
+        _seed(conn)
+        before = (_dump(conn), _rows(conn), migrations.current_version(conn))
+        conn.close()
+>       with pytest.raises(SystemExit) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE SystemExit
+
+tests/test_migrations_guard.py:277: Failed
+----------------------------- Captured stdout call -----------------------------
+db: /tmp/pytest-of-akshay/pytest-46/test_g9_cli_init_refuses_rever0/daolab.db (journal_mode=wal)
+schema: v13 (up to date)
+usecases seeded: 15 planned + diy
+____________ test_g10_guard_runs_on_every_call_even_when_up_to_date ____________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ba2e5774da0>
+
+    def test_g10_guard_runs_on_every_call_even_when_up_to_date(monkeypatch):
+        conn = _conn()
+        models.init_db(conn)
+        calls = _spy_guard(monkeypatch)
+        before = _state(conn)
+        assert models.init_db(conn) == []
+>       assert calls == [conn]
+E       assert [] == [<sqlite3.Con...7ba2e56e65c0>]
+E         
+E         Right contains one more item: <sqlite3.Connection object at 0x7ba2e56e65c0>
+E         Use -v to get more diff
+
+tests/test_migrations_guard.py:340: AssertionError
+__________________ test_g10b_guard_runs_before_any_migration ___________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7ba2e56e0800>
+
+    def test_g10b_guard_runs_before_any_migration(monkeypatch):
+        """The guard runs once, before the loop: a refused DB gets no migration at all."""
+        conn = _reverted_v13()
+        conn.execute("PRAGMA user_version = 0")
+        ran = []
+        monkeypatch.setattr(migrations, "MIGRATIONS", [
+            migrations.Migration(m.version, m.name, lambda c, v=m.version: ran.append(v))
+            for m in migrations.MIGRATIONS])
+        calls = _spy_guard(monkeypatch)
+>       _assert_refused(conn, ALL_LABELS)
+
+tests/test_migrations_guard.py:353: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7ba2e56e63e0>
+expected_labels = ['table user_keys', 'column jobs.secret', 'table snapshots without public_id', 'column snapshots.wrapped_dek', 'column setups.snapshot_bdfs', 'reservations.save_snapshot default 1']
+call = None
+
+    def _assert_refused(conn, expected_labels, call=None):
+        """apply() (or `call`) raises RevertedSchema naming exactly `expected_labels`, and the
+        DB is untouched: same sqlite_master, total_changes and user_version."""
+        before = _state(conn)
+>       with pytest.raises(migrations.RevertedSchema) as exc:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RevertedSchema
+
+tests/test_migrations_guard.py:187: Failed
+=========================== short test summary info ============================
+FAILED tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M1]
+FAILED tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M2]
+FAILED tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M3]
+FAILED tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M4]
+FAILED tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M5]
+FAILED tests/test_migrations_guard.py::test_g1_each_marker_alone_is_refused[M6]
+FAILED tests/test_migrations_guard.py::test_g2_reverted_v12_is_refused - Fail...
+FAILED tests/test_migrations_guard.py::test_g3_reverted_v13_is_refused - Fail...
+FAILED tests/test_migrations_guard.py::test_g4_refusal_ignores_user_version[0]
+FAILED tests/test_migrations_guard.py::test_g4_refusal_ignores_user_version[11]
+FAILED tests/test_migrations_guard.py::test_g4_refusal_ignores_user_version[12]
+FAILED tests/test_migrations_guard.py::test_g4_refusal_ignores_user_version[latest]
+FAILED tests/test_migrations_guard.py::test_g5_message_has_fixed_labels_only
+FAILED tests/test_migrations_guard.py::test_g9_cli_init_refuses_reverted_db
+FAILED tests/test_migrations_guard.py::test_g10_guard_runs_on_every_call_even_when_up_to_date
+FAILED tests/test_migrations_guard.py::test_g10b_guard_runs_before_any_migration
+16 failed, 9 passed in 1.09s

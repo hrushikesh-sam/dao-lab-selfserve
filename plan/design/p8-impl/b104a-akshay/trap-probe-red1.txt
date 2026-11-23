@@ -1,0 +1,6 @@
+# trap probe, stage red-1: unchanged service/ (origin/rama a03f858), .venv, 2026-11-23T15:55:09Z
+# fixtures: tests/test_migrations_guard.py builders; synthetic :memory: DBs
+latest_version() = 11; has RevertedSchema: False
+reverted v12: SchemaTooNew: database schema is v12 but this code only knows up to v11 — update the checkout before running against this DB; DB unchanged: True
+reverted v13: SchemaTooNew: database schema is v13 but this code only knows up to v11 — update the checkout before running against this DB; DB unchanged: True
+reverted v13, user_version hand-set 11: ACCEPTED: init_db -> [], user_version 11; DB unchanged: True
