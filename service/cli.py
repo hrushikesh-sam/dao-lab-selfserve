@@ -43,7 +43,7 @@ def cmd_init(args) -> int:
     conn = models.connect(config.settings.db_path)
     try:
         applied = models.init_db(conn)
-    except migrations.SchemaTooNew as e:
+    except (migrations.SchemaTooNew, migrations.RevertedSchema) as e:
         _die(str(e))
     catalog.seed_usecases(conn)
     planned = conn.execute("SELECT COUNT(*) FROM usecases WHERE yaml_path IS NULL").fetchone()[0]

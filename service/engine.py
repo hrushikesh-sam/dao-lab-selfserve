@@ -631,6 +631,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: database schema is v{have} but this checkout expects v{want}; "
               "run `daolab init` first", file=sys.stderr)
         return 1
+    try:
+        migrations.refuse_reverted_schema(db)    # a reverted v13 DB passes the check above
+    except migrations.RevertedSchema as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     if config.settings.job_timeout_sec <= 0:
         print(f"error: DAOLAB_JOB_TIMEOUT_SEC must be > 0, got {config.settings.job_timeout_sec}",
               file=sys.stderr)
