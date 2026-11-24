@@ -225,7 +225,7 @@ def test_take_ambiguous_unlinks_everything(ticket_dir, fake_mountinfo, monkeypat
     assert list(ticket_dir.iterdir()) == []
 
 
-@pytest.mark.parametrize("age_seconds,accepted", [(299, True), (300, True), (301, False), (-1, False)])
+@pytest.mark.parametrize("age_seconds,accepted", [(299, True), (300, True), (301, False), (-1, True)])
 def test_take_ttl_boundary(ticket_dir, fake_mountinfo, age_seconds, accepted):
     tickets.write(USER_ID, PUBLIC_ID, S, mountinfo=fake_mountinfo)
     path = next(ticket_dir.iterdir())
@@ -239,6 +239,33 @@ def test_take_ttl_boundary(ticket_dir, fake_mountinfo, age_seconds, accepted):
             tickets.take(USER_ID, PUBLIC_ID, now)
         assert str(exc.value) == "ticket:invalid"
     assert not path.exists()
+
+
+@pytest.mark.parametrize("age_seconds,accepted", [
+    (-5, True), (-6, False), (300, True), (301, False)])
+def test_take_ttl_allows_five_seconds_of_clock_slack(ticket_dir, fake_mountinfo, age_seconds, accepted):
+    tickets.write(USER_ID, PUBLIC_ID, S, mountinfo=fake_mountinfo)
+    path = next(ticket_dir.iterdir())
+    now = datetime.now(UTC)
+    ts = now.timestamp() - age_seconds
+    os.utime(path, (ts, ts))
+    if accepted:
+        assert tickets.take(USER_ID, PUBLIC_ID, now) == S
+    else:
+        with pytest.raises(tickets.TicketError) as exc:
+            tickets.take(USER_ID, PUBLIC_ID, now)
+        assert str(exc.value) == "ticket:invalid"
+    assert not path.exists()
+
+
+def test_sweep_keeps_files_within_clock_slack(ticket_dir, fake_mountinfo):
+    tickets.write(USER_ID, PUBLIC_ID, S, mountinfo=fake_mountinfo)
+    future = next(ticket_dir.iterdir())
+    now = datetime.now(UTC)
+    ts = now.timestamp() + 5
+    os.utime(future, (ts, ts))
+    assert tickets.sweep(now) == 0
+    assert future.exists()
 
 
 @POSIX

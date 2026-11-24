@@ -13,6 +13,7 @@ log = logging.getLogger("daolab.tickets")
 IDENTITY_RE = re.compile(r"AGE-SECRET-KEY-1[0-9A-Z]{58}")
 PUBLIC_ID_RE = re.compile(r"[0-9a-f]{32}")
 TTL_SECONDS = 300
+CLOCK_SLACK_SECONDS = 5
 DEFAULT_MOUNTINFO = "/proc/self/mountinfo"
 INVALID = "ticket:invalid"
 
@@ -112,7 +113,7 @@ def _file_ok(st, now_ts: float | None = None) -> bool:
         return False
     if now_ts is not None:
         age = now_ts - st.st_mtime
-        if age < 0 or age > TTL_SECONDS:
+        if age < -CLOCK_SLACK_SECONDS or age > TTL_SECONDS:
             return False
     return True
 
@@ -200,7 +201,8 @@ def sweep(now: datetime) -> int:
             st = entry.stat(follow_symlinks=False)
         except OSError:
             continue
-        if stat.S_ISREG(st.st_mode) and now.timestamp() - st.st_mtime <= TTL_SECONDS:
+        age = now.timestamp() - st.st_mtime
+        if stat.S_ISREG(st.st_mode) and -CLOCK_SLACK_SECONDS <= age <= TTL_SECONDS:
             continue
         try:
             os.unlink(entry.path)
