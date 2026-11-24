@@ -394,6 +394,26 @@ def test_owner_cancel_refuses_a_non_cancellable_approval(db, users, clock, seale
     assert db.execute("SELECT consumed_at FROM key_challenges WHERE id = ?", (cid,)).fetchone()[0] is None
 
 
+def test_failed_owner_cancel_leaves_the_challenge_reusable(db, users, clock, sealed, tb01):
+    kid = active_key(db)
+    owner = user_id(db, "alice")
+    snapshot(db, owner, tb01[0], kid, "e" * 32, held=owner, requested_by=owner)
+    aid = approved_reset(db, kid)
+    cid = issue(db, "alice", "cancel_delete", f"approval:{aid}")["challenge_id"]
+
+    db.execute("UPDATE admin_approvals SET state = 'rejected' WHERE id = ?", (aid,))
+    with pytest.raises(approvals.ApprovalServiceError):
+        approvals.cancel_by_owner(db, aid, user_row(db, "alice"), SOON, NONCE, cid)
+    assert db.execute("SELECT consumed_at FROM key_challenges WHERE id = ?",
+                      (cid,)).fetchone()[0] is None
+
+    db.execute("UPDATE admin_approvals SET state = 'approved' WHERE id = ?", (aid,))
+    approvals.cancel_by_owner(db, aid, user_row(db, "alice"), SOON, NONCE, cid)
+    assert db.execute("SELECT state FROM admin_approvals WHERE id = ?", (aid,)).fetchone()[0] == "cancelled"
+    assert db.execute("SELECT consumed_at FROM key_challenges WHERE id = ?",
+                      (cid,)).fetchone()[0] == SOON
+
+
 def test_owner_cancel_rolls_back_on_a_challenge_failure(db, users, clock, sealed, tb01):
     kid = active_key(db)
     aid = approved_reset(db, kid)
