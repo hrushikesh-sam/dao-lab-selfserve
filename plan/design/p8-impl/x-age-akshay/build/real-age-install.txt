@@ -1,0 +1,8 @@
+# date: 2026-11-24T16:24:16Z  tree: 8639e1b40703b7277f34810964fdaeb1ee063976
+# command: sh deploy/age/install-age.sh <real age-v1.1.1-linux-amd64.tar.gz> <scratch prefix>
+install-age: OK age v1.1.1 (linux-amd64): <prefix>/bin/age, <prefix>/bin/age-keygen (mode 0755)
+rc=0
+755 <prefix>/bin/age
+755 <prefix>/bin/age-keygen
+0c6ddc31c276f55e9414fe27af4aada4579ce2fb824c1ec3f207873a77a49752  age
+e279f64ccd11347e57b8d28304e3e358ae1a5ef4f19107e7a1f9c9156fdcad91  age-keygen

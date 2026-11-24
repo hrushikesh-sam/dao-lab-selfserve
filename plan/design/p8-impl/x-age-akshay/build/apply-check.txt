@@ -1,0 +1,9 @@
+# date: 2026-11-24T16:25:04Z
+# base: 564183062842a5f6426355701582c13f2f7afa92
+# tested tree (x-age index): 8639e1b40703b7277f34810964fdaeb1ee063976
+# command: git apply --index X-AGE.patch
+apply rc=0
+# applied tree: 8639e1b40703b7277f34810964fdaeb1ee063976
+TREE MATCH
+diff --check rc=0
+ 10 files changed, 1031 insertions(+), 3 deletions(-)

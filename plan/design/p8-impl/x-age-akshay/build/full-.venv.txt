@@ -1,0 +1,60 @@
+# date:        2026-11-24T16:24:42Z
+# worktree:    /home/akshay/x-age (branch x-age)
+# HEAD:        564183062842a5f6426355701582c13f2f7afa92
+# tree:        8639e1b40703b7277f34810964fdaeb1ee063976   (index; git add -A before each stage)
+# status:      10 entries (git status --short)
+#   M  .env.example
+#   M  .github/workflows/ci.yml
+#   M  .gitignore
+#   M  deploy/age/README.md
+#   A  deploy/age/install-age.sh
+#   M  playbooks/bringup.yml
+#   A  playbooks/tasks/install_age.yml
+#   M  service/config.py
+#   M  tests/conftest.py
+#   A  tests/test_age_install.py
+# venv:        /home/akshay/x-age/.venv
+# PATH:        /home/akshay/x-age/.venv/bin:/usr/local/bin:/usr/bin:/bin
+# age on PATH: none
+# python:      3.12.13
+# ansible-core: 2.21.6
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# command:     .venv/bin/python -m pytest tests/ -q -rsf -p no:cacheprovider
+
+..................................................................s..... [  4%]
+........................................................................ [  9%]
+........................................................................ [ 14%]
+................................................ss...................... [ 19%]
+........................................................................ [ 24%]
+........................................................................ [ 28%]
+........................................................................ [ 33%]
+........................................................................ [ 38%]
+........................................................................ [ 43%]
+........................................................................ [ 48%]
+........................................................................ [ 53%]
+......s................................................................. [ 57%]
+........................................................................ [ 62%]
+........................................................................ [ 67%]
+........................................................................ [ 72%]
+........................................................................ [ 77%]
+........................................................................ [ 82%]
+........................................................................ [ 86%]
+........................................................................ [ 91%]
+........................................................................ [ 96%]
+...................................................                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /home/akshay/x-age/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_dashboard_e2e.py:17: could not import 'playwright.sync_api': No module named 'playwright'
+SKIPPED [1] tests/conftest.py:86: age v1.1.1 not installed (see deploy/age/README.md)
+SKIPPED [1] tests/test_daolab_keys.py:146: sshd not installed
+SKIPPED [1] tests/test_daolab_keys.py:155: sshd not installed
+SKIPPED [1] tests/test_playbooks.py:1134: sshd not installed
+1487 passed, 5 skipped, 1 warning in 933.43s (0:15:33)
+# exit: 0

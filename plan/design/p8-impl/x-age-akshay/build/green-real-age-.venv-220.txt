@@ -1,0 +1,28 @@
+# date:        2026-11-24T16:24:20Z
+# worktree:    /home/akshay/x-age (branch x-age)
+# HEAD:        564183062842a5f6426355701582c13f2f7afa92
+# tree:        8639e1b40703b7277f34810964fdaeb1ee063976   (index; git add -A before each stage)
+# status:      10 entries (git status --short)
+#   M  .env.example
+#   M  .github/workflows/ci.yml
+#   M  .gitignore
+#   M  deploy/age/README.md
+#   A  deploy/age/install-age.sh
+#   M  playbooks/bringup.yml
+#   A  playbooks/tasks/install_age.yml
+#   M  service/config.py
+#   M  tests/conftest.py
+#   A  tests/test_age_install.py
+# venv:        /home/akshay/x-age/.venv-220
+# PATH:        /home/akshay/x-age/.venv-220/bin:/usr/local/bin:/usr/bin:/bin
+# age on PATH: none
+# python:      3.12.13
+# ansible-core: 2.20.11
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# command:     .venv-220/bin/python -m pytest tests/test_age_install.py -q -rsf -p no:cacheprovider -k pinned_v1_1_1 or marker
+
+...........                                                              [100%]
+11 passed, 40 deselected in 3.06s
+# exit: 0

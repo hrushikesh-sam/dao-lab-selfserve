@@ -1,0 +1,1150 @@
+diff --git a/.env.example b/.env.example
+index d4a1c1d..33be253 100644
+--- a/.env.example
++++ b/.env.example
+@@ -54,3 +54,7 @@ DAOLAB_JOB_TIMEOUT_SEC=1800
+ # `daolab revoke-token <user>` ends one at once
+ DAOLAB_TOKEN_TTL_DAYS=90
+ DAOLAB_RECONCILE_ATTEMPTS=2
++
++# age v1.1.1 (X-AGE, deploy/age/): the CLI the snapshot work runs
++DAOLAB_AGE_BIN=age
++DAOLAB_AGE_KEYGEN_BIN=age-keygen
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index f854732..919ba58 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -33,5 +33,19 @@ jobs:
+           python -m pip install --upgrade pip
+           pip install -e ".[ansible]"
+           ansible-playbook --version
++      # X-AGE: the pinned age v1.1.1 for the requires_age tests. The release publishes no
++      # checksums; deploy/age/SHA256SUMS and BINARIES.sha256 are the trust anchor, checked by
++      # install-age.sh (via verify-age.sh) before anything is installed.
++      - name: Install age v1.1.1
++        run: |
++          d=$(mktemp -d "$RUNNER_TEMP/age.XXXXXX")
++          curl --fail --location --silent --show-error \
++            -o "$d/age-v1.1.1-linux-amd64.tar.gz" \
++            https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-amd64.tar.gz
++          sh deploy/age/install-age.sh "$d/age-v1.1.1-linux-amd64.tar.gz" "$HOME/.local"
++          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+       - name: Test
++        # requires_age tests fail (not skip) here if age is missing or not v1.1.1
++        env:
++          DAOLAB_REQUIRE_AGE: "1"
+         run: python -m pytest tests/ -q -rf
+diff --git a/.gitignore b/.gitignore
+index 25eb9ae..4ad8e17 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -151,6 +151,8 @@ activemq-data/
+ .env
+ .envrc
+ .venv
++# the second test venv (ansible-core 2.20.11, the floor); only its lib/ matched before
++.venv-220/
+ env/
+ venv/
+ ENV/
+diff --git a/deploy/age/README.md b/deploy/age/README.md
+index b77f1bf..302fb44 100644
+--- a/deploy/age/README.md
++++ b/deploy/age/README.md
+@@ -49,6 +49,75 @@ extracts `age/age` and `age/age-keygen` from that same copy and checks them agai
+ exits 0 on a full match. On an unknown file name, any mismatch or a missing binary, it
+ prints one line to stderr and exits 1.
+ 
+-It makes no network access and installs nothing: installing the verified binaries is a
+-later task. `tests/test_age_pin.py` checks the pin files' format and runs the script
+-on synthetic tarballs; it never uses the network.
++It makes no network access and installs nothing; `install-age.sh` (below) installs.
++`tests/test_age_pin.py` checks the pin files' format and runs the script on synthetic
++tarballs; it never uses the network.
++
++## Installing (X-AGE)
++
++The real v1.1.1 binaries print exactly `v1.1.1` and a newline for `age --version` and
++`age-keygen --version` (rc 0, nothing on stderr). Every check below requires exactly that.
++
++### On the controller (linux-amd64)
++
++Download both tarballs by hand into a new empty directory. You need the arm64 one later for
++the DPU. Keep the release file names: the scripts look them up in `SHA256SUMS`.
++
++    d=$(mktemp -d)
++    for a in amd64 arm64; do
++      curl --fail --location --silent --show-error -o "$d/age-v1.1.1-linux-$a.tar.gz" \
++        "https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-$a.tar.gz"
++    done
++    sh deploy/age/verify-age.sh "$d/age-v1.1.1-linux-arm64.tar.gz"    # checked now, used for the DPU
++    sudo sh deploy/age/install-age.sh "$d/age-v1.1.1-linux-amd64.tar.gz"   # prefix /usr/local
++    age --version; age-keygen --version                                 # both: v1.1.1
++
++`install-age.sh <tarball> [prefix]` (default prefix `/usr/local`; POSIX sh, `set -eu`, no
++network) does the following:
++- It refuses a tarball for the other arch (`uname -m`).
++- It copies the tarball into a private temp dir and runs `verify-age.sh` on that copy.
++- It unpacks the same copy and hashes both binaries again against `BINARIES.sha256`.
++- It runs each binary's `--version`, which must print exactly `v1.1.1`.
++- Only then does it install both with `install -m 0755` into `<prefix>/bin`, and run
++  `<prefix>/bin/age --version` (and age-keygen's) again.
++
++On any mismatch it prints one `install-age: …` line on stderr, exits 1 and installs
++nothing. A user install without sudo works the same way with a prefix such as
++`"$HOME/.local"`. In that case, put `$HOME/.local/bin` on `PATH`, or point the settings at the
++binaries:
++`DAOLAB_AGE_BIN` and `DAOLAB_AGE_KEYGEN_BIN` (defaults `age`, `age-keygen`; paths, not secrets).
++
++### On the DPU (linux-arm64) — Akshay, by hand
++
++Nothing is downloaded on the DPU, and the controller can't run arm64 binaries, so
++`playbooks/tasks/install_age.yml` does the following:
++- The controller verifies and unpacks a private copy of the arm64 tarball.
++- It copies only the two binaries to the DPU's `/usr/local/bin` (owner root, mode 0755).
++  Each one replaces the old file only if its sha256 is the `linux-arm64` pin.
++- The DPU then checks both installed files against the pins again and runs `--version`.
++
++It is part of `bringup.yml`, but tagged `[age, never]`: it runs only with `--tags age`. With
++that tag, nothing else in bringup runs, apart from resolving the setup.
++
++    ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 --tags age \
++      -e daolab_age_arm64_tarball="$d/age-v1.1.1-linux-arm64.tar.gz"
++
++Without `daolab_age_arm64_tarball` (or with another file name) it stops before doing anything.
++Check by hand on the board afterwards:
++
++    stat -c '%U %G %a %n' /usr/local/bin/age /usr/local/bin/age-keygen   # root root 755
++    sha256sum /usr/local/bin/age /usr/local/bin/age-keygen               # the linux-arm64 lines of BINARIES.sha256
++    age --version; age-keygen --version                                 # v1.1.1
++
++### In CI and in tests
++
++`.github/workflows/ci.yml` downloads the amd64 tarball with `curl --fail`, runs
++`install-age.sh` with the prefix `$HOME/.local`, and adds `$HOME/.local/bin` to `$GITHUB_PATH`.
++It runs the tests with `DAOLAB_REQUIRE_AGE=1`.
++
++Tests that run the real age carry `@pytest.mark.requires_age` (`tests/conftest.py`). They run
++only when `age` and `age-keygen` (`DAOLAB_AGE_BIN` / `DAOLAB_AGE_KEYGEN_BIN`, else `PATH`) both
++print exactly `v1.1.1`. Otherwise they are skipped with "age v1.1.1 not installed (see
++deploy/age/README.md)". With `DAOLAB_REQUIRE_AGE=1` they fail instead, so CI can't pass with a
++missing age. `tests/test_age_install.py` tests the scripts, the marker and the DPU task with
++synthetic tarballs and fake binaries (no network).
+diff --git a/deploy/age/install-age.sh b/deploy/age/install-age.sh
+new file mode 100755
+index 0000000..5399d48
+--- /dev/null
++++ b/deploy/age/install-age.sh
+@@ -0,0 +1,98 @@
++#!/bin/sh
++# install-age.sh <tarball> [prefix] - install the pinned age v1.1.1 (X-AGE, errata E-1).
++#
++# Installs age and age-keygen from an official v1.1.1 release tarball into <prefix>/bin
++# (default /usr/local; run it as root for that). The tarball must be for this host's arch
++# (linux-amd64 on x86_64, linux-arm64 on aarch64).
++#
++# The tarball is copied into a private temporary directory. verify-age.sh checks that copy
++# against SHA256SUMS and BINARIES.sha256 (both beside this script), and the binaries are
++# extracted from the same copy and hashed again here. So the file that is checked is the file
++# that is installed. Each binary's `--version` must print exactly "v1.1.1" (one line, rc 0)
++# before it is installed with `install -m 0755`, and again from <prefix>/bin afterwards.
++# On any mismatch, one line on stderr and exit 1; a refused binary is never installed.
++#
++# POSIX sh (runs under dash). No network access: download the tarball yourself
++# (deploy/age/README.md).
++set -eu
++
++die() {
++    printf 'install-age: %s\n' "$*" >&2
++    exit 1
++}
++
++[ "$#" -ge 1 ] && [ "$#" -le 2 ] || die "usage: install-age.sh <tarball> [prefix, default /usr/local]"
++tarball=$1
++prefix=${2:-/usr/local}
++case $prefix in
++    /*) ;;
++    *) die "the prefix must be an absolute path: $prefix" ;;
++esac
++
++here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || die "cannot find the script directory"
++verify=$here/verify-age.sh
++bins=$here/BINARIES.sha256
++[ -f "$verify" ] || die "missing: verify-age.sh"
++[ -f "$bins" ] || die "missing pin file: BINARIES.sha256"
++[ -f "$tarball" ] || die "not a file: $tarball"
++
++machine=$(uname -m)
++case $machine in
++    x86_64) host=linux-amd64 ;;
++    aarch64) host=linux-arm64 ;;
++    *) die "no pinned age release for this machine: $machine" ;;
++esac
++
++name=$(basename -- "$tarball")
++case $name in
++    age-v1.1.1-linux-amd64.tar.gz) arch=linux-amd64 ;;
++    age-v1.1.1-linux-arm64.tar.gz) arch=linux-arm64 ;;
++    *) die "unknown file name: $name" ;;
++esac
++[ "$arch" = "$host" ] || die "wrong arch: the tarball is $arch, this host is $host"
++
++# pin FILE NAME: the one 64-hex hash pinned for NAME in FILE, or nothing (as verify-age.sh).
++pin() {
++    awk -v n="$2" '$2 == n { c++; h = $1 } END { if (c == 1) print h }' "$1"
++}
++
++# is_v111 BINARY: BINARY --version exits 0 and prints exactly "v1.1.1" and one newline.
++# (The trailing x keeps the command substitution from dropping extra newlines.)
++is_v111() {
++    out=$("$1" --version 2>/dev/null && echo x) || return 1
++    [ "$out" = "v1.1.1
++x" ]
++}
++
++tmp=$(mktemp -d) || die "mktemp failed"
++trap 'rm -rf "$tmp"' EXIT
++trap 'exit 1' HUP INT TERM
++
++copy=$tmp/$name
++cp -- "$tarball" "$copy" 2>/dev/null || die "cannot copy: $name"
++sh "$verify" "$copy" >/dev/null || die "verify-age.sh refused $name"
++mkdir "$tmp/x" || die "mkdir failed"
++tar -xzf "$copy" -C "$tmp/x" age/age age/age-keygen 2>/dev/null \
++    || die "cannot extract age/age and age/age-keygen from: $name"
++
++for b in age age-keygen; do
++    f=$tmp/x/age/$b
++    [ -f "$f" ] && [ ! -h "$f" ] || die "not a regular file in $name: age/$b"
++    want=$(pin "$bins" "$arch/age/$b")
++    got=$(sha256sum < "$f" | awk '{ print $1 }')
++    [ -n "$want" ] && [ "$got" = "$want" ] || die "binary sha256 mismatch: $arch/age/$b"
++    chmod 0755 "$f" || die "chmod failed: age/$b"
++    is_v111 "$f" || die "age/$b --version is not exactly v1.1.1"
++done
++
++# Create <prefix>/bin only when missing: `install -d -m` would also change an existing dir's mode.
++[ -d "$prefix/bin" ] || install -d -m 0755 "$prefix/bin" || die "cannot create $prefix/bin"
++for b in age age-keygen; do
++    install -m 0755 "$tmp/x/age/$b" "$prefix/bin/$b" || die "cannot install $prefix/bin/$b"
++done
++for b in age age-keygen; do
++    is_v111 "$prefix/bin/$b" || die "installed $prefix/bin/$b --version is not exactly v1.1.1"
++done
++
++printf 'install-age: OK age v1.1.1 (%s): %s/bin/age, %s/bin/age-keygen (mode 0755)\n' \
++    "$arch" "$prefix" "$prefix"
+diff --git a/playbooks/bringup.yml b/playbooks/bringup.yml
+index 1bad4fe..aececf0 100644
+--- a/playbooks/bringup.yml
++++ b/playbooks/bringup.yml
+@@ -6,12 +6,21 @@
+ # On the DPU it checks what a deploy relies on and writes the personality marker; with
+ # -e daolab_deploy_vms=true it also checks the XCP-ng host. It fails at the end listing every
+ # missing prerequisite, so one run gives the whole to-do list.
++#
++# X-AGE: installing the pinned age v1.1.1 on the DPU runs only when asked (tags: [age, never]),
++# and then only that (plus resolve, tagged always):
++#
++#   ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 --tags age \
++#     -e daolab_age_arm64_tarball=/path/to/age-v1.1.1-linux-arm64.tar.gz
+ - name: resolve the setup
+   hosts: localhost
+   gather_facts: false
+   tasks:
+     - name: resolve
+       ansible.builtin.import_tasks: tasks/resolve.yml
++      # always: `--tags age` must still resolve the setup, or r_dpu stays empty and the age
++      # play silently runs on no host
++      tags: [always]
+ 
+ - name: the DPU
+   hosts: r_dpu
+@@ -86,6 +95,14 @@
+                 | selectattr('rc', 'ne', 0)
+                 | map(attribute='item.value') | map('regex_replace', '^', 'missing SR-IOV network: ') | list) }}
+ 
++- name: age v1.1.1 on the DPU (only with --tags age; X-AGE)
++  hosts: r_dpu
++  gather_facts: false
++  tasks:
++    - name: install age
++      ansible.builtin.import_tasks: tasks/install_age.yml
++      tags: [age, never]
++
+ - name: report
+   hosts: localhost
+   gather_facts: false
+diff --git a/playbooks/tasks/install_age.yml b/playbooks/tasks/install_age.yml
+new file mode 100644
+index 0000000..f44ace3
+--- /dev/null
++++ b/playbooks/tasks/install_age.yml
+@@ -0,0 +1,154 @@
++# playbooks/tasks/install_age.yml — X-AGE: the pinned age v1.1.1 on the DPU (errata E-1).
++#
++# Imported by bringup.yml with `tags: [age, never]`, so it runs only when asked, by an admin, by
++# hand (deploy/age/README.md):
++#
++#   ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 --tags age \
++#     -e daolab_age_arm64_tarball=/path/to/age-v1.1.1-linux-arm64.tar.gz
++#
++# The tarball is downloaded by hand; nothing here uses the network. On the controller, a private
++# copy of it is checked by deploy/age/verify-age.sh and unpacked. The DPU gets only the two
++# binaries, and each one replaces /usr/local/bin/<name> only if its sha256 is the linux-arm64
++# pin in BINARIES.sha256 (copy's `validate:` runs on the DPU, on the uploaded temp file).
++# Then the DPU checks both installed files against the pins again and runs `--version`, which
++# must print exactly v1.1.1. (The controller can't run the arm64 binaries itself.)
++#
++# Vars: daolab_age_arm64_tarball (required). For tests only: daolab_age_root (a prefix for
++# /usr/local/bin; the files are owned by root only when it is empty) and daolab_age_pin_dir
++# (synthetic pins and verify-age.sh; default deploy/age).
++- name: "age: the settings"
++  ansible.builtin.set_fact:
++    _age_root: "{{ daolab_age_root | default('') }}"
++    _age_pin_dir: "{{ daolab_age_pin_dir | default(playbook_dir ~ '/../deploy/age') }}"
++    _age_tarball: "{{ daolab_age_arm64_tarball | default('') }}"
++
++- name: "age: the arm64 tarball is given"
++  ansible.builtin.assert:
++    that:
++      - _age_tarball | length > 0
++      - (_age_tarball | basename) == 'age-v1.1.1-linux-arm64.tar.gz'
++    fail_msg: >-
++      set -e daolab_age_arm64_tarball=<path to age-v1.1.1-linux-arm64.tar.gz>, downloaded by
++      hand from the v1.1.1 release (deploy/age/README.md)
++    quiet: true
++
++- name: "age: the linux-arm64 pins"
++  ansible.builtin.set_fact:
++    _age_pins:
++      age: "{{ _age_pin_text | regex_findall('(?m)^([0-9a-f]{64})  linux-arm64/age/age$') }}"
++      age-keygen: "{{ _age_pin_text | regex_findall('(?m)^([0-9a-f]{64})  linux-arm64/age/age-keygen$') }}"
++  vars:
++    _age_pin_text: "{{ lookup('ansible.builtin.file', _age_pin_dir ~ '/BINARIES.sha256') }}"
++
++- name: "age: each binary is pinned exactly once"
++  ansible.builtin.assert:
++    that:
++      - _age_pins['age'] | length == 1
++      - _age_pins['age-keygen'] | length == 1
++    fail_msg: "BINARIES.sha256 must pin linux-arm64/age/age and linux-arm64/age/age-keygen exactly once"
++    quiet: true
++
++- name: "age: verify on the controller, then install on the DPU"
++  block:
++    - name: "age: on the controller"
++      delegate_to: localhost
++      run_once: true
++      vars:
++        ansible_become: false
++      block:
++        - name: "age: a private work dir on the controller"
++          ansible.builtin.tempfile:
++            state: directory
++            suffix: .age
++          register: _age_tmp
++
++        - name: "age: copy the tarball into it (that copy is verified and unpacked)"
++          ansible.builtin.copy:
++            src: "{{ _age_tarball }}"
++            dest: "{{ _age_tmp.path }}/age-v1.1.1-linux-arm64.tar.gz"
++            mode: "0600"
++
++        - name: "age: verify-age.sh on the copy"
++          ansible.builtin.command:
++            argv: [sh, "{{ _age_pin_dir }}/verify-age.sh", "{{ _age_tmp.path }}/age-v1.1.1-linux-arm64.tar.gz"]
++          changed_when: false
++
++        - name: "age: unpack the verified copy"
++          ansible.builtin.command:
++            argv: [tar, -xzf, "{{ _age_tmp.path }}/age-v1.1.1-linux-arm64.tar.gz", -C,
++                   "{{ _age_tmp.path }}", age/age, age/age-keygen]
++          changed_when: false
++
++        - name: "age: hash the unpacked binaries on the controller"
++          ansible.builtin.stat:
++            path: "{{ _age_tmp.path }}/age/{{ item }}"
++            checksum_algorithm: sha256
++            follow: false
++          loop: [age, age-keygen]
++          register: _age_unpacked
++
++        # All or nothing: neither binary goes to the DPU unless both match (the DPU's
++        # validate: below is the second gate, per file).
++        - name: "age: both unpacked binaries match their linux-arm64 pins"
++          ansible.builtin.assert:
++            that:
++              - (_age_unpacked.results | map(attribute='stat.isreg', default=false) | list) == [true, true]
++              - (_age_unpacked.results | map(attribute='stat.checksum', default='') | list)
++                == [_age_pins['age'][0], _age_pins['age-keygen'][0]]
++            fail_msg: "the unpacked age / age-keygen do not match the linux-arm64 pins; nothing was copied to the DPU"
++            quiet: true
++
++    - name: "age: install on the DPU, only a binary that matches its linux-arm64 pin"
++      ansible.builtin.copy:
++        src: "{{ _age_tmp.path }}/age/{{ item }}"
++        dest: "{{ _age_root }}/usr/local/bin/{{ item }}"
++        mode: "0755"
++        owner: "{{ 'root' if _age_root == '' else omit }}"
++        group: "{{ 'root' if _age_root == '' else omit }}"
++        validate: "sh -c 'echo \"{{ _age_pins[item][0] }}  $1\" | sha256sum -c --status' sh %s"
++      loop: [age, age-keygen]
++
++  always:
++    - name: "age: remove the controller work dir"
++      ansible.builtin.file:
++        path: "{{ _age_tmp.path }}"
++        state: absent
++      delegate_to: localhost
++      run_once: true
++      vars:
++        ansible_become: false
++      when: _age_tmp.path is defined
++
++- name: "age: hash the installed binaries on the DPU"
++  ansible.builtin.command:
++    argv: [sha256sum, "{{ _age_root }}/usr/local/bin/age", "{{ _age_root }}/usr/local/bin/age-keygen"]
++  register: _age_sums
++  changed_when: false
++
++- name: "age: installed binaries match the linux-arm64 pins"
++  ansible.builtin.assert:
++    that:
++      - (_age_sums.stdout_lines | map('split') | map('first') | list)
++        == [_age_pins['age'][0], _age_pins['age-keygen'][0]]
++    fail_msg: "the installed age / age-keygen on the DPU do not match the linux-arm64 pins"
++    quiet: true
++
++- name: "age: run --version on the DPU"
++  ansible.builtin.command:
++    argv: ["{{ _age_root }}/usr/local/bin/{{ item }}", --version]
++  loop: [age, age-keygen]
++  register: _age_version
++  changed_when: false
++  failed_when: false
++
++- name: "age: --version is exactly v1.1.1"
++  ansible.builtin.assert:
++    that:
++      - item.rc == 0
++      - item.stdout == 'v1.1.1'
++      - item.stdout_lines | length == 1
++    fail_msg: "{{ item.item }} --version on the DPU is not exactly v1.1.1"
++    quiet: true
++  loop: "{{ _age_version.results }}"
++  loop_control:
++    label: "{{ item.item }}"
+diff --git a/service/config.py b/service/config.py
+index 5cb392a..802d1b8 100644
+--- a/service/config.py
++++ b/service/config.py
+@@ -53,6 +53,8 @@ class Settings:
+     deployable: tuple[str, ...]
+     xo_url: str
+     xo_token_file: str
++    age_bin: str
++    age_keygen_bin: str
+ 
+     @classmethod
+     def from_env(cls) -> "Settings":
+@@ -106,6 +108,9 @@ class Settings:
+             # B-93: the use cases' VMs are made through Xen Orchestra (scripts/run/xo.sh)
+             xo_url=env("DAOLAB_XO_URL", "https://127.0.0.1:8443/rest/v0"),
+             xo_token_file=env("DAOLAB_XO_TOKEN_FILE", ""),
++            # X-AGE: the pinned age v1.1.1 CLI (deploy/age/install-age.sh). Paths, not secrets.
++            age_bin=env("DAOLAB_AGE_BIN", "age"),
++            age_keygen_bin=env("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"),
+         )
+ 
+ 
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 892ac52..857903d 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -14,7 +14,9 @@ The ``mk_setup`` / ``mk_usecase`` / ``mk_res`` / ``mk_user`` helpers insert rows
+ """
+ import hashlib
+ import os
++import shutil
+ import sqlite3
++import subprocess
+ from datetime import datetime, timezone
+ 
+ import dotenv
+@@ -40,6 +42,58 @@ def T(hour, minute=0, day=1):
+     return datetime(2026, 9, day, hour, minute, tzinfo=UTC)
+ 
+ 
++# ---- the `requires_age` marker (X-AGE) ----------------------------------------------------
++# A test marked @pytest.mark.requires_age runs the real age CLI. It runs only when both age
++# and age-keygen (DAOLAB_AGE_BIN / DAOLAB_AGE_KEYGEN_BIN, else the names on PATH) are the
++# pinned v1.1.1: `--version` exits 0 and prints exactly "v1.1.1\n", as the release binaries
++# do. Otherwise it is skipped, or fails when DAOLAB_REQUIRE_AGE=1 (CI installs age with
++# deploy/age/install-age.sh and sets it, so a broken install can't hide behind skips).
++AGE_MISSING = "age v1.1.1 not installed (see deploy/age/README.md)"
++_AGE_TOOLS = (("DAOLAB_AGE_BIN", "age"), ("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"))
++_age_ok = None
++
++
++def pytest_configure(config):
++    config.addinivalue_line(
++        "markers", "requires_age: needs the pinned age v1.1.1 CLI, age and age-keygen "
++                   "(skipped without it; fails instead when DAOLAB_REQUIRE_AGE=1)")
++
++
++def _is_age_v111(name):
++    path = shutil.which(name)
++    if path is None:
++        return False
++    try:
++        p = subprocess.run([path, "--version"], capture_output=True, timeout=30,
++                           stdin=subprocess.DEVNULL)
++    except (OSError, subprocess.SubprocessError):
++        return False
++    return p.returncode == 0 and p.stdout == b"v1.1.1\n"
++
++
++def age_installed():
++    """True when the pinned age v1.1.1 is usable (checked once per test session)."""
++    global _age_ok
++    if _age_ok is None:
++        _age_ok = all(_is_age_v111(os.environ.get(var) or default) for var, default in _AGE_TOOLS)
++    return _age_ok
++
++
++def pytest_runtest_setup(item):
++    if item.get_closest_marker("requires_age") is None or age_installed():
++        return
++    if os.environ.get("DAOLAB_REQUIRE_AGE") != "1":
++        pytest.skip(AGE_MISSING)
++
++
++@pytest.hookimpl(tryfirst=True)
++def pytest_runtest_call(item):
++    # The required case fails in the call phase, so it is reported as a failed test, not as
++    # a setup error.
++    if item.get_closest_marker("requires_age") is not None and not age_installed():
++        pytest.fail(f"{AGE_MISSING}, and DAOLAB_REQUIRE_AGE=1", pytrace=False)
++
++
+ @pytest.fixture
+ def db():
+     conn = sqlite3.connect(":memory:", isolation_level=None)
+diff --git a/tests/test_age_install.py b/tests/test_age_install.py
+new file mode 100644
+index 0000000..accd94f
+--- /dev/null
++++ b/tests/test_age_install.py
+@@ -0,0 +1,611 @@
++"""X-AGE: the pinned age v1.1.1 (errata E-1) installed where it's needed — the controller and CI
++(deploy/age/install-age.sh), the DPU (playbooks/tasks/install_age.yml, `bringup.yml --tags age`) —
++and the `requires_age` test marker (tests/conftest.py).
++
++Everything here uses synthetic tarballs, synthetic pins and fake binaries (shell scripts that
++print a version), like tests/test_age_pin.py; nothing touches the network or the real release.
++The one exception is the last test, which needs the real age on PATH (requires_age; CI installs
++it). The real v1.1.1 binaries print exactly "v1.1.1\\n" for --version, on stdout, with rc 0
++(checked by hand on the downloaded release, plan in the X-AGE findings 8.3).
++"""
++import hashlib
++import io
++import os
++import platform
++import shutil
++import stat
++import subprocess
++import sys
++import tarfile
++
++import pytest
++import yaml
++
++from tests.conftest import REPO
++from tests.test_playbooks import ANSIBLE, Lab
++
++AGE_DIR = os.path.join(REPO, "deploy", "age")
++VERIFY = os.path.join(AGE_DIR, "verify-age.sh")
++INSTALL = os.path.join(AGE_DIR, "install-age.sh")
++TASKS = os.path.join(REPO, "playbooks", "tasks", "install_age.yml")
++BRINGUP = os.path.join(REPO, "playbooks", "bringup.yml")
++CI = os.path.join(REPO, ".github", "workflows", "ci.yml")
++README = os.path.join(AGE_DIR, "README.md")
++ARCHES = ("linux-amd64", "linux-arm64")
++HOST = {"x86_64": "linux-amd64", "aarch64": "linux-arm64"}.get(platform.machine())
++OTHER = {"linux-amd64": "linux-arm64", "linux-arm64": "linux-amd64"}.get(HOST)
++SH = shutil.which("dash") or "sh"
++MISSING = "age v1.1.1 not installed (see deploy/age/README.md)"
++URL = "https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-amd64.tar.gz"
++
++needs_host_arch = pytest.mark.skipif(HOST is None, reason=f"no age release for {platform.machine()}")
++needs_ansible = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed "
++                                                       "(pip install -e .[ansible])")
++
++
++def _sha(data):
++    return hashlib.sha256(data).hexdigest()
++
++
++def fake_bin(name, arch, body="echo v1.1.1"):
++    """A fake age binary: a shell script. The comment makes every (name, arch) hash distinct."""
++    return f"#!/bin/sh\n# fake {name} {arch}\n{body}\n".encode()
++
++
++def _tarball(members, mode=0o755):
++    buf = io.BytesIO()
++    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
++        for name, data in members.items():
++            info = tarfile.TarInfo(name)
++            info.size, info.mode = len(data), mode
++            tf.addfile(info, io.BytesIO(data))
++    return buf.getvalue()
++
++
++class Kit:
++    """Copies of verify-age.sh and install-age.sh beside synthetic pins, plus the synthetic
++    tarballs they pin (one per arch)."""
++
++    def __init__(self, tmp_path):
++        assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
++        self.root = tmp_path
++        self.pins = tmp_path / "pins"
++        self.pins.mkdir()
++        shutil.copy2(VERIFY, self.pins / "verify-age.sh")
++        shutil.copy2(INSTALL, self.pins / "install-age.sh")
++        self.inp = tmp_path / "in"
++        self.inp.mkdir()
++        self.scratch = tmp_path / "scratch"
++        self.scratch.mkdir()
++        self.tarballs, self.members = {}, {}
++
++    def build(self, bodies=None, mode=0o755, tamper=None):
++        """bodies: {(arch, binary): shell body}; tamper: {(arch, binary): bytes} put in the
++        tarball but NOT in the pins (the pins keep the untampered binary)."""
++        bodies, tamper = bodies or {}, tamper or {}
++        sums, bins = [], []
++        for arch in ARCHES:
++            members = {f"age/{b}": fake_bin(b, arch, bodies.get((arch, b), "echo v1.1.1"))
++                       for b in ("age", "age-keygen")}
++            members["age/LICENSE"] = b"license\n"
++            for b in ("age", "age-keygen"):
++                bins.append(f"{_sha(members[f'age/{b}'])}  {arch}/age/{b}\n")
++            shipped = dict(members)
++            for (a, b), data in tamper.items():
++                if a == arch:
++                    shipped[f"age/{b}"] = data
++            name = f"age-v1.1.1-{arch}.tar.gz"
++            data = _tarball(shipped, mode)
++            (self.inp / name).write_bytes(data)
++            sums.append(f"{_sha(data)}  {name}\n")
++            self.tarballs[arch] = self.inp / name
++            self.members[arch] = members
++        (self.pins / "SHA256SUMS").write_text("".join(sums))
++        (self.pins / "BINARIES.sha256").write_text("".join(bins))
++        return self
++
++
++@pytest.fixture
++def kit(tmp_path):
++    return Kit(tmp_path)
++
++
++def install(kit, *args, umask="022", script="install-age.sh"):
++    env = {"PATH": os.environ["PATH"], "LC_ALL": "C", "TMPDIR": str(kit.scratch)}
++    return subprocess.run(["sh", "-c", f'umask {umask} && exec "$0" "$@"', SH,
++                           str(kit.pins / script), *map(str, args)],
++                          env=env, capture_output=True, text=True, timeout=60)
++
++
++def _refused(p, needle, prefix):
++    assert p.returncode != 0, (p.stdout, p.stderr)
++    assert "install-age: " in p.stderr and needle in p.stderr, p.stderr
++    assert not (prefix / "bin").exists() or list((prefix / "bin").iterdir()) == []
++
++
++# --- install-age.sh ----------------------------------------------------------------------
++
++def test_install_script_is_posix_sh_with_set_eu_and_no_network():
++    assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
++    with open(INSTALL) as fh:
++        text = fh.read()
++    assert text.startswith("#!/bin/sh\n")
++    assert os.access(INSTALL, os.X_OK)
++    code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
++    assert "\nset -eu\n" in code
++    for word in ("curl", "wget", "apt", "pip", "sudo", "bash", "[["):
++        assert word not in code, word
++    assert "verify-age.sh" in code and "install -m 0755" in code
++    assert "${2:-/usr/local}" in code                     # the default prefix
++    p = subprocess.run([SH, "-n", INSTALL], capture_output=True, text=True)
++    assert p.returncode == 0, p.stderr
++
++
++@needs_host_arch
++def test_installs_both_binaries_0755_from_the_verified_copy(kit):
++    kit.build(mode=0o600)                       # the archive's own mode doesn't matter
++    prefix = kit.root / "prefix"                # prefix/bin doesn't exist yet: it's created
++    p = install(kit, kit.tarballs[HOST], prefix, umask="077")
++    assert p.returncode == 0, p.stderr
++    assert "install-age: OK" in p.stdout and p.stderr == ""
++    for b in ("age", "age-keygen"):
++        f = prefix / "bin" / b
++        assert stat.S_IMODE(f.stat().st_mode) == 0o755, oct(f.stat().st_mode)
++        assert f.read_bytes() == kit.members[HOST][f"age/{b}"]
++    assert sorted(os.listdir(prefix / "bin")) == ["age", "age-keygen"]
++    assert list(kit.scratch.iterdir()) == []            # its temp dirs are gone
++
++
++@needs_host_arch
++def test_an_existing_bin_dir_keeps_its_mode_and_a_rerun_is_fine(kit):
++    kit.build()
++    prefix = kit.root / "prefix"
++    (prefix / "bin").mkdir(parents=True)
++    (prefix / "bin").chmod(0o700)
++    assert install(kit, kit.tarballs[HOST], prefix).returncode == 0
++    p = install(kit, kit.tarballs[HOST], prefix)
++    assert p.returncode == 0, p.stderr
++    assert stat.S_IMODE((prefix / "bin").stat().st_mode) == 0o700
++
++
++@needs_host_arch
++def test_rejects_a_tampered_tarball(kit):
++    kit.build()
++    path = kit.tarballs[HOST]
++    path.write_bytes(path.read_bytes() + b"\0")
++    p = install(kit, path, kit.root / "prefix")
++    _refused(p, "verify-age.sh refused", kit.root / "prefix")
++    assert "tarball sha256 mismatch" in p.stderr                  # verify-age.sh's own line
++    assert list(kit.scratch.iterdir()) == []
++
++
++@needs_host_arch
++def test_rejects_a_tarball_for_the_other_arch_before_extracting_anything(kit):
++    kit.build()
++    p = install(kit, kit.tarballs[OTHER], kit.root / "prefix")
++    _refused(p, "wrong arch", kit.root / "prefix")
++    assert OTHER in p.stderr and HOST in p.stderr
++    assert list(kit.scratch.iterdir()) == []
++
++
++@needs_host_arch
++def test_rejects_a_binary_that_differs_from_its_pin_even_if_the_tarball_is_pinned(kit):
++    kit.build(tamper={(HOST, "age-keygen"): b"#!/bin/sh\necho v1.1.1\n"})
++    p = install(kit, kit.tarballs[HOST], kit.root / "prefix")
++    _refused(p, "verify-age.sh refused", kit.root / "prefix")
++    assert f"{HOST}/age/age-keygen" in p.stderr
++
++
++@needs_host_arch
++@pytest.mark.parametrize("binary", ["age", "age-keygen"])
++@pytest.mark.parametrize("body", [
++    "echo v1.2.0",                       # another version
++    "echo v1.1.1-extra",                 # not exact
++    "echo 'v1.1.1 '",                    # trailing text
++    "echo v1.1.1; echo more",            # a second line
++    "echo; echo v1.1.1",                 # a leading line
++    "echo v1.1.1; exit 3",               # right text, failing rc
++])
++def test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1(kit, binary, body):
++    kit.build(bodies={(HOST, binary): body})
++    p = install(kit, kit.tarballs[HOST], kit.root / "prefix")
++    _refused(p, "not exactly v1.1.1", kit.root / "prefix")
++    assert f"age/{binary}" in p.stderr
++    assert list(kit.scratch.iterdir()) == []
++
++
++@needs_host_arch
++def test_installs_the_file_it_verified_not_the_file_named_on_the_command_line(kit):
++    """A stand-in verify-age.sh swaps the ORIGINAL tarball for a tampered (but re-pinned-looking)
++    one while the real check runs on install-age.sh's private copy: the installed binaries must
++    still be the pinned ones."""
++    kit.build()
++    real = kit.pins / "real-verify.sh"
++    shutil.move(kit.pins / "verify-age.sh", real)
++    evil = kit.root / "evil.tar.gz"
++    evil.write_bytes(_tarball({"age/age": b"#!/bin/sh\necho v1.1.1\n# evil\n",
++                               "age/age-keygen": b"#!/bin/sh\necho v1.1.1\n# evil\n"}))
++    seen = kit.root / "verify-arg"
++    original = kit.tarballs[HOST]
++    (kit.pins / "verify-age.sh").write_text(
++        "#!/bin/sh\n"
++        f"printf '%s\\n' \"$1\" > '{seen}'\n"
++        f"cp '{evil}' '{original}'\n"
++        f"exec sh '{real}' \"$1\"\n")
++    prefix = kit.root / "prefix"
++    p = install(kit, original, prefix)
++    assert p.returncode == 0, p.stderr
++    assert seen.read_text().strip() != str(original)            # it checked a private copy
++    assert original.read_bytes() == evil.read_bytes()           # the swap really happened
++    for b in ("age", "age-keygen"):
++        assert (prefix / "bin" / b).read_bytes() == kit.members[HOST][f"age/{b}"]
++
++
++@pytest.mark.parametrize("args,needle", [
++    ((), "usage"),
++    (("a", "b", "c"), "usage"),
++    (("{missing}", "{prefix}"), "not a file"),
++    (("{tarball}", "relative/prefix"), "absolute"),
++    (("{renamed}", "{prefix}"), "unknown file name"),
++])
++def test_refuses_bad_arguments(kit, args, needle):
++    kit.build()
++    renamed = kit.root / "age.tar.gz"
++    shutil.copy2(kit.tarballs["linux-amd64"], renamed)
++    subs = {"{missing}": str(kit.root / "nope.tar.gz"), "{prefix}": str(kit.root / "prefix"),
++            "{tarball}": str(kit.tarballs[HOST or "linux-amd64"]), "{renamed}": str(renamed)}
++    p = install(kit, *[subs.get(a, a) for a in args])
++    _refused(p, needle, kit.root / "prefix")
++
++
++# --- the requires_age marker (tests/conftest.py) -----------------------------------------
++
++INNER = """import pytest
++
++@pytest.mark.requires_age
++def test_needs_age():
++    pass
++
++def test_plain():
++    pass
++"""
++
++
++def _fake_tools(d, age="echo v1.1.1", keygen="echo v1.1.1"):
++    d.mkdir(parents=True, exist_ok=True)
++    for name, body in (("age", age), ("age-keygen", keygen)):
++        if body is not None:
++            (d / name).write_text(f"#!/bin/sh\n{body}\n")
++            (d / name).chmod(0o755)
++    return d
++
++
++def run_inner(tmp_path, path_dirs, extra=None, args=()):
++    """Run pytest on a two-test file with tests/conftest.py loaded as a plugin, in a clean
++    environment (CI's DAOLAB_REQUIRE_AGE=1 must not leak in) with the given PATH."""
++    inner = tmp_path / "inner"
++    inner.mkdir(exist_ok=True)
++    (inner / "test_inner.py").write_text(INNER)
++    env = {"PATH": os.pathsep.join(str(d) for d in path_dirs), "PYTHONPATH": REPO,
++           "LC_ALL": "C", "HOME": str(tmp_path), "PYTHONDONTWRITEBYTECODE": "1", **(extra or {})}
++    return subprocess.run([sys.executable, "-m", "pytest", "-p", "tests.conftest",
++                           "-p", "no:cacheprovider", "-q", "-rsfE", "--strict-markers",
++                           "--rootdir", str(inner), *args, str(inner / "test_inner.py")],
++                          cwd=REPO, env=env, capture_output=True, text=True, timeout=120)
++
++
++def _summary(p):
++    return p.stdout.strip().splitlines()[-1] if p.stdout.strip() else p.stderr[-500:]
++
++
++def test_marker_skips_without_age(tmp_path):
++    empty = tmp_path / "empty"
++    empty.mkdir()
++    p = run_inner(tmp_path, [empty])
++    assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
++    assert MISSING in p.stdout
++
++
++def test_marker_fails_without_age_when_required(tmp_path):
++    empty = tmp_path / "empty"
++    empty.mkdir()
++    p = run_inner(tmp_path, [empty], {"DAOLAB_REQUIRE_AGE": "1"})
++    assert p.returncode == 1 and "1 failed, 1 passed" in _summary(p), p.stdout + p.stderr
++    assert MISSING in p.stdout and "test_needs_age" in p.stdout
++
++
++def test_marker_runs_the_test_with_a_v1_1_1_age_on_path(tmp_path):
++    p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin")], {"DAOLAB_REQUIRE_AGE": "1"})
++    assert p.returncode == 0 and "2 passed" in _summary(p), p.stdout + p.stderr
++
++
++@pytest.mark.parametrize("age,keygen", [
++    ("echo v1.0.0", "echo v1.1.1"),          # an apt-style older age
++    ("echo v1.1.1", "echo v1.2.0"),
++    ("echo v1.1.1", None),                   # no age-keygen
++    (None, "echo v1.1.1"),                   # no age
++    ("echo v1.1.1; exit 1", "echo v1.1.1"),
++])
++def test_marker_skips_a_wrong_or_partial_install(tmp_path, age, keygen):
++    p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin", age, keygen)])
++    assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
++    assert MISSING in p.stdout
++
++
++def test_marker_uses_daolab_age_bin_and_keygen_bin(tmp_path):
++    tools = _fake_tools(tmp_path / "elsewhere")
++    empty = tmp_path / "empty"
++    empty.mkdir()
++    p = run_inner(tmp_path, [empty], {"DAOLAB_AGE_BIN": str(tools / "age"),
++                                      "DAOLAB_AGE_KEYGEN_BIN": str(tools / "age-keygen"),
++                                      "DAOLAB_REQUIRE_AGE": "1"})
++    assert p.returncode == 0 and "2 passed" in _summary(p), p.stdout + p.stderr
++    # ... and a DAOLAB_AGE_BIN pointing at a wrong version wins over a good age on PATH
++    bad = _fake_tools(tmp_path / "bad", age="echo v1.0.0")
++    p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin")], {"DAOLAB_AGE_BIN": str(bad / "age")})
++    assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
++
++
++def test_marker_is_registered(tmp_path):
++    p = run_inner(tmp_path, [tmp_path], args=("--markers",))
++    assert "@pytest.mark.requires_age" in p.stdout, p.stdout[-1500:]
++
++
++# --- service/config.py -------------------------------------------------------------------
++
++def test_age_settings_default_to_the_names_on_path(monkeypatch):
++    from service import config
++    monkeypatch.delenv("DAOLAB_AGE_BIN", raising=False)
++    monkeypatch.delenv("DAOLAB_AGE_KEYGEN_BIN", raising=False)
++    s = config.Settings.from_env()
++    assert (s.age_bin, s.age_keygen_bin) == ("age", "age-keygen")
++
++
++def test_age_settings_come_from_the_environment(monkeypatch):
++    from service import config
++    monkeypatch.setenv("DAOLAB_AGE_BIN", "/opt/age/bin/age")
++    monkeypatch.setenv("DAOLAB_AGE_KEYGEN_BIN", "/opt/age/bin/age-keygen")
++    s = config.Settings.from_env()
++    assert (s.age_bin, s.age_keygen_bin) == ("/opt/age/bin/age", "/opt/age/bin/age-keygen")
++    assert "DAOLAB_AGE_BIN" not in config.SECRET_ENV            # paths, not secrets
++
++
++# --- CI, .gitignore, README --------------------------------------------------------------
++
++def _ci_steps():
++    with open(CI) as fh:
++        return yaml.safe_load(fh)["jobs"]["test"]["steps"]
++
++
++def test_ci_installs_the_pinned_age_before_the_tests_and_requires_it():
++    steps = _ci_steps()
++    names = [s.get("name") for s in steps]
++    idx = [i for i, s in enumerate(steps) if "install-age.sh" in s.get("run", "")]
++    assert len(idx) == 1, names
++    step = steps[idx[0]]
++    run = step["run"]
++    assert "curl --fail" in run and URL in run
++    assert 'install-age.sh "$d/age-v1.1.1-linux-amd64.tar.gz" "$HOME/.local"' in run
++    assert 'echo "$HOME/.local/bin" >> "$GITHUB_PATH"' in run
++    test = names.index("Test")
++    assert names.index("Install") < idx[0] < test
++    assert steps[test].get("env", {}).get("DAOLAB_REQUIRE_AGE") == "1"
++
++
++def test_gitignore_covers_both_venvs():
++    if not os.path.isdir(os.path.join(REPO, ".git")) and not os.path.isfile(os.path.join(REPO, ".git")):
++        pytest.skip("not a git checkout")
++    # The rule must come from the repo's own .gitignore: a venv made by `uv venv` carries a
++    # private `*` .gitignore, which would make this pass on one machine and not another.
++    for path in (".venv/bin/python", ".venv-220/bin/python", ".venv-220/pyvenv.cfg"):
++        p = subprocess.run(["git", "-C", REPO, "check-ignore", "-v", "--no-index", path],
++                           capture_output=True, text=True)
++        assert p.returncode == 0, f"{path} is not ignored"
++        source = p.stdout.split(":", 1)[0]
++        assert source == ".gitignore", f"{path} is ignored only by {source}, not the repo's .gitignore"
++
++
++def test_readme_says_how_to_install_on_the_controller_and_the_dpu():
++    with open(README) as fh:
++        text = fh.read()
++    for needle in ("install-age.sh", "/usr/local", "--tags age", "daolab_age_arm64_tarball",
++                   "requires_age", "DAOLAB_REQUIRE_AGE", "age-v1.1.1-linux-arm64.tar.gz",
++                   "age-v1.1.1-linux-amd64.tar.gz"):
++        assert needle in text, needle
++    assert "installing the verified binaries is a\nlater task" not in text
++    assert "is a later task" not in text
++
++
++# --- the DPU task: playbooks/tasks/install_age.yml via `bringup.yml --tags age` -----------
++
++def test_bringup_runs_the_age_task_only_when_asked_and_always_resolves():
++    with open(BRINGUP) as fh:
++        plays = yaml.safe_load(fh)
++    imports = [(p, t) for p in plays for t in p.get("tasks", [])
++               if "ansible.builtin.import_tasks" in t]
++    resolve = [t for _, t in imports if t["ansible.builtin.import_tasks"] == "tasks/resolve.yml"]
++    age = [(p, t) for p, t in imports if t["ansible.builtin.import_tasks"] == "tasks/install_age.yml"]
++    assert len(resolve) == 1 and resolve[0].get("tags") == ["always"]
++    assert len(age) == 1
++    play, task = age[0]
++    assert play["hosts"] == "r_dpu" and task.get("tags") == ["age", "never"]
++
++
++def test_the_dpu_binaries_are_owned_by_root_outside_tests():
++    with open(TASKS) as fh:
++        text = fh.read()
++    assert text.count("owner: \"{{ 'root' if _age_root == '' else omit }}\"") == 1
++    assert text.count("group: \"{{ 'root' if _age_root == '' else omit }}\"") == 1
++    assert "/usr/local/bin/" in text and 'mode: "0755"' in text
++
++
++class DpuKit(Kit):
++    """A Kit whose arm64 tarball goes to the fake DPU (the fake binaries are shell scripts, so
++    they run on any controller)."""
++
++    def __init__(self, tmp_path):
++        super().__init__(tmp_path)
++        self.lab = Lab(_labdir(tmp_path))
++        self.bin = self.lab.dir / "root" / "usr" / "local" / "bin"
++        self.bin.mkdir(parents=True)          # the DPU's /usr/local/bin exists
++        self.ctl_tmp = tmp_path / "ctl-tmp"
++        self.ctl_tmp.mkdir()
++
++
++def _labdir(tmp_path):
++    d = tmp_path / "lab"
++    d.mkdir()
++    return d
++
++
++@pytest.fixture
++def dpu(tmp_path):
++    return DpuKit(tmp_path)
++
++
++def dpu_run(dpu, monkeypatch, tags="age", **ev):
++    if tags:
++        monkeypatch.setenv("ANSIBLE_RUN_TAGS", tags)
++    else:
++        monkeypatch.delenv("ANSIBLE_RUN_TAGS", raising=False)
++    monkeypatch.setenv("TMPDIR", str(dpu.ctl_tmp))
++    base = {"ansible_become": False, "daolab_bringup_root": str(dpu.lab.dir / "root"),
++            "daolab_age_root": str(dpu.lab.dir / "root"), "daolab_age_pin_dir": str(dpu.pins),
++            "hw_class": "sdp-pf1-vf8", "daolab_deploy_vms": False}
++    base.update(ev)
++    return dpu.lab.run("bringup.yml", **{k: v for k, v in base.items() if v is not None})
++
++
++@needs_ansible
++def test_dpu_task_installs_both_binaries_0755_and_checks_them(dpu, monkeypatch):
++    dpu.build(mode=0o600)
++    rc = dpu_run(dpu, monkeypatch, daolab_age_arm64_tarball=str(dpu.tarballs["linux-arm64"]))
++    assert rc == 0, dpu.lab.stdout[-3000:]
++    for b in ("age", "age-keygen"):
++        f = dpu.bin / b
++        assert f.read_bytes() == dpu.members["linux-arm64"][f"age/{b}"]
++        assert stat.S_IMODE(f.stat().st_mode) == 0o755
++    assert "age: installed binaries match the linux-arm64 pins" in dpu.lab.stdout
++    assert "age: --version is exactly v1.1.1" in dpu.lab.stdout
++    assert list(dpu.ctl_tmp.iterdir()) == []                # the controller work dir is gone
++
++
++@needs_ansible
++@pytest.mark.parametrize("value", [None, ""])
++def test_dpu_task_refuses_a_missing_tarball_var(dpu, monkeypatch, value):
++    dpu.build()
++    rc = dpu_run(dpu, monkeypatch, daolab_age_arm64_tarball=value)
++    assert rc != 0
++    assert "set -e daolab_age_arm64_tarball=" in dpu.lab.stdout, dpu.lab.stdout[-3000:]
++    assert list(dpu.bin.iterdir()) == []
++
++
++@needs_ansible
++def test_dpu_task_refuses_the_amd64_tarball(dpu, monkeypatch):
++    dpu.build()
++    rc = dpu_run(dpu, monkeypatch, daolab_age_arm64_tarball=str(dpu.tarballs["linux-amd64"]))
++    assert rc != 0 and "set -e daolab_age_arm64_tarball=" in dpu.lab.stdout
++    assert list(dpu.bin.iterdir()) == []
++
++
++@needs_ansible
++def test_dpu_task_refuses_a_tarball_with_a_bad_hash(dpu, monkeypatch):
++    dpu.build()
++    path = dpu.tarballs["linux-arm64"]
++    path.write_bytes(path.read_bytes() + b"\0")
++    rc = dpu_run(dpu, monkeypatch, daolab_age_arm64_tarball=str(path))
++    assert rc != 0
++    assert "tarball sha256 mismatch" in dpu.lab.stdout, dpu.lab.stdout[-3000:]
++    assert list(dpu.bin.iterdir()) == []
++    assert list(dpu.ctl_tmp.iterdir()) == []
++
++
++@needs_ansible
++def test_dpu_side_pin_check_refuses_a_bad_binary_even_if_verify_were_bypassed(dpu, monkeypatch):
++    """Defence in depth: with verify-age.sh replaced by a stub that says OK, a binary that isn't
++    the arm64 pin must never replace the DPU's existing /usr/local/bin/age (copy's validate:)."""
++    dpu.build(tamper={("linux-arm64", "age"): b"#!/bin/sh\necho v1.1.1\n# not the pin\n"})
++    (dpu.pins / "verify-age.sh").write_text("#!/bin/sh\necho 'verify-age: OK (stub)'\n")
++    old = b"#!/bin/sh\necho previous age\n"
++    (dpu.bin / "age").write_bytes(old)
++    rc = dpu_run(dpu, monkeypatch, daolab_age_arm64_tarball=str(dpu.tarballs["linux-arm64"]))
++    assert rc != 0, dpu.lab.stdout[-3000:]
++    assert "do not match the linux-arm64 pins; nothing was copied to the DPU" in dpu.lab.stdout, \
++        dpu.lab.stdout[-3000:]
++    assert (dpu.bin / "age").read_bytes() == old
++    assert not (dpu.bin / "age-keygen").exists()
++    assert list(dpu.ctl_tmp.iterdir()) == []
++
++
++@needs_ansible
++def test_the_dpu_copy_validate_refuses_a_binary_that_is_not_its_pin(tmp_path):
++    """The second gate on its own: install_age.yml's real copy task (its validate: line), run
++    with a source file that isn't the pin, must fail and leave the existing file untouched; a
++    file that is its pin is installed 0755."""
++    with open(TASKS) as fh:
++        tasks = yaml.safe_load(fh)
++    outer = next(t for t in tasks if "block" in t and "always" in t)
++    copy = next(t for t in outer["block"] if "validate" in t.get("ansible.builtin.copy", {}))
++    src = tmp_path / "src"
++    (src / "age").mkdir(parents=True)
++    good_age, good_kg = b"#!/bin/sh\necho v1.1.1\n# a\n", b"#!/bin/sh\necho v1.1.1\n# k\n"
++    (src / "age" / "age").write_bytes(b"#!/bin/sh\necho v1.1.1\n# not the pin\n")
++    (src / "age" / "age-keygen").write_bytes(good_kg)
++    root = tmp_path / "root"
++    (root / "usr" / "local" / "bin").mkdir(parents=True)
++    old = b"#!/bin/sh\necho previous age\n"
++    (root / "usr" / "local" / "bin" / "age").write_bytes(old)
++    play = [{"hosts": "localhost", "gather_facts": False,
++             "vars": {"_age_root": str(root), "_age_tmp": {"path": str(src)},
++                      "_age_pins": {"age": [_sha(good_age)], "age-keygen": [_sha(good_kg)]}},
++             "tasks": [copy]}]
++    pb = tmp_path / "copy.yml"
++    pb.write_text(yaml.safe_dump(play))
++    env = {"PATH": os.environ["PATH"], "LC_ALL": "C.UTF-8", "HOME": str(tmp_path),
++           "ANSIBLE_LOCAL_TEMP": str(tmp_path / "t"), "ANSIBLE_HOME": str(tmp_path / "ah"),
++           "ANSIBLE_NOCOLOR": "1"}
++    p = subprocess.run([ANSIBLE, "-i", "localhost,", "-c", "local", str(pb),
++                        "-e", f"ansible_python_interpreter={sys.executable}"],
++                       env=env, capture_output=True, text=True, timeout=300)
++    out = p.stdout + p.stderr
++    assert p.returncode != 0 and "failed to validate" in out, out[-3000:]
++    assert (root / "usr" / "local" / "bin" / "age").read_bytes() == old
++    kg = root / "usr" / "local" / "bin" / "age-keygen"
++    assert kg.read_bytes() == good_kg and stat.S_IMODE(kg.stat().st_mode) == 0o755
++
++
++@needs_ansible
++def test_dpu_task_refuses_a_pinned_binary_with_the_wrong_version(dpu, monkeypatch):
++    dpu.build(bodies={("linux-arm64", "age-keygen"): "echo v1.2.0"})
++    rc = dpu_run(dpu, monkeypatch, daolab_age_arm64_tarball=str(dpu.tarballs["linux-arm64"]))
++    assert rc != 0
++    assert "--version on the DPU is not exactly v1.1.1" in dpu.lab.stdout, dpu.lab.stdout[-3000:]
++
++
++@needs_ansible
++def test_a_plain_bringup_does_not_install_age(dpu, monkeypatch):
++    dpu.build()
++    dpu_run(dpu, monkeypatch, tags=None,
++            daolab_age_arm64_tarball=str(dpu.tarballs["linux-arm64"]))
++    assert "TASK [age: " not in dpu.lab.stdout, dpu.lab.stdout[-3000:]
++    assert list(dpu.bin.iterdir()) == []
++    assert "PLAY [the DPU]" in dpu.lab.stdout          # the normal bringup did run
++
++
++# --- the real age (CI installs it; skipped locally unless installed) -----------------------
++
++@pytest.mark.requires_age
++def test_the_age_on_path_is_the_pinned_v1_1_1():
++    pins = {}
++    with open(os.path.join(AGE_DIR, "BINARIES.sha256")) as fh:
++        for line in fh:
++            h, label = line.split()
++            pins[label] = h
++    for var, name in (("DAOLAB_AGE_BIN", "age"), ("DAOLAB_AGE_KEYGEN_BIN", "age-keygen")):
++        path = shutil.which(os.environ.get(var) or name)
++        p = subprocess.run([path, "--version"], capture_output=True, timeout=30,
++                           stdin=subprocess.DEVNULL)
++        assert (p.returncode, p.stdout) == (0, b"v1.1.1\n"), (name, p)
++        if HOST:
++            with open(path, "rb") as fh:
++                assert _sha(fh.read()) == pins[f"{HOST}/age/{name}"], name

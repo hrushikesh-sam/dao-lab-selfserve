@@ -1,0 +1,1218 @@
+# date:        2026-11-24T16:18:03Z
+# worktree:    /home/akshay/x-age (branch x-age)
+# HEAD:        564183062842a5f6426355701582c13f2f7afa92
+# tree:        5f4dcf7c93ba39e0ad90284830c4c9ea2b1eb3cb   (index; git add -A before each stage)
+# status:      2 entries (git status --short)
+#   M  .env.example
+#   A  tests/test_age_install.py
+# venv:        /home/akshay/x-age/.venv
+# PATH:        /home/akshay/x-age/.venv/bin:/usr/local/bin:/usr/bin:/bin
+# age on PATH: none
+# python:      3.12.13
+# ansible-core: 2.21.6
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# command:     .venv/bin/python -m pytest tests/test_age_install.py tests/test_config.py -q -rsf -p no:cacheprovider
+
+FEEEEEEEEEEEEEEEEEEEEEEEFFFFFFFFFFFFFFFFFEEEEEEEEF...F                   [100%]
+==================================== ERRORS ====================================
+__ ERROR at setup of test_installs_both_binaries_0755_from_the_verified_copy ___
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_installs_both_binaries_070')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69da1e0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_installs_both_binaries_070')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_an_existing_bin_dir_keeps_its_mode_and_a_rerun_is_fine _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_an_existing_bin_dir_keeps0')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69ca5a0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_an_existing_bin_dir_keeps0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+______________ ERROR at setup of test_rejects_a_tampered_tarball _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_tampered_tarbal0')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69cb110>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_tampered_tarbal0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_tarball_for_the_other_arch_before_extracting_anything _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_tarball_for_the0')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69cbe90>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_tarball_for_the0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_binary_that_differs_from_its_pin_even_if_the_tarball_is_pinned _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_binary_that_dif0')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69340b0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_binary_that_dif0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo v1.2.0-age] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w0')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69cb2c0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo v1.2.0-age-keygen] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w1')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69ca870>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w1')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo v1.1.1-extra-age] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w2')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69db800>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w2')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo v1.1.1-extra-age-keygen] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w3')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69360f0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w3')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo 'v1.1.1 '-age] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w4')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c6937710>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w4')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo 'v1.1.1 '-age-keygen] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w5')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69358e0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w5')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo v1.1.1; echo more-age] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w6')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69367b0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w6')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo v1.1.1; echo more-age-keygen] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w7')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c6937d10>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w7')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo; echo v1.1.1-age] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w8')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c697c710>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w8')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo; echo v1.1.1-age-keygen] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w9')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c697d010>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w9')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo v1.1.1; exit 3-age] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w10')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c697db80>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w10')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_rejects_a_pinned_binary_whose_version_is_not_exactly_v1_1_1[echo v1.1.1; exit 3-age-keygen] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w11')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c697e720>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_rejects_a_pinned_binary_w11')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_installs_the_file_it_verified_not_the_file_named_on_the_command_line _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_installs_the_file_it_veri0')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c6937650>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_installs_the_file_it_veri0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+__________ ERROR at setup of test_refuses_bad_arguments[args0-usage] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg0')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c6936cc0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+__________ ERROR at setup of test_refuses_bad_arguments[args1-usage] ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg1')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c6936360>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg1')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+________ ERROR at setup of test_refuses_bad_arguments[args2-not a file] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg2')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c6935460>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg2')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_________ ERROR at setup of test_refuses_bad_arguments[args3-absolute] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg3')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c69ca8a0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg3')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+____ ERROR at setup of test_refuses_bad_arguments[args4-unknown file name] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg4')
+
+    @pytest.fixture
+    def kit(tmp_path):
+>       return Kit(tmp_path)
+               ^^^^^^^^^^^^^
+
+tests/test_age_install.py:110: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.Kit object at 0x7e05c697fe30>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_refuses_bad_arguments_arg4')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_dpu_task_installs_both_binaries_0755_and_checks_them __
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_installs_both_bi0')
+
+    @pytest.fixture
+    def dpu(tmp_path):
+>       return DpuKit(tmp_path)
+               ^^^^^^^^^^^^^^^^
+
+tests/test_age_install.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_age_install.py:447: in __init__
+    super().__init__(tmp_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.DpuKit object at 0x7e05c67ca5d0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_installs_both_bi0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_____ ERROR at setup of test_dpu_task_refuses_a_missing_tarball_var[None] ______
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_a_missin0')
+
+    @pytest.fixture
+    def dpu(tmp_path):
+>       return DpuKit(tmp_path)
+               ^^^^^^^^^^^^^^^^
+
+tests/test_age_install.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_age_install.py:447: in __init__
+    super().__init__(tmp_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.DpuKit object at 0x7e05c6935eb0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_a_missin0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_______ ERROR at setup of test_dpu_task_refuses_a_missing_tarball_var[] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_a_missin1')
+
+    @pytest.fixture
+    def dpu(tmp_path):
+>       return DpuKit(tmp_path)
+               ^^^^^^^^^^^^^^^^
+
+tests/test_age_install.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_age_install.py:447: in __init__
+    super().__init__(tmp_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.DpuKit object at 0x7e05c6935310>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_a_missin1')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+__________ ERROR at setup of test_dpu_task_refuses_the_amd64_tarball ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_the_amd60')
+
+    @pytest.fixture
+    def dpu(tmp_path):
+>       return DpuKit(tmp_path)
+               ^^^^^^^^^^^^^^^^
+
+tests/test_age_install.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_age_install.py:447: in __init__
+    super().__init__(tmp_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.DpuKit object at 0x7e05c69cab40>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_the_amd60')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+______ ERROR at setup of test_dpu_task_refuses_a_tarball_with_a_bad_hash _______
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_a_tarbal0')
+
+    @pytest.fixture
+    def dpu(tmp_path):
+>       return DpuKit(tmp_path)
+               ^^^^^^^^^^^^^^^^
+
+tests/test_age_install.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_age_install.py:447: in __init__
+    super().__init__(tmp_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.DpuKit object at 0x7e05c697cad0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_a_tarbal0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_dpu_side_pin_check_refuses_a_bad_binary_even_if_verify_were_bypassed _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_side_pin_check_refuse0')
+
+    @pytest.fixture
+    def dpu(tmp_path):
+>       return DpuKit(tmp_path)
+               ^^^^^^^^^^^^^^^^
+
+tests/test_age_install.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_age_install.py:447: in __init__
+    super().__init__(tmp_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.DpuKit object at 0x7e05c67caae0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_side_pin_check_refuse0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_ ERROR at setup of test_dpu_task_refuses_a_pinned_binary_with_the_wrong_version _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_a_pinned0')
+
+    @pytest.fixture
+    def dpu(tmp_path):
+>       return DpuKit(tmp_path)
+               ^^^^^^^^^^^^^^^^
+
+tests/test_age_install.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_age_install.py:447: in __init__
+    super().__init__(tmp_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.DpuKit object at 0x7e05c67c89e0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_dpu_task_refuses_a_pinned0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+_________ ERROR at setup of test_a_plain_bringup_does_not_install_age __________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_a_plain_bringup_does_not_0')
+
+    @pytest.fixture
+    def dpu(tmp_path):
+>       return DpuKit(tmp_path)
+               ^^^^^^^^^^^^^^^^
+
+tests/test_age_install.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_age_install.py:447: in __init__
+    super().__init__(tmp_path)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <tests.test_age_install.DpuKit object at 0x7e05c67ca120>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_a_plain_bringup_does_not_0')
+
+    def __init__(self, tmp_path):
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:70: AssertionError
+=================================== FAILURES ===================================
+__________ test_install_script_is_posix_sh_with_set_eu_and_no_network __________
+
+    def test_install_script_is_posix_sh_with_set_eu_and_no_network():
+>       assert os.path.exists(INSTALL), "deploy/age/install-age.sh does not exist"
+E       AssertionError: deploy/age/install-age.sh does not exist
+E       assert False
+E        +  where False = <function exists at 0x7e05c85fb880>('/home/akshay/x-age/deploy/age/install-age.sh')
+E        +    where <function exists at 0x7e05c85fb880> = <module 'posixpath' (frozen)>.exists
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/test_age_install.py:129: AssertionError
+________________________ test_marker_skips_without_age _________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_skips_without_age0')
+
+    def test_marker_skips_without_age(tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        p = run_inner(tmp_path, [empty])
+>       assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_skips_without_age0/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.07s
+E         
+E       assert '1 passed, 1 skipped' in '1 error in 0.07s'
+E        +  where '1 error in 0.07s' = _summary(CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.07s\n", stderr=''))
+
+tests/test_age_install.py:305: AssertionError
+_________________ test_marker_fails_without_age_when_required __________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_fails_without_age_0')
+
+    def test_marker_fails_without_age_when_required(tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        p = run_inner(tmp_path, [empty], {"DAOLAB_REQUIRE_AGE": "1"})
+>       assert p.returncode == 1 and "1 failed, 1 passed" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_fails_without_age_0/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.07s
+E         
+E       assert (2 == 1)
+E        +  where 2 = CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.07s\n", stderr='').returncode
+
+tests/test_age_install.py:313: AssertionError
+_____________ test_marker_runs_the_test_with_a_v1_1_1_age_on_path ______________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_runs_the_test_with0')
+
+    def test_marker_runs_the_test_with_a_v1_1_1_age_on_path(tmp_path):
+        p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin")], {"DAOLAB_REQUIRE_AGE": "1"})
+>       assert p.returncode == 0 and "2 passed" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_runs_the_test_with0/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.08s
+E         
+E       assert (2 == 0)
+E        +  where 2 = CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.08s\n", stderr='').returncode
+
+tests/test_age_install.py:319: AssertionError
+____ test_marker_skips_a_wrong_or_partial_install[echo v1.0.0-echo v1.1.1] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p0')
+age = 'echo v1.0.0', keygen = 'echo v1.1.1'
+
+    @pytest.mark.parametrize("age,keygen", [
+        ("echo v1.0.0", "echo v1.1.1"),          # an apt-style older age
+        ("echo v1.1.1", "echo v1.2.0"),
+        ("echo v1.1.1", None),                   # no age-keygen
+        (None, "echo v1.1.1"),                   # no age
+        ("echo v1.1.1; exit 1", "echo v1.1.1"),
+    ])
+    def test_marker_skips_a_wrong_or_partial_install(tmp_path, age, keygen):
+        p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin", age, keygen)])
+>       assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p0/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.07s
+E         
+E       assert '1 passed, 1 skipped' in '1 error in 0.07s'
+E        +  where '1 error in 0.07s' = _summary(CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.07s\n", stderr=''))
+
+tests/test_age_install.py:331: AssertionError
+____ test_marker_skips_a_wrong_or_partial_install[echo v1.1.1-echo v1.2.0] _____
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p1')
+age = 'echo v1.1.1', keygen = 'echo v1.2.0'
+
+    @pytest.mark.parametrize("age,keygen", [
+        ("echo v1.0.0", "echo v1.1.1"),          # an apt-style older age
+        ("echo v1.1.1", "echo v1.2.0"),
+        ("echo v1.1.1", None),                   # no age-keygen
+        (None, "echo v1.1.1"),                   # no age
+        ("echo v1.1.1; exit 1", "echo v1.1.1"),
+    ])
+    def test_marker_skips_a_wrong_or_partial_install(tmp_path, age, keygen):
+        p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin", age, keygen)])
+>       assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p1/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.10s
+E         
+E       assert '1 passed, 1 skipped' in '1 error in 0.10s'
+E        +  where '1 error in 0.10s' = _summary(CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.10s\n", stderr=''))
+
+tests/test_age_install.py:331: AssertionError
+________ test_marker_skips_a_wrong_or_partial_install[echo v1.1.1-None] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p2')
+age = 'echo v1.1.1', keygen = None
+
+    @pytest.mark.parametrize("age,keygen", [
+        ("echo v1.0.0", "echo v1.1.1"),          # an apt-style older age
+        ("echo v1.1.1", "echo v1.2.0"),
+        ("echo v1.1.1", None),                   # no age-keygen
+        (None, "echo v1.1.1"),                   # no age
+        ("echo v1.1.1; exit 1", "echo v1.1.1"),
+    ])
+    def test_marker_skips_a_wrong_or_partial_install(tmp_path, age, keygen):
+        p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin", age, keygen)])
+>       assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p2/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.07s
+E         
+E       assert '1 passed, 1 skipped' in '1 error in 0.07s'
+E        +  where '1 error in 0.07s' = _summary(CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.07s\n", stderr=''))
+
+tests/test_age_install.py:331: AssertionError
+________ test_marker_skips_a_wrong_or_partial_install[None-echo v1.1.1] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p3')
+age = None, keygen = 'echo v1.1.1'
+
+    @pytest.mark.parametrize("age,keygen", [
+        ("echo v1.0.0", "echo v1.1.1"),          # an apt-style older age
+        ("echo v1.1.1", "echo v1.2.0"),
+        ("echo v1.1.1", None),                   # no age-keygen
+        (None, "echo v1.1.1"),                   # no age
+        ("echo v1.1.1; exit 1", "echo v1.1.1"),
+    ])
+    def test_marker_skips_a_wrong_or_partial_install(tmp_path, age, keygen):
+        p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin", age, keygen)])
+>       assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p3/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.07s
+E         
+E       assert '1 passed, 1 skipped' in '1 error in 0.07s'
+E        +  where '1 error in 0.07s' = _summary(CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.07s\n", stderr=''))
+
+tests/test_age_install.py:331: AssertionError
+_ test_marker_skips_a_wrong_or_partial_install[echo v1.1.1; exit 1-echo v1.1.1] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p4')
+age = 'echo v1.1.1; exit 1', keygen = 'echo v1.1.1'
+
+    @pytest.mark.parametrize("age,keygen", [
+        ("echo v1.0.0", "echo v1.1.1"),          # an apt-style older age
+        ("echo v1.1.1", "echo v1.2.0"),
+        ("echo v1.1.1", None),                   # no age-keygen
+        (None, "echo v1.1.1"),                   # no age
+        ("echo v1.1.1; exit 1", "echo v1.1.1"),
+    ])
+    def test_marker_skips_a_wrong_or_partial_install(tmp_path, age, keygen):
+        p = run_inner(tmp_path, [_fake_tools(tmp_path / "bin", age, keygen)])
+>       assert "1 passed, 1 skipped" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_skips_a_wrong_or_p4/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.07s
+E         
+E       assert '1 passed, 1 skipped' in '1 error in 0.07s'
+E        +  where '1 error in 0.07s' = _summary(CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.07s\n", stderr=''))
+
+tests/test_age_install.py:331: AssertionError
+________________ test_marker_uses_daolab_age_bin_and_keygen_bin ________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_uses_daolab_age_bi0')
+
+    def test_marker_uses_daolab_age_bin_and_keygen_bin(tmp_path):
+        tools = _fake_tools(tmp_path / "elsewhere")
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        p = run_inner(tmp_path, [empty], {"DAOLAB_AGE_BIN": str(tools / "age"),
+                                          "DAOLAB_AGE_KEYGEN_BIN": str(tools / "age-keygen"),
+                                          "DAOLAB_REQUIRE_AGE": "1"})
+>       assert p.returncode == 0 and "2 passed" in _summary(p), p.stdout + p.stderr
+E       AssertionError: 
+E         ==================================== ERRORS ====================================
+E         ________________________ ERROR collecting test_inner.py ________________________
+E         'requires_age' not found in `markers` configuration option
+E         =========================== short test summary info ============================
+E         ERROR ../../../tmp/pytest-of-akshay/pytest-32/test_marker_uses_daolab_age_bi0/inner/test_inner.py
+E         !!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+E         1 error in 0.07s
+E         
+E       assert (2 == 0)
+E        +  where 2 = CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep...r.py\n!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.07s\n", stderr='').returncode
+
+tests/test_age_install.py:342: AssertionError
+__________________________ test_marker_is_registered ___________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-32/test_marker_is_registered0')
+
+    def test_marker_is_registered(tmp_path):
+        p = run_inner(tmp_path, [tmp_path], args=("--markers",))
+>       assert "@pytest.mark.requires_age" in p.stdout, p.stdout[-1500:]
+E       AssertionError:  function as an expected failure if any of the conditions evaluate to True. Optionally specify a reason for better reporting and run=False if you don't even want to execute the test function. If only specific exception(s) are expected, you can list them in raises, and if the test fails in other ways, it will be reported as a true failure. See https://docs.pytest.org/en/stable/reference/reference.html#pytest-mark-xfail
+E         
+E         @pytest.mark.parametrize(argnames, argvalues): call a test function multiple times passing in different arguments in turn. argvalues generally needs to be a list of values if argnames specifies only one name or a list of tuples of values if argnames specifies multiple names. Example: @parametrize('arg1', [1,2]) would lead to two calls of the decorated test function, one with arg1=1 and another with arg1=2.see https://docs.pytest.org/en/stable/how-to/parametrize.html for more info and examples.
+E         
+E         @pytest.mark.usefixtures(fixturename1, fixturename2, ...): mark tests as needing all of the specified fixtures. see https://docs.pytest.org/en/stable/explanation/fixtures.html#usefixtures
+E         
+E         @pytest.mark.tryfirst: mark a hook implementation function such that the plugin machinery will try to call it first/as early as possible. DEPRECATED, use @pytest.hookimpl(tryfirst=True) instead.
+E         
+E         @pytest.mark.trylast: mark a hook implementation function such that the plugin machinery will try to call it last/as late as possible. DEPRECATED, use @pytest.hookimpl(trylast=True) instead.
+E         
+E         
+E       assert '@pytest.mark.requires_age' in '@pytest.mark.anyio: mark the (coroutine function) test to be run asynchronously via anyio.\n\n@pytest.mark.filterwarn...in machinery will try to call it last/as late as possible. DEPRECATED, use @pytest.hookimpl(trylast=True) instead.\n\n'
+E        +  where '@pytest.mark.anyio: mark the (coroutine function) test to be run asynchronously via anyio.\n\n@pytest.mark.filterwarn...in machinery will try to call it last/as late as possible. DEPRECATED, use @pytest.hookimpl(trylast=True) instead.\n\n' = CompletedProcess(args=['/home/akshay/x-age/.venv/bin/python', '-m', 'pytest', '-p', 'tests.conftest', '-p', 'no:cachep... will try to call it last/as late as possible. DEPRECATED, use @pytest.hookimpl(trylast=True) instead.\n\n', stderr='').stdout
+
+tests/test_age_install.py:351: AssertionError
+________________ test_age_settings_default_to_the_names_on_path ________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e05c69cbf20>
+
+    def test_age_settings_default_to_the_names_on_path(monkeypatch):
+        from service import config
+        monkeypatch.delenv("DAOLAB_AGE_BIN", raising=False)
+        monkeypatch.delenv("DAOLAB_AGE_KEYGEN_BIN", raising=False)
+        s = config.Settings.from_env()
+>       assert (s.age_bin, s.age_keygen_bin) == ("age", "age-keygen")
+                ^^^^^^^^^
+E       AttributeError: 'Settings' object has no attribute 'age_bin'
+
+tests/test_age_install.py:361: AttributeError
+_________________ test_age_settings_come_from_the_environment __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7e05c69359d0>
+
+    def test_age_settings_come_from_the_environment(monkeypatch):
+        from service import config
+        monkeypatch.setenv("DAOLAB_AGE_BIN", "/opt/age/bin/age")
+        monkeypatch.setenv("DAOLAB_AGE_KEYGEN_BIN", "/opt/age/bin/age-keygen")
+        s = config.Settings.from_env()
+>       assert (s.age_bin, s.age_keygen_bin) == ("/opt/age/bin/age", "/opt/age/bin/age-keygen")
+                ^^^^^^^^^
+E       AttributeError: 'Settings' object has no attribute 'age_bin'
+
+tests/test_age_install.py:369: AttributeError
+_______ test_ci_installs_the_pinned_age_before_the_tests_and_requires_it _______
+
+    def test_ci_installs_the_pinned_age_before_the_tests_and_requires_it():
+        steps = _ci_steps()
+        names = [s.get("name") for s in steps]
+        idx = [i for i, s in enumerate(steps) if "install-age.sh" in s.get("run", "")]
+>       assert len(idx) == 1, names
+E       AssertionError: [None, None, 'Install', 'Test']
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+tests/test_age_install.py:384: AssertionError
+_______________________ test_gitignore_covers_both_venvs _______________________
+
+    def test_gitignore_covers_both_venvs():
+        if not os.path.isdir(os.path.join(REPO, ".git")) and not os.path.isfile(os.path.join(REPO, ".git")):
+            pytest.skip("not a git checkout")
+        # The rule must come from the repo's own .gitignore: a venv made by `uv venv` carries a
+        # private `*` .gitignore, which would make this pass on one machine and not another.
+        for path in (".venv/bin/python", ".venv-220/bin/python", ".venv-220/pyvenv.cfg"):
+            p = subprocess.run(["git", "-C", REPO, "check-ignore", "-v", "--no-index", path],
+                               capture_output=True, text=True)
+            assert p.returncode == 0, f"{path} is not ignored"
+            source = p.stdout.split(":", 1)[0]
+>           assert source == ".gitignore", f"{path} is ignored only by {source}, not the repo's .gitignore"
+E           AssertionError: .venv-220/bin/python is ignored only by .venv-220/.gitignore, not the repo's .gitignore
+E           assert '.venv-220/.gitignore' == '.gitignore'
+E             
+E             - .gitignore
+E             + .venv-220/.gitignore
+
+tests/test_age_install.py:405: AssertionError
+________ test_readme_says_how_to_install_on_the_controller_and_the_dpu _________
+
+    def test_readme_says_how_to_install_on_the_controller_and_the_dpu():
+        with open(README) as fh:
+            text = fh.read()
+        for needle in ("install-age.sh", "/usr/local", "--tags age", "daolab_age_arm64_tarball",
+                       "requires_age", "DAOLAB_REQUIRE_AGE", "age-v1.1.1-linux-arm64.tar.gz",
+                       "age-v1.1.1-linux-amd64.tar.gz"):
+>           assert needle in text, needle
+E           AssertionError: install-age.sh
+E           assert 'install-age.sh' in "# age v1.1.1 pin (B-103, errata E-1)\n\nThe snapshot work uses age from the **official GitHub v1.1.1 release assets**...test_age_pin.py` checks the pin files' format and runs the script\non synthetic tarballs; it never uses the network.\n"
+
+tests/test_age_install.py:414: AssertionError
+______ test_bringup_runs_the_age_task_only_when_asked_and_always_resolves ______
+
+    def test_bringup_runs_the_age_task_only_when_asked_and_always_resolves():
+        with open(BRINGUP) as fh:
+            plays = yaml.safe_load(fh)
+        imports = [(p, t) for p in plays for t in p.get("tasks", [])
+                   if "ansible.builtin.import_tasks" in t]
+        resolve = [t for _, t in imports if t["ansible.builtin.import_tasks"] == "tasks/resolve.yml"]
+        age = [(p, t) for p, t in imports if t["ansible.builtin.import_tasks"] == "tasks/install_age.yml"]
+>       assert len(resolve) == 1 and resolve[0].get("tags") == ["always"]
+E       AssertionError: assert (1 == 1 and None == ['always'])
+E        +  where 1 = len([{'name': 'resolve', 'ansible.builtin.import_tasks': 'tasks/resolve.yml'}])
+E        +  and   None = <built-in method get of dict object at 0x7e05c689b9c0>('tags')
+E        +    where <built-in method get of dict object at 0x7e05c689b9c0> = {'name': 'resolve', 'ansible.builtin.import_tasks': 'tasks/resolve.yml'}.get
+
+tests/test_age_install.py:428: AssertionError
+____________ test_the_dpu_binaries_are_owned_by_root_outside_tests _____________
+
+    def test_the_dpu_binaries_are_owned_by_root_outside_tests():
+>       with open(TASKS) as fh:
+             ^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-age/playbooks/tasks/install_age.yml'
+
+tests/test_age_install.py:435: FileNotFoundError
+__________________ test_the_age_on_path_is_the_pinned_v1_1_1 ___________________
+
+    @pytest.mark.requires_age
+    def test_the_age_on_path_is_the_pinned_v1_1_1():
+        pins = {}
+        with open(os.path.join(AGE_DIR, "BINARIES.sha256")) as fh:
+            for line in fh:
+                h, label = line.split()
+                pins[label] = h
+        for var, name in (("DAOLAB_AGE_BIN", "age"), ("DAOLAB_AGE_KEYGEN_BIN", "age-keygen")):
+            path = shutil.which(os.environ.get(var) or name)
+>           p = subprocess.run([path, "--version"], capture_output=True, timeout=30,
+                               stdin=subprocess.DEVNULL)
+
+tests/test_age_install.py:568: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/subprocess.py:548: in run
+    with Popen(*popenargs, **kwargs) as process:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/subprocess.py:1026: in __init__
+    self._execute_child(args, executable, preexec_fn, close_fds,
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/subprocess.py:1826: in _execute_child
+    and os.path.dirname(executable)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+p = None
+
+>   ???
+E   TypeError: expected str, bytes or os.PathLike object, not NoneType
+
+<frozen posixpath>:181: TypeError
+_____________________ test_env_example_has_no_unknown_keys _____________________
+
+    def test_env_example_has_no_unknown_keys():
+        known = {"DAOLAB_" + f.name.upper() for f in dataclasses.fields(config.Settings)}
+        unknown = sorted(k for k in _env_example_keys() if k not in known)
+>       assert not unknown, f".env.example lists keys with no Settings field: {unknown}"
+E       AssertionError: .env.example lists keys with no Settings field: ['DAOLAB_AGE_BIN', 'DAOLAB_AGE_KEYGEN_BIN']
+E       assert not ['DAOLAB_AGE_BIN', 'DAOLAB_AGE_KEYGEN_BIN']
+
+tests/test_config.py:102: AssertionError
+=============================== warnings summary ===============================
+tests/test_age_install.py:559
+  /home/akshay/x-age/tests/test_age_install.py:559: PytestUnknownMarkWarning: Unknown pytest.mark.requires_age - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.requires_age
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_age_install.py::test_install_script_is_posix_sh_with_set_eu_and_no_network
+FAILED tests/test_age_install.py::test_marker_skips_without_age - AssertionEr...
+FAILED tests/test_age_install.py::test_marker_fails_without_age_when_required
+FAILED tests/test_age_install.py::test_marker_runs_the_test_with_a_v1_1_1_age_on_path
+FAILED tests/test_age_install.py::test_marker_skips_a_wrong_or_partial_install[echo v1.0.0-echo v1.1.1]
+FAILED tests/test_age_install.py::test_marker_skips_a_wrong_or_partial_install[echo v1.1.1-echo v1.2.0]
+FAILED tests/test_age_install.py::test_marker_skips_a_wrong_or_partial_install[echo v1.1.1-None]
+FAILED tests/test_age_install.py::test_marker_skips_a_wrong_or_partial_install[None-echo v1.1.1]
+FAILED tests/test_age_install.py::test_marker_skips_a_wrong_or_partial_install[echo v1.1.1; exit 1-echo v1.1.1]
+FAILED tests/test_age_install.py::test_marker_uses_daolab_age_bin_and_keygen_bin
+FAILED tests/test_age_install.py::test_marker_is_registered - AssertionError:...
+FAILED tests/test_age_install.py::test_age_settings_default_to_the_names_on_path
+FAILED tests/test_age_install.py::test_age_settings_come_from_the_environment
+FAILED tests/test_age_install.py::test_ci_installs_the_pinned_age_before_the_tests_and_requires_it
+FAILED tests/test_age_install.py::test_gitignore_covers_both_venvs - Assertio...
+FAILED tests/test_age_install.py::test_readme_says_how_to_install_on_the_controller_and_the_dpu
+FAILED tests/test_age_install.py::test_bringup_runs_the_age_task_only_when_asked_and_always_resolves
+FAILED tests/test_age_install.py::test_the_dpu_binaries_are_owned_by_root_outside_tests
+FAILED tests/test_age_install.py::test_the_age_on_path_is_the_pinned_v1_1_1
+FAILED tests/test_config.py::test_env_example_has_no_unknown_keys - Assertion...
+20 failed, 3 passed, 1 warning, 31 errors in 4.01s
+# exit: 1
