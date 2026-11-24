@@ -1,6 +1,9 @@
 """B-104 PR A (B-104-DDL.md v4 §1, §2, §6.1, §6.2 T-1/T-2): versions 12 and 13 are burned
 no-op placeholders (errata E-4), and `migrations.apply()` refuses a DB that carries schema
 from the reverted Phase 8 attempt (4ec115e, reverted in 9c8a089) before running anything.
+Updated in PR B, where migration 14 makes latest_version() 14: nothing here assumes a fixed
+latest; G-7/G-8 allow only the closed list of migration-14 additions; the engine tests cover
+a reverted DB at the latest version (the guard refuses) and below it (the version check does).
 
 Synthetic DBs only (`:memory:` or `tmp_path`). The reverted v12/v13 shapes are literal DDL
 copied from the fingerprint in B-104 FINDINGS §3; no reverted code is imported."""
@@ -214,8 +217,10 @@ def test_g2_reverted_v12_is_refused():
 
 
 def test_g3_reverted_v13_is_refused():
-    """G-3, the trap: without the guard, a reverted v13 DB is at the latest version as far
-    as user_version goes, so apply() would run nothing and accept it."""
+    """G-3, the trap: a reverted v13 DB reports user_version 13. Without the guard, apply()
+    would skip the burned 12/13 and run only 14, whose IF NOT EXISTS / add_column would
+    silently keep the reverted snapshots table and save_snapshot DEFAULT 1 (and while 13
+    was the latest version, it would run nothing and accept the DB)."""
     conn = _reverted_v13()
     assert migrations.current_version(conn) == 13
     _assert_refused(conn, ALL_LABELS)
@@ -299,25 +304,77 @@ def test_g6_guard_passes_on_our_own_latest_schema():
     assert models.init_db(conn) == []
 
 
+# The closed list of what an upgrade across migration 14 may add (B-104-DDL.md v4 §3). Literal,
+# not derived from service code: migration 14 is the first non-no-op upgrade; only these
+# additions are allowed. New column -> the value every pre-existing row must hold.
+M14_NEW_TABLES = {"keys", "key_challenges", "admin_approvals", "snapshots"}
+M14_NEW_COLUMNS = {("reservations", "save_snapshot"): 0,
+                   ("jobs", "snapshot_id"): None,
+                   ("setups", "snapshot_enabled"): 0}
+
+
+def _snapshot(conn):
+    """{table: (old-column table_info as (name, type, notnull, dflt_value, pk),
+    rows as (rowid, *columns) ORDER BY rowid)} for every table."""
+    out = {}
+    for t in [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]:
+        info = [tuple(r)[1:6] for r in conn.execute(f"PRAGMA table_info({t})")]
+        cols = ", ".join(f'"{c[0]}"' for c in info)
+        out[t] = (info, [tuple(r) for r in conn.execute(
+            f"SELECT rowid, {cols} FROM {t} ORDER BY rowid")])
+    return out
+
+
+def _assert_upgrade_kept_everything(conn, before):
+    """Strict before/after check with a closed list of allowed changes:
+    1. every old table: identical table_info for its old columns, and the same rows
+       (ORDER BY rowid) with identical values in every old column;
+    2. new tables: exactly M14_NEW_TABLES, each empty;
+    3. new columns: exactly M14_NEW_COLUMNS, each holding its value on every row."""
+    after_tables = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert after_tables - set(before) == M14_NEW_TABLES
+    for t in M14_NEW_TABLES:
+        assert conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] == 0, t
+    for t, (info, rows) in before.items():
+        assert t in after_tables, t
+        old = [c[0] for c in info]
+        after_info = [tuple(r)[1:6] for r in conn.execute(f"PRAGMA table_info({t})")]
+        assert [c for c in after_info if c[0] in old] == info, t
+        cols = ", ".join(f'"{c}"' for c in old)
+        assert [tuple(r) for r in conn.execute(
+            f"SELECT rowid, {cols} FROM {t} ORDER BY rowid")] == rows, t
+        new_cols = {c[0] for c in after_info} - set(old)
+        assert new_cols == {c for (tt, c) in M14_NEW_COLUMNS if tt == t}, t
+        for c in new_cols:
+            assert rows, (t, c, "no pre-existing row to check the new column on")
+            assert [r[0] for r in conn.execute(f'SELECT "{c}" FROM {t} ORDER BY rowid')] \
+                == [M14_NEW_COLUMNS[(t, c)]] * len(rows), (t, c)
+
+
 def test_g7_v11_db_with_rows_passes_and_upgrades():
+    """G-7: a v11 DB with rows upgrades to latest and keeps every row; the only changes are
+    the closed list M14_NEW_TABLES / M14_NEW_COLUMNS."""
     conn = _v11()
     _seed(conn)
-    rows = _rows(conn)
+    before = _snapshot(conn)
     assert models.init_db(conn) == [m.version for m in migrations.MIGRATIONS if m.version > 11]
     assert migrations.current_version(conn) == migrations.latest_version()
-    assert _rows(conn) == rows
+    _assert_upgrade_kept_everything(conn, before)
 
 
 @pytest.mark.parametrize("stopped_at", [12, 13])
 def test_g8_new_code_db_stopped_at_placeholder_resumes(stopped_at):
-    """G-8: a crash after the no-op 12 or 13 is a legitimate state, not a reverted DB."""
+    """G-8: a crash after the no-op 12 or 13 is a legitimate state, not a reverted DB. It
+    resumes, keeps every row, and changes only the closed list M14_NEW_TABLES / M14_NEW_COLUMNS."""
     conn = _at_version(_conn(), stopped_at)
     _seed(conn)
-    rows = _rows(conn)
+    before = _snapshot(conn)
     assert models.init_db(conn) == [m.version for m in migrations.MIGRATIONS
                                     if m.version > stopped_at]
     assert migrations.current_version(conn) == migrations.latest_version()
-    assert _rows(conn) == rows
+    _assert_upgrade_kept_everything(conn, before)
 
 
 def _spy_guard(monkeypatch):
@@ -418,8 +475,10 @@ def test_t2_placeholders_change_nothing_but_user_version(monkeypatch):
 
 
 # ---- engine startup runs the same guard (Q-3 (b)) -------------------------
-# With 12/13 burned, latest_version() is 13, so a reverted v13 DB passes the engine's
-# `have == want` check (engine.py:629-633); the engine must also run the guard.
+# A reverted DB whose user_version equals latest_version() passes the engine's
+# `have == want` check (engine.py:629-633), so the engine must also run the guard. A reverted
+# DB below latest (e.g. a reverted v13 DB at 13, with latest 14) is refused by the version
+# check first, before the guard runs.
 
 def _engine_settings(monkeypatch, tmp_path):
     path = str(tmp_path / "engine.db")
@@ -434,11 +493,14 @@ def _spy_tick(monkeypatch):
     return calls
 
 
-def test_engine_refuses_reverted_v13_db_at_latest_version(monkeypatch, tmp_path, capsys):
+def test_engine_refuses_reverted_schema_at_latest_version(monkeypatch, tmp_path, capsys):
+    """Reverted v13 tables with user_version hand-set to latest: the version check passes,
+    so only the engine's guard call refuses it."""
     path = _engine_settings(monkeypatch, tmp_path)
     conn = _reverted_v13(models.connect(path))
     _seed(conn)
-    assert migrations.current_version(conn) == migrations.latest_version() == 13
+    conn.execute(f"PRAGMA user_version = {migrations.latest_version()}")
+    assert migrations.current_version(conn) == migrations.latest_version()
     before = (_dump(conn), _rows(conn), migrations.current_version(conn))
     conn.close()
     ticks = _spy_tick(monkeypatch)
@@ -468,15 +530,22 @@ def test_engine_starts_on_clean_fully_migrated_db_and_runs_the_guard(monkeypatch
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("build, have", [(_v11, 11), (_reverted_v12, 12)])
+@pytest.mark.parametrize("build, have", [(_v11, 11), (_reverted_v12, 12), (_reverted_v13, 13)])
 def test_engine_still_refuses_a_version_mismatch_first(monkeypatch, tmp_path, capsys,
                                                        build, have):
-    """Unchanged: a DB behind latest gets the version message, before the guard runs."""
+    """A DB behind latest gets the version message, before the guard runs, and is left
+    unchanged. Includes a reverted v13 DB at user_version 13 (< latest since migration 14)."""
     path = _engine_settings(monkeypatch, tmp_path)
-    build(models.connect(path)).close()
+    conn = build(models.connect(path))
+    assert migrations.current_version(conn) == have
+    before = (_dump(conn), _rows(conn), migrations.current_version(conn))
+    conn.close()
     calls, ticks = _spy_guard(monkeypatch), _spy_tick(monkeypatch)
     assert engine.main([]) == 1
     err = capsys.readouterr().err
     assert err == (f"error: database schema is v{have} but this checkout expects "
                    f"v{migrations.latest_version()}; run `daolab init` first\n")
     assert calls == [] and ticks == []
+    conn = models.connect(path)
+    assert (_dump(conn), _rows(conn), migrations.current_version(conn)) == before
+    conn.close()
