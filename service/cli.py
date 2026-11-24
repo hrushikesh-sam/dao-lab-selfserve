@@ -192,21 +192,30 @@ def cmd_key_init(args) -> int:
     path = os.path.expanduser(config.settings.identity_file)
     if not path or os.path.lexists(path):
         _die("identity file already exists")
+    parent = os.path.dirname(path) or "."
+    try:
+        if os.path.islink(parent):
+            _die("unsafe identity directory")
+        if not os.path.isdir(parent):
+            if os.path.lexists(parent):
+                _die("unsafe identity directory")
+            os.makedirs(parent, mode=0o700)
+            if os.name == "posix":
+                os.chmod(parent, 0o700)
+        elif os.name == "posix":
+            info = os.stat(parent)
+            if info.st_uid != os.getuid() or info.st_mode & 0o022:
+                _die("unsafe identity directory")
+    except OSError as exc:
+        _die(f"cannot secure identity directory: {type(exc).__name__}")
     try:
         agecli.version()
         identity, recipient = agecli.keygen()
     except agecli.AgeError as exc:
         _die(exc.message)
-    parent = os.path.dirname(path) or "."
     try:
-        if not os.path.isdir(parent):
-            os.makedirs(parent, mode=0o700, exist_ok=True)
-        if os.name == "posix" and parent != ".":
-            os.chmod(parent, 0o700)
-    except OSError as exc:
-        _die(f"cannot secure identity directory: {type(exc).__name__}")
-    try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags, 0o600)
     except FileExistsError:
         _die("identity file already exists")
     except OSError as exc:
@@ -214,6 +223,8 @@ def cmd_key_init(args) -> int:
     try:
         with os.fdopen(fd, "wb") as fh:
             fh.write(identity)
+            fh.flush()
+            os.fsync(fh.fileno())
     except OSError as exc:
         try:
             os.unlink(path)

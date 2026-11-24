@@ -84,24 +84,57 @@ def test_key_init_writes_a_private_file_and_posts_only_the_recipient(key_cli, ca
     assert CANARY not in caplog.text and CANARY not in db_dump(settings)
 
 
-def test_key_init_tightens_an_existing_parent_directory(key_cli, monkeypatch):
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode checks")
+def test_key_init_keeps_an_existing_0755_parent_unchanged(key_cli):
     settings, _calls, _posted = key_cli
     parent = os.path.dirname(settings.identity_file)
-    os.makedirs(parent, exist_ok=True)
-    posix = os.name == "posix"
-    chmod_calls = []
-    real_chmod = os.chmod
-
-    def spy_chmod(path, mode):
-        chmod_calls.append((str(path), mode))
-        return real_chmod(path, mode)
-
-    monkeypatch.setattr(cli.os, "name", "posix")
-    monkeypatch.setattr(cli.os, "chmod", spy_chmod)
+    os.makedirs(parent, mode=0o755)
+    os.chmod(parent, 0o755)
     assert cli.cmd_key_init(None) == 0
-    assert (parent, 0o700) in chmod_calls
-    if posix:
-        assert stat.S_IMODE(os.stat(parent).st_mode) == 0o700
+    assert stat.S_IMODE(os.stat(parent).st_mode) == 0o755
+    assert stat.S_IMODE(os.stat(settings.identity_file).st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode checks")
+def test_key_init_refuses_an_existing_group_world_writable_parent(key_cli, monkeypatch, capsys):
+    settings, _calls, posted = key_cli
+    parent = os.path.dirname(settings.identity_file)
+    os.makedirs(parent, mode=0o777)
+    os.chmod(parent, 0o777)
+    monkeypatch.setattr(agecli, "keygen", lambda: pytest.fail("keygen must not run"))
+    with pytest.raises(SystemExit) as exit_info:
+        cli.cmd_key_init(None)
+    assert exit_info.value.code == 1
+    assert "unsafe identity directory" in capsys.readouterr().err
+    assert not os.path.exists(settings.identity_file)
+    assert posted == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX symlink checks")
+def test_key_init_refuses_a_symlinked_parent(key_cli, monkeypatch, capsys):
+    settings, _calls, posted = key_cli
+    parent = os.path.dirname(settings.identity_file)
+    real = os.path.join(os.path.dirname(parent), "real-keys")
+    os.makedirs(real, mode=0o755)
+    os.symlink(real, parent)
+    monkeypatch.setattr(agecli, "keygen", lambda: pytest.fail("keygen must not run"))
+    with pytest.raises(SystemExit) as exit_info:
+        cli.cmd_key_init(None)
+    assert exit_info.value.code == 1
+    assert "unsafe identity directory" in capsys.readouterr().err
+    assert not os.path.exists(settings.identity_file)
+    assert not os.listdir(real)
+    assert posted == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode checks")
+def test_key_init_creates_a_missing_parent_at_0700(key_cli):
+    settings, _calls, _posted = key_cli
+    parent = os.path.dirname(settings.identity_file)
+    assert not os.path.exists(parent)
+    assert cli.cmd_key_init(None) == 0
+    assert stat.S_IMODE(os.stat(parent).st_mode) == 0o700
+    assert stat.S_IMODE(os.stat(settings.identity_file).st_mode) == 0o600
 
 
 def test_key_init_refuses_an_existing_identity_file(key_cli, monkeypatch, capsys):
