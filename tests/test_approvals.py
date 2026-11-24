@@ -171,6 +171,36 @@ def test_decide_needs_a_different_admin_and_an_open_active_target(db, clock, use
     assert decided_twice.value.code == "invalid_state"
 
 
+def test_reject_reset_when_target_key_is_no_longer_active(db, clock, users):
+    mk_user(db, "second-admin", role="admin")
+    kid = key_for(db, "alice")
+    aid = approvals.request(db, "lost_key_reset", f"key:{kid}", admin(db))
+    db.execute("UPDATE keys SET state = 'retired', updated_at = ? WHERE id = ?", (CREATED, kid))
+
+    with pytest.raises(approvals.ApprovalServiceError) as inactive:
+        approvals.decide(db, aid, admin(db, "second-admin"), True, CREATED)
+    assert inactive.value.code == "invalid_state"
+
+    approvals.decide(db, aid, admin(db, "second-admin"), False, CREATED)
+    assert approval_row(db, aid)["state"] == "rejected"
+    assert approval_row(db, aid)["execute_after"] is None
+
+
+def test_reject_reset_when_requester_is_no_longer_an_admin(db, clock, users):
+    mk_user(db, "second-admin", role="admin")
+    kid = key_for(db, "alice")
+    aid = approvals.request(db, "lost_key_reset", f"key:{kid}", admin(db))
+    db.execute("UPDATE users SET role = 'user' WHERE username = 'dev-admin'")
+
+    with pytest.raises(approvals.ApprovalServiceError) as not_admin:
+        approvals.decide(db, aid, admin(db, "second-admin"), True, CREATED)
+    assert not_admin.value.code == "forbidden"
+
+    approvals.decide(db, aid, admin(db, "second-admin"), False, CREATED)
+    assert approval_row(db, aid)["state"] == "rejected"
+    assert approval_row(db, aid)["execute_after"] is None
+
+
 def test_approve_reset_holds_only_unheld_saved_snapshots(db, clock, users, tb01):
     mk_user(db, "second-admin", role="admin")
     kid = key_for(db, "alice")

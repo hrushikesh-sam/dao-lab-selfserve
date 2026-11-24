@@ -128,7 +128,7 @@ def decide(conn: sqlite3.Connection, approval_id: int, admin_row, approve: bool,
             raise ApprovalServiceError("invalid_state", "a different admin must decide")
         if row["state"] != "pending":
             raise ApprovalServiceError("invalid_state", "approval is not pending")
-        if row["action"] == "lost_key_reset":
+        if row["action"] == "lost_key_reset" and approve:
             key_id = _target_key_id(row["target_ref"])
             key = conn.execute("SELECT * FROM keys WHERE id = ?", (key_id,)).fetchone() if key_id else None
             if key is None or key["state"] != "active":
