@@ -201,16 +201,23 @@ def test_take_reads_then_unlinks(ticket_dir, fake_mountinfo, monkeypatch):
     monkeypatch.setattr(tickets.os, "read", read)
     monkeypatch.setattr(tickets.os, "unlink", unlink)
     now = datetime.now(UTC)
-    assert tickets.take(USER_ID, PUBLIC_ID, now) == S
+    assert tickets.take(USER_ID, PUBLIC_ID, now, mountinfo=fake_mountinfo) == S
     assert "read" in events and "unlink" in events
     assert events.index("read") < events.index("unlink")
     assert events[-1] == "unlink"
     assert not path.exists()
 
 
-def test_take_missing(ticket_dir):
+def test_take_rechecks_the_ticket_directory(ticket_dir, fake_mountinfo):
+    tickets.write(USER_ID, PUBLIC_ID, S, mountinfo=fake_mountinfo)
+    os.chmod(ticket_dir, 0o755)
+    with pytest.raises(tickets.TicketError, match="ticket:invalid"):
+        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC), mountinfo=fake_mountinfo)
+
+
+def test_take_missing(ticket_dir, fake_mountinfo):
     with pytest.raises(tickets.TicketError) as exc:
-        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC))
+        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC), mountinfo=fake_mountinfo)
     assert str(exc.value) == "ticket:missing"
 
 
@@ -220,7 +227,7 @@ def test_take_ambiguous_unlinks_everything(ticket_dir, fake_mountinfo, monkeypat
     monkeypatch.setattr(tickets.secrets, "token_hex", lambda _n: "b" * 32)
     tickets.write(USER_ID, PUBLIC_ID, S, mountinfo=fake_mountinfo)
     with pytest.raises(tickets.TicketError) as exc:
-        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC))
+        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC), mountinfo=fake_mountinfo)
     assert str(exc.value) == "ticket:ambiguous"
     assert list(ticket_dir.iterdir()) == []
 
@@ -233,10 +240,10 @@ def test_take_ttl_boundary(ticket_dir, fake_mountinfo, age_seconds, accepted):
     ts = now.timestamp() - age_seconds
     os.utime(path, (ts, ts))
     if accepted:
-        assert tickets.take(USER_ID, PUBLIC_ID, now) == S
+        assert tickets.take(USER_ID, PUBLIC_ID, now, mountinfo=fake_mountinfo) == S
     else:
         with pytest.raises(tickets.TicketError) as exc:
-            tickets.take(USER_ID, PUBLIC_ID, now)
+            tickets.take(USER_ID, PUBLIC_ID, now, mountinfo=fake_mountinfo)
         assert str(exc.value) == "ticket:invalid"
     assert not path.exists()
 
@@ -250,10 +257,10 @@ def test_take_ttl_allows_five_seconds_of_clock_slack(ticket_dir, fake_mountinfo,
     ts = now.timestamp() - age_seconds
     os.utime(path, (ts, ts))
     if accepted:
-        assert tickets.take(USER_ID, PUBLIC_ID, now) == S
+        assert tickets.take(USER_ID, PUBLIC_ID, now, mountinfo=fake_mountinfo) == S
     else:
         with pytest.raises(tickets.TicketError) as exc:
-            tickets.take(USER_ID, PUBLIC_ID, now)
+            tickets.take(USER_ID, PUBLIC_ID, now, mountinfo=fake_mountinfo)
         assert str(exc.value) == "ticket:invalid"
     assert not path.exists()
 
@@ -264,7 +271,7 @@ def test_sweep_keeps_files_within_clock_slack(ticket_dir, fake_mountinfo):
     now = datetime.now(UTC)
     ts = now.timestamp() + 5
     os.utime(future, (ts, ts))
-    assert tickets.sweep(now) == 0
+    assert tickets.sweep(now, mountinfo=fake_mountinfo) == 0
     assert future.exists()
 
 
@@ -276,7 +283,7 @@ def test_take_refuses_symlink(ticket_dir, fake_mountinfo, monkeypatch, tmp_path)
     path = ticket_dir / _name("c" * 32)
     os.symlink(target, path)
     with pytest.raises(tickets.TicketError) as exc:
-        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC))
+        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC), mountinfo=fake_mountinfo)
     assert str(exc.value) == "ticket:invalid"
     assert not path.exists()
 
@@ -287,7 +294,7 @@ def test_take_refuses_hardlink(ticket_dir, fake_mountinfo, tmp_path):
     path = next(ticket_dir.iterdir())
     os.link(path, tmp_path / "other-link")
     with pytest.raises(tickets.TicketError) as exc:
-        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC))
+        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC), mountinfo=fake_mountinfo)
     assert str(exc.value) == "ticket:invalid"
     assert not path.exists()
 
@@ -299,15 +306,16 @@ def test_take_refuses_wrong_owner_and_mode(ticket_dir, fake_mountinfo, monkeypat
     real_geteuid = os.geteuid
     monkeypatch.setattr(tickets.os, "geteuid", lambda: real_geteuid() + 1)
     with pytest.raises(tickets.TicketError, match="ticket:invalid"):
-        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC))
-    assert not path.exists()
+        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC), mountinfo=fake_mountinfo)
+    assert path.exists()
+    path.unlink()
 
     monkeypatch.setattr(tickets.os, "geteuid", real_geteuid)
     tickets.write(USER_ID, PUBLIC_ID, S, mountinfo=fake_mountinfo)
     path = next(ticket_dir.iterdir())
     os.chmod(path, 0o644)
     with pytest.raises(tickets.TicketError, match="ticket:invalid"):
-        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC))
+        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC), mountinfo=fake_mountinfo)
     assert not path.exists()
 
 
@@ -326,12 +334,18 @@ def test_sweep_removes_old_and_nonregular_only(ticket_dir, fake_mountinfo, caplo
         expected = 2
     else:
         expected = 1
-    assert tickets.sweep(now) == expected
+    assert tickets.sweep(now, mountinfo=fake_mountinfo) == expected
     assert fresh.exists()
     assert not old.exists()
     assert S.decode() not in caplog.text
     assert fresh.name not in caplog.text
     assert str(expected) in caplog.text
+
+
+def test_sweep_rechecks_the_ticket_directory(ticket_dir, fake_mountinfo):
+    os.chmod(ticket_dir, 0o755)
+    with pytest.raises(tickets.TicketError, match="ticket:invalid"):
+        tickets.sweep(datetime.now(UTC), mountinfo=fake_mountinfo)
 
 
 def test_canary_secret_absent_from_errors_and_logs(ticket_dir, fake_mountinfo, caplog):
@@ -342,7 +356,7 @@ def test_canary_secret_absent_from_errors_and_logs(ticket_dir, fake_mountinfo, c
     except tickets.TicketError as exc:
         errors.append(str(exc))
     try:
-        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC))
+        tickets.take(USER_ID, PUBLIC_ID, datetime.now(UTC), mountinfo=fake_mountinfo)
     except tickets.TicketError as exc:
         errors.append(str(exc))
     assert errors == ["ticket:invalid", "ticket:missing"]

@@ -154,9 +154,11 @@ def write(user_id: int, public_id: str, s: bytes, *, mountinfo: str = DEFAULT_MO
     log.info("ticket written: user_id=%s public_id=%s", user_id, public_id)
 
 
-def take(user_id: int, public_id: str, now: datetime) -> bytes:
+def take(user_id: int, public_id: str, now: datetime,
+         mountinfo: str = DEFAULT_MOUNTINFO) -> bytes:
     if not _valid_ids(user_id, public_id):
         raise TicketError(INVALID)
+    _check_dir(config.settings.ticket_dir, mountinfo)
     try:
         matches = [os.path.join(config.settings.ticket_dir, name)
                    for name in os.listdir(config.settings.ticket_dir)
@@ -187,7 +189,9 @@ def take(user_id: int, public_id: str, now: datetime) -> bytes:
     return b"".join(chunks)
 
 
-def sweep(now: datetime) -> int:
+def sweep(now: datetime, mountinfo: str = DEFAULT_MOUNTINFO) -> int:
+    if os.path.lexists(config.settings.ticket_dir):
+        _check_dir(config.settings.ticket_dir, mountinfo)
     try:
         entries = list(os.scandir(config.settings.ticket_dir))
     except FileNotFoundError:
