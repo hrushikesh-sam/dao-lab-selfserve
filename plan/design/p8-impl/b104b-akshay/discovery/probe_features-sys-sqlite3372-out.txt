@@ -1,0 +1,33 @@
+python 3.10.12 | sqlite 3.37.2
+[PASS] A1 partial UNIQUE index: 2nd active refused, many retired allowed -- IntegrityError: UNIQUE constraint failed: k.user_id
+[PASS] A2 ADD COLUMN NOT NULL DEFAULT 0 + CHECK: legacy rows get 0, 2 refused -- legacy=[0, 0]; update 2 -> IntegrityError: CHECK constraint failed: save_snapshot IN (0, 1); dflt_value='0'
+[PASS] A2b M6 reads dflt_value '0' (not '1') for DEFAULT 0 -- '0'
+[PASS] A3 ADD COLUMN CHECK is tested against existing rows (bad default + rows -> refused) -- OperationalError: CHECK constraint failed
+     (same ALTER on an EMPTY table: accepted )
+[PASS] A4 ADD COLUMN REFERENCES ON DELETE SET NULL (default NULL) works with FKs on -- after parent delete: None; bad FK -> IntegrityError: FOREIGN KEY constraint failed
+[PASS] A4b ...and a non-NULL default is refused while FKs are on -- OperationalError: Cannot add a REFERENCES column with non-NULL default value
+[PASS] A5 composite FK: own key ok, another user's key refused -- IntegrityError: FOREIGN KEY constraint failed
+     (without UNIQUE(id,user_id) on the parent: OperationalError: foreign key mismatch - "ch" referencing "keys" )
+[PASS] A6 CHECKs with GLOB '[^...]' / LIKE / length() behave as the DDL intends -- 29 cases
+     note: the timestamp GLOB checks shape only ('2026-13-99T99:99:99Z' is accepted, by design)
+     note: a 64-byte BLOB into the hex column: accepted (BLOB passes length/GLOB)
+[PASS] A7 CREATE TABLE with an FK to a not-yet-created table is accepted (order is a convention)
+[PASS] A8 ADD COLUMN then writable_schema rewrite in one txn; 'restore' insertable inside it; ROLLBACK undoes both -- DBCONFIG_DEFENSIVE=n/a; insert in txn: ok
+     stored jobs sql after ADD COLUMN ends with: "th_probe', 'reconcile')), snapshot_id INTEGER REFERENCES snapshots(id) ON DELETE SET NULL)"
+[PASS] A9 PRAGMA foreign_keys cannot be switched off inside a migration's transaction -- fk=1
+
+--- Part B: v4 DDL dry run on a v13 file DB (exported a67d4ac service/) ---
+naive ';' split gives 30 pieces; complete_statement split gives 13 statements: 4 tables, 9 indexes
+statements parsed: 13 | add_column: ['reservations.save_snapshot', 'jobs.snapshot_id', 'setups.snapshot_enabled'] | user_version before: 13
+[PASS] B1 legacy rows after 14: save_snapshot 0, snapshot_enabled 0, snapshot_id NULL, kind kept -- (0, 0, None, 'cleanup')
+[PASS] B2 jobs.kind 'restore' accepted, 'bogus' refused (new connection) -- IntegrityError: CHECK constraint failed: kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile', 'restore')
+[PASS] B3 guard M1..M6 passes on the v4 schema
+[PASS] B3b no marker fires individually -- []
+[PASS] B4 M6 input: reservations.save_snapshot dflt_value -- '0' (M6 needs '1')
+[PASS] B5 integrity_check ok, foreign_key_check empty
+new indexes: ['idx_admin_approvals_due', 'idx_admin_approvals_one_open', 'idx_key_challenges_open', 'idx_keys_one_active', 'idx_keys_one_pending', 'idx_snapshots_delete_due', 'idx_snapshots_hold_approval', 'idx_snapshots_key', 'idx_snapshots_user_setup']
+[PASS] B6 no reuse of the reverted index names
+jobs kind line now: ["CHECK (kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile', 'restore')),"]
+jobs sql tail: ' NULL\n        , snapshot_id INTEGER REFERENCES snapshots(id) ON DELETE SET NULL)'
+
+SUMMARY: 18 PASS / 0 FAIL

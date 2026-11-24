@@ -1,0 +1,3 @@
+applied: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] | user_version: 14 | sqlite 3.53.1
+tables (excluding sqlite_sequence): 16
+admin_approvals, audit_events, health_snapshots, ip_leases, ip_pools, jobs, key_challenges, keys, pools, reservations, resources, setups, snapshots, usecases, users, vms

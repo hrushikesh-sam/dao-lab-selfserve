@@ -1,0 +1,76 @@
+=== ~/b104a/.venv ===
+python 3.12.13 | sqlite 3.53.1
+service from: /tmp/b104b-probe/service
+latest_version(): 13 | migrations: [(11, 'token_expiry'), (12, 'burned_reverted_v12'), (13, 'burned_reverted_v13')]
+foreign_keys during init: 1 | isolation_level: None
+applied: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] | user_version: 13
+
+--- sqlite_master.sql for jobs (repr) ---
+"CREATE TABLE jobs (\n            id             INTEGER PRIMARY KEY AUTOINCREMENT,\n            reservation_id INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,\n            kind           TEXT    NOT NULL\n                           CHECK (kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile')),\n            state          TEXT    NOT NULL DEFAULT 'pending'\n                           CHECK (state IN ('pending', 'running', 'succeeded', 'failed')),\n            attempt        INTEGER NOT NULL DEFAULT 1 CHECK (attempt >= 1),\n            trace_id       TEXT,\n            log_path       TEXT,\n            steps          TEXT    NOT NULL DEFAULT '[]',   -- JSON list of step records\n            error          TEXT,                            -- set only in state 'failed'\n            started_at     TEXT,                            -- set when the job starts running\n            finished_at    TEXT,                            -- set when it succeeds or fails\n            created_at     TEXT    NOT NULL,\n            updated_at     TEXT    NOT NULL\n        )"
+--- sqlite_master.sql for jobs (raw) ---
+CREATE TABLE jobs (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            reservation_id INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+            kind           TEXT    NOT NULL
+                           CHECK (kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile')),
+            state          TEXT    NOT NULL DEFAULT 'pending'
+                           CHECK (state IN ('pending', 'running', 'succeeded', 'failed')),
+            attempt        INTEGER NOT NULL DEFAULT 1 CHECK (attempt >= 1),
+            trace_id       TEXT,
+            log_path       TEXT,
+            steps          TEXT    NOT NULL DEFAULT '[]',   -- JSON list of step records
+            error          TEXT,                            -- set only in state 'failed'
+            started_at     TEXT,                            -- set when the job starts running
+            finished_at    TEXT,                            -- set when it succeeds or fails
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL
+        )
+
+_OLD_JOB_KINDS (DDL §3.8) present: True | count: 1 | 'restore' present: False
+kind CHECK line: ["CHECK (kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile')),"]
+
+reservations cols: ['id', 'user_id', 'usecase_id', 'setup_id', 'state', 'requested_start_at', 'start_at', 'end_at', 'diy', 'diy_templates', 'retries', 'failure_reason', 'created_at', 'updated_at', 'mode', 'turnaround_min', 'ssh_pubkey', 'access_password']
+setups cols: ['id', 'name', 'pool_id', 'capabilities', 'links', 'diagram', 'yaml_path', 'created_at', 'updated_at', 'availability']
+jobs cols: ['id', 'reservation_id', 'kind', 'state', 'attempt', 'trace_id', 'log_path', 'steps', 'error', 'started_at', 'finished_at', 'created_at', 'updated_at']
+tables: ['audit_events', 'health_snapshots', 'ip_leases', 'ip_pools', 'jobs', 'pools', 'reservations', 'resources', 'setups', 'sqlite_sequence', 'usecases', 'users', 'vms']
+guard on our own v13: passes
+schema_version: 33 | integrity_check: ok
+compile_options of interest: ['ENABLE_FTS5', 'THREADSAFE=1']
+=== ~/b104a/.venv-220 ===
+python 3.12.13 | sqlite 3.53.1
+service from: /tmp/b104b-probe/service
+latest_version(): 13 | migrations: [(11, 'token_expiry'), (12, 'burned_reverted_v12'), (13, 'burned_reverted_v13')]
+foreign_keys during init: 1 | isolation_level: None
+applied: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13] | user_version: 13
+
+--- sqlite_master.sql for jobs (repr) ---
+"CREATE TABLE jobs (\n            id             INTEGER PRIMARY KEY AUTOINCREMENT,\n            reservation_id INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,\n            kind           TEXT    NOT NULL\n                           CHECK (kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile')),\n            state          TEXT    NOT NULL DEFAULT 'pending'\n                           CHECK (state IN ('pending', 'running', 'succeeded', 'failed')),\n            attempt        INTEGER NOT NULL DEFAULT 1 CHECK (attempt >= 1),\n            trace_id       TEXT,\n            log_path       TEXT,\n            steps          TEXT    NOT NULL DEFAULT '[]',   -- JSON list of step records\n            error          TEXT,                            -- set only in state 'failed'\n            started_at     TEXT,                            -- set when the job starts running\n            finished_at    TEXT,                            -- set when it succeeds or fails\n            created_at     TEXT    NOT NULL,\n            updated_at     TEXT    NOT NULL\n        )"
+--- sqlite_master.sql for jobs (raw) ---
+CREATE TABLE jobs (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            reservation_id INTEGER NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+            kind           TEXT    NOT NULL
+                           CHECK (kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile')),
+            state          TEXT    NOT NULL DEFAULT 'pending'
+                           CHECK (state IN ('pending', 'running', 'succeeded', 'failed')),
+            attempt        INTEGER NOT NULL DEFAULT 1 CHECK (attempt >= 1),
+            trace_id       TEXT,
+            log_path       TEXT,
+            steps          TEXT    NOT NULL DEFAULT '[]',   -- JSON list of step records
+            error          TEXT,                            -- set only in state 'failed'
+            started_at     TEXT,                            -- set when the job starts running
+            finished_at    TEXT,                            -- set when it succeeds or fails
+            created_at     TEXT    NOT NULL,
+            updated_at     TEXT    NOT NULL
+        )
+
+_OLD_JOB_KINDS (DDL §3.8) present: True | count: 1 | 'restore' present: False
+kind CHECK line: ["CHECK (kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile')),"]
+
+reservations cols: ['id', 'user_id', 'usecase_id', 'setup_id', 'state', 'requested_start_at', 'start_at', 'end_at', 'diy', 'diy_templates', 'retries', 'failure_reason', 'created_at', 'updated_at', 'mode', 'turnaround_min', 'ssh_pubkey', 'access_password']
+setups cols: ['id', 'name', 'pool_id', 'capabilities', 'links', 'diagram', 'yaml_path', 'created_at', 'updated_at', 'availability']
+jobs cols: ['id', 'reservation_id', 'kind', 'state', 'attempt', 'trace_id', 'log_path', 'steps', 'error', 'started_at', 'finished_at', 'created_at', 'updated_at']
+tables: ['audit_events', 'health_snapshots', 'ip_leases', 'ip_pools', 'jobs', 'pools', 'reservations', 'resources', 'setups', 'sqlite_sequence', 'usecases', 'users', 'vms']
+guard on our own v13: passes
+schema_version: 33 | integrity_check: ok
+compile_options of interest: ['ENABLE_FTS5', 'THREADSAFE=1']

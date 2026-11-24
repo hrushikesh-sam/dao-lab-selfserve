@@ -1,0 +1,131 @@
+# date: 2026-11-24T10:13:42Z  venv: ~/b104b/.venv  sqlite: 3.53.1
+# command: python -I ~/notes/b104/ddl-check.py /tmp/b104b-ddlcheck (rama = origin/rama a67d4ac) ~/b104b/plan/design/p8-impl/B-104-DDL.md (final v4.1)
+base: rama migrations, user_version 13
+jobs.kind rewrite, 1st run: rewritten
+jobs.kind rewrite, 2nd run: skipped (already rewritten)
+integrity_check: ok | foreign_key_check rows: 0
+DDL parsed: ['admin_approvals', 'key_challenges', 'keys', 'snapshots'] | add_column: ['reservations.save_snapshot', 'jobs.snapshot_id', 'setups.snapshot_enabled']
+
+[keys]
+  recipient S-shaped: refused (CHECK constraint failed: length(recipient) = 62                -- (inferred) 'age1' + 58 bech32 chars; N-1)
+  recipient bad bech32 char 'b': refused (CHECK constraint failed: length(recipient) = 62                -- (inferred) 'age1' + 58 bech32 chars; N-1)
+  recipient valid shape (key 1): accepted
+  second pending key for the user: refused (UNIQUE constraint failed: keys.user_id)
+  self-activation: refused (CHECK constraint failed: activated_by IS NULL OR activated_by <> user_id)
+  active without activator: refused (CHECK constraint failed: (state = 'pending') = (activated_by IS NULL))
+  activation by another admin: accepted
+  pending key 2: accepted
+  pending -> revoked (key 2): refused (CHECK constraint failed: (state = 'pending') = (activated_by IS NULL))
+  second active key (key 2): refused (UNIQUE constraint failed: keys.user_id)
+
+[key_challenges]
+  valid rotate challenge (ch 1): accepted
+  nonce_sha256 uppercase: refused (CHECK constraint failed: length(nonce_sha256) = 64 AND nonce_sha256 NOT GLOB '*[^0-9a-f]*')
+  target_ref with braces: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128)
+  target_ref uppercase: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128)
+  target_ref S-shaped: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128)
+  target_ref S-shaped lowercase: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128)
+  valid cancel_delete challenge (ch 2): accepted
+  CAS consume ch 1, first / replay rowcount: 1 0
+
+[snapshots]
+  valid public_id (snap 1, reservation 1): accepted
+  public_id with '-': refused (CHECK constraint failed: length(public_id) = 32        -- Q-9: 32 lowercase hex, no '-')
+  second snapshot for reservation 1: refused (UNIQUE constraint failed: snapshots.reservation_id)
+  state restore_incomplete: refused (CHECK constraint failed: state IN ('capturing', 'saved', 'failed'))
+  hold on a capturing row: refused (CHECK constraint failed: delete_after IS NULL OR state = 'saved')
+  delete_after without delete_requested_by: refused (CHECK constraint failed: (delete_after IS NULL) = (delete_requested_by IS NULL))
+  delete_requested_by without delete_after: refused (CHECK constraint failed: (delete_after IS NULL) = (delete_requested_by IS NULL))
+  delete_after <= created_at: refused (CHECK constraint failed: delete_after IS NULL OR delete_after > created_at)
+  delete_requested_by unknown user: refused (FOREIGN KEY constraint failed)
+  hold on a saved row (user delete): accepted
+  cancel_delete clears the hold: accepted
+  hold_approval_id without delete_after: refused (CHECK constraint failed: hold_approval_id IS NULL OR delete_after IS NOT NULL)
+  hold_approval_id of a non-existent approval: refused (FOREIGN KEY constraint failed)
+
+[admin_approvals]
+  target_ref S-shaped: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128)
+  unknown action: refused (CHECK constraint failed: action IN ('lost_key_reset', 'tripwire_accept', 'tripwire_rebaseline',)
+  valid home_discard (appr 1): accepted
+  second pending for same target: refused (UNIQUE constraint failed: admin_approvals.action, admin_approvals.target_ref)
+  pending with decided_by: refused (CHECK constraint failed: state <> 'pending' OR decided_by IS NULL)
+  decided by the requester: refused (CHECK constraint failed: decided_by IS NULL OR decided_by <> requested_by)
+  approved without decided_by: refused (CHECK constraint failed: state NOT IN ('approved', 'rejected') OR decided_by IS NOT NULL)
+  decided_by without decided_at: refused (CHECK constraint failed: (decided_by IS NULL) = (decided_at IS NULL))
+  execute_after <= created_at: refused (CHECK constraint failed: execute_after IS NULL OR execute_after > created_at)
+  approved by a second admin, 24h hold: accepted
+  executed before execute_after: refused (CHECK constraint failed: executed_at IS NULL OR execute_after IS NULL OR executed_at >= execute_after)
+  owner cancel after approval (cancelled, decided_by kept): accepted
+  executed_at on a cancelled row: refused (CHECK constraint failed: executed_at IS NULL OR state = 'approved')
+  tripwire_accept, no hold (appr 2): accepted
+  approve + execute at once (execute_after NULL): accepted
+
+[jobs]
+  kind restore: accepted
+  kind cleanup (legacy kind): accepted
+  kind bogus: refused (CHECK constraint failed: kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile', 'restore'))
+  jobs has a 'secret' column: False
+
+[timestamp shape]
+  expires_at with a space: refused (CHECK constraint failed: expires_at > created_at)
+  expires_at with +00:00: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  created_at not a time: refused (CHECK constraint failed: expires_at > created_at)
+  expires_at well-formed: accepted
+
+[S-shaped canary over every new TEXT column]
+  keys.recipient: refused (CHECK constraint failed: length(recipient) = 62                -- (inferred) 'age1' + 58 bech32 chars; N-1)
+  keys.fingerprint: refused (CHECK constraint failed: length(fingerprint) = 64              -- N-1: proposed lowercase sha256 hex)
+  keys.state: refused (CHECK constraint failed: state IN ('pending', 'active', 'retired', 'revoked'))
+  keys.activated_at: refused (CHECK constraint failed: (activated_by IS NULL) = (activated_at IS NULL))
+  keys.created_at: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  keys.updated_at: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  key_challenges.purpose: refused (CHECK constraint failed: purpose IN ('rotate', 'delete', 'cancel_delete', 'discard_home'))
+  key_challenges.target_ref: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128)
+  key_challenges.nonce_sha256: refused (CHECK constraint failed: length(nonce_sha256) = 64 AND nonce_sha256 NOT GLOB '*[^0-9a-f]*')
+  key_challenges.expires_at: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  key_challenges.consumed_at: refused (CHECK constraint failed: consumed_at IS NULL OR consumed_at <= expires_at)
+  key_challenges.created_at: refused (CHECK constraint failed: expires_at > created_at)
+  key_challenges.updated_at: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  snapshots.public_id: refused (CHECK constraint failed: length(public_id) = 32        -- Q-9: 32 lowercase hex, no '-')
+  snapshots.state: refused (CHECK constraint failed: state IN ('capturing', 'saved', 'failed'))
+  snapshots.delete_after: refused (CHECK constraint failed: (delete_after IS NULL) = (delete_requested_by IS NULL))
+  snapshots.created_at: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  snapshots.updated_at: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  admin_approvals.action: refused (CHECK constraint failed: action IN ('lost_key_reset', 'tripwire_accept', 'tripwire_rebaseline',)
+  admin_approvals.target_ref: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128)
+  admin_approvals.state: refused (CHECK constraint failed: state IN ('pending', 'approved', 'rejected', 'cancelled'))
+  admin_approvals.decided_at: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  admin_approvals.execute_after: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+  admin_approvals.executed_at: refused (CHECK constraint failed: executed_at IS NULL OR state = 'approved')
+  admin_approvals.created_at: refused (CHECK constraint failed: execute_after IS NULL OR execute_after > created_at)
+  admin_approvals.updated_at: refused (CHECK constraint failed: created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+
+[FK actions vs daolab sync]
+  delete released reservation 1 (as catalog.py:564): accepted
+  snapshot 1 kept, reservation_id: (None,)
+  delete setup tb-01 with snapshots (as catalog.py:565): refused (FOREIGN KEY constraint failed)
+  jobs.snapshot_id after the snapshot row is deleted: None
+
+[T-16/T-19/T-20 lost-key reset: hold, owner cancel, then a second reset to execute_after]
+  reset 1 approved (appr 3): key 1 state = active
+  pA held by the approval: True | pB keeps its own hold (hold_approval_id NULL): True
+  clear pA's delete_after while hold_approval_id is still set: refused (CHECK constraint failed: hold_approval_id IS NULL OR delete_after IS NOT NULL)
+  activate pending key 2 during the hold: refused (UNIQUE constraint failed: keys.user_id)
+  CAS on the key's open challenge during the hold, rowcount: 1
+  owner cancel (one transaction, rows WHERE hold_approval_id=3): challenge CAS 1, approval -> cancelled 1, holds cleared 1
+  after cancel: approval state = cancelled | pA hold: (None, None, None) | pB own hold kept: True | key 1 = active
+  execution CAS on the cancelled approval at execute_after, rowcount: 0
+  reset 2 approved (appr 4): key 1 state = active | pA held by appr 4: True
+  pC captured during the hold (saved, unheld): True
+  execution CAS before execute_after, rowcount: 0
+  execution at 2026-11-24T00:00:01Z (one transaction): approval executed 1, key revoked 1, snapshots of the key deleted 3 (approval-held pA, own-held pB, unheld pC)
+  key 1 state: revoked | pA, pB, pC exist: [False, False, False] | snapshots still on key 1: 0
+  open challenge of the revoked key, unexpired at 2026-11-24T00:00:01Z : True | CAS rowcount: 0
+  activate pending key 2 after the revoke: accepted
+
+[T-21 retention: a held row is neither counted nor pruned]
+  before prune: unheld saved = 4 | held = 1
+  prune query from §3.5 deleted: 1 | unheld saved left: 3 | held oldest row kept: True | oldest unheld pruned: True
+
+final integrity_check: ok | foreign_key_check rows: 0
+# exit: 0

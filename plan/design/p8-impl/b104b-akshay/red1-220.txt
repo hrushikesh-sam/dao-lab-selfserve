@@ -1,0 +1,2905 @@
+# date:        2026-11-24T09:09:52Z
+# worktree:    /home/akshay/b104b (branch b104b)
+# HEAD:        a67d4acc9741c2ee228abb23e30e0982f26700b4
+# status:      9 entries (git status --short)
+#    M README.md
+#    M plan/08-cli-config-ops.md
+#    M plan/README.md
+#   MM service/migrations.py
+#   MM tests/test_jobs.py
+#   AM tests/test_migration_14.py
+#   MM tests/test_migrations_guard.py
+#   ?? .venv-220/
+#   ?? plan/design/
+# venv:        /home/akshay/b104b/.venv-220
+# python:      3.12.13
+# ansible-core: 2.20.11
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# command:     .venv-220/bin/python -m pytest tests/test_migration_14.py tests/test_migrations.py tests/test_migrations_guard.py tests/test_jobs.py tests/test_reservation_states.py -q -rsf -p no:cacheprovider
+
+FFFFFEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 24%]
+EEEEEEEEEEEEFFFFFFFEEEEEEFEEEEEE........................................ [ 49%]
+........................................................................ [ 74%]
+........................................................................ [ 98%]
+...                                                                      [100%]
+==================================== ERRORS ====================================
+_____ ERROR at setup of test_t5_check_violations_raise[action legacy_home] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370c7c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '8ed3740b98266308deebecd49173f834f5de269611cd3db8a575ee9b8881624b', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[admin_approvals.target_ref 129 chars] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d030>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '5d3e965d6b765c611c5f50d23a9f55e82cbbd6f8dc671da30fa2b1f748ad1570', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[admin_approvals.target_ref braces] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d8a0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1rqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'b0a202fc3640499a927ba736fb0f1bc06aac52b4927748ed4908bfc864a95fdc', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[admin_approvals.target_ref empty] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e020>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1yqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'ad037113bc7baaaeb02c144f9d73cd61a5642583e92e682f6664054b6315c76b', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[admin_approvals.target_ref non-ascii] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e7a0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age19qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'a016265424637a34330bb07fc865643e9307bd8dd5d9403b59d78195515c8107', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[admin_approvals.target_ref slash] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370ef20>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1xqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'afbc529c4387ee99de596330d15e8e3abdc38014628d10469eb63f46b4cb71c8', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[admin_approvals.target_ref space] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f6a0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age18qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '3880f43da95a0c452193da4d7096c1df01feaf40085a02a9cef865862138360b', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[admin_approvals.target_ref uppercase] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370fe20>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1gqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'b25bcecc3d4d965b682abf9f50f09b436fa75902503c94eeaa435aaf50c5c28f', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__ ERROR at setup of test_t5_check_violations_raise[approval state executed] ___
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336905e0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1fqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'bc4ff46d05cb0fcbf89d0a6a2cff8fdab6620167e20e5729b1a6e1d94d4af5b0', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__ ERROR at setup of test_t5_check_violations_raise[consumed_at > expires_at] __
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f7633690d60>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age12qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '44c08778dff5597212e12a8a75657b86d4dd283f038a19aa787255d2e70a7b99', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__ ERROR at setup of test_t5_check_violations_raise[expires_at <= created_at] __
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370ff10>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1tqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'c21fdff1cc5971158ddf74a8e9106ec72c988e6e4f774fac1cedc86e742d7a62', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+____ ERROR at setup of test_t5_check_violations_raise[fingerprint 63 chars] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f970>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1vqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'e581c86b44991136ae9f6b23328f62d7055dfa902fe6d6a524ef2417da8506de', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+____ ERROR at setup of test_t5_check_violations_raise[fingerprint non-hex] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f1f0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1dqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'b8321d849befccd29e225c20b0e981eca401e3cad03208476eea1452ba9f8712', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[fingerprint uppercase] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370ea70>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1wqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '78bcf44ad77d61253b982743f80af3ca7eea8e5fd5b47e67705f3f67d62162bd', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[key_challenges.target_ref 129 chars] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e2f0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age10qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '61412703ce276f423f7d3b069c7da5efb01f5d1723c3728bc42402fba6e3c0d1', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[key_challenges.target_ref braces] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d7b0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1sqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'c25aefb5f82116f95614e2c5e2db3fab53522d843ae6a12ffc5f3609fe281a36', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[key_challenges.target_ref empty] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370cd60>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age13qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '2ebbf21967d942610bb042c323c2e862ec695238e98cf5c7d868384fdc86909d', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[key_challenges.target_ref non-ascii] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370c400>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1jqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'ff6d347ae218ab1a0d0866f84e6f2d12bcde038b55c3594a6693d12bf7b3b1f0', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[key_challenges.target_ref slash] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f7633a706d0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1nqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '9873365cd56a3981719801795af132f67d13d207cb73993b7fd13ddb40770394', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[key_challenges.target_ref space] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a4310>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age15qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'eec22b6951381159b0ae1caac1ac3f61bdc0e7939c28c378d482eea50aaf2c2b', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[key_challenges.target_ref uppercase] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a4a90>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age14qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '8c454349a84d48f9566b5d8b31216404a34f56d19b0626ec041324fc2b64ca83', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+______ ERROR at setup of test_t5_check_violations_raise[keys.state bogus] ______
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a5210>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1kqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'c4a86a39ae8720e57c6d921506850df913a3ec94062b0e560d6d4eabd8b4f4aa', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[nonce_sha256 63 chars] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a5990>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1hqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'e58fbff323fbe05d3ab829c33415d1d51873dc2e15c2c342fd175d7613241ef2', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[nonce_sha256 65 chars] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f7633a70130>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1cqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '149bcc92a7dbafbbd431376435b882f84f7d569b9931e4731f0781f0a66326a1', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+____ ERROR at setup of test_t5_check_violations_raise[nonce_sha256 non-hex] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370c7c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1eqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '98cc32ade8869dcc663013c2b9d35d374ada59f3e48a32f41668a9e6c90ce0f2', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[nonce_sha256 uppercase] ___
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370cc70>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age16qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '21f9babaccee9721304e0cc5f07d3151b969226cb6bbc73696015ab2815d52ab', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[public_id 31 chars] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d6c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1mqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'e2baaa4012115898cfa43757e7fae564fabe4902dcb3d6ed4188e587846951da', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[public_id 33 chars] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370df30>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1uqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '5b742e65f037bdc7d3bae357e5d9a2cea151145e31befb65b07930e6d4e66224', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+____ ERROR at setup of test_t5_check_violations_raise[public_id uppercase] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e6b0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1aqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '235ff45081300108209f7649f8447b6c58969466f2e9da90122a992689a5228d', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[public_id uuid with dashes] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370ee30>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age17qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '54c95b0d2494211c2fd35f6d97929c505f5d1a9aec24a3723252aaba64551f23', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+______ ERROR at setup of test_t5_check_violations_raise[public_id with -] ______
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f2e0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1lqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'e6bbf00bd83e4d9ba3ce3ecb51d945be878dd2d5929f21b1f3a6c73fd48c89cb', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+______ ERROR at setup of test_t5_check_violations_raise[purpose restore] _______
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a4f40>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1qpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '64085a395b0009f2ee8bc6607212bbc1fbc090cc2ea9611481125838461aee04', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[recipient 61 chars] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a47c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1ppqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '91f80373a10596fd284077ea3ad174a082c417ca894dadd0f4c6926fe0997f45', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[recipient 63 chars] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a4040>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1zpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'd9984e5cb1fec3fecd47419b0611a852bc8a0fb4b58e7bbabddc9227af146c27', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[recipient bech32 1] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a6110>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1rpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '59e3b9abaa0600b24e1eaecaa7cf447014e184b8b38fc16a3789166439f3a9be', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[recipient bech32 b] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f4c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1ypqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'fc7b65b464386f125863300729b4e9185e86ebe70753b5f8f1494a8c5f5f3cef', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[recipient bech32 i] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370ec50>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age19pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '29e2286adeb5ce977c08c57893dccbea1881a99e64f1ebe5ee13dd465b603c8f', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[recipient bech32 o] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e4d0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1xpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '69afbfb4ea7894b92e381217aaa81fbc761b021b768d6b96d3fe9aef015e5ba4', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[recipient prefix AGE1] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370dd50>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age18pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '6e40791bd304d610d2a20af647a22f2d9a1696a1df8152f4c737cd0076e7c0c5', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[recipient prefix age2] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d4e0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1gpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'dff338844d81037e69445aef50f9d21486c0604a0a347b1133a1822f2b17ea0b', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__ ERROR at setup of test_t5_check_violations_raise[recipient uppercase body] __
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d030>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1fpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'e41f4ec99990a386d6f6d70e98a3edbd434befd2ca5f44f7686bbfa94ef6d1e3', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+______ ERROR at setup of test_t5_check_violations_raise[save_snapshot 2] _______
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370cb80>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age12pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'd032c0ed5d00c8755ca50d80572b263bee3994dc6bf8d6740918d33a2565c798', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[save_snapshot NULL] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f7633a706d0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1tpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '257885f51d64d2de650cad7572684f5a233d9a6fd044ce473d5b45965dae5270', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_check_violations_raise[snapshot_enabled 2] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a4b80>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1vpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'dc7bf1f9814c023d4ea7df67ef3643920f05ab3b0caa94869d54107c051552e7', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[snapshot_enabled NULL] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a5300>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1dpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '8fa3a14bc82f67cc0e7a64c92a7d0654c278c565d75ae09e8000d77c90e36973', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[snapshots.state bogus] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a5d50>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1wpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '8790b8c9284793f61183410c67bfbf4b7ec861ec09457807880be3c06526682f', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__ ERROR at setup of test_t5_check_violations_raise[snapshots.state deleted] ___
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a6890>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age10pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'beb787041b0df95787ff6440c327162718b468de67228d35f1a97575cce7bf48', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_check_violations_raise[snapshots.state restore_incomplete] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f7633a70040>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1spqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'b522bbda9246f390095cf67c5089d9af192a6ff76575ca84b222fc1e7660bf63', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_check_violations_raise[snapshots.state saving] ___
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370c400>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age13pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '17f8dbf32044d357c5c134bcf7dc243b06fcdd15f43311060b44ee8026aecbb5', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__ ERROR at setup of test_t5_s_shaped_canary_refused_by_every_new_text_column __
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370cd60>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1jpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '479cf6aab905f2ecf976e22963ae4c035f0688123455befc8ca9582bddab4205', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+______ ERROR at setup of test_t5_timestamp_shape_refused[keys.created_at] ______
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d7b0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1npqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '77a52bae94c13bedf8f24d226919035bdae381a952538e485df8c00a455c56df', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+______ ERROR at setup of test_t5_timestamp_shape_refused[keys.updated_at] ______
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e2f0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age15pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '893e474314ead8d8f49cf1b912061da561efc8744e1f01dd6548840e9394b438', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____ ERROR at setup of test_t5_timestamp_shape_refused[keys.activated_at] _____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370ea70>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age14pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'e7621932a879d3a70ae03402b17bfbbc2d7215ee06dd921b6139382f1fd205b3', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[key_challenges.created_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f1f0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1kpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'd532e7c4e5e28e9fb0d6043ef0827f4b2044f7d6c79615d48e02b4411e8a6b48', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[key_challenges.updated_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f790>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1hpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'acc769df823f3b81fed99e1d4f405485824f21c44d3ef8a5bbe3e0264a192d9c', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[key_challenges.expires_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a49a0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1cpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'be5c65c873466e810ec9adda551e6a1ac117b3748c7f10617b5cda9a29d721f6', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[key_challenges.consumed_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a4130>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1epqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '759ff6e1f399d3afad4c7ea728fb001726307ecef034b5fb73f8aeaa4427b16b', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_timestamp_shape_refused[snapshots.created_at] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a64d0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age16pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '97e654ea74174d6619e981c26596d23af95b16ae7c2289d8614747de5a2359a3', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t5_timestamp_shape_refused[snapshots.updated_at] ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a7010>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1mpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'ff73fd2cc452305ba72bb76a5d9a71daa6b49eb065a199989a8235e3c1d58b00', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__ ERROR at setup of test_t5_timestamp_shape_refused[snapshots.delete_after] ___
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f970>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1upqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '4f467c007a5f870bc44d16ed87f34691c1c38774ba163169e81fc8dba102b794', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[admin_approvals.created_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370ee30>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1apqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '368a7d69d892e144ef864fef49366589c24fc12e4292221559d727a6ebe3a6f2', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[admin_approvals.updated_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e6b0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age17pqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'cce7d5deb4be9af706b4c425285c1224adf52631797784d7f3de3d4875d5a385', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[admin_approvals.decided_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370df30>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1lpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '73ac1703f14b875a6be7b68cbc6b8eed335d674a4a45d3b86fd6edfb739d5ccd', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[admin_approvals.execute_after] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d6c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1qzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '933bcf41052747da61d441b5b82c0fcc067596f2153ca1e1b0ab29d72346f45a', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t5_timestamp_shape_refused[admin_approvals.executed_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370cc70>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1pzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '24820085325fcc38ddab4a27b71942ddaa022b8535b928c9bc7912f710bccf36', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+________ ERROR at setup of test_t6_two_admin_and_different_admin_rules _________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370c7c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1zzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'f7eaf4143eb873034abddf99264a785a8c9883cd9f0ddb57101d0c28dec522c1', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_____________________ ERROR at setup of test_t7_uniqueness _____________________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f7633a708b0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1rzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'dd5ae5ccdbcaba7530aaeff5f4827f7c1723f99b7156a41e0aa07af416eb465f', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_______ ERROR at setup of test_t8_composite_fk_refuses_another_users_key _______
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a4a90>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1yzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '80373e8a95361edf2e1b55e31a243504a38e3a8afcb2d61de2118bf51fd5aedb', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+____ ERROR at setup of test_t9_first_consume_wins_and_a_replay_gets_nothing ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a5210>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age19zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '5de5ddb53787b3da3e4eaa42a32325d0061f950d67dbf778357f6d36789b7955', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__________ ERROR at setup of test_t9_challenge_cas_refusals[expired] ___________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a6c50>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1xzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '80ed46ca89412eeee5d33efdb5532f1c169d5217196b5401927b48e333eb68aa', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_________ ERROR at setup of test_t9_challenge_cas_refusals[at expiry] __________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a7790>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age18zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'fa501c2c654e8e7cc0467f5f6cfec6d0d18b9ba4c5dda29a36feae5fd787b602', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_______ ERROR at setup of test_t9_challenge_cas_refusals[wrong purpose] ________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f7633a707c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1gzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'c62361da697ef58a0493ef38dcbb0acbdcdc50bbb386630100a84912dbb360fc', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+________ ERROR at setup of test_t9_challenge_cas_refusals[wrong target] ________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370cb80>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1fzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '41a0a95b72157a18d4206782337640d7a588d6c69ae8bab9194944917c60c50e', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_________ ERROR at setup of test_t9_challenge_cas_refusals[wrong user] _________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d030>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age12zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '7323c168964c9b5b008089db43e9f92154ca43e3c47e6c940f5827b0ba21fbc2', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+________ ERROR at setup of test_t9_challenge_cas_refusals[key revoked] _________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d4e0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1tzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '2b3ec1d7df6f0a0eec5b8b622be5d9c0c2a51b8a7cf450a4e7165233dce98e62', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+________ ERROR at setup of test_t9_challenge_cas_refusals[key retired] _________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370dd50>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1vzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '94873bfe0a1d38c226af866ae3491fa9e368cb0963792eee88621ba3540ad182', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t10_sync_style_deletes_keep_snapshot_and_block_setup_removal _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e4d0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1dzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '4217c6e13e4b9bd98b9e6e678ec0a30d835c1ca1cb88ae617f3673502a2016ac', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+___ ERROR at setup of test_t11_jobs_snapshot_id_set_null_on_snapshot_delete ____
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370ec50>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1wzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'b11182c5f833e1bb3a155be72e6308537bc4f0bde97df10db91337ecbe8503e5', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t12_restore_kind_accepted_bogus_refused_old_kinds_kept _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370f880>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age10zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '437ec16191df98ee84a74e632ea2f6ca462ffeee1c0326349bcce0ad4e67a600', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+______________ ERROR at setup of test_t15_delete_hold_constraints ______________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370eb60>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1szqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'ea24ffe51c394fb7e07f30855012bed2ed2bdd05f8c35a295b8c95fb275732cd', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_________ ERROR at setup of test_t16_lost_key_reset_hold_then_execute __________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e3e0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age13zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '75dfe2339bb59bebbadd8903482c838beb70a7133c1b358e0ee6fe4650462169', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+__________ ERROR at setup of test_t19_owner_cancels_reset_during_hold __________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370dc60>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1jzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'ba7ec10729c025997f57f75f94497167944cfdd59fac5ab0fdf8067f47848b81', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_t20_execution_deletes_every_snapshot_of_the_revoked_key _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d990>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1nzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'ca805e7ac597fb9e4174a4d37c3645acead953f11a376da8be3fd5b9ffc52f67', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+________________ ERROR at setup of test_t17_execute_after_rules ________________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d210>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age15zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '42ecfd25c347d20fe6a64120b520dc817898faa2ef5776770da551ac0189b0fb', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_________ ERROR at setup of test_t21_retention_prune_ignores_held_rows _________
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370c9a0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age14zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '54e14302c0b0d54abf47c7b899d0479594fa8e7b27678ddd92211d188624b3ea', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_v41_1_second_reset_refused_while_first_is_approved_and_unexecuted[executed] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a5300>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1kzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '7e4c9b5e770369e71f6b9017ac6071e901b826ee53893f58e118a9b4aaaa24bc', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_v41_1_second_reset_refused_while_first_is_approved_and_unexecuted[cancelled] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f76336a47c0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1hzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '5b23e168479acd817e6a109a40bf91436abc16cf23f935a97327b79e59fe15c5', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_v41_4_execution_when_key_no_longer_active_deletes_nothing[retired] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370c9a0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1czqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '47432f0c7a5550ab356e0a66f07cfe024eef839898b53e23f696778c77da5032', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_v41_4_execution_when_key_no_longer_active_deletes_nothing[revoked] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370cd60>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1ezqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'df3aefb7545066dafcbfef0e3346b9e40470bda1473deabbcaead29c00e85ae4', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_v41_2_keys_activation_pair[activated_by without activated_at] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370d7b0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age16zqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': '83a5f114143bf5eacf7e19b81cf62c6cf23ef0632127e7dafe35de80117358cd', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+_ ERROR at setup of test_v41_2_keys_activation_pair[activated_at without activated_by] _
+
+    @pytest.fixture
+    def w():
+>       world = _world()
+                ^^^^^^^^
+
+tests/test_migration_14.py:199: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_migration_14.py:190: in _world
+    w.key = key(conn, w.owner, "active", activated_by=w.adm1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_migration_14.py:144: in key
+    return ins(conn, "keys", user_id=user_id, recipient=recipient,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x7f763370e2f0>, table = 'keys'
+cols = {'user_id': 1, 'recipient': 'age1mzqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', 'fingerprint': 'ee1ea0b808d230c44d1efdc286160f81ba9f8c07c3e31fec76ad5aa4565b9420', 'state': 'active', ...}
+
+    def ins(conn, table, **cols):
+        cols.setdefault("created_at", T0)
+        cols.setdefault("updated_at", cols["created_at"])
+        sql = (f"INSERT INTO {table} ({', '.join(cols)}) "
+               f"VALUES ({', '.join('?' for _ in cols)})")
+>       return conn.execute(sql, list(cols.values())).lastrowid
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.OperationalError: no such table: keys
+
+tests/test_migration_14.py:136: OperationalError
+=================================== FAILURES ===================================
+___________ test_t1_fresh_db_reaches_14_with_new_tables_and_columns ____________
+
+    def test_t1_fresh_db_reaches_14_with_new_tables_and_columns():
+        conn = _conn()
+>       assert models.init_db(conn) == list(range(1, 15))
+E       assert [1, 2, 3, 4, 5, 6, ...] == [1, 2, 3, 4, 5, 6, ...]
+E         
+E         Right contains one more item: 14
+E         Use -v to get more diff
+
+tests/test_migration_14.py:236: AssertionError
+_________ test_t3_upgrade_keeps_legacy_rows_with_preserve_defaults[11] _________
+
+from_version = 11
+
+    @pytest.mark.parametrize("from_version", [11, 13])
+    def test_t3_upgrade_keeps_legacy_rows_with_preserve_defaults(from_version):
+        conn = _at_version(_conn(), from_version)
+        owner = mk_user(conn, "owner")[0]
+        sid = mk_setup(conn, "tb-01", ["wire"])
+        cid = mk_usecase(conn, "uc1", ["wire"])
+        rid = mk_res(conn, sid, cid, T(10), T(11), state="released", user_id=owner)
+        jid = models.create_job(conn, rid, "cleanup")
+        tables = {"reservations": rid, "setups": sid, "jobs": jid}
+        before = {t: dict(conn.execute(f"SELECT * FROM {t} WHERE id = ?", (i,)).fetchone())
+                  for t, i in tables.items()}
+>       assert models.init_db(conn) == list(range(from_version + 1, 15))
+E       assert [12, 13] == [12, 13, 14]
+E         
+E         Right contains one more item: 14
+E         Use -v to get more diff
+
+tests/test_migration_14.py:264: AssertionError
+_________ test_t3_upgrade_keeps_legacy_rows_with_preserve_defaults[13] _________
+
+from_version = 13
+
+    @pytest.mark.parametrize("from_version", [11, 13])
+    def test_t3_upgrade_keeps_legacy_rows_with_preserve_defaults(from_version):
+        conn = _at_version(_conn(), from_version)
+        owner = mk_user(conn, "owner")[0]
+        sid = mk_setup(conn, "tb-01", ["wire"])
+        cid = mk_usecase(conn, "uc1", ["wire"])
+        rid = mk_res(conn, sid, cid, T(10), T(11), state="released", user_id=owner)
+        jid = models.create_job(conn, rid, "cleanup")
+        tables = {"reservations": rid, "setups": sid, "jobs": jid}
+        before = {t: dict(conn.execute(f"SELECT * FROM {t} WHERE id = ?", (i,)).fetchone())
+                  for t, i in tables.items()}
+>       assert models.init_db(conn) == list(range(from_version + 1, 15))
+E       assert [] == [14]
+E         
+E         Right contains one more item: 14
+E         Use -v to get more diff
+
+tests/test_migration_14.py:264: AssertionError
+________________ test_t4_m14_twice_in_one_transaction_is_a_noop ________________
+
+    def test_t4_m14_twice_in_one_transaction_is_a_noop():
+        conn = _at_version(_conn(), 13)
+>       fn = _m14()
+             ^^^^^^
+
+tests/test_migration_14.py:283: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _m14():
+>       return {m.version: m for m in migrations.MIGRATIONS}[14].fn
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 14
+
+tests/test_migration_14.py:97: KeyError
+_______________ test_t4_m14_on_an_up_to_date_db_changes_nothing ________________
+
+    def test_t4_m14_on_an_up_to_date_db_changes_nothing():
+        conn = _latest()
+        dump, version, changes = _dump(conn), _schema_version(conn), conn.total_changes
+>       _m14()(conn)
+        ^^^^^^
+
+tests/test_migration_14.py:297: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _m14():
+>       return {m.version: m for m in migrations.MIGRATIONS}[14].fn
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 14
+
+tests/test_migration_14.py:97: KeyError
+_ test_t12_rewrite_refuses_unless_old_kinds_occur_exactly_once[old text 0 times] _
+
+case = 'old text 0 times'
+
+    @pytest.mark.parametrize("case", ["old text 0 times", "old text 2 times"])
+    def test_t12_rewrite_refuses_unless_old_kinds_occur_exactly_once(case):
+        """v4 §3.8 + v4.1-3: no guessing. The migration fails loudly and rolls back."""
+        conn = _v13_with_jobs(case)
+        assert _jobs_sql(conn).count(OLD_KINDS_TEXT) == {"old text 0 times": 0,
+                                                         "old text 2 times": 2}[case]
+        dump = _dump(conn)
+>       with pytest.raises(RuntimeError, match=REWRITE_ERROR):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/test_migration_14.py:608: Failed
+_ test_t12_rewrite_refuses_unless_old_kinds_occur_exactly_once[old text 2 times] _
+
+case = 'old text 2 times'
+
+    @pytest.mark.parametrize("case", ["old text 0 times", "old text 2 times"])
+    def test_t12_rewrite_refuses_unless_old_kinds_occur_exactly_once(case):
+        """v4 §3.8 + v4.1-3: no guessing. The migration fails loudly and rolls back."""
+        conn = _v13_with_jobs(case)
+        assert _jobs_sql(conn).count(OLD_KINDS_TEXT) == {"old text 0 times": 0,
+                                                         "old text 2 times": 2}[case]
+        dump = _dump(conn)
+>       with pytest.raises(RuntimeError, match=REWRITE_ERROR):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/test_migration_14.py:608: Failed
+____________ test_t12_rewrite_skips_when_new_kinds_already_present _____________
+
+    def test_t12_rewrite_skips_when_new_kinds_already_present():
+        """v4.1-3: the exact new text present means already rewritten: skip, don't raise."""
+        conn = _v13_with_jobs("new text present")
+>       assert models.init_db(conn) == [14]
+E       assert [] == [14]
+E         
+E         Right contains one more item: 14
+E         Use -v to get more diff
+
+tests/test_migration_14.py:619: AssertionError
+____________________ test_t12_other_connections_see_restore ____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-18/test_t12_other_connections_see0')
+
+    def test_t12_other_connections_see_restore(tmp_path):
+        path = str(tmp_path / "m14.db")
+        conn = models.connect(path)
+        models.init_db(conn)
+        uid = mk_user(conn, "owner")[0]
+        sid = mk_setup(conn, "tb-01", ["wire"])
+        rid = mk_res(conn, sid, mk_usecase(conn, "uc1", ["wire"]), T(10), T(11), user_id=uid)
+        conn.close()
+        other = sqlite3.connect(path)                    # a brand-new connection
+>       other.execute("INSERT INTO jobs (reservation_id, kind, created_at, updated_at) "
+                      "VALUES (?, 'restore', ?, ?)", (rid, T0, T0))
+E       sqlite3.IntegrityError: CHECK constraint failed: kind IN ('deploy', 'cleanup', 'health_probe', 'reconcile')
+
+tests/test_migration_14.py:634: IntegrityError
+_________________________ test_m14_is_one_transaction __________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-18/test_m14_is_one_transaction0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f7633473a70>
+
+    def test_m14_is_one_transaction(tmp_path, monkeypatch):
+        """Q-5: a failure after the rewrite (the last step) rolls back all of 14: no new table,
+        index or column, the old jobs.kind CHECK, user_version 13."""
+        conn = _at_version(models.connect(str(tmp_path / "v13.db")), 13)
+        dump = _dump(conn)
+>       real = _m14()
+               ^^^^^^
+
+tests/test_migration_14.py:648: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _m14():
+>       return {m.version: m for m in migrations.MIGRATIONS}[14].fn
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 14
+
+tests/test_migration_14.py:97: KeyError
+_____________________ test_t13_no_reverted_shapes_after_14 _____________________
+
+    def test_t13_no_reverted_shapes_after_14():
+        conn = _latest()
+        assert not migrations.has_column(conn, "jobs", "secret")
+        assert not migrations.has_table(conn, "user_keys")
+        assert not migrations.has_column(conn, "snapshots", "wrapped_dek")
+        assert not migrations.has_column(conn, "snapshots", "path")
+        assert not migrations.has_column(conn, "setups", "snapshot_bdfs")
+>       assert migrations.has_column(conn, "snapshots", "public_id")
+E       AssertionError: assert False
+E        +  where False = <function has_column at 0x7f7633a08900>(<sqlite3.Connection object at 0x7f763370f2e0>, 'snapshots', 'public_id')
+E        +    where <function has_column at 0x7f7633a08900> = migrations.has_column
+
+tests/test_migration_14.py:673: AssertionError
+____________________ test_t14_no_key_material_column_names _____________________
+
+    def test_t14_no_key_material_column_names():
+        conn = _latest()
+        rule = re.compile(r"secret|dek|private|identity|nonce$|password|wrapped")
+        for table in NEW_TABLES:
+>           assert migrations.has_table(conn, table), table          # not vacuous
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: keys
+E           assert False
+E            +  where False = <function has_table at 0x7f7633a082c0>(<sqlite3.Connection object at 0x7f763370ec50>, 'keys')
+E            +    where <function has_table at 0x7f7633a082c0> = migrations.has_table
+
+tests/test_migration_14.py:687: AssertionError
+________________ test_m14_integrity_and_foreign_key_check_clean ________________
+
+    def test_m14_integrity_and_foreign_key_check_clean():
+        conn = _at_version(_conn(), 11)
+        uid = mk_user(conn, "legacy")[0]
+        sid = mk_setup(conn, "legacy-tb", ["wire"])
+        rid = mk_res(conn, sid, mk_usecase(conn, "legacy-uc", ["wire"]), T(10), T(11), user_id=uid)
+        models.create_job(conn, rid, "deploy")
+>       assert models.init_db(conn) == [12, 13, 14]
+E       assert [12, 13] == [12, 13, 14]
+E         
+E         Right contains one more item: 14
+E         Use -v to get more diff
+
+tests/test_migration_14.py:879: AssertionError
+=============================== warnings summary ===============================
+tests/test_reservation_states.py::test_cancel_releases_a_queued_booking
+  /home/akshay/b104b/.venv-220/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_migration_14.py::test_t1_fresh_db_reaches_14_with_new_tables_and_columns
+FAILED tests/test_migration_14.py::test_t3_upgrade_keeps_legacy_rows_with_preserve_defaults[11]
+FAILED tests/test_migration_14.py::test_t3_upgrade_keeps_legacy_rows_with_preserve_defaults[13]
+FAILED tests/test_migration_14.py::test_t4_m14_twice_in_one_transaction_is_a_noop
+FAILED tests/test_migration_14.py::test_t4_m14_on_an_up_to_date_db_changes_nothing
+FAILED tests/test_migration_14.py::test_t12_rewrite_refuses_unless_old_kinds_occur_exactly_once[old text 0 times]
+FAILED tests/test_migration_14.py::test_t12_rewrite_refuses_unless_old_kinds_occur_exactly_once[old text 2 times]
+FAILED tests/test_migration_14.py::test_t12_rewrite_skips_when_new_kinds_already_present
+FAILED tests/test_migration_14.py::test_t12_other_connections_see_restore - s...
+FAILED tests/test_migration_14.py::test_m14_is_one_transaction - KeyError: 14
+FAILED tests/test_migration_14.py::test_t13_no_reverted_shapes_after_14 - Ass...
+FAILED tests/test_migration_14.py::test_t14_no_key_material_column_names - As...
+FAILED tests/test_migration_14.py::test_m14_integrity_and_foreign_key_check_clean
+13 failed, 187 passed, 1 warning, 91 errors in 9.34s
+# exit: 1

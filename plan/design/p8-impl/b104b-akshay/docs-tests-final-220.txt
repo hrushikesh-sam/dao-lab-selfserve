@@ -1,0 +1,43 @@
+# date:        2026-11-24T10:20:30Z
+# worktree:    /home/akshay/b104b (branch b104b)
+# HEAD:        a67d4acc9741c2ee228abb23e30e0982f26700b4
+# tree:        5505478e9d4c835e8c763591b72eba6be3135edf
+# status:      12 entries (git status --short)
+#   M  README.md
+#   M  plan/08-cli-config-ops.md
+#   M  plan/README.md
+#   A  plan/design/p8-impl/.gitattributes
+#   A  plan/design/p8-impl/B-104-DDL.md
+#   A  plan/design/p8-impl/B-104-DDL.v3-v4.diff
+#   A  plan/design/p8-impl/B-104-DDL.v4-v4.1.diff
+#   M  service/migrations.py
+#   M  tests/test_jobs.py
+#   A  tests/test_migration_14.py
+#   M  tests/test_migrations_guard.py
+#   ?? .venv-220/
+# venv:        /home/akshay/b104b/.venv-220
+# python:      3.12.13
+# ansible-core: 2.20.11
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# command:     .venv-220/bin/python -m pytest tests/test_access.py tests/test_api.py tests/test_api_internal.py tests/test_catalog.py tests/test_cleanup_flow.py tests/test_concurrency.py tests/test_config.py tests/test_e2e_tb01.py tests/test_engine.py tests/test_engine_health.py tests/test_health.py tests/test_ipam.py tests/test_jobs.py tests/test_mock_api.py tests/test_orphans.py tests/test_otel.py tests/test_recovery.py tests/test_reservation_states.py tests/test_runner.py tests/test_scheduler.py tests/test_vms.py -q -rsf -p no:cacheprovider
+
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 31%]
+........................................................................ [ 41%]
+........................................................................ [ 52%]
+........................................................................ [ 62%]
+........................................................................ [ 73%]
+........................................................................ [ 83%]
+........................................................................ [ 94%]
+.........................................                                [100%]
+=============================== warnings summary ===============================
+.venv-220/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /home/akshay/b104b/.venv-220/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+689 passed, 1 warning in 78.16s (0:01:18)
+# exit: 0

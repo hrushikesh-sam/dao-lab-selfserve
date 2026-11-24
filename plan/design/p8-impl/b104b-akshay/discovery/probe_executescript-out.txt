@@ -1,0 +1,3 @@
+in_transaction after executescript: False
+ROLLBACK failed: cannot rollback - no transaction is active
+rows in a after ROLLBACK: 1 | table b exists: 1

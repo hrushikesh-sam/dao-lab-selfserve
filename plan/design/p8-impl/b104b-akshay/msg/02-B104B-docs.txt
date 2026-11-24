@@ -1,0 +1,85 @@
+Document the B-104 v4.1 DDL and the v14 upgrade step (B-104)
+
+What: plan/design/p8-impl/B-104-DDL.md is the B-104 DDL v4.1, the
+design record of migration 14: DDL v4 (signed off by Rama 23 Nov) plus
+his 24 Nov sign-off. Q-13 (where holds live), the delete-sweep rule and
+the table order are marked SIGNED OFF. The v4.1 changes 1-6 are applied
+and described in a new section 11: the one-open approval index also
+covers approved, unexecuted approvals; keys sets activated_by and
+activated_at together; an exact jobs.kind rewrite; a lost_key_reset
+targets key:<id> (approved as a change to Q-11, with Rama's code rules
+for B-105/B-106 recorded in Q-11); a home_discard targets setup:<name>;
+"(inferred)" is removed only where now signed off. Its SQL is exactly
+what _m14_snapshots_v1 sends. Also: a citation legend, accuracy fixes
+(the engine has run the guard since PR #9; refuse_reverted_schema is
+public; the test file is tests/test_migration_14.py; migrations.py line
+numbers refer to a67d4ac; a local path in the §6 test-plan rules is
+reworded, meaning unchanged), the pytest names of the v4.1 tests, and
+an operator note. The history sits beside it: B-104-DDL.v3-v4.diff (a
+byte copy from the evidence branch) and B-104-DDL.v4-v4.1.diff (diff -u
+from v4 to this document). plan/design/p8-impl/.gitattributes is
+"*.diff -text -whitespace": the diffs are verbatim, so their whitespace
+is data. -text keeps them byte-exact (no line-ending conversion), and
+-whitespace stops git's whitespace checks from flagging their blank
+context lines, each a single space. They are still text diffs. This is
+changed from the "*.diff -text" Rama saw, for that reason: -text alone
+does not stop git diff --check.
+plan/08-cli-config-ops.md: the daolab init section now says it applies
+the pending migrations, adds the upgrade note (v13 -> v14: run daolab
+init once per DB before starting the engine), and its sample output
+matches what cli.py:52-53 prints. The "Schema evolution stance" bullet
+said "no migration framework" and "hand-applied ALTER TABLE"; it now
+describes the append-only migrations in service/migrations.py, tracked
+by PRAGMA user_version, applied by daolab init one transaction each,
+with SchemaTooNew and RevertedSchema refusals, and lists the four new
+stateful tables. README.md and plan/README.md: 16 tables, schema v14.
+
+Why: the signed-off design must live beside the code it describes, in
+the branch it describes; until now it was only on the evidence branch.
+The upgrade note is needed because the engine refuses any version
+mismatch, and every existing DB is at v13 until `daolab init` runs once.
+plan/08's schema bullet contradicted the code.
+
+Files: plan/design/p8-impl/B-104-DDL.md,
+plan/design/p8-impl/B-104-DDL.v3-v4.diff,
+plan/design/p8-impl/B-104-DDL.v4-v4.1.diff,
+plan/design/p8-impl/.gitattributes (all new),
+plan/08-cli-config-ops.md, README.md, plan/README.md. Docs only; no
+code or test changes.
+
+Verified:
+- Doc vs code: the SQL extracted from B-104-DDL.md (its sql blocks,
+  add_column calls and _OLD/_NEW_JOB_KINDS) is identical, with no
+  exceptions, to the 25 statements _m14_snapshots_v1 sends, on both
+  venvs.
+- Both diffs rebuild byte-exactly with patch: the v3 at d1bd24d to v4
+  (sha256 f4169f1d...), and v4 to this document (sha256 307b87fe...).
+- The table count (16) was measured on a fresh v14 DB, excluding
+  sqlite_sequence.
+- The sample output is derived from the cli.py source and the 15
+  SEED_USECASES entries; the CLI was not run.
+- ddl-check.py on the final document exits 0. Against its recorded v4
+  output only two lines differ, both expected: the base is now v13, and
+  the S-shaped canary on keys.activated_at is refused by the new v4.1-2
+  CHECK first.
+- No test reads README.md or plan/**.
+- git check-attr: text and whitespace are unset on both .diff files.
+  git diff --cached --check exits 0 for all 11 files of both commits.
+  On a fresh origin/rama, git apply still prints "76 lines add
+  whitespace errors" for the .diff files: the patch itself creates the
+  .gitattributes, so it is not yet in effect. That is a warning only,
+  and both patches apply with exit 0.
+- Full suites: 1437 passed, 4 skipped, 0 failed on both venvs, and
+  make test (.venv, ansible-core 2.21.6) the same. They ran on trees
+  that differ from the final tree only in files under plan/
+  (.gitattributes, B-104-DDL.md, its v4-v4.1 diff, and line wrapping in
+  plan/08-cli-config-ops.md), which no test reads
+  (tests-reading-docs.txt).
+Evidence (branch akshay-p8-gate, plan/design/p8-impl/b104b-akshay/):
+doc-vs-code.venv.txt, doc-vs-code.venv-220.txt, diff-proof-v3-v4.txt,
+diff-proof-v4-v4.1.txt, table-count.txt, ddl-check-final.venv.txt,
+ddl-check-final.venv-220.txt, tests-reading-docs.txt, diff-check.txt,
+full-221.txt, full-220.txt, make-test.txt and apply-check.txt.
+
+Patch: B104B-docs.patch (applies on top of B104B-m14.patch, and alone)
+sha256 ca46df7ee4e40a8163d266005f0a01e533116f5e84bfa750a6343e943b40f911

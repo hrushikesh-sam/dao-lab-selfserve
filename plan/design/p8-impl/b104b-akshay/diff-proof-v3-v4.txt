@@ -1,0 +1,10 @@
+# date: 2026-11-24T09:05:58Z
+## v3-v4 diff: byte copy from origin/akshay-p8-gate
+byte-identical to the branch copy
+8606064e1f6a5068094e896f27f6a19f856d99a4b97c1e5689514a97e6c326e9  plan/design/p8-impl/B-104-DDL.v3-v4.diff
+v3 (d1bd24d) sha256: da8dd1414d454cc2b8288e2552a7ef59ee003cf4e03385c0f9e75a97260c54bc
+local ~/notes/b104/B-104-DDL.v3.md sha256: da8dd1414d454cc2b8288e2552a7ef59ee003cf4e03385c0f9e75a97260c54bc
+patch exit=0
+rebuilt v4 sha256: f4169f1dd13177fd58e63af0cd1ba5858eecbe210c594a484e7902954ea95732
+v4 (origin/akshay-p8-gate) sha256: f4169f1dd13177fd58e63af0cd1ba5858eecbe210c594a484e7902954ea95732
+REBUILDS v4 BYTE-EXACTLY

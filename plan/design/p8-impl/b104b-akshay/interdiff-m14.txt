@@ -1,0 +1,198 @@
+diff --git a/service/migrations.py b/service/migrations.py
+index e15275c..d513787 100644
+--- a/service/migrations.py
++++ b/service/migrations.py
+@@ -269,8 +269,8 @@ def _m13_burned(conn: sqlite3.Connection) -> None:
+ 
+ 
+ def _m14_snapshots_v1(conn: sqlite3.Connection) -> None:
+-    """B-104 (B-104-DDL.md v4 §3, signed off by Rama 2026-11-23/24; v4.1 items marked
+-    `# v4.1-N`, pending his sign-off): the Phase 8 snapshot schema, as one migration (Q-5).
++    """B-104 (B-104-DDL.md v4.1 §3: v4 signed off by Rama 23 Nov; the v4.1 items, marked
++    `# v4.1-N`, signed off by Rama 24 Nov): the Phase 8 snapshot schema, as one migration (Q-5).
+ 
+     * `keys` - a user's age X25519 public recipients; pending -> active (by another admin)
+       -> retired | revoked. Never any private key material (design:55, :72-73; E-10).
+@@ -312,7 +312,7 @@ def _m14_snapshots_v1(conn: sqlite3.Connection) -> None:
+             CHECK (activated_by IS NULL OR activated_by <> user_id), -- "different admin" = not the owner (Q-7)
+             CHECK ((state = 'pending') = (activated_by IS NULL)),    -- retired/revoked keys were once active
+         """
+-        # v4.1-2: activated_by and activated_at are set together (not in v4)
++        # v4.1-2 (signed off by Rama 24 Nov): activated_by and activated_at are set together
+         """
+             CHECK ((activated_by IS NULL) = (activated_at IS NULL)),
+         """
+@@ -374,10 +374,10 @@ def _m14_snapshots_v1(conn: sqlite3.Connection) -> None:
+                           CHECK (action IN ('lost_key_reset', 'tripwire_accept', 'tripwire_rebaseline',
+                                             'home_discard')),                    -- Q-11 (final)
+             target_ref    TEXT    NOT NULL                                       -- Q-11: """
+-        # v4.1-4: lost_key_reset targets key:<id> (v4: user:<id>)
++        # v4.1-4 (signed off by Rama 24 Nov): lost_key_reset targets key:<id> (v4: user:<id>)
+         """key:<id>"""
+         """, hw_class, """
+-        # v4.1-5: home_discard targets setup:<name> (v4: setup name)
++        # v4.1-5 (signed off by Rama 24 Nov): home_discard targets setup:<name> (v4: setup name)
+         """setup:<name>
+                           CHECK (length(target_ref) BETWEEN 1 AND 128
+                                  AND target_ref NOT GLOB '*[^a-z0-9._:-]*'
+@@ -412,9 +412,9 @@ def _m14_snapshots_v1(conn: sqlite3.Connection) -> None:
+         """
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_approvals_one_open
+             ON admin_approvals(action, target_ref) """
+-        # v4.1-1: an approved, not yet executed approval stays "open" (v4: WHERE state = 'pending')
+-        """WHERE state = 'pending' OR (state = 'approved' AND executed_at IS NULL)"""
+-        """      -- (inferred)""")
++        # v4.1-1 (signed off by Rama 24 Nov): an approved, not yet executed approval stays
++        # "open" (v4: WHERE state = 'pending'; v4's "(inferred)" tag dropped, v4.1-6)
++        """WHERE state = 'pending' OR (state = 'approved' AND executed_at IS NULL)""")
+     conn.execute(
+         """
+         CREATE INDEX IF NOT EXISTS idx_admin_approvals_due
+@@ -478,9 +478,12 @@ def _m14_snapshots_v1(conn: sqlite3.Connection) -> None:
+     sql = conn.execute(
+         "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+     ).fetchone()[0]
+-    if _NEW_JOB_KINDS in sql:          # v4.1-3: exact new text = already rewritten (v4: "'restore'" in sql)
++    # v4.1-3 (signed off by Rama 24 Nov): skip only on the exact new text (v4: "'restore'" in
++    # sql); otherwise the old text must occur exactly once (v4: _OLD_JOB_KINDS not in sql), or
++    # raise, and apply() rolls back: user_version and the schema stay unchanged.
++    if _NEW_JOB_KINDS in sql:
+         return
+-    if sql.count(_OLD_JOB_KINDS) != 1:  # v4.1-3: exactly once, never guess (v4: _OLD_JOB_KINDS not in sql)
++    if sql.count(_OLD_JOB_KINDS) != 1:
+         raise RuntimeError(
+             "migration 14: cannot find the jobs.kind CHECK to rewrite "
+             f"(expected {_OLD_JOB_KINDS!r} in the table definition)")
+diff --git a/tests/test_migration_14.py b/tests/test_migration_14.py
+index 1ed3677..d3749ff 100644
+--- a/tests/test_migration_14.py
++++ b/tests/test_migration_14.py
+@@ -1,4 +1,5 @@
+-"""B-104 PR B (B-104-DDL.md v4 §3, §6.2 T-1..T-21; v4.1-1..3): migration 14 `snapshots_v1`.
++"""B-104 PR B (B-104-DDL.md v4.1 §3, §6.2 T-1..T-21 and the v4.1 tests; v4 signed off by
++Rama 23 Nov, v4.1-1..6 signed off by Rama 24 Nov): migration 14 `snapshots_v1`.
+ 
+ One migration adds the Phase 8 snapshot schema: tables `keys`, `key_challenges`,
+ `admin_approvals`, `snapshots`; columns `reservations.save_snapshot`, `jobs.snapshot_id`,
+@@ -735,7 +736,9 @@ def _approve_reset(w, key_id):
+ 
+ 
+ def _execute_reset(w, aid, key_id, now):
+-    """The end of the hold, one transaction (v4 §3.3 "When the hold ends")."""
++    """The end of the hold, one transaction (v4 §3.3 "When the hold ends"). Rama, 24 Nov:
++    act only if the key is still active; the snapshots are deleted only if the revoke
++    changed a row, otherwise nothing is deleted."""
+     c = w.conn
+     c.execute("BEGIN IMMEDIATE")
+     executed = c.execute(EXECUTION_CAS, {"now": now, "id": aid}).rowcount
+@@ -743,6 +746,7 @@ def _execute_reset(w, aid, key_id, now):
+     if executed:
+         revoked = c.execute("UPDATE keys SET state = 'revoked', updated_at = ? WHERE id = ? "
+                             "AND state = 'active'", (now, key_id)).rowcount
++    if revoked:
+         deleted = c.execute("DELETE FROM snapshots WHERE key_id = ?", (key_id,)).rowcount
+     c.execute("COMMIT")
+     return executed, revoked, deleted
+@@ -896,6 +900,27 @@ def test_v41_1_second_reset_refused_while_first_is_approved_and_unexecuted(w, fi
+     accepted(c, second, (f"key:{k}", w.adm2, T1, T1))
+ 
+ 
++# ---- v4.1-4: execution acts only if the key under reset is still active (Rama, 24 Nov) ------
++
++@pytest.mark.parametrize("key_now", ["retired", "revoked"])
++def test_v41_4_execution_when_key_no_longer_active_deletes_nothing(w, key_now):
++    c, k = w.conn, w.key
++    _own_held(w)
++    aid, held = _approve_reset(w, k)
++    assert held == 1
++    c.execute("UPDATE keys SET state = ?, updated_at = ? WHERE id = ?", (key_now, T1, k))
++    snaps = lambda: [tuple(r) for r in c.execute(                       # noqa: E731
++        "SELECT id, state, delete_after, delete_requested_by, hold_approval_id FROM snapshots "
++        "WHERE key_id = ? ORDER BY id", (k,))]
++    before = snaps()
++    assert len(before) == 2
++    executed, revoked, deleted = _execute_reset(w, aid, k, LATER)
++    assert executed in (0, 1)                        # the CAS may succeed
++    assert (revoked, deleted) == (0, 0)
++    assert snaps() == before                         # every snapshot of K is still there
++    assert key_state(c, k) == key_now
++
++
+ # ---- v4.1-2: activated_by and activated_at are set together ----------------------------------
+ 
+ @pytest.mark.parametrize("case", ["activated_by without activated_at",
+diff --git a/tests/test_migrations_guard.py b/tests/test_migrations_guard.py
+index bb6b0d6..ead0a87 100644
+--- a/tests/test_migrations_guard.py
++++ b/tests/test_migrations_guard.py
+@@ -1,6 +1,9 @@
+ """B-104 PR A (B-104-DDL.md v4 §1, §2, §6.1, §6.2 T-1/T-2): versions 12 and 13 are burned
+ no-op placeholders (errata E-4), and `migrations.apply()` refuses a DB that carries schema
+ from the reverted Phase 8 attempt (4ec115e, reverted in 9c8a089) before running anything.
++Updated in PR B, where migration 14 makes latest_version() 14: nothing here assumes a fixed
++latest; G-7/G-8 allow only the closed list of migration-14 additions; the engine tests cover
++a reverted DB at the latest version (the guard refuses) and below it (the version check does).
+ 
+ Synthetic DBs only (`:memory:` or `tmp_path`). The reverted v12/v13 shapes are literal DDL
+ copied from the fingerprint in B-104 FINDINGS §3; no reverted code is imported."""
+@@ -214,8 +217,10 @@ def test_g2_reverted_v12_is_refused():
+ 
+ 
+ def test_g3_reverted_v13_is_refused():
+-    """G-3, the trap: without the guard, a reverted v13 DB is at the latest version as far
+-    as user_version goes, so apply() would run nothing and accept it."""
++    """G-3, the trap: a reverted v13 DB reports user_version 13. Without the guard, apply()
++    would skip the burned 12/13 and run only 14, whose IF NOT EXISTS / add_column would
++    silently keep the reverted snapshots table and save_snapshot DEFAULT 1 (and while 13
++    was the latest version, it would run nothing and accept the DB)."""
+     conn = _reverted_v13()
+     assert migrations.current_version(conn) == 13
+     _assert_refused(conn, ALL_LABELS)
+@@ -471,7 +476,9 @@ def test_t2_placeholders_change_nothing_but_user_version(monkeypatch):
+ 
+ # ---- engine startup runs the same guard (Q-3 (b)) -------------------------
+ # A reverted DB whose user_version equals latest_version() passes the engine's
+-# `have == want` check (engine.py:629-633); the engine must also run the guard.
++# `have == want` check (engine.py:629-633), so the engine must also run the guard. A reverted
++# DB below latest (e.g. a reverted v13 DB at 13, with latest 14) is refused by the version
++# check first, before the guard runs.
+ 
+ def _engine_settings(monkeypatch, tmp_path):
+     path = str(tmp_path / "engine.db")
+@@ -486,7 +493,9 @@ def _spy_tick(monkeypatch):
+     return calls
+ 
+ 
+-def test_engine_refuses_reverted_v13_db_at_latest_version(monkeypatch, tmp_path, capsys):
++def test_engine_refuses_reverted_schema_at_latest_version(monkeypatch, tmp_path, capsys):
++    """Reverted v13 tables with user_version hand-set to latest: the version check passes,
++    so only the engine's guard call refuses it."""
+     path = _engine_settings(monkeypatch, tmp_path)
+     conn = _reverted_v13(models.connect(path))
+     _seed(conn)
+@@ -521,15 +530,22 @@ def test_engine_starts_on_clean_fully_migrated_db_and_runs_the_guard(monkeypatch
+     assert len(calls) == 1
+ 
+ 
+-@pytest.mark.parametrize("build, have", [(_v11, 11), (_reverted_v12, 12)])
++@pytest.mark.parametrize("build, have", [(_v11, 11), (_reverted_v12, 12), (_reverted_v13, 13)])
+ def test_engine_still_refuses_a_version_mismatch_first(monkeypatch, tmp_path, capsys,
+                                                        build, have):
+-    """Unchanged: a DB behind latest gets the version message, before the guard runs."""
++    """A DB behind latest gets the version message, before the guard runs, and is left
++    unchanged. Includes a reverted v13 DB at user_version 13 (< latest since migration 14)."""
+     path = _engine_settings(monkeypatch, tmp_path)
+-    build(models.connect(path)).close()
++    conn = build(models.connect(path))
++    assert migrations.current_version(conn) == have
++    before = (_dump(conn), _rows(conn), migrations.current_version(conn))
++    conn.close()
+     calls, ticks = _spy_guard(monkeypatch), _spy_tick(monkeypatch)
+     assert engine.main([]) == 1
+     err = capsys.readouterr().err
+     assert err == (f"error: database schema is v{have} but this checkout expects "
+                    f"v{migrations.latest_version()}; run `daolab init` first\n")
+     assert calls == [] and ticks == []
++    conn = models.connect(path)
++    assert (_dump(conn), _rows(conn), migrations.current_version(conn)) == before
++    conn.close()

@@ -1,0 +1,49 @@
+# date: 2026-11-24T10:14:49Z
+# B104B-m14.patch  sha256 faed58e16f3a2c0f9fb11a01bbd7fcd10f2530e0c301565ae9c0470af0df298a
+# B104B-docs.patch sha256 ca46df7ee4e40a8163d266005f0a01e533116f5e84bfa750a6343e943b40f911
+# tested trees (~/b104b): tree1 5168e893a4181bea994a409326e75797e92d820c  tree2 5505478e9d4c835e8c763591b72eba6be3135edf
+
+## (1) m14 then docs, --index, on a fresh origin/rama worktree
+HEAD is now at a67d4ac Merge pull request #9 from hrushikesh-sam/p8-b104a
+HEAD: a67d4acc9741c2ee228abb23e30e0982f26700b4
+m14 --check exit=0
+m14 apply exit=0
+after m14: 5168e893a4181bea994a409326e75797e92d820c == tree1 TREE MATCH
+docs --check exit=0
+/home/akshay/notes/b104b/build/B104B-docs.patch:942: trailing whitespace.
+ 
+/home/akshay/notes/b104b/build/B104B-docs.patch:945: trailing whitespace.
+ 
+/home/akshay/notes/b104b/build/B104B-docs.patch:951: trailing whitespace.
+ 
+/home/akshay/notes/b104b/build/B104B-docs.patch:970: trailing whitespace.
+ 
+/home/akshay/notes/b104b/build/B104B-docs.patch:972: trailing whitespace.
+ 
+warning: squelched 71 whitespace errors
+warning: 76 lines add whitespace errors.
+docs apply exit=0
+after docs: 5505478e9d4c835e8c763591b72eba6be3135edf
+TREE MATCH (== tree2)
+
+## (2) docs patch alone on a fresh origin/rama worktree
+HEAD is now at a67d4ac Merge pull request #9 from hrushikesh-sam/p8-b104a
+docs-alone --check exit=0
+/home/akshay/notes/b104b/build/B104B-docs.patch:942: trailing whitespace.
+ 
+/home/akshay/notes/b104b/build/B104B-docs.patch:945: trailing whitespace.
+ 
+/home/akshay/notes/b104b/build/B104B-docs.patch:951: trailing whitespace.
+ 
+/home/akshay/notes/b104b/build/B104B-docs.patch:970: trailing whitespace.
+ 
+/home/akshay/notes/b104b/build/B104B-docs.patch:972: trailing whitespace.
+ 
+warning: squelched 71 whitespace errors
+warning: 76 lines add whitespace errors.
+docs-alone apply exit=0
+ 7 files changed, 1556 insertions(+), 12 deletions(-)
+
+## cleanup
+both /tmp worktrees removed
+b104b-apply worktrees left: 0

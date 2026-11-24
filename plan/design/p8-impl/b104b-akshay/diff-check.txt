@@ -1,0 +1,9 @@
+# date: 2026-11-24T10:14:39Z  HEAD: a67d4acc9741c2ee228abb23e30e0982f26700b4  tree2: 5505478e9d4c835e8c763591b72eba6be3135edf
+# .gitattributes: *.diff -text -whitespace
+## git check-attr -a (both .diff files)
+plan/design/p8-impl/B-104-DDL.v3-v4.diff: text: unset
+plan/design/p8-impl/B-104-DDL.v3-v4.diff: whitespace: unset
+plan/design/p8-impl/B-104-DDL.v4-v4.1.diff: text: unset
+plan/design/p8-impl/B-104-DDL.v4-v4.1.diff: whitespace: unset
+## git diff --cached --check origin/rama (all 11 staged files)
+exit=0

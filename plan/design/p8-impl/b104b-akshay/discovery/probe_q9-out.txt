@@ -1,0 +1,19 @@
+[keys: transitions are not constraints]
+  pending -> revoked, state only: refused (CHECK constraint failed: (state = 'pending') = (activated_by IS NULL))
+  pending -> revoked, with activated_by+activated_at set in the same UPDATE: ACCEPTED
+  active with activated_by but activated_at NULL: ACCEPTED
+[BLOB values vs TEXT CHECKs]
+  target_ref = BLOB lowercase S-shaped: refused (CHECK constraint failed: length(target_ref) BETWEEN 1 AND 128
+                        AND target_ref NOT GLOB '*[^a-z0-9._:-]*'       -- closed lowercase charset (inferred); Q-10
+                        AND target_ref NOT LIKE 'age-secret-key-%')
+  nonce_sha256 = 64-byte BLOB of hex chars: ACCEPTED
+[admin_approvals: one-open index covers only 'pending']
+  2nd lost_key_reset for user:1 while the 1st is approved, not executed: ACCEPTED
+  ...and approving it too: ACCEPTED
+  approvals pending-or-unexecuted for user:1: 2
+[admin_approvals: no key column; the key under reset is implied by target_ref]
+  columns: ['id', 'action', 'target_ref', 'requested_by', 'decided_by', 'state', 'decided_at', 'execute_after', 'executed_at', 'created_at', 'updated_at']
+[index coverage of FK child columns used by ON DELETE / parent deletes]
+  jobs: [('idx_jobs_state', ['state', 'id']), ('idx_jobs_reservation', ['reservation_id', 'id'])]
+  key_challenges: [('idx_key_challenges_open', ['user_id', 'expires_at']), ('sqlite_autoindex_key_challenges_1', ['nonce_sha256'])]
+  snapshots: [('idx_snapshots_hold_approval', ['hold_approval_id']), ('idx_snapshots_delete_due', ['delete_after']), ('idx_snapshots_key', ['key_id']), ('idx_snapshots_user_setup', ['user_id', 'setup_id', 'state', 'created_at']), ('sqlite_autoindex_snapshots_2', ['reservation_id']), ('sqlite_autoindex_snapshots_1', ['public_id'])]

@@ -1,0 +1,5 @@
+# date: 2026-11-24T10:13:35Z
+## grep -nE '~/|/home/akshay' plan/design/p8-impl/B-104-DDL.md
+exit=1 (1 = searched, found nothing)
+## for reference, grep -n '/home/' (the DPU's /home/lab is kept: E-6's subject)
+603:    - Root-owned files in `/home/lab` are user data, not a tripwire class (E-6, errata:15).

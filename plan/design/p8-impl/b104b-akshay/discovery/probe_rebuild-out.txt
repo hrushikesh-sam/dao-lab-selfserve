@@ -1,0 +1,2 @@
+rebuild with FKs ON: jobs rows after DROP of parent: 0 (was 1)
+m6 text edit with FKs ON: jobs rows: 1 | schema_version 2 -> 3 | same connection sees new CHECK ('c' accepted) | integrity_check: ok

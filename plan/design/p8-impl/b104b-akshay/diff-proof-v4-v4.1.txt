@@ -1,0 +1,12 @@
+# date: 2026-11-24T10:13:35Z
+## v4-v4.1 diff: diff -u --label B-104-DDL.v4.md --label B-104-DDL.md <v4> <final>
+--- B-104-DDL.v4.md
++++ B-104-DDL.md
+@@ -1,18 +1,19 @@
+hunks: 22 | CR bytes: 0 | 'No newline' markers: 0 | lines: 310
+7081ba62de61776b036086395f35aefcdafa5a0bc70ee0efb18c498738e6398c  plan/design/p8-impl/B-104-DDL.v4-v4.1.diff
+v4 source sha256: f4169f1dd13177fd58e63af0cd1ba5858eecbe210c594a484e7902954ea95732 (origin/akshay-p8-gate)
+patch exit=0
+rebuilt final sha256: 307b87fe7d8a1a8c157fc5210222d94ba2861100171557bcb10b2c6ff17dc3bf
+final doc     sha256: 307b87fe7d8a1a8c157fc5210222d94ba2861100171557bcb10b2c6ff17dc3bf
+REBUILDS THE FINAL DOC BYTE-EXACTLY

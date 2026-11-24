@@ -1,0 +1,119 @@
+Add migration 14, the Phase 8 snapshot schema (B-104)
+
+What: one migration, Migration(14, "snapshots_v1", _m14_snapshots_v1),
+built from B-104-DDL v4.1 section 3 (v4 signed off by Rama 23 Nov, the
+v4.1 items 24 Nov). In order: tables keys, key_challenges,
+admin_approvals and snapshots (each with its indexes); columns
+reservations.save_snapshot (INTEGER NOT NULL DEFAULT 0, so every
+existing booking keeps PRESERVE), jobs.snapshot_id (REFERENCES snapshots
+ON DELETE SET NULL) and setups.snapshot_enabled (DEFAULT 0); then the
+restore job kind. The jobs.kind CHECK is rewritten in place the way
+migration 6 rewrote reservations.state: a writable_schema text edit plus
+a schema_version bump, never a table rebuild, so no row is touched and
+no ON DELETE action can fire. Each statement is its own conn.execute()
+(no executescript, which would commit apply()'s transaction).
+Everything is IF NOT EXISTS or add_column, and the rewrite skips when
+done, so the migration is idempotent; it creates none of the
+reverted-schema guard markers. No new TEXT column accepts an S-shaped
+value: each has a closed CHECK (tested on all 26), and every timestamp
+carries the YYYY-MM-DDTHH:MM:SSZ shape CHECK. models.JOB_KINDS, the
+engine and the API are unchanged; nothing creates a restore job yet.
+
+v4.1 (signed off by Rama 24 Nov; each one is marked "# v4.1-N" in
+migrations.py):
+1. idx_admin_approvals_one_open also covers approved, not yet executed
+   approvals, so a second reset for the same target can't be opened.
+2. keys keeps CHECK ((state = 'pending') = (activated_by IS NULL)) and
+   adds CHECK ((activated_by IS NULL) = (activated_at IS NULL)).
+3. The jobs.kind rewrite skips only on the exact new kinds text,
+   otherwise requires the old text exactly once, else raises; apply()
+   then rolls back, leaving user_version and the schema unchanged.
+4. A lost_key_reset targets key:<id>. At execution the key is revoked
+   only if it is still active, and its snapshots are deleted only then.
+   This migration enforces neither; the tests follow the rule, and the
+   code rules are for B-105/B-106.
+5. A home_discard targets setup:<name>.
+6. "(inferred)" is dropped from the one-open index only.
+
+Why: B-104 is the schema every later Phase 8 task (keys, challenges,
+snapshot capture and restore, two-admin approvals) builds on. One
+migration means a DB is either fully pre-snapshot or fully snapshot-
+capable (Q-5). The 12/13 placeholders and the guard (PR #9) make it safe
+to start at 14.
+
+Operational note: the engine refuses to start unless the DB is at the
+latest schema version (engine.py:629-633), and that is now v14. Every
+existing DB therefore needs `daolab init` once after this lands, before
+the engine is started.
+
+Files: service/migrations.py; tests/test_migration_14.py (new, 104
+tests). Existing tests updated because they pinned the v13 schema:
+- tests/test_jobs.py: test_migration_creates_jobs_table lists the exact
+  jobs columns; snapshot_id added.
+- tests/test_migrations_guard.py:
+  - test_engine_refuses_reverted_v13_db_at_latest_version asserted
+    latest_version() == 13. It is renamed
+    test_engine_refuses_reverted_schema_at_latest_version and sets the
+    reverted DB's user_version to latest_version(), the case the engine
+    guard exists for.
+  - New version-mismatch case:
+    test_engine_still_refuses_a_version_mismatch_first[_reverted_v13-13].
+    A reverted v13 DB at user_version
+    13, now below latest, gets the engine's version refusal ("run
+    `daolab init` first"), no guard call, no tick. The parametrized test
+    now also checks that every case leaves the DB unchanged.
+  - G-7 and G-8 compared every row of every table before and after the
+    upgrade, which no schema addition can pass. They now compare
+    strictly against a closed, literal list: every old table keeps its
+    rows, its old columns' values and its old columns' table_info; the
+    new tables are exactly the four above, empty; the new columns are
+    exactly the three above, each holding its default on every row.
+    Anything else fails.
+  - The module and G-3 docstrings and comments no longer assume 13 is
+    the latest version.
+
+Verified: tests first, on Python 3.12.13 (SQLite 3.53.1) with
+ansible-core 2.21.6 and 2.20.11. Synthetic DBs only (:memory: and
+tmp_path). The tests never read the DDL doc; the v4 SQL they exercise
+(the challenge and execution CAS, the retention prune) is copied
+literally. The red stages ran the base files from origin/rama, restored
+from git and checked back by sha256.
+Red 1, the new tests only, against unchanged code: 13 failed, 91 errors
+("no such table: keys"), 187 passed on both; every new test fails,
+including the v4.1-4 test, and every existing one passes.
+Red 2, with the test updates, code unchanged: 18 failed, 91 errors, 183
+passed on both. True reds: test_jobs (no snapshot_id), G-7 and G-8 (no
+new tables), and the new version-mismatch case (at 13 = latest, the
+engine reaches the guard instead). The renamed engine test still passes
+at 13: a guard, not a red.
+Green: 292 passed on both. The new tests cover T-1, T-3 to T-17 and
+T-19 to T-21 of the DDL test plan (T-2 is PR #9's placeholder test;
+T-18 is the full suite): a fresh DB reaches 14; legacy rows keep every
+value with the PRESERVE defaults; idempotence; every CHECK, with an
+S-shaped canary on all 26 new TEXT columns and the timestamp shape on
+all 15 timestamp columns; the two-admin and different-admin rules;
+uniqueness; the cross-user composite FKs; the single-use challenge CAS;
+the FK actions daolab sync relies on; the restore kind and the rewrite's
+refusals, rollback and visibility to other connections; no reverted
+shapes and no key-material column names; delete holds; the lost-key
+reset hold, owner cancel and execution; execute_after; retention
+ignoring held rows; one transaction (a failure after the rewrite leaves
+v13 exactly as it was); integrity_check and foreign_key_check clean; and
+the v4.1 items, including an execution on a key that is no longer
+active deleting nothing.
+The SQL that _m14 sends is identical, with no exceptions, to the SQL in
+plan/design/p8-impl/B-104-DDL.md, and to DDL v4 plus exactly the
+declared v4.1 edits.
+Evidence (branch akshay-p8-gate, plan/design/p8-impl/b104b-akshay/):
+red1-221.txt, red1-220.txt, red2-221.txt, red2-220.txt, green-221.txt,
+green-220.txt, full-221.txt, full-220.txt, diff-check.txt,
+doc-vs-code.venv.txt, ddl-verbatim-check.venv.txt, apply-check.txt and
+V41-CHANGES.md.
+
+Series result (on origin/rama a67d4ac, with both B-104 PR B commits):
+full suite 1437 passed, 4 skipped, 0 failed on Python 3.12.13 with
+ansible-core 2.21.6, and the same with 2.20.11: the PR #9 baseline
+1332/4/0 plus the 105 new tests, with the same 4 skips.
+
+Patch: B104B-m14.patch
+sha256 faed58e16f3a2c0f9fb11a01bbd7fcd10f2530e0c301565ae9c0470af0df298a

@@ -1,0 +1,22 @@
+doc CREATEs : 13 ['keys', 'idx_keys_one_active', 'idx_keys_one_pending', 'key_challenges', 'idx_key_challenges_open', 'snapshots', 'idx_snapshots_user_setup', 'idx_snapshots_key', 'idx_snapshots_delete_due', 'idx_snapshots_hold_approval', 'admin_approvals', 'idx_admin_approvals_one_open', 'idx_admin_approvals_due']
+code CREATEs: 13 ['keys', 'idx_keys_one_active', 'idx_keys_one_pending', 'key_challenges', 'idx_key_challenges_open', 'admin_approvals', 'idx_admin_approvals_one_open', 'idx_admin_approvals_due', 'snapshots', 'idx_snapshots_user_setup', 'idx_snapshots_key', 'idx_snapshots_delete_due', 'idx_snapshots_hold_approval']
+statement set: IDENTICAL
+code table order == §3.1 order (keys, key_challenges, admin_approvals, snapshots): True | the doc lists §3.5 snapshots before §3.6 admin_approvals (section order); §3.1 states the run order
+  IDENTICAL  admin_approvals
+  IDENTICAL  idx_admin_approvals_due
+  IDENTICAL  idx_admin_approvals_one_open
+  IDENTICAL  idx_key_challenges_open
+  IDENTICAL  idx_keys_one_active
+  IDENTICAL  idx_keys_one_pending
+  IDENTICAL  idx_snapshots_delete_due
+  IDENTICAL  idx_snapshots_hold_approval
+  IDENTICAL  idx_snapshots_key
+  IDENTICAL  idx_snapshots_user_setup
+  IDENTICAL  key_challenges
+  IDENTICAL  keys
+  IDENTICAL  snapshots
+add_column (table, column, ddl), in order: IDENTICAL
+_OLD/_NEW_JOB_KINDS: IDENTICAL
+other statements sent: none | executescript used: no (Rec has no executescript)
+statements sent in total: 25
+RESULT: IDENTICAL, no exceptions

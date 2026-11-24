@@ -1,0 +1,18 @@
+CREATE statements sent, in order: ['keys', 'idx_keys_one_active', 'idx_keys_one_pending', 'key_challenges', 'idx_key_challenges_open', 'admin_approvals', 'idx_admin_approvals_one_open', 'idx_admin_approvals_due', 'snapshots', 'idx_snapshots_user_setup', 'idx_snapshots_key', 'idx_snapshots_delete_due', 'idx_snapshots_hold_approval']
+  SAME  admin_approvals
+  SAME  idx_admin_approvals_due
+  SAME  idx_admin_approvals_one_open
+  SAME  idx_key_challenges_open
+  SAME  idx_keys_one_active
+  SAME  idx_keys_one_pending
+  SAME  idx_snapshots_delete_due
+  SAME  idx_snapshots_hold_approval
+  SAME  idx_snapshots_key
+  SAME  idx_snapshots_user_setup
+  SAME  key_challenges
+  SAME  keys
+  SAME  snapshots
+add_column DDL identical to v4 §3.7-§3.9 (order too): True
+_OLD/_NEW_JOB_KINDS identical to v4: True
+executescript used: False | statements sent: 25
+RESULT: VERBATIM (modulo the declared v4.1 edits)
