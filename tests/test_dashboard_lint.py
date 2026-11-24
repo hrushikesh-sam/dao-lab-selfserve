@@ -200,6 +200,13 @@ def test_markup_templates_escape_every_interpolation():
     assert checked >= 2, "expected at least one escaped markup template per page"
 
 
+def test_mermaid_disables_html_labels():
+    for path in PAGES:
+        script = inline_script(page_source(path))
+        assert re.search(r"mermaid\.initialize\(\{[^}]*flowchart:\s*\{\s*htmlLabels:\s*false",
+                         script, re.S), f"{path.name}: htmlLabels not disabled"
+
+
 def test_mermaid_is_pinned_with_sri():
     tag = (f'<script src="{MERMAID_URL}" integrity="{MERMAID_SRI}" '
            'crossorigin="anonymous"></script>')

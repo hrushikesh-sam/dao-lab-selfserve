@@ -236,7 +236,7 @@ const CANCELABLE = ["queued"];
 const ENDABLE = ["ready", "active"];
 const AVAIL_BADGE = {available:"b-green", quarantined:"b-red", maintenance:"b-amber"};
 
-if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
+if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", flowchart: {htmlLabels: false}, theme: "neutral"});
 
 function diagramFallback(el, source) { el.innerHTML = `<pre>${esc(source)}</pre>`; }
 function appendDiagram(el, svg, name) {

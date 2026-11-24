@@ -274,7 +274,7 @@ const BUSY = ["provisioning", "cleaning"];
 const HEALTH_BADGE = {healthy:"b-green", degraded:"b-amber", down:"b-red", unknown:"b-grey"};
 const PW = {};
 
-if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
+if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", flowchart: {htmlLabels: false}, theme: "neutral"});
 let MERMAID_N = 0;
 function diagramFallback(el, source) { el.innerHTML = `<pre>${esc(source)}</pre>`; }
 function appendDiagram(el, svg) {

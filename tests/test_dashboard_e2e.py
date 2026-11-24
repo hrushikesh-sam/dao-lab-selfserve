@@ -46,7 +46,7 @@ def stack(tmp_path):
     for name, role in (("alice", "user"), ("boss", "admin")):
         out = subprocess.run(cli + ["add-user", name, str(tmp_path / "k.pub"), "--role", role],
                              env=env, cwd=REPO, check=True, capture_output=True, text=True).stdout
-        tokens[name] = out.split("token: ")[1].strip()
+        tokens[name] = out.split("token: ")[1].splitlines()[0].strip()
     procs = [subprocess.Popen([py, "-m", "uvicorn", "service.api:app", "--host", "127.0.0.1",
                                "--port", str(port)], env=env, cwd=REPO,
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
