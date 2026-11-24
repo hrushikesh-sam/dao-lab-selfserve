@@ -53,6 +53,8 @@ class Settings:
     deployable: tuple[str, ...]
     xo_url: str
     xo_token_file: str
+    age_bin: str
+    age_keygen_bin: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -106,6 +108,9 @@ class Settings:
             # B-93: the use cases' VMs are made through Xen Orchestra (scripts/run/xo.sh)
             xo_url=env("DAOLAB_XO_URL", "https://127.0.0.1:8443/rest/v0"),
             xo_token_file=env("DAOLAB_XO_TOKEN_FILE", ""),
+            # X-AGE: the pinned age v1.1.1 CLI (deploy/age/install-age.sh). Paths, not secrets.
+            age_bin=env("DAOLAB_AGE_BIN", "age"),
+            age_keygen_bin=env("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"),
         )
 
 

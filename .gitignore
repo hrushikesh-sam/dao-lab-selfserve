@@ -151,6 +151,8 @@ activemq-data/
 .env
 .envrc
 .venv
+# the second test venv (ansible-core 2.20.11, the floor); only its lib/ matched before
+.venv-220/
 env/
 venv/
 ENV/
