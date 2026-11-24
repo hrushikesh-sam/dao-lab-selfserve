@@ -1,0 +1,154 @@
+# playbooks/tasks/install_age.yml — X-AGE: the pinned age v1.1.1 on the DPU (errata E-1).
+#
+# Imported by bringup.yml with `tags: [age, never]`, so it runs only when asked, by an admin, by
+# hand (deploy/age/README.md):
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 --tags age \
+#     -e daolab_age_arm64_tarball=/path/to/age-v1.1.1-linux-arm64.tar.gz
+#
+# The tarball is downloaded by hand; nothing here uses the network. On the controller, a private
+# copy of it is checked by deploy/age/verify-age.sh and unpacked. The DPU gets only the two
+# binaries, and each one replaces /usr/local/bin/<name> only if its sha256 is the linux-arm64
+# pin in BINARIES.sha256 (copy's `validate:` runs on the DPU, on the uploaded temp file).
+# Then the DPU checks both installed files against the pins again and runs `--version`, which
+# must print exactly v1.1.1. (The controller can't run the arm64 binaries itself.)
+#
+# Vars: daolab_age_arm64_tarball (required). For tests only: daolab_age_root (a prefix for
+# /usr/local/bin; the files are owned by root only when it is empty) and daolab_age_pin_dir
+# (synthetic pins and verify-age.sh; default deploy/age).
+- name: "age: the settings"
+  ansible.builtin.set_fact:
+    _age_root: "{{ daolab_age_root | default('') }}"
+    _age_pin_dir: "{{ daolab_age_pin_dir | default(playbook_dir ~ '/../deploy/age') }}"
+    _age_tarball: "{{ daolab_age_arm64_tarball | default('') }}"
+
+- name: "age: the arm64 tarball is given"
+  ansible.builtin.assert:
+    that:
+      - _age_tarball | length > 0
+      - (_age_tarball | basename) == 'age-v1.1.1-linux-arm64.tar.gz'
+    fail_msg: >-
+      set -e daolab_age_arm64_tarball=<path to age-v1.1.1-linux-arm64.tar.gz>, downloaded by
+      hand from the v1.1.1 release (deploy/age/README.md)
+    quiet: true
+
+- name: "age: the linux-arm64 pins"
+  ansible.builtin.set_fact:
+    _age_pins:
+      age: "{{ _age_pin_text | regex_findall('(?m)^([0-9a-f]{64})  linux-arm64/age/age$') }}"
+      age-keygen: "{{ _age_pin_text | regex_findall('(?m)^([0-9a-f]{64})  linux-arm64/age/age-keygen$') }}"
+  vars:
+    _age_pin_text: "{{ lookup('ansible.builtin.file', _age_pin_dir ~ '/BINARIES.sha256') }}"
+
+- name: "age: each binary is pinned exactly once"
+  ansible.builtin.assert:
+    that:
+      - _age_pins['age'] | length == 1
+      - _age_pins['age-keygen'] | length == 1
+    fail_msg: "BINARIES.sha256 must pin linux-arm64/age/age and linux-arm64/age/age-keygen exactly once"
+    quiet: true
+
+- name: "age: verify on the controller, then install on the DPU"
+  block:
+    - name: "age: on the controller"
+      delegate_to: localhost
+      run_once: true
+      vars:
+        ansible_become: false
+      block:
+        - name: "age: a private work dir on the controller"
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: .age
+          register: _age_tmp
+
+        - name: "age: copy the tarball into it (that copy is verified and unpacked)"
+          ansible.builtin.copy:
+            src: "{{ _age_tarball }}"
+            dest: "{{ _age_tmp.path }}/age-v1.1.1-linux-arm64.tar.gz"
+            mode: "0600"
+
+        - name: "age: verify-age.sh on the copy"
+          ansible.builtin.command:
+            argv: [sh, "{{ _age_pin_dir }}/verify-age.sh", "{{ _age_tmp.path }}/age-v1.1.1-linux-arm64.tar.gz"]
+          changed_when: false
+
+        - name: "age: unpack the verified copy"
+          ansible.builtin.command:
+            argv: [tar, -xzf, "{{ _age_tmp.path }}/age-v1.1.1-linux-arm64.tar.gz", -C,
+                   "{{ _age_tmp.path }}", age/age, age/age-keygen]
+          changed_when: false
+
+        - name: "age: hash the unpacked binaries on the controller"
+          ansible.builtin.stat:
+            path: "{{ _age_tmp.path }}/age/{{ item }}"
+            checksum_algorithm: sha256
+            follow: false
+          loop: [age, age-keygen]
+          register: _age_unpacked
+
+        # All or nothing: neither binary goes to the DPU unless both match (the DPU's
+        # validate: below is the second gate, per file).
+        - name: "age: both unpacked binaries match their linux-arm64 pins"
+          ansible.builtin.assert:
+            that:
+              - (_age_unpacked.results | map(attribute='stat.isreg', default=false) | list) == [true, true]
+              - (_age_unpacked.results | map(attribute='stat.checksum', default='') | list)
+                == [_age_pins['age'][0], _age_pins['age-keygen'][0]]
+            fail_msg: "the unpacked age / age-keygen do not match the linux-arm64 pins; nothing was copied to the DPU"
+            quiet: true
+
+    - name: "age: install on the DPU, only a binary that matches its linux-arm64 pin"
+      ansible.builtin.copy:
+        src: "{{ _age_tmp.path }}/age/{{ item }}"
+        dest: "{{ _age_root }}/usr/local/bin/{{ item }}"
+        mode: "0755"
+        owner: "{{ 'root' if _age_root == '' else omit }}"
+        group: "{{ 'root' if _age_root == '' else omit }}"
+        validate: "sh -c 'echo \"{{ _age_pins[item][0] }}  $1\" | sha256sum -c --status' sh %s"
+      loop: [age, age-keygen]
+
+  always:
+    - name: "age: remove the controller work dir"
+      ansible.builtin.file:
+        path: "{{ _age_tmp.path }}"
+        state: absent
+      delegate_to: localhost
+      run_once: true
+      vars:
+        ansible_become: false
+      when: _age_tmp.path is defined
+
+- name: "age: hash the installed binaries on the DPU"
+  ansible.builtin.command:
+    argv: [sha256sum, "{{ _age_root }}/usr/local/bin/age", "{{ _age_root }}/usr/local/bin/age-keygen"]
+  register: _age_sums
+  changed_when: false
+
+- name: "age: installed binaries match the linux-arm64 pins"
+  ansible.builtin.assert:
+    that:
+      - (_age_sums.stdout_lines | map('split') | map('first') | list)
+        == [_age_pins['age'][0], _age_pins['age-keygen'][0]]
+    fail_msg: "the installed age / age-keygen on the DPU do not match the linux-arm64 pins"
+    quiet: true
+
+- name: "age: run --version on the DPU"
+  ansible.builtin.command:
+    argv: ["{{ _age_root }}/usr/local/bin/{{ item }}", --version]
+  loop: [age, age-keygen]
+  register: _age_version
+  changed_when: false
+  failed_when: false
+
+- name: "age: --version is exactly v1.1.1"
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - item.stdout == 'v1.1.1'
+      - item.stdout_lines | length == 1
+    fail_msg: "{{ item.item }} --version on the DPU is not exactly v1.1.1"
+    quiet: true
+  loop: "{{ _age_version.results }}"
+  loop_control:
+    label: "{{ item.item }}"

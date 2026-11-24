@@ -33,5 +33,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[ansible]"
           ansible-playbook --version
+      # X-AGE: the pinned age v1.1.1 for the requires_age tests. The release publishes no
+      # checksums; deploy/age/SHA256SUMS and BINARIES.sha256 are the trust anchor, checked by
+      # install-age.sh (via verify-age.sh) before anything is installed.
+      - name: Install age v1.1.1
+        run: |
+          d=$(mktemp -d "$RUNNER_TEMP/age.XXXXXX")
+          curl --fail --location --silent --show-error \
+            -o "$d/age-v1.1.1-linux-amd64.tar.gz" \
+            https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-amd64.tar.gz
+          sh deploy/age/install-age.sh "$d/age-v1.1.1-linux-amd64.tar.gz" "$HOME/.local"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Test
+        # requires_age tests fail (not skip) here if age is missing or not v1.1.1
+        env:
+          DAOLAB_REQUIRE_AGE: "1"
         run: python -m pytest tests/ -q -rf

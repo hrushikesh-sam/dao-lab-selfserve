@@ -6,12 +6,21 @@
 # On the DPU it checks what a deploy relies on and writes the personality marker; with
 # -e daolab_deploy_vms=true it also checks the XCP-ng host. It fails at the end listing every
 # missing prerequisite, so one run gives the whole to-do list.
+#
+# X-AGE: installing the pinned age v1.1.1 on the DPU runs only when asked (tags: [age, never]),
+# and then only that (plus resolve, tagged always):
+#
+#   ansible-playbook -i inventory/hosts.yml playbooks/bringup.yml -e setup=tb-01 --tags age \
+#     -e daolab_age_arm64_tarball=/path/to/age-v1.1.1-linux-arm64.tar.gz
 - name: resolve the setup
   hosts: localhost
   gather_facts: false
   tasks:
     - name: resolve
       ansible.builtin.import_tasks: tasks/resolve.yml
+      # always: `--tags age` must still resolve the setup, or r_dpu stays empty and the age
+      # play silently runs on no host
+      tags: [always]
 
 - name: the DPU
   hosts: r_dpu
@@ -85,6 +94,14 @@
              + (_net.results | default([]) | rejectattr('skipped', 'defined')
                 | selectattr('rc', 'ne', 0)
                 | map(attribute='item.value') | map('regex_replace', '^', 'missing SR-IOV network: ') | list) }}
+
+- name: age v1.1.1 on the DPU (only with --tags age; X-AGE)
+  hosts: r_dpu
+  gather_facts: false
+  tasks:
+    - name: install age
+      ansible.builtin.import_tasks: tasks/install_age.yml
+      tags: [age, never]
 
 - name: report
   hosts: localhost

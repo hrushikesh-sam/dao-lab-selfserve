@@ -14,7 +14,9 @@ The ``mk_setup`` / ``mk_usecase`` / ``mk_res`` / ``mk_user`` helpers insert rows
 """
 import hashlib
 import os
+import shutil
 import sqlite3
+import subprocess
 from datetime import datetime, timezone
 
 import dotenv
@@ -38,6 +40,58 @@ TEST_USERS = {"alice": "user", "bob": "user", "dev-admin": "admin"}
 
 def T(hour, minute=0, day=1):
     return datetime(2026, 9, day, hour, minute, tzinfo=UTC)
+
+
+# ---- the `requires_age` marker (X-AGE) ----------------------------------------------------
+# A test marked @pytest.mark.requires_age runs the real age CLI. It runs only when both age
+# and age-keygen (DAOLAB_AGE_BIN / DAOLAB_AGE_KEYGEN_BIN, else the names on PATH) are the
+# pinned v1.1.1: `--version` exits 0 and prints exactly "v1.1.1\n", as the release binaries
+# do. Otherwise it is skipped, or fails when DAOLAB_REQUIRE_AGE=1 (CI installs age with
+# deploy/age/install-age.sh and sets it, so a broken install can't hide behind skips).
+AGE_MISSING = "age v1.1.1 not installed (see deploy/age/README.md)"
+_AGE_TOOLS = (("DAOLAB_AGE_BIN", "age"), ("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"))
+_age_ok = None
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "requires_age: needs the pinned age v1.1.1 CLI, age and age-keygen "
+                   "(skipped without it; fails instead when DAOLAB_REQUIRE_AGE=1)")
+
+
+def _is_age_v111(name):
+    path = shutil.which(name)
+    if path is None:
+        return False
+    try:
+        p = subprocess.run([path, "--version"], capture_output=True, timeout=30,
+                           stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return p.returncode == 0 and p.stdout == b"v1.1.1\n"
+
+
+def age_installed():
+    """True when the pinned age v1.1.1 is usable (checked once per test session)."""
+    global _age_ok
+    if _age_ok is None:
+        _age_ok = all(_is_age_v111(os.environ.get(var) or default) for var, default in _AGE_TOOLS)
+    return _age_ok
+
+
+def pytest_runtest_setup(item):
+    if item.get_closest_marker("requires_age") is None or age_installed():
+        return
+    if os.environ.get("DAOLAB_REQUIRE_AGE") != "1":
+        pytest.skip(AGE_MISSING)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_call(item):
+    # The required case fails in the call phase, so it is reported as a failed test, not as
+    # a setup error.
+    if item.get_closest_marker("requires_age") is not None and not age_installed():
+        pytest.fail(f"{AGE_MISSING}, and DAOLAB_REQUIRE_AGE=1", pytrace=False)
 
 
 @pytest.fixture
