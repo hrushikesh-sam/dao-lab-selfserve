@@ -1,7 +1,7 @@
 """B-105: the generic two-admin approval flow and the lost-key reset effect."""
 import pytest
 
-from service import approvals, keys, models
+from service import approvals, challenges, keys, models
 from tests.conftest import mk_user
 
 CANARY = "AGE-SECRET-KEY-1" + "Q" * 58
@@ -267,9 +267,50 @@ def test_reject_does_not_place_holds(db, clock, users, tb01):
     assert (row["delete_after"], row["hold_approval_id"]) == (None, None)
 
 
-def test_cancel_by_owner_is_a_stub(db, clock, users, tb01):
-    with pytest.raises(NotImplementedError):
-        approvals.cancel_by_owner(db, 1, admin(db, "alice"), CREATED)
+def test_cancel_by_owner_clears_only_the_approvals_holds(db, clock, users, tb01):
+    mk_user(db, "second-admin", role="admin")
+    kid = key_for(db, "alice")
+    owner = user_id(db, "alice")
+    other = approvals.request(db, "home_discard", "setup:tb-01", admin(db))
+    approvals.decide(db, other, admin(db, "second-admin"), True, CREATED)
+
+    snapshot(db, owner, tb01[0], kid, f"{1:032x}")
+    snapshot(db, owner, tb01[0], kid, f"{2:032x}")
+    snapshot(db, owner, tb01[0], kid, f"{3:032x}", "saved", AFTER, owner)
+    snapshot(db, owner, tb01[0], kid, f"{4:032x}", "saved", AFTER,
+             user_id(db, "dev-admin"), other)
+    aid = approvals.request(db, "lost_key_reset", f"key:{kid}", admin(db))
+    approvals.decide(db, aid, admin(db, "second-admin"), True, CREATED)
+
+    nonce = b"cancel-nonce-canary"
+    target = f"approval:{aid}"
+    cid = models.insert(db, "key_challenges", {
+        "user_id": owner, "key_id": kid, "purpose": "cancel_delete", "target_ref": target,
+        "nonce_sha256": challenges.digest(nonce, "cancel_delete", target, kid, owner, AFTER),
+        "expires_at": AFTER, "created_at": CREATED, "updated_at": CREATED})
+
+    approvals.cancel_by_owner(db, aid, admin(db, "alice"), CREATED, nonce, cid)
+
+    row = approval_row(db, aid)
+    assert row["state"] == "cancelled" and row["executed_at"] is None
+    challenge = db.execute("SELECT * FROM key_challenges WHERE id = ?", (cid,)).fetchone()
+    assert challenge["consumed_at"] == CREATED
+    for public_id in (f"{1:032x}", f"{2:032x}"):
+        held = db.execute("SELECT * FROM snapshots WHERE public_id = ?", (public_id,)).fetchone()
+        assert (held["delete_after"], held["delete_requested_by"], held["hold_approval_id"]) == (
+            None, None, None)
+    own = db.execute("SELECT * FROM snapshots WHERE public_id = ?", (f"{3:032x}",)).fetchone()
+    assert (own["delete_after"], own["delete_requested_by"], own["hold_approval_id"]) == (
+        AFTER, owner, None)
+    other_row = db.execute("SELECT * FROM snapshots WHERE public_id = ?", (f"{4:032x}",)).fetchone()
+    assert (other_row["delete_after"], other_row["delete_requested_by"],
+            other_row["hold_approval_id"]) == (AFTER, user_id(db, "dev-admin"), other)
+    audit = db.execute("SELECT actor, detail FROM audit_events WHERE action = 'approval_cancel'").fetchone()
+    assert audit["actor"] == "alice"
+    detail = models.from_json(audit["detail"])
+    assert (detail["approval_id"], detail["action"], detail["state"], detail["cleared"]) == (
+        aid, "lost_key_reset", "cancelled", 2)
+    assert nonce.decode("ascii") not in db_dump(db)
 
 
 def db_dump(conn):
