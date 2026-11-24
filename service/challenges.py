@@ -127,6 +127,7 @@ def issue(conn: sqlite3.Connection, user, purpose: str, target_ref: str, now) ->
     if purpose not in PURPOSES:
         raise ChallengeError("invalid_purpose", "validation_error", 422)
     now_text = _stamp(now)
+    agecli.version()
     conn.execute("BEGIN IMMEDIATE")
     try:
         key = keys.active_key(conn, user["id"])

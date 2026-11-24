@@ -159,6 +159,20 @@ def test_issue_seals_a_hash_and_returns_the_ciphertext_once(db, users, clock, se
     assert ARMOR.decode("ascii") not in caplog.text
 
 
+def test_issue_checks_age_version_before_opening_the_write_transaction(db, users, clock, sealed, monkeypatch):
+    active_key(db)
+    pending_key(db, fingerprint="a" * 64)
+    seen = []
+
+    def version():
+        seen.append(db.in_transaction)
+        return "v1.1.1"
+
+    monkeypatch.setattr(agecli, "version", version)
+    issue(db, "alice", "rotate", "a" * 64)
+    assert seen == [False]
+
+
 def test_issue_rejects_bad_purpose_target_and_missing_or_inactive_key(db, users, clock, sealed):
     pending_key(db)
     user = user_row(db, "alice")
