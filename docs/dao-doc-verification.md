@@ -157,6 +157,6 @@ cat /etc/daolab/hw_class
 4. Resolve the `smartnic-turnkey` / `smartnic` duplicate (rename the seed row or drop it and
    update `tests/test_api.py`).
 5. `plan/07` body still describes the SDP backend; trim it or keep the historical note.
-6. Proposed device-allocation schema task is **B-103** (B-102 is now Akshay's TLS end-to-end).
+6. Proposed device-allocation schema task is **B-104** (B-103 is the Python/core/age floor and CI; B-102 is Akshay's TLS end-to-end).
 7. B-60's otel issues are resolved on this branch: `otel-collector-contrib:0.160.0` exists
    (verified with `docker manifest inspect`), and `tcpcheck` is a contrib receiver in that line.
