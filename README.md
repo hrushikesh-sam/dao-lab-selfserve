@@ -90,7 +90,7 @@ daolab/
 │                        verify, otel_agent), apps/<app>/, verify_clean / reconcile / orphans / bringup
 ├── service/
 │   ├── config.py        env-driven settings (.env.example)
-│   ├── schema.sql       frozen baseline DDL; migrations.py adds the rest (12 tables, schema v11)
+│   ├── schema.sql       frozen baseline DDL; migrations.py adds the rest (16 tables, schema v14)
 │   ├── models.py        sqlite helpers
 │   ├── catalog.py       load usecases/ + setups/ YAML, mirror into DB (`daolab sync`)
 │   ├── scheduler.py     pure placement (asap / at, slot grid, capability match, hw_class lead)

@@ -1,0 +1,389 @@
+--- B-104-DDL.v3.md
++++ B-104-DDL.md
+@@ -1,10 +1,10 @@
+-# B-104 — DDL draft for sign-off (v2)
++# B-104 — DDL (v4)
+ 
+-Date: 2026-11-23. Status: **DRAFT v2 for Rama's sign-off**. Nothing is built.
++Date: 2026-11-23. Status: **v4, signed off by Rama 2026-11-23, with conditions applied**. Nothing is built.
+ 
+ - **Base:** `origin/rama` `a03f858` (PR #8, B-103, merged).
+   - `git diff --stat 747d10d a03f858 -- service tests/test_migrations.py tests/test_reservation_states.py plan/10-backend-tasksheet.md` is empty, so every file:line citation made against `747d10d` still holds.
+-- **Previous version:** `B-104-DDL.v1.md`.
++- **History:** `B-104-DDL.v1-v2.s3.diff`, `B-104-DDL.v1-v2.s7.diff`, `B-104-DDL.v2-v3.diff`, `B-104-DDL.v3-v4.diff`.
+ - Read `FINDINGS.md` first: it has the file:line facts this draft relies on.
+ 
+ **Citation keys:**
+@@ -25,7 +25,18 @@
+ | R-3 | **The tripwire uses synthetic baselines only**; production baselines stay OPEN | §4.4; design:49 "Baseline content: OPEN" is unchanged |
+ | R-4 | **ML device on restore:** bind the recorded BDF to the recorded driver and verify by readback. **Never invent hugepage counts.** If the hugepages it needs are missing, **fail closed** to `restore_incomplete` plus quarantine | §4.4 |
+ | R-5 | **The swap check goes in B-107.** | §9 N-6 |
+-| R-6 (pending) | Confirm that the recorded devices live in the snapshot profile (`daolab-profile/1`), **never in a `setups.snapshot_bdfs` column** | §2.1 (M5) |
++| R-6 **CONFIRMED** (sign-off) | The recorded devices live in the snapshot profile (`daolab-profile/1`), **never in a `setups.snapshot_bdfs` column**. That name stays a guard marker | §2.1 (M5) |
++
++**Sign-off (Rama, 2026-11-23):**
++- **Approved as proposed:** Q-1, Q-3, Q-4, Q-5, Q-7, Q-9, Q-10, Q-11, Q-12, Q-14, Q-15, Q-18, Q-19, Q-20, Q-21.
++- **Approved with changes (applied in v4):**
++  - **Q-6:**
++    - a new `snapshots.hold_approval_id`; cancel and execution match rows by it;
++    - execution deletes every snapshot of the revoked key;
++    - immediate revoke REJECTED;
++    - a booking refusal for a later task.
++  - **Q-16:** a held row is neither counted nor pruned.
++- **Not in the sign-off list:** Q-13 (where holds live). Its text is updated for `hold_approval_id` and its status is unchanged (proposed). See §7.
+ 
+ ---
+ 
+@@ -99,7 +110,7 @@
+ 
+ **On M5:**
+ - The devices a restore rebinds are recorded in the snapshot profile, `daolab-profile/1` (design:108; R-4: "bind the recorded BDF to the recorded driver"), not in the DB. So `setups.snapshot_bdfs` is never needed, and it stays a marker.
+-- **Rama is still to confirm this (R-6).** If he wants a DB column after all, it must get a different name, and M5 stays.
++- **Confirmed by Rama at sign-off (R-6):** no `setups.snapshot_bdfs` column, ever, and M5 stays a marker.
+ 
+ ### 2.2 Where it runs
+ - **In `migrations.apply()`**, right after the existing `SchemaTooNew` check (`migrations.py:300-303`) and **before** the loop (`:305`).
+@@ -164,16 +175,16 @@
+ 
+ ## 3. DDL for migration 14
+ 
+-### 3.1 One migration (Q-5, proposed)
++### 3.1 One migration (Q-5, approved)
+ `Migration(14, "snapshots_v1", _m14_snapshots_v1)` holds everything in §3.3–§3.9.
+ 
+ Why:
+ 1. `apply()` gives each migration one `BEGIN IMMEDIATE` (`migrations.py:308-315`). One migration means a DB is either fully pre-snapshot or fully snapshot-capable, with no mid-states for code or the guard to reason about.
+-2. The objects reference each other: `snapshots → keys`, `key_challenges → keys`, `jobs → snapshots`. They form one unit.
+-3. The design's 12/13/14 split (design:117) is void under E-4 (errata:13). The two deltas signed off in design:122 (`key_challenges.target_ref` plaintext; `admin_approvals`) land in this migration 14. That closes E-14 (errata:23) once this DDL is signed off.
++2. The objects reference each other: `snapshots → keys`, `snapshots → admin_approvals`, `key_challenges → keys`, `jobs → snapshots`. They form one unit.
++3. The design's 12/13/14 split (design:117) is void under E-4 (errata:13). The two deltas signed off in design:122 (`key_challenges.target_ref` plaintext; `admin_approvals`) land in this migration 14. With Rama's sign-off of this DDL, E-14 (errata:23) is closed.
+ 
+ **Order inside `_m14_snapshots_v1`** (inferred):
+-1. `keys`, `key_challenges`, `snapshots`, `admin_approvals` (FK targets first);
++1. `keys`, `key_challenges`, `admin_approvals`, `snapshots` (FK targets first; `snapshots.hold_approval_id` references `admin_approvals`);
+ 2. the `add_column` calls of §3.7–§3.9;
+ 3. the `jobs.kind` CHECK rewrite of §3.8.
+ 
+@@ -182,7 +193,7 @@
+ ### 3.2 Conventions used below
+ - Every table has `id INTEGER PRIMARY KEY AUTOINCREMENT`, `created_at TEXT NOT NULL` and `updated_at TEXT NOT NULL`, so `models.insert`/`models.update` work unchanged (`models.py:69-83`) (inferred).
+ - Timestamps are UTC `YYYY-MM-DDTHH:MM:SSZ` (AGENTS.md; `models.utcnow`, `models.py:46-47`). With that fixed format, text comparison equals time comparison, which the CHECKs and the CAS updates below rely on (inferred).
+-- **Proposed in v2:** every timestamp column of the four new tables carries a shape CHECK, `GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'` (an exact 20-character match).
++- **Added in v2, part of the DDL signed off on 2026-11-23:** every timestamp column of the four new tables carries a shape CHECK, `GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'` (an exact 20-character match).
+   - Existing tables have none. The new ones get it so that no new TEXT column can hold an S-shaped value (§5), and so that the text-ordered comparisons above stay valid.
+   - A malformed time then fails at write, rather than comparing wrongly later.
+ - All FKs are enforced (`PRAGMA foreign_keys=ON`, `models.py:33`).
+@@ -222,7 +233,7 @@
+            AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+            AND (activated_at IS NULL OR
+                 activated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+-                                                             -- timestamp shape, §3.2 (proposed)
++                                                             -- timestamp shape, §3.2
+ );
+ CREATE UNIQUE INDEX IF NOT EXISTS idx_keys_one_active  ON keys(user_id) WHERE state = 'active';
+ CREATE UNIQUE INDEX IF NOT EXISTS idx_keys_one_pending ON keys(user_id) WHERE state = 'pending';  -- (inferred)
+@@ -239,26 +250,28 @@
+ | `active → revoked` | **the hold ends**: the engine executes the approval through the `execute_after` CAS (§3.6) | the engine |
+ | `pending → active` (new key) | after the old key is `revoked`; `idx_keys_one_active` blocks it while the old key is still active | an admin who is not the owner |
+ 
+-**Effects of a reset (Q-6, proposed):**
++**Effects of a reset (Q-6, approved with changes):**
+ 1. **On approval** (one transaction, test T-16):
+    - the key **stays `active`**;
+-   - every `saved` snapshot with `key_id` = that key gets `delete_after = now + 24h` and `delete_requested_by = <the approval's requested_by>`;
+-   - the approval's `execute_after` gets the same value.
+-   - Rows already under an earlier hold keep it (inferred).
++   - every `saved` snapshot with `key_id` = that key and no hold yet gets `delete_after = now + 24h`, `delete_requested_by = <the approval's requested_by>` and **`hold_approval_id = <the approval's id>`**;
++   - the approval's `execute_after` gets the same instant.
++   - A row already under an earlier hold of its own keeps that hold, with `hold_approval_id` NULL.
+ 2. **During the hold:**
+    - The owner may cancel with a `cancel_delete` challenge, `target_ref = approval:<id>`, answered with the still-active key (design:112). The challenge CAS requires an active key, so this works.
+-   - Cancelling sets the approval to `cancelled` and clears `delete_after`/`delete_requested_by` on the snapshots that reset held (rows where `delete_after = execute_after AND delete_requested_by = requested_by`), in one transaction (test T-19) (inferred).
++   - Cancelling sets the approval to `cancelled` and clears `delete_after`, `delete_requested_by` and `hold_approval_id` on the rows **`WHERE hold_approval_id = <the approval's id>`**, in one transaction (test T-19).
+    - The user may enroll a new key as `pending` in the meantime.
+-3. **When the hold ends** (one transaction, inside the execution CAS):
++3. **When the hold ends** (one transaction, inside the execution CAS on `execute_after`):
+    - the key goes `active → revoked`;
+-   - the held snapshots are deleted (files by the engine, then the rows, with audit events);
++   - **every** snapshot whose `key_id` is the revoked key is deleted, whether held by this approval (`hold_approval_id = <id>`), under an own hold, or unheld (e.g. captured during the hold). The engine deletes the files, then the rows, with audit events;
+    - `executed_at` is set.
+    - From then on, the key's open challenges fail the CAS (it requires `state = 'active'`, §3.4), and the user's `pending` key may be activated.
+-   - **Edge (inferred):** the key is still active during the hold, so a capture in those 24h is wrapped to it and would be unrecoverable after the revoke. Proposal: execution deletes **every** snapshot whose `key_id` is the revoked key, held or not. Alternatively, the API refuses snapshot-enabled bookings while a reset is pending (Q-6).
++- **Rows are matched by `hold_approval_id`, never by timestamp.**
++- **The generic delete sweep** (§3.5) handles only rows with `hold_approval_id IS NULL`. Rows held by an approval go only through that approval's execution, so revoke and delete stay in one transaction (inferred).
++- **Later task, not B-104:** the API/engine refuses snapshot-enabled bookings for a user while a `lost_key_reset` approval for that user is `pending`, or `approved` but not yet executed. That way no new snapshot is wrapped to a key that is about to be revoked.
++
++**Immediate revoke: REJECTED** (Rama, sign-off). The owner could never cancel, because their `cancel_delete` would fail the active-key CAS.
+ 
+-**Alternative, not proposed: immediate revoke.** The key → `revoked` on approval.
+-- **For:** it stops a thief using a stolen identity during the 24h.
+-- **Against:** the owner can then never cancel, because their `cancel_delete` fails the active-key CAS. That contradicts the cancellable 24h hold of design:18, :47, :112.
++**Rotation** stays after B-106 (R-2). The old identity stays valid until every `key.age` is re-wrapped (design:61-63; §4.1).
+ 
+ **Other notes:**
+ - A `pending` key is never revoked; when superseded, it is deleted (inferred). No row references a pending key: challenges reference the key the nonce was sealed to, which is the active one, and snapshots reference the key `key.age` is wrapped to.
+@@ -326,7 +339,7 @@
+ - design:112: 24h holds; an unsaved purge has hold 0; the engine physically deletes.
+ - design:119-120: `public_id`; states.
+ - D-7-4 (design:134): a retry reuses the failed row.
+-- Q-9, Q-13, Q-15, Q-16.
++- Q-6, Q-9, Q-13, Q-15, Q-16.
+ 
+ ```sql
+ CREATE TABLE IF NOT EXISTS snapshots (
+@@ -344,10 +357,13 @@
+                         CHECK (state IN ('capturing', 'saved', 'failed')),   -- [design:120]; Q-15
+     delete_after        TEXT,                                -- end of a 24h delete hold; NULL = not held (Q-13)
+     delete_requested_by INTEGER REFERENCES users(id),        -- who started the hold (Q-13)
++    hold_approval_id    INTEGER REFERENCES admin_approvals(id),  -- set only for a hold placed by an approval
++                                                             -- (lost_key_reset); NULL for an own delete hold (Q-6)
+     created_at          TEXT    NOT NULL,
+     updated_at          TEXT    NOT NULL,
+     FOREIGN KEY (key_id, user_id) REFERENCES keys(id, user_id),
+     CHECK ((delete_after IS NULL) = (delete_requested_by IS NULL)),
++    CHECK (hold_approval_id IS NULL OR delete_after IS NOT NULL),
+     CHECK (delete_after IS NULL OR state = 'saved'),         -- only saved rows are held; unsaved ones
+                                                              -- purge with hold 0 [design:112] (inferred)
+     CHECK (delete_after IS NULL OR delete_after > created_at),
+@@ -359,20 +375,40 @@
+ CREATE INDEX IF NOT EXISTS idx_snapshots_user_setup ON snapshots(user_id, setup_id, state, created_at);
+ CREATE INDEX IF NOT EXISTS idx_snapshots_key        ON snapshots(key_id);
+ CREATE INDEX IF NOT EXISTS idx_snapshots_delete_due ON snapshots(delete_after) WHERE delete_after IS NOT NULL;
++CREATE INDEX IF NOT EXISTS idx_snapshots_hold_approval ON snapshots(hold_approval_id) WHERE hold_approval_id IS NOT NULL;
+ ```
+ 
+ **Holds (Q-13):**
+-- A user delete (`delete` challenge) or an admin delete sets `delete_after = now + 24h` and `delete_requested_by` = that user.
+-- A lost-key reset does the same for every `saved` snapshot of the key under reset. The key stays active until the hold ends, and the owner can cancel (§3.3).
+-- `cancel_delete` clears both columns.
+-- When `delete_after` has passed, the engine deletes the three files and then the row (Q-15). `audit_events` keeps the record (`models.audit`, `models.py:535-546`).
++- **An own delete hold:** a user delete (`delete` challenge, `target_ref` = the snapshot's `public_id`) or an admin delete sets `delete_after = now + 24h` and `delete_requested_by` = that user, with `hold_approval_id` NULL.
++  - `cancel_delete` on that `public_id` clears both columns.
++  - When `delete_after` has passed, the engine's delete sweep deletes the three files and then the row (Q-15).
++  - **The sweep handles only `hold_approval_id IS NULL` rows** (inferred).
++- **An approval hold** (`lost_key_reset`): the approval's transaction sets the same two columns plus `hold_approval_id` on every unheld `saved` snapshot of the key under reset (§3.3).
++  - The owner's `cancel_delete` on `approval:<id>` clears all three on the rows `WHERE hold_approval_id = <id>`.
++  - The approval's execution deletes every snapshot of the key.
++  - Rows are matched by `hold_approval_id`, never by timestamp.
++- `audit_events` keeps a record of every deletion (`models.audit`, `models.py:535-546`).
+ 
+ **States (Q-15):**
+ - `capturing → saved | failed`; `failed → capturing` on a force-clean retry (D-7-4).
+ - The engine marks a `capturing` row whose job is gone or timed out as `failed` (inferred).
+ - `restore_incomplete` is **not** a state. It is a residue item only (§4.4).
+ 
+-**Retention (Q-16):** the prune step after a save (design:96) counts `saved` rows per (user, setup) and deletes the oldest `saved` first. This is code, not a constraint: a 4th row exists briefly before the prune. `idx_snapshots_user_setup` serves the query.
++**Retention (Q-16, approved with changes):**
++- The prune step after a save (design:96) **counts and prunes only `saved` rows with `delete_after IS NULL`** per (user, setup), oldest first.
++- A held row is never retention-pruned: its hold's execution (or the delete sweep) deletes it.
++- This is code, not a constraint: a 4th row exists briefly before the prune. `idx_snapshots_user_setup` serves the query.
++
++```sql
++-- retention prune (Q-16): keep the newest 3 unheld saved rows per (user, setup)
++DELETE FROM snapshots WHERE id IN (
++    SELECT id FROM snapshots
++     WHERE user_id = :uid AND setup_id = :sid AND state = 'saved' AND delete_after IS NULL
++     ORDER BY created_at DESC, id DESC
++     LIMIT -1 OFFSET 3);
++```
++
++The engine deletes the three files for the selected rows before the row delete, as for every deletion (inferred).
+ 
+ **Deliberately absent:**
+ - No `path` column: paths are derived from `snapshot_root`, `user_id` and `public_id` (design:91).
+@@ -396,7 +432,7 @@
+     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+     action        TEXT    NOT NULL
+                   CHECK (action IN ('lost_key_reset', 'tripwire_accept', 'tripwire_rebaseline',
+-                                    'home_discard')),                    -- Q-11 (proposed list)
++                                    'home_discard')),                    -- Q-11 (final)
+     target_ref    TEXT    NOT NULL                                       -- Q-11: user:<id>, hw_class, setup name
+                   CHECK (length(target_ref) BETWEEN 1 AND 128
+                          AND target_ref NOT GLOB '*[^a-z0-9._:-]*'
+@@ -437,7 +473,7 @@
+ 
+ | Action | On approval | `execute_after` | `executed_at` |
+ |---|---|---|---|
+-| `lost_key_reset` | the key **stays `active`**; its `saved` snapshots get `delete_after` and `delete_requested_by` (§3.3). The owner's `cancel_delete` (`approval:<id>`) before `execute_after` → `cancelled`, and those holds are cleared in the same transaction (T-19) | now + 24h, the **same value** as those `delete_after`s (one transaction; a CHECK can't span tables, so a test covers it, §6.2 T-16) | set by the execution CAS at the end of the hold, in the same transaction as key → `revoked` and the deletion of the held snapshots |
++| `lost_key_reset` | the key **stays `active`**; its unheld `saved` snapshots get `delete_after`, `delete_requested_by` and `hold_approval_id = <this id>` (§3.3). The owner's `cancel_delete` (`approval:<id>`) before `execute_after` → `cancelled`, and the holds on the rows `WHERE hold_approval_id = <this id>` are cleared in the same transaction (T-19) | now + 24h, the **same instant** as those `delete_after`s (one transaction; a CHECK can't span tables, so a test covers it, §6.2 T-16) | set by the execution CAS at the end of the hold, in the same transaction as key → `revoked` and the deletion of **every** snapshot of that key, held or not (T-16, T-20) |
+ | `home_discard` | nothing yet; visible to the owner (design:112) | now + 24h | set after the engine discards the home. The owner's `cancel_delete` before then → `cancelled` |
+ | `tripwire_accept` / `tripwire_rebaseline` | quarantine may lift / the baseline is replaced (design:49, :101) | NULL (no hold stated) | set when applied |
+ 
+@@ -547,13 +583,13 @@
+ | `capturing → saved` | capture | committed **before** the job exits 0 (design:92); wipe is allowed only after this (design:94) |
+ | `capturing → failed` | capture, or the engine for a stale row (Q-15) | tar rc≠0, mount under home, empty-home guard (design:99); job gone or timed out |
+ | `failed → capturing` | capture retry via force-clean | reuses the same row (D-7-4, design:134) |
+-| `saved`, hold set (`delete_after`, `delete_requested_by`) | API on `delete` (user/admin) or lost-key reset | 24h hold (design:112; Q-6, Q-13) |
++| `saved`, hold set (`delete_after`, `delete_requested_by`; plus `hold_approval_id` for a reset) | API on `delete` (user/admin), or the `lost_key_reset` approval | 24h hold (design:112; Q-6, Q-13) |
+ | hold cleared | API on `cancel_delete` | before `delete_after` |
+ | files deleted, then the row deleted, then the audit event | engine | after `delete_after`; `failed` rows at once (hold 0, design:112) |
+ 
+ **Readers:**
+ - list, restore and download see only `saved` rows **without** a hold (inferred);
+-- retention counts `saved` per (user, setup), oldest first (Q-16).
++- retention counts and prunes only unheld `saved` rows (`delete_after IS NULL`) per (user, setup), oldest first (Q-16).
+ 
+ Restore never changes the snapshot's state (§3.5).
+ 
+@@ -584,7 +620,7 @@
+ | `key_challenges.nonce_sha256` | SHA-256 over the length-delimited (nonce, purpose, target_ref, key_id, user_id, expires_at) | no: a hash, not the nonce. It can't be inverted **if the nonce is ≥ 32 random bytes** (N-2) |
+ | `key_challenges.target_ref` | fingerprint / public_id / ref, closed lowercase charset, ≤128 | no (plaintext by decision, design:122) |
+ | `key_challenges` other columns | ids, purpose, timestamps | no |
+-| `snapshots.*` | ids, `public_id`, state, `key_id`, `delete_after`, `delete_requested_by` | no; no path, no DEK, no wrapped key |
++| `snapshots.*` | ids, `public_id`, state, `key_id`, `delete_after`, `delete_requested_by`, `hold_approval_id` | no; no path, no DEK, no wrapped key |
+ | `admin_approvals.*` | action, target_ref, admin ids, state, `decided_at`, `execute_after`, `executed_at` | no |
+ | `reservations.save_snapshot`, `setups.snapshot_enabled` | 0/1 | no |
+ | `jobs.snapshot_id` | FK id | no |
+@@ -646,82 +682,98 @@
+ | T-12 | `restore` kind: `jobs.kind = 'restore'` accepted, `'bogus'` refused, the existing four still accepted; the CHECK rewrite raises and rolls back (version unchanged) when the expected text is missing (mirrors `tests/test_reservation_states.py:163`) |
+ | T-13 | `jobs` has no `secret` column; no table `user_keys`; `snapshots` has no `wrapped_dek` or `path`; `setups` has no `snapshot_bdfs` |
+ | T-14 | column-name rule (§5) over the new tables |
+-| T-15 | **delete holds** (`delete_after`, `delete_requested_by`): set together on a `saved` row, accepted; `delete_after` without `delete_requested_by` refused, and the reverse; a hold on a `capturing` or `failed` row refused; `delete_after <= created_at` refused; `cancel_delete` (both cleared) accepted; `delete_requested_by` of a non-existent user refused (FK) |
+-| T-16 | **lost-key reset, hold then execute.** Approval `pending → approved` (other admin), in one transaction with: the key **still `active`**; its `saved` snapshots get `delete_after` = the approval's `execute_after` and `delete_requested_by` = `requested_by`. During the hold: the CAS on the key's open challenge succeeds; a new `pending` key can be enrolled but **not** activated (one-active index). At `execute_after`: the execution CAS sets `executed_at`, the key goes `active → revoked` and the held snapshots are deleted, in one transaction. Afterwards the CAS on the revoked key's open challenge gives rowcount 0, and the pending key can be activated. A `pending → revoked` transition is refused |
+-| T-19 | **owner cancels a reset during the hold.** After approval, the owner's `cancel_delete` challenge (`target_ref = approval:<id>`, sealed to the still-active key) is consumed by the CAS (rowcount 1). In the same transaction the approval → `cancelled` and the reset's holds are cleared (`delete_after`, `delete_requested_by` NULL). An earlier hold of the user's own stays. The key stays `active`; a later execution CAS on the cancelled approval gives rowcount 0 |
++| T-15 | **delete holds** (`delete_after`, `delete_requested_by`): set together on a `saved` row, accepted; `delete_after` without `delete_requested_by` refused, and the reverse; a hold on a `capturing` or `failed` row refused; `delete_after <= created_at` refused; `cancel_delete` (both cleared) accepted; `delete_requested_by` of a non-existent user refused (FK); **`hold_approval_id` without `delete_after` refused; `hold_approval_id` of a non-existent approval refused (FK); clearing `delete_after` while `hold_approval_id` is still set refused** |
++| T-16 | **lost-key reset, hold then execute.** Approval `pending → approved` (other admin), in one transaction with: the key **still `active`**; its unheld `saved` snapshots get `delete_after` = the approval's `execute_after`, `delete_requested_by` = `requested_by` and **`hold_approval_id` = the approval's id**; a row with an own earlier hold keeps it with `hold_approval_id` NULL. During the hold: the CAS on the key's open challenge succeeds; a new `pending` key can be enrolled but **not** activated (one-active index). At `execute_after`: the execution CAS sets `executed_at`, the key goes `active → revoked` and **every snapshot of that key** is deleted, in one transaction. Afterwards the CAS on the revoked key's open challenge gives rowcount 0, and the pending key can be activated. An execution CAS before `execute_after` gives 0. A `pending → revoked` transition is refused |
++| T-19 | **owner cancels a reset during the hold.** After approval, the owner's `cancel_delete` challenge (`target_ref = approval:<id>`, sealed to the still-active key) is consumed by the CAS (rowcount 1). In the same transaction the approval → `cancelled` and the holds on the rows **`WHERE hold_approval_id = <id>`** are cleared (all three columns NULL). An own earlier hold (`hold_approval_id` NULL) stays. The key stays `active`; a later execution CAS on the cancelled approval gives rowcount 0 |
++| T-20 | **execution deletes an unheld snapshot of the revoked key.** A `saved` snapshot captured during the hold (no hold, `hold_approval_id` NULL), and one under an own hold, are both deleted by the execution, along with the approval-held rows. Afterwards no snapshot references the revoked key |
++| T-21 | **retention ignores held rows.** For one (user, setup), with 4 unheld `saved` rows and 1 older held row, the §3.5 prune query (taken from this document) deletes only the oldest unheld row. 3 unheld rows remain and the held row is neither counted nor pruned |
+ | T-17 | **`execute_after`**: `executed_at < execute_after` refused; `executed_at >= execute_after` accepted; `execute_after <= created_at` refused; NULL `execute_after` (tripwire) executes at once |
+ | T-18 | the full existing suite stays green (`make test`), on both venvs as for B-103 |
+ 
+ ### 6.3 What `ddl-check.py` already verifies on the draft
+-`~/notes/b104/ddl-check.py` parses this file's `sql` blocks, `add_column` calls and `_OLD/_NEW_JOB_KINDS` strings, applies them to a synthetic v11 DB in the §3.1 order, and exercises a sample of T-5…T-19. Output: `ddl-check-out.txt`.
++`~/notes/b104/ddl-check.py` parses this file's `sql` blocks (the `CREATE TABLE` blocks and the §3.5 retention prune), `add_column` calls and `_OLD/_NEW_JOB_KINDS` strings. It applies them to a synthetic v11 DB in the §3.1 order and exercises a sample of T-5…T-21. Output: `ddl-check-out.txt`.
+ 
+ ---
+ 
+-## 7. Decisions for sign-off
++## 7. Decisions (signed off by Rama, 2026-11-23)
+ 
+-Each item has a **Proposed:** answer. Items marked **OPEN** still need Rama's call; the rest are proposals to sign off as written. The numbers are kept from v1 for traceability:
++**Status:**
++- Every item below is **APPROVED** (as proposed) or **APPROVED WITH CHANGES** (the changes are applied in v4).
++- The one exception is Q-13, which was not in the sign-off list (see item 11).
++
++The numbers are kept from v1 for traceability:
+ - Q-2, Q-17 and Q-22 are folded into the text (§2.3, §2.1, §2.4);
+ - Q-8 → §8 N-1;
+ - Q-23 → §9 N-5.
+ 
+-1. **Q-1 — Numbering vs the signed-off text. OPEN.** design:117 planned "12 snapshots/keys/challenges; 13 jobs rewrite/restore; 14 `admin_approvals`", and design:122 signs off "migration-14 `admin_approvals`".
+-   **Proposed:** E-4 (errata:13) supersedes design:117. Every delta signed off in design:122 lands in the single migration 14, and "migration-14" in design:122 now means "the B-104 migration". Rama's errata v1.2 docs PR (R-1) records this, and E-14 (errata:23) closes when this DDL is signed off.
+-2. **Q-3 — Guard placement beyond `daolab init`. OPEN.**
+-   **Proposed:** B-104 places it in `migrations.apply()` only (covers `daolab init`). Two follow-ups:
++1. **Q-1 — Numbering vs the signed-off text. APPROVED.** design:117 planned "12 snapshots/keys/challenges; 13 jobs rewrite/restore; 14 `admin_approvals`", and design:122 signs off "migration-14 `admin_approvals`".
++   E-4 (errata:13) supersedes design:117. Every delta signed off in design:122 lands in the single migration 14, and "migration-14" in design:122 now means "the B-104 migration". Rama's errata v1.2 docs PR (R-1) records this. E-14 (errata:23) is closed by this sign-off.
++2. **Q-3 — Guard placement beyond `daolab init`. APPROVED.**
++   B-104 places the guard in `migrations.apply()` only (covers `daolab init`). Two follow-ups:
+    - (a) the API gains a startup check, the same `have == want` test as `engine.py:629-633`, plus the guard, in the task that owns `api.py` startup;
+    - (b) the engine calls the guard beside `engine.py:629`, as a one-line change for Akshay (the file owner) to approve separately.
+    Until then, the engine is already protected by its version check (a reverted DB is at 12/13, the code at 14).
+-3. **Q-4 — Exception shape.** **Proposed:** as drafted. A new `RevertedSchema(Exception)`, caught with `SchemaTooNew` in a tuple at `cli.py:46`; `SchemaTooNew` is not reparented. (This one wasn't in the revision list; I kept the v1 proposal.)
+-4. **Q-5 — One migration or several.** **Proposed:** one migration 14 (§3.1).
+-5. **Q-6 — Key lifecycle and the lost-key reset. OPEN.**
+-   **Proposed:** states `pending / active / retired / revoked`. A two-admin lost-key reset **only starts a 24h hold** (design:18, :47, :112):
+-   - On the second admin's approval, the key **stays `active`**. Its `saved` snapshots get `delete_after = now + 24h` (`delete_requested_by` = the approval's `requested_by`), and `admin_approvals.execute_after` gets the same value, in one transaction.
+-   - During the hold, the owner may cancel with `cancel_delete`, `target_ref = approval:<id>`. That sets the approval to `cancelled` and clears those holds, in one transaction. The user may enroll a new key as `pending`.
+-   - When the hold ends, the engine executes the approval through the `execute_after` CAS: key → `revoked`, the held snapshots are deleted, and the pending key may then be activated.
++3. **Q-4 — Exception shape. APPROVED.** A new `RevertedSchema(Exception)`, caught with `SchemaTooNew` in a tuple at `cli.py:46`; `SchemaTooNew` is not reparented.
++4. **Q-5 — One migration or several. APPROVED.** One migration 14 (§3.1).
++5. **Q-6 — Key lifecycle and the lost-key reset. APPROVED WITH CHANGES.**
++   - States `pending / active / retired / revoked`. A two-admin lost-key reset **only starts a 24h hold** (design:18, :47, :112).
++   - **On the second admin's approval** (one transaction):
++     - the key **stays `active`**;
++     - its unheld `saved` snapshots get `delete_after = now + 24h`, `delete_requested_by` = the approval's `requested_by`, and **`hold_approval_id` = the approval's id**;
++     - `admin_approvals.execute_after` gets the same instant.
++   - **New column (change):** `snapshots.hold_approval_id INTEGER REFERENCES admin_approvals(id)`, nullable.
++     - It is set only for holds placed by an approval (`lost_key_reset`), and NULL for a user's or admin's own delete hold.
++     - `CHECK (hold_approval_id IS NULL OR delete_after IS NOT NULL)`, plus a partial index (§3.5).
++   - **During the hold:** the owner may cancel with `cancel_delete`, `target_ref = approval:<id>`.
++     - That sets the approval to `cancelled` and clears the holds on the rows `WHERE hold_approval_id = <id>`, in one transaction.
++     - The user may enroll a new key as `pending`.
++   - **Matching (change):** cancel and execution match held rows **by `hold_approval_id`, never by timestamp**.
++   - **When the hold ends (change):** the engine executes the approval through the `execute_after` CAS. The key → `revoked`, and **every snapshot whose `key_id` is the revoked key is deleted, held or not**. The pending key may then be activated.
+    - The challenge CAS keeps its "key must be active" condition. It is right for keys revoked at the end of a hold.
+-   - Sub-point: snapshots captured during the hold are wrapped to the soon-revoked key. Proposal: execution deletes every snapshot of that key, held or not. Alternatively, refuse snapshot-enabled bookings while a reset is pending (§3.3).
+-
+-   **Alternative:** revoke immediately on approval. That stops a thief using a stolen identity during the 24h, but the owner can never cancel, because their `cancel_delete` fails the active-key CAS.
+-6. **Q-7 — "A different admin activates".** **Proposed:** "different admin" = **not the key owner**, enforced by `CHECK (activated_by IS NULL OR activated_by <> user_id)`. The activator's `role = 'admin'` is checked in code, with no trigger. The same rule applies to both admins of an approval.
+-7. **Q-9 — `public_id` format.** **Proposed:** as drafted. 32 lowercase hex from `secrets.token_hex(16)`, with no `-`, so ticket names parse unambiguously.
+-8. **Q-10 — `target_ref` per purpose. OPEN.**
+-   **Proposed:**
++   - **Later task, not B-104 (change):** the API/engine refuses snapshot-enabled bookings while a `lost_key_reset` approval for that user is `pending`, or `approved` but not yet executed.
++   - **Immediate revoke: REJECTED.**
++   - **Rotation** stays after B-106, and the old identity stays valid until every `key.age` is re-wrapped.
++6. **Q-7 — "A different admin activates". APPROVED.** "Different admin" = **not the key owner**, enforced by `CHECK (activated_by IS NULL OR activated_by <> user_id)`. The activator's `role = 'admin'` is checked in code, with no trigger. The same rule applies to both admins of an approval.
++7. **Q-9 — `public_id` format. APPROVED.** 32 lowercase hex from `secrets.token_hex(16)`, with no `-`, so ticket names parse unambiguously.
++8. **Q-10 — `target_ref` per purpose. APPROVED; final.**
+ 
+    | Purpose | `target_ref` |
+    |---|---|
+    | `rotate` | the new key's fingerprint, 64 hex (design:59) |
+    | `delete` | the snapshot's `public_id` |
+-   | `cancel_delete` | the held snapshot's `public_id`, or `approval:<id>` for a held `home_discard` or `lost_key_reset` |
++   | `cancel_delete` | the held snapshot's `public_id` (own delete hold), or `approval:<id>` (a hold placed by an approval: `lost_key_reset` or `home_discard`) |
+    | `discard_home` | `setup:<name>`, for the owner's own kept/quarantined home on that setup |
+ 
+-   The charset is `[a-z0-9._:-]{1,128}` plus `NOT LIKE 'age-secret-key-%'`. It assumes setup names and `hw_class` values are lowercase; all current ones are (`tb-01`, `sdp-pf1-vf8`, checked on `origin/rama`).
+-9. **Q-11 — `admin_approvals` actions and targets. OPEN.**
+-   **Proposed:** actions `lost_key_reset`, `tripwire_accept`, `tripwire_rebaseline`, `home_discard`.
+-   - **Admin home discard needs two admins.** It destroys user data, the same as the E-13 legacy-home wipe ("wipe only with explicit two-admin approval", errata:22). One `home_discard` action covers both: approval → `execute_after = now + 24h`, visible to the owner, cancellable by the owner's `cancel_delete` (design:112).
+-   - Targets: `user:<id>` (reset), the `hw_class` (tripwire), the setup name (discard).
++   The charset is `[a-z0-9._:-]{1,128}` plus `NOT LIKE 'age-secret-key-%'`. Setup names and `hw_class` values are lowercase; all current ones are (`tb-01`, `sdp-pf1-vf8`, checked on `origin/rama`).
++9. **Q-11 — `admin_approvals` actions and targets. APPROVED; final.**
++   - **The four actions:** `lost_key_reset`, `tripwire_accept`, `tripwire_rebaseline`, `home_discard`.
++   - **`home_discard`:** two admins, a 24h hold (`execute_after = now + 24h`), visible to the owner, owner-cancellable by `cancel_delete` on `approval:<id>` (design:112). It also covers the E-13 legacy-home wipe ("wipe only with explicit two-admin approval", errata:22).
++   - **Targets:** `user:<id>` (reset), the `hw_class` (tripwire), the setup name (discard).
+    - Pending approvals don't expire. An admin can `cancel` them, and the one-open index stops duplicates.
+-10. **Q-12 — At most 3 open challenges.** **Proposed:** as drafted. A count inside `BEGIN IMMEDIATE` in code, with no trigger. Consumed and expired rows are kept; pruning them is a later decision.
+-11. **Q-13 — Where holds live.** **Proposed:** no fifth table.
+-    - `snapshots.delete_after` + `snapshots.delete_requested_by` (FK `users`) hold the 24h user/admin delete holds, including the snapshots of a reset key.
+-    - `admin_approvals.execute_after` holds the reset and discard holds.
+-    - For a reset, both carry the same instant, written in one transaction (§3.6). The key stays `active` throughout the hold (Q-6).
+-    - The owner's `cancel_delete` on `approval:<id>` sets the approval to `cancelled` and clears that reset's snapshot holds in one transaction. At `execute_after`, the execution CAS revokes the key and deletes the held snapshots in one transaction.
+-12. **Q-14 — Restore job.** **Proposed:** Option A, a `restore` job kind via the m6-style CHECK rewrite (§3.8). Capture stays inside `cleanup`.
+-13. **Q-15 — Snapshot states.** **Proposed:**
++10. **Q-12 — At most 3 open challenges. APPROVED.** A count inside `BEGIN IMMEDIATE` in code, with no trigger. Consumed and expired rows are kept; pruning them is a later decision.
++11. **Q-13 — Where holds live. Not in Rama's sign-off list; status unchanged (proposed).** The text is updated for the Q-6 changes.
++    - No fifth table.
++    - **Own delete holds:** `snapshots.delete_after` + `snapshots.delete_requested_by` (FK `users`), with `hold_approval_id` NULL.
++    - **Approval holds:** the same two columns plus `snapshots.hold_approval_id` (FK `admin_approvals`). `admin_approvals.execute_after` holds the reset and discard deadlines, and for a reset it carries the same instant as the rows' `delete_after` (§3.6).
++    - Cancel and execution match rows by `hold_approval_id`. The generic delete sweep handles only `hold_approval_id IS NULL` rows (inferred).
++    - Q-6's approval already depends on these columns, so this item is very likely settled in substance. Ask Rama to confirm it explicitly.
++12. **Q-14 — Restore job. APPROVED.** Option A: a `restore` job kind via the m6-style CHECK rewrite (§3.8). Capture stays inside `cleanup`.
++13. **Q-15 — Snapshot states. APPROVED.**
+     - States: `capturing / saved / failed`.
+     - After physical deletion the **row is deleted**, and `audit_events` keeps the record.
+     - `restore_incomplete` is a **residue item only**.
+     - Stale `capturing` rows are marked `failed` by the engine (inferred).
+-14. **Q-16 — Retention.** **Proposed:** retention counts `saved` rows only and prunes the oldest `saved` first. A `saved` row under a delete hold still counts (it is `saved`) (inferred). Say if held rows should be excluded.
+-15. **Q-18 — Enable flag.** **Proposed:** `setups.snapshot_enabled`, **admin-controlled**, and **excluded from `catalog.sync`'s `fields`**. That is needed for drain-before-disable (design:41).
+-16. **Q-19 — `save_snapshot` default.** **Proposed:** as drafted. The column default is 0; "create default 1" (design:20) is the API writing 1 explicitly on enabled setups when the owner has an active key.
+-17. **Q-20 — FK actions vs `daolab sync`. OPEN.**
+-    **Proposed:**
++14. **Q-16 — Retention. APPROVED WITH CHANGES.**
++    - Retention pruning **counts and prunes only `saved` rows with `delete_after IS NULL`**, oldest first, per (user, setup).
++    - **A held row is never retention-pruned:** its hold's execution (or the delete sweep, for an own hold) deletes it.
++    - The prune query is in §3.5, and T-21 tests it.
++15. **Q-18 — Enable flag. APPROVED.** `setups.snapshot_enabled`, **admin-controlled**, and **excluded from `catalog.sync`'s `fields`**. That is needed for drain-before-disable (design:41).
++16. **Q-19 — `save_snapshot` default. APPROVED.** The column default is 0; "create default 1" (design:20) is the API writing 1 explicitly on enabled setups when the owner has an active key.
++17. **Q-20 — FK actions vs `daolab sync`. APPROVED.**
+     - Keep `snapshots.reservation_id ... ON DELETE SET NULL` (sync deletes released reservations, `catalog.py:564/578`).
+     - Keep `snapshots.setup_id` as `NO ACTION`, so removing a setup that still has snapshots fails. A later `catalog.py` change makes that a clear `SyncError` ("removal blocked by N snapshots") instead of a raw FK error.
+     - Users are never deleted: user deletion (design:29) means `enabled = 0` plus held deletes of their snapshots (inferred). So `users` FKs keep `NO ACTION`.
+-18. **Q-21 — Snapshot metadata in the DB. OPEN.**
+-    **Proposed:** none in v1. Size, `sha256` of `.age`, `hw_class`, use case and the device profile live in `hdr.json` and the snapshot's `daolab-profile/1` (R-4, R-6). If a reader later needs a column, it is an additive migration. This keeps the DB to identifiers and states only.
++18. **Q-21 — Snapshot metadata in the DB. APPROVED.** None in v1. Size, `sha256` of `.age`, `hw_class`, use case and the device profile live in `hdr.json` and the snapshot's `daolab-profile/1` (R-4, R-6). If a reader later needs a column, it is an additive migration.
+ 
+ ---
+ 
+@@ -732,7 +784,7 @@
+   - X25519 `age1…` recipients only (62 chars), no plugin recipients.
+   - B-105 must check the `keys.recipient` CHECK against real `age-keygen -y` output from the pinned age v1.1.1 (`deploy/age/`, merged with B-103 in PR #8; E-1, errata:10).
+ - **N-2: the challenge nonce is ≥ 32 bytes from `secrets.token_bytes`.** `nonce_sha256` is safe to store only on that condition (§5). The hash input is exactly design:67's length-delimited fields, with `expires_at` as its stored text.
+-- **N-3: rotation goes after B-106** (R-2). The re-wrap updates `snapshots.key_id` per file, and rotation is complete when no row has the old `key_id` (§4.1).
++- **N-3: rotation goes after B-106** (R-2; confirmed at sign-off). The old identity stays valid until every `key.age` is re-wrapped. The re-wrap updates `snapshots.key_id` per file, and rotation is complete when no row has the old `key_id` (§4.1).
+ 
+ ## 9. B-107 notes
+ 

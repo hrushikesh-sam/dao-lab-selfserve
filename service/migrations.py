@@ -268,6 +268,239 @@ def _m13_burned(conn: sqlite3.Connection) -> None:
     """E-4: version 13 is burned; see _m12_burned."""
 
 
+def _m14_snapshots_v1(conn: sqlite3.Connection) -> None:
+    """B-104 (B-104-DDL.md v4.1 §3: v4 signed off by Rama 23 Nov; the v4.1 items, marked
+    `# v4.1-N`, signed off by Rama 24 Nov): the Phase 8 snapshot schema, as one migration (Q-5).
+
+    * `keys` - a user's age X25519 public recipients; pending -> active (by another admin)
+      -> retired | revoked. Never any private key material (design:55, :72-73; E-10).
+    * `key_challenges` - single-use, 10-minute challenges; only the nonce's SHA-256 is kept.
+    * `admin_approvals` - two-admin actions (lost-key reset, tripwire, home discard).
+    * `snapshots` - one row per saved home; files are derived from `public_id`, never stored.
+      Holds live in `delete_after` / `delete_requested_by` / `hold_approval_id` (Q-13);
+      the routine delete sweep handles only rows with `hold_approval_id IS NULL`.
+    * columns `reservations.save_snapshot` (DEFAULT 0 = PRESERVE), `jobs.snapshot_id`,
+      `setups.snapshot_enabled` (admin-controlled, not synced).
+    * the `restore` job kind: the jobs.kind CHECK is rewritten in place, the m6 way.
+
+    Order: keys, key_challenges, admin_approvals, snapshots (each table, then its indexes),
+    then the three columns, then the jobs.kind rewrite. Idempotent: `IF NOT EXISTS`,
+    `add_column` and a rewrite that skips when done. That is safe only because
+    `refuse_reverted_schema` has already refused the reverted shapes, and nothing here
+    creates any of its markers (M1..M6). One statement per execute(); never executescript(),
+    which would COMMIT apply()'s transaction."""
+    # -- keys (v4 §3.3) --
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS keys (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL REFERENCES users(id),
+            recipient    TEXT    NOT NULL UNIQUE                     -- age X25519 public recipient [design:55]
+                         CHECK (length(recipient) = 62                -- (inferred) 'age1' + 58 bech32 chars; N-1
+                                AND recipient GLOB 'age1*'
+                                AND substr(recipient, 5) NOT GLOB '*[^qpzry9x8gf2tvdw0s3jn54khce6mua7l]*'),
+            fingerprint  TEXT    NOT NULL UNIQUE                     -- shown by the CLI at enrollment [design:57]
+                         CHECK (length(fingerprint) = 64              -- N-1: proposed lowercase sha256 hex
+                                AND fingerprint NOT GLOB '*[^0-9a-f]*'), --      of `recipient`
+            state        TEXT    NOT NULL DEFAULT 'pending'
+                         CHECK (state IN ('pending', 'active', 'retired', 'revoked')),  -- [design:57]; Q-6
+            activated_by INTEGER REFERENCES users(id),               -- the activating admin [design:57]
+            activated_at TEXT,
+            created_at   TEXT    NOT NULL,
+            updated_at   TEXT    NOT NULL,
+            UNIQUE (id, user_id),                                    -- target of the composite FKs below (inferred)
+            CHECK (activated_by IS NULL OR activated_by <> user_id), -- "different admin" = not the owner (Q-7)
+            CHECK ((state = 'pending') = (activated_by IS NULL)),    -- retired/revoked keys were once active
+        """
+        # v4.1-2 (signed off by Rama 24 Nov): activated_by and activated_at are set together
+        """
+            CHECK ((activated_by IS NULL) = (activated_at IS NULL)),
+        """
+        """
+            CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND (activated_at IS NULL OR
+                        activated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+                                                                     -- timestamp shape, §3.2
+        )""")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_keys_one_active  ON keys(user_id) "
+        "WHERE state = 'active'")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_keys_one_pending ON keys(user_id) "
+        "WHERE state = 'pending'  -- (inferred)")
+
+    # -- key_challenges (v4 §3.4) --
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS key_challenges (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL REFERENCES users(id),
+            key_id       INTEGER NOT NULL,                           -- the key the nonce was sealed to (inferred)
+            purpose      TEXT    NOT NULL
+                         CHECK (purpose IN ('rotate', 'delete', 'cancel_delete', 'discard_home')),  -- [design:68]
+            target_ref   TEXT    NOT NULL                            -- plaintext [design:68, :122]
+                         CHECK (length(target_ref) BETWEEN 1 AND 128
+                                AND target_ref NOT GLOB '*[^a-z0-9._:-]*'       -- closed lowercase charset (inferred); Q-10
+                                AND target_ref NOT LIKE 'age-secret-key-%'),    -- belt: refuses an S-shaped value even if
+                                                                                -- Q-10 widens the charset (LIKE ignores ASCII case)
+            nonce_sha256 TEXT    NOT NULL UNIQUE                     -- hash only, never the nonce [design:67]
+                         CHECK (length(nonce_sha256) = 64 AND nonce_sha256 NOT GLOB '*[^0-9a-f]*'),
+            expires_at   TEXT    NOT NULL,                           -- created + 10 min [design:66]; one of the
+                                                                     -- hashed fields, so its exact text counts
+            consumed_at  TEXT,                                       -- NULL = open; set once by CAS [design:66]
+            created_at   TEXT    NOT NULL,
+            updated_at   TEXT    NOT NULL,
+            FOREIGN KEY (key_id, user_id) REFERENCES keys(id, user_id),   -- the key must be the user's own (inferred)
+            CHECK (expires_at > created_at),
+            CHECK (consumed_at IS NULL OR consumed_at <= expires_at),
+            CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND expires_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND (consumed_at IS NULL OR
+                        consumed_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+        )""")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_key_challenges_open
+            ON key_challenges(user_id, expires_at) WHERE consumed_at IS NULL""")
+
+    # -- admin_approvals (v4 §3.6); before snapshots, which references it --
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS admin_approvals (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            action        TEXT    NOT NULL
+                          CHECK (action IN ('lost_key_reset', 'tripwire_accept', 'tripwire_rebaseline',
+                                            'home_discard')),                    -- Q-11 (final)
+            target_ref    TEXT    NOT NULL                                       -- Q-11: """
+        # v4.1-4 (signed off by Rama 24 Nov): lost_key_reset targets key:<id> (v4: user:<id>)
+        """key:<id>"""
+        """, hw_class, """
+        # v4.1-5 (signed off by Rama 24 Nov): home_discard targets setup:<name> (v4: setup name)
+        """setup:<name>
+                          CHECK (length(target_ref) BETWEEN 1 AND 128
+                                 AND target_ref NOT GLOB '*[^a-z0-9._:-]*'
+                                 AND target_ref NOT LIKE 'age-secret-key-%'),
+            requested_by  INTEGER NOT NULL REFERENCES users(id),                 -- first admin
+            decided_by    INTEGER REFERENCES users(id),                          -- second admin
+            state         TEXT    NOT NULL DEFAULT 'pending'
+                          CHECK (state IN ('pending', 'approved', 'rejected', 'cancelled')),
+            decided_at    TEXT,
+            execute_after TEXT,                                                  -- end of the 24h hold (Q-13); NULL = none
+            executed_at   TEXT,                                                  -- single use (inferred)
+            created_at    TEXT    NOT NULL,
+            updated_at    TEXT    NOT NULL,
+            CHECK (decided_by IS NULL OR decided_by <> requested_by),            -- two different admins [design:17-18]
+            CHECK ((decided_by IS NULL) = (decided_at IS NULL)),
+            CHECK (state <> 'pending' OR decided_by IS NULL),
+            CHECK (state NOT IN ('approved', 'rejected') OR decided_by IS NOT NULL),  -- 'cancelled' may follow an
+                                                                                      -- approval (owner cancel)
+            CHECK (executed_at IS NULL OR state = 'approved'),
+            CHECK (executed_at IS NULL OR execute_after IS NULL OR executed_at >= execute_after),
+            CHECK (execute_after IS NULL OR execute_after > created_at),
+            CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND (decided_at IS NULL OR
+                        decided_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+                   AND (execute_after IS NULL OR
+                        execute_after GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z')
+                   AND (executed_at IS NULL OR
+                        executed_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+        )""")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_approvals_one_open
+            ON admin_approvals(action, target_ref) """
+        # v4.1-1 (signed off by Rama 24 Nov): an approved, not yet executed approval stays
+        # "open" (v4: WHERE state = 'pending'; v4's "(inferred)" tag dropped, v4.1-6)
+        """WHERE state = 'pending' OR (state = 'approved' AND executed_at IS NULL)""")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_admin_approvals_due
+            ON admin_approvals(execute_after) WHERE state = 'approved' AND executed_at IS NULL""")
+
+    # -- snapshots (v4 §3.5) --
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS snapshots (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            public_id           TEXT    NOT NULL UNIQUE              -- [design:119]; used in file and ticket names
+                                CHECK (length(public_id) = 32        -- Q-9: 32 lowercase hex, no '-'
+                                       AND public_id NOT GLOB '*[^0-9a-f]*'),
+            user_id             INTEGER NOT NULL REFERENCES users(id),    -- owner; path u<user_id> [design:91]
+            setup_id            INTEGER NOT NULL REFERENCES setups(id),   -- retention key [design:96]; NO ACTION (Q-20)
+            reservation_id      INTEGER UNIQUE                       -- the slot it was captured from (inferred);
+                                REFERENCES reservations(id) ON DELETE SET NULL,  -- sync deletes released reservations
+                                                                     -- (catalog.py:564, :578); UNIQUE = D-7-4 row reuse
+            key_id              INTEGER NOT NULL,                    -- the key key.age is wrapped to (inferred; §4.1)
+            state               TEXT    NOT NULL DEFAULT 'capturing'
+                                CHECK (state IN ('capturing', 'saved', 'failed')),   -- [design:120]; Q-15
+            delete_after        TEXT,                                -- end of a 24h delete hold; NULL = not held (Q-13)
+            delete_requested_by INTEGER REFERENCES users(id),        -- who started the hold (Q-13)
+            hold_approval_id    INTEGER REFERENCES admin_approvals(id),  -- set only for a hold placed by an approval
+                                                                     -- (lost_key_reset); NULL for an own delete hold (Q-6)
+            created_at          TEXT    NOT NULL,
+            updated_at          TEXT    NOT NULL,
+            FOREIGN KEY (key_id, user_id) REFERENCES keys(id, user_id),
+            CHECK ((delete_after IS NULL) = (delete_requested_by IS NULL)),
+            CHECK (hold_approval_id IS NULL OR delete_after IS NOT NULL),
+            CHECK (delete_after IS NULL OR state = 'saved'),         -- only saved rows are held; unsaved ones
+                                                                     -- purge with hold 0 [design:112] (inferred)
+            CHECK (delete_after IS NULL OR delete_after > created_at),
+            CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+                   AND (delete_after IS NULL OR
+                        delete_after GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+        )""")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_user_setup ON snapshots(user_id, setup_id, state, created_at)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_key        ON snapshots(key_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_delete_due ON snapshots(delete_after) "
+        "WHERE delete_after IS NOT NULL")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_snapshots_hold_approval ON snapshots(hold_approval_id) "
+        "WHERE hold_approval_id IS NOT NULL")
+
+    # -- columns (v4 §3.7, §3.8, §3.9) --
+    add_column(conn, "reservations", "save_snapshot",
+               "INTEGER NOT NULL DEFAULT 0 CHECK (save_snapshot IN (0, 1))")
+    add_column(conn, "jobs", "snapshot_id",
+               "INTEGER REFERENCES snapshots(id) ON DELETE SET NULL")
+    add_column(conn, "setups", "snapshot_enabled",
+               "INTEGER NOT NULL DEFAULT 0 CHECK (snapshot_enabled IN (0, 1))")
+
+    # -- the restore kind (v4 §3.8, Q-14): rewrite the jobs.kind CHECK text in place, the m6
+    # way. A text edit touches no row, so no FK check or ON DELETE action can fire; never
+    # rebuild the table. --
+    sql = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+    ).fetchone()[0]
+    # v4.1-3 (signed off by Rama 24 Nov): skip only on the exact new text (v4: "'restore'" in
+    # sql); otherwise the old text must occur exactly once (v4: _OLD_JOB_KINDS not in sql), or
+    # raise, and apply() rolls back: user_version and the schema stay unchanged.
+    if _NEW_JOB_KINDS in sql:
+        return
+    if sql.count(_OLD_JOB_KINDS) != 1:
+        raise RuntimeError(
+            "migration 14: cannot find the jobs.kind CHECK to rewrite "
+            f"(expected {_OLD_JOB_KINDS!r} in the table definition)")
+    version = conn.execute("PRAGMA schema_version").fetchone()[0]
+    conn.execute("PRAGMA writable_schema = ON")
+    conn.execute(
+        "UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = 'jobs'",
+        (sql.replace(_OLD_JOB_KINDS, _NEW_JOB_KINDS, 1),))
+    conn.execute(f"PRAGMA schema_version = {int(version) + 1}")
+    conn.execute("PRAGMA writable_schema = OFF")
+
+
+# Derived from m5's CHECK text (migrations.py `_m5_jobs`), not copied from the reverted commit.
+_OLD_JOB_KINDS = "'deploy', 'cleanup', 'health_probe', 'reconcile')"
+_NEW_JOB_KINDS = "'deploy', 'cleanup', 'health_probe', 'reconcile', 'restore')"
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "reservation_mode", _m1_reservation_mode),
     Migration(2, "ip_leases", _m2_ip_leases),
@@ -282,6 +515,7 @@ MIGRATIONS: list[Migration] = [
     Migration(11, "token_expiry", _m11_token_expiry),
     Migration(12, "burned_reverted_v12", _m12_burned),
     Migration(13, "burned_reverted_v13", _m13_burned),
+    Migration(14, "snapshots_v1", _m14_snapshots_v1),
 ]
 
 

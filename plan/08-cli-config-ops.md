@@ -30,15 +30,25 @@ additionally accepts `YYYY-MM-DDTHH:MM` (interpreted as UTC) and the literal `no
 
 ### `daolab init`
 
-Creates the sqlite file at `DAOLAB_DB_PATH`, applies `service/schema.sql`, enables WAL, seeds
+Creates the sqlite file at `DAOLAB_DB_PATH`, applies `service/schema.sql` and every pending
+migration (`service/migrations.py`), enables WAL, seeds
 the 15 planned catalog rows from the README use-case table (`yaml_path` NULL) plus the `diy`
 pseudo-row (`yaml_path = 'builtin'`). Idempotent: safe to re-run, never overwrites existing rows.
+
+After upgrading to a build with a newer schema (e.g. B-104 PR B: v13 -> v14), run `daolab init`
+once per DB before starting the engine. The engine refuses any version mismatch
+(`engine.py:629-633`). `daolab init` is idempotent and refuses DBs from the reverted Phase 8
+attempt.
 
 ```
 $ daolab init
 db: ./daolab.db (journal_mode=wal)
+schema: v14 (applied: v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14)
 usecases seeded: 15 planned + diy
 ```
+
+That is a fresh DB. On a v13 DB the schema line reads `schema: v14 (applied: v14)`, and when
+nothing is pending, `schema: v14 (up to date)`.
 
 ### `daolab sync`
 
@@ -267,15 +277,16 @@ failing playbook's task output appears under `daolab-engine`.
   [`deploy/backup/README.md`](../deploy/backup/README.md). Restore in short: stop
   `daolab-api.service` and `daolab-engine.timer`, replace `daolab.db`, delete stale
   `-wal`/`-shm` files, `daolab init`, start again.
-- **Schema evolution stance** — no migration framework. `service/schema.sql` is the single
-  source of truth and every statement is `CREATE ... IF NOT EXISTS`, so `daolab init` is always
-  safe to re-run. Catalog tables (`pools`, `setups`, `resources`, `usecases`) are fully
-  regenerable from YAML via `daolab sync`; the rest carry state (`users`, `reservations`, `vms`,
-  `jobs`, `ip_leases`, `audit_events`, `health_snapshots`; `ip_pools` is re-synced from
-  `DAOLAB_IP_POOL`) — back them up (`deploy/backup/`, B-101).
-  A schema change ships as an edit to `schema.sql` plus, when live rows must survive, a
-  hand-applied `ALTER TABLE` against the file (take a `.backup` first). Dev databases are
-  simply deleted and rebuilt (`daolab init` + `daolab sync` + `daolab add-user`).
+- **Schema evolution** — `service/schema.sql` is the frozen v0 baseline. Every later change is
+  an append-only, numbered migration in `service/migrations.py`, tracked by
+  `PRAGMA user_version` and applied by `daolab init`, each in one transaction with its version
+  bump. `daolab init` refuses a DB newer than the code (`SchemaTooNew`) and a DB with the
+  reverted Phase 8 shapes (`RevertedSchema`). Catalog tables (`pools`, `setups`, `resources`,
+  `usecases`) are fully regenerable from YAML via `daolab sync`; the rest carry state (`users`,
+  `reservations`, `vms`, `jobs`, `ip_leases`, `audit_events`, `health_snapshots`, and since v14
+  `keys`, `key_challenges`, `admin_approvals`, `snapshots`; `ip_pools` is re-synced from
+  `DAOLAB_IP_POOL`) — back them up (`deploy/backup/`, B-101). Dev databases are simply deleted
+  and rebuilt (`daolab init` + `daolab sync` + `daolab add-user`).
 - **Postgres trigger** — exactly one condition, per README Phase 4: move sqlite → Postgres
   **only if you get >1 API worker**. Data volume, user count, and uptime wishes are not
   triggers; a single uvicorn worker plus WAL covers this system's write rates.

@@ -1,0 +1,310 @@
+--- B-104-DDL.v4.md
++++ B-104-DDL.md
+@@ -1,18 +1,19 @@
+-# B-104 — DDL (v4)
++# B-104 — DDL (v4.1)
+ 
+-Date: 2026-11-23. Status: **v4, signed off by Rama 2026-11-23, with conditions applied**. Nothing is built.
++Date: 2026-11-23 (v4); 2026-11-24 (v4.1). Status: **v4.1, signed off by Rama 23-24 Nov. Built in PR B on origin/rama a67d4ac.**
+ 
+-- **Base:** `origin/rama` `a03f858` (PR #8, B-103, merged).
+-  - `git diff --stat 747d10d a03f858 -- service tests/test_migrations.py tests/test_reservation_states.py plan/10-backend-tasksheet.md` is empty, so every file:line citation made against `747d10d` still holds.
+-- **History:** `B-104-DDL.v1-v2.s3.diff`, `B-104-DDL.v1-v2.s7.diff`, `B-104-DDL.v2-v3.diff`, `B-104-DDL.v3-v4.diff`.
++- **Base:** built in PR B on `origin/rama` `a67d4ac` (PR #9, B-104 PR A, merged). `service/migrations.py` line numbers refer to `a67d4ac`.
++  - Other file:line citations were made against `747d10d` / `a03f858` and still hold at `a67d4ac`: PR A changed `cli.py:46` in place and added `engine.py:634-638` after the cited lines.
++- **History:** `B-104-DDL.v1-v2.s3.diff`, `B-104-DDL.v1-v2.s7.diff`, `B-104-DDL.v2-v3.diff`, `B-104-DDL.v3-v4.diff`, `B-104-DDL.v4-v4.1.diff`.
+ - Read `FINDINGS.md` first: it has the file:line facts this draft relies on.
+ 
+ **Citation keys:**
+ - **design:NN** = `origin/akshay-p8-gate:plan/design/p8-gate-review/p8-snapshot-design-v1.1.md` line NN.
+-- **E-n (errata:NN)** = `~/notes/p8-design-errata-v1.2.md` (signed off by Rama, 23 Nov 2026), line NN.
++- **E-n (errata:NN)** = errata v1.2 (signed off by Rama, 23 Nov 2026; Rama's errata docs PR pending), line NN.
+ - **Rama 19:5x** = Rama's answers of 23 Nov, recorded in §0.
+ - **(inferred)** = my reasoning, not a decision anyone has made.
+ - **Q-n** = an item in §7. **N-n** = an item in the B-105 / B-107 notes (§8, §9).
++- **Review files:** FINDINGS.md, probe.py, ddl-check.py, their outputs (probe-out.txt, ddl-check-out.txt) and the v1-v2 and v2-v3 diffs are on `origin/akshay-p8-gate` in `plan/design/p8-impl/b104-akshay/`; this folder holds only this document and the v3-v4 and v4-v4.1 diffs.
+ 
+ ---
+ 
+@@ -36,7 +37,8 @@
+     - immediate revoke REJECTED;
+     - a booking refusal for a later task.
+   - **Q-16:** a held row is neither counted nor pruned.
+-- **Not in the sign-off list:** Q-13 (where holds live). Its text is updated for `hold_approval_id` and its status is unchanged (proposed). See §7.
++- **SIGNED OFF (24 Nov):** Q-13 (where holds live), the delete-sweep rule (§3.3, §3.5) and the table order (§3.1). See §7.
++- **v4.1 (signed off 24 Nov):** v4.1-1..6, see §11.
+ 
+ ---
+ 
+@@ -47,7 +49,7 @@
+ ```python
+ def _m12_burned(conn: sqlite3.Connection) -> None:
+     """E-4: version 12 is burned. The reverted B-104 attempt (4ec115e, reverted in 9c8a089)
+-    used it, so it stays a no-op forever. `_refuse_reverted_schema` keeps those DBs out."""
++    used it, so it stays a no-op forever. `refuse_reverted_schema` keeps those DBs out."""
+ 
+ def _m13_burned(conn: sqlite3.Connection) -> None:
+     """E-4: version 13 is burned; see _m12_burned."""
+@@ -58,9 +60,9 @@
+ 
+ **Why they must exist:**
+ - E-4 (errata:13): burn 12 and 13; B-104 starts at 14.
+-- `_check_contiguous()` (`service/migrations.py:273-280`) runs at import and refuses anything but 1..N. Without 12 and 13, a `Migration(14, ...)` makes the module fail to import.
++- `_check_contiguous()` (`service/migrations.py:288-295`) runs at import and refuses anything but 1..N. Without 12 and 13, a `Migration(14, ...)` makes the module fail to import.
+ 
+-**Why they're safe on every kind of DB.** `apply()` still bumps `user_version` in the same transaction (`migrations.py:308-315`).
++**Why they're safe on every kind of DB.** `apply()` still bumps `user_version` in the same transaction (`migrations.py:360-367`).
+ 
+ | DB | What happens at 12/13 | Safe because |
+ |---|---|---|
+@@ -68,7 +70,7 @@
+ | at 11 (every real DB today) | same | no-op |
+ | new code, crashed after 12 or 13 | resumes at the next version | nothing to redo; a no-op is trivially idempotent (header rule 2, `migrations.py:14-15`) |
+ | reverted v12 or v13 | **never reached**: the guard (§2) refuses first | — |
+-| already ≥ 14 | skipped as usual (`migrations.py:306`) | — |
++| already ≥ 14 | skipped as usual (`migrations.py:358`) | — |
+ 
+ Header rule 1 (never edit or reorder, `migrations.py:12-13`) is kept: 12 and 13 are new entries, and existing ones are untouched. Migration names are not stored in the DB (only `user_version` is), so the names may differ from the reverted `"snapshots"` and `"restore_jobs"` without any effect.
+ 
+@@ -113,13 +115,12 @@
+ - **Confirmed by Rama at sign-off (R-6):** no `setups.snapshot_bdfs` column, ever, and M5 stays a marker.
+ 
+ ### 2.2 Where it runs
+-- **In `migrations.apply()`**, right after the existing `SchemaTooNew` check (`migrations.py:300-303`) and **before** the loop (`:305`).
++- **In `migrations.apply()`**, right after the existing `SchemaTooNew` check (`migrations.py:351-354`) and **before** the loop (`:357`).
+ - On **every** call, including when the DB is already up to date. It costs a few `PRAGMA table_info` reads. It also means a DB that somehow reached ≥14 with reverted tables is still refused.
+ - `SchemaTooNew` stays first, so a DB from newer code keeps its existing error and tests (`tests/test_migrations.py:120-125, 162-170`).
+ - It is read-only (`sqlite_master` and `PRAGMA table_info` only), so it needs no transaction (inferred). Outside the threat model, a reverted build running concurrently could race it. That isn't a real deployment case (the reverted code is on no deployable branch).
+ - `apply()` is reached from `models.init_db` (`models.py:37-43`) → `cli.cmd_init` (`cli.py:45`), the only non-test caller, so `daolab init` is covered.
+-- **Not covered by this placement: the engine and the API.**
+-  - The engine already refuses any version mismatch (`engine.py:629-633`), so a reverted-v13 DB (13) under new code (14) cannot start the engine.
++- **The engine is covered too, since PR A:** it refuses any version mismatch (`engine.py:629-633`), then runs the guard (`engine.py:634-638`), so a reverted DB is refused even at the latest version.
+   - The API has no schema check at all. See Q-3.
+ 
+ ### 2.3 Exception and message
+@@ -128,8 +129,8 @@
+ class RevertedSchema(Exception):
+     """The DB has tables or columns from the reverted Phase 8 attempt (4ec115e)."""
+ 
+-def _refuse_reverted_schema(conn) -> None:
+-    found = [label for label, hit in _REVERTED_MARKERS(conn) if hit]   # fixed labels only
++def refuse_reverted_schema(conn) -> None:        # public; _REVERTED_MARKERS is a tuple
++    found = [label for label, check in _REVERTED_MARKERS if check(conn)]   # fixed labels only
+     if found:
+         raise RevertedSchema(
+             "database has schema from the reverted Phase 8 snapshot attempt "
+@@ -143,10 +144,9 @@
+ 
+ **CLI:** `cmd_init` must exit 1 with this message, not a traceback. That is one change in `cli.py:46`: `except (migrations.SchemaTooNew, migrations.RevertedSchema)` (Q-4).
+ 
+-**Files B-104 touches** (proposed):
+-- `service/migrations.py`: placeholders, guard, migration 14;
+-- `service/cli.py:46`: one `except` line;
+-- `tests/test_migrations.py`, or a new `tests/test_migrations_p8.py`.
++**Files B-104 touched:**
++- PR A: `service/migrations.py` (placeholders, guard), `service/cli.py:46` (one `except` line), `service/engine.py:634-638` (the guard at startup), `tests/test_migrations_guard.py`;
++- PR B: `service/migrations.py` (migration 14), `tests/test_migration_14.py` (new), `tests/test_jobs.py`, `tests/test_migrations_guard.py`; and this document.
+ 
+ To be checked against the B-104 row when Rama adds `snapshot-design.md` §8 (R-1). No B-103..B-114 row exists in `plan/10` on any branch today (FINDINGS §1.5).
+ 
+@@ -179,11 +179,11 @@
+ `Migration(14, "snapshots_v1", _m14_snapshots_v1)` holds everything in §3.3–§3.9.
+ 
+ Why:
+-1. `apply()` gives each migration one `BEGIN IMMEDIATE` (`migrations.py:308-315`). One migration means a DB is either fully pre-snapshot or fully snapshot-capable, with no mid-states for code or the guard to reason about.
++1. `apply()` gives each migration one `BEGIN IMMEDIATE` (`migrations.py:360-367`). One migration means a DB is either fully pre-snapshot or fully snapshot-capable, with no mid-states for code or the guard to reason about.
+ 2. The objects reference each other: `snapshots → keys`, `snapshots → admin_approvals`, `key_challenges → keys`, `jobs → snapshots`. They form one unit.
+ 3. The design's 12/13/14 split (design:117) is void under E-4 (errata:13). The two deltas signed off in design:122 (`key_challenges.target_ref` plaintext; `admin_approvals`) land in this migration 14. With Rama's sign-off of this DDL, E-14 (errata:23) is closed.
+ 
+-**Order inside `_m14_snapshots_v1`** (inferred):
++**Order inside `_m14_snapshots_v1`** (SIGNED OFF, 24 Nov):
+ 1. `keys`, `key_challenges`, `admin_approvals`, `snapshots` (FK targets first; `snapshots.hold_approval_id` references `admin_approvals`);
+ 2. the `add_column` calls of §3.7–§3.9;
+ 3. the `jobs.kind` CHECK rewrite of §3.8.
+@@ -229,6 +229,7 @@
+     UNIQUE (id, user_id),                                    -- target of the composite FKs below (inferred)
+     CHECK (activated_by IS NULL OR activated_by <> user_id), -- "different admin" = not the owner (Q-7)
+     CHECK ((state = 'pending') = (activated_by IS NULL)),    -- retired/revoked keys were once active
++    CHECK ((activated_by IS NULL) = (activated_at IS NULL)),
+     CHECK (created_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+            AND updated_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+            AND (activated_at IS NULL OR
+@@ -266,7 +267,7 @@
+    - `executed_at` is set.
+    - From then on, the key's open challenges fail the CAS (it requires `state = 'active'`, §3.4), and the user's `pending` key may be activated.
+ - **Rows are matched by `hold_approval_id`, never by timestamp.**
+-- **The generic delete sweep** (§3.5) handles only rows with `hold_approval_id IS NULL`. Rows held by an approval go only through that approval's execution, so revoke and delete stay in one transaction (inferred).
++- **The generic delete sweep** (§3.5) handles only rows with `hold_approval_id IS NULL`. Rows held by an approval go only through that approval's execution, so revoke and delete stay in one transaction (SIGNED OFF, 24 Nov).
+ - **Later task, not B-104:** the API/engine refuses snapshot-enabled bookings for a user while a `lost_key_reset` approval for that user is `pending`, or `approved` but not yet executed. That way no new snapshot is wrapped to a key that is about to be revoked.
+ 
+ **Immediate revoke: REJECTED** (Rama, sign-off). The owner could never cancel, because their `cancel_delete` would fail the active-key CAS.
+@@ -382,7 +383,7 @@
+ - **An own delete hold:** a user delete (`delete` challenge, `target_ref` = the snapshot's `public_id`) or an admin delete sets `delete_after = now + 24h` and `delete_requested_by` = that user, with `hold_approval_id` NULL.
+   - `cancel_delete` on that `public_id` clears both columns.
+   - When `delete_after` has passed, the engine's delete sweep deletes the three files and then the row (Q-15).
+-  - **The sweep handles only `hold_approval_id IS NULL` rows** (inferred).
++  - **The sweep handles only `hold_approval_id IS NULL` rows** (SIGNED OFF, 24 Nov).
+ - **An approval hold** (`lost_key_reset`): the approval's transaction sets the same two columns plus `hold_approval_id` on every unheld `saved` snapshot of the key under reset (§3.3).
+   - The owner's `cancel_delete` on `approval:<id>` clears all three on the rows `WHERE hold_approval_id = <id>`.
+   - The approval's execution deletes every snapshot of the key.
+@@ -433,7 +434,7 @@
+     action        TEXT    NOT NULL
+                   CHECK (action IN ('lost_key_reset', 'tripwire_accept', 'tripwire_rebaseline',
+                                     'home_discard')),                    -- Q-11 (final)
+-    target_ref    TEXT    NOT NULL                                       -- Q-11: user:<id>, hw_class, setup name
++    target_ref    TEXT    NOT NULL                                       -- Q-11: key:<id>, hw_class, setup:<name>
+                   CHECK (length(target_ref) BETWEEN 1 AND 128
+                          AND target_ref NOT GLOB '*[^a-z0-9._:-]*'
+                          AND target_ref NOT LIKE 'age-secret-key-%'),
+@@ -464,12 +465,12 @@
+                 executed_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'))
+ );
+ CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_approvals_one_open
+-    ON admin_approvals(action, target_ref) WHERE state = 'pending';      -- (inferred)
++    ON admin_approvals(action, target_ref) WHERE state = 'pending' OR (state = 'approved' AND executed_at IS NULL);
+ CREATE INDEX IF NOT EXISTS idx_admin_approvals_due
+     ON admin_approvals(execute_after) WHERE state = 'approved' AND executed_at IS NULL;
+ ```
+ 
+-**How each action uses it (Q-13; inferred where not stated):**
++**How each action uses it (Q-13, SIGNED OFF 24 Nov; the tripwire and home_discard rows are inferred where not stated):**
+ 
+ | Action | On approval | `execute_after` | `executed_at` |
+ |---|---|---|---|
+@@ -507,13 +508,13 @@
+ ```
+ 
+ **The `restore` kind (Q-14, Option A):**
+-- It uses the m6 method (`migrations.py:167-195`) on `jobs`:
++- It uses the m6 method (`migrations.py:171-195`) on `jobs`:
+   - read `sqlite_master.sql` for `jobs`;
+-  - if `'restore'` is already present, skip;
+-  - else require `_OLD_JOB_KINDS` and raise `RuntimeError("migration 14: cannot find the jobs.kind CHECK to rewrite ...")` if it is missing;
++  - if `_NEW_JOB_KINDS` is already present, skip (v4.1-3);
++  - else require `_OLD_JOB_KINDS` exactly once (v4.1-3), and otherwise raise `RuntimeError("migration 14: cannot find the jobs.kind CHECK to rewrite ...")`; `apply()` rolls back, so `user_version` and the schema stay unchanged;
+   - else `writable_schema` → replace once → bump `schema_version` → `writable_schema = OFF`.
+-- **It is safe to skip on `'restore'`** only because the guard already refused every DB where the reverted v13 put `'restore'` there (M2).
+-- **Same text as the reverted strings:** these two strings are byte-identical to `4ec115e:service/migrations.py:310-311`. That is unavoidable, because both are derived from m5's CHECK text (`migrations.py:147-148`). The constants and function are written from m5/m6, not copied from the reverted commit.
++- **It is safe to skip on `_NEW_JOB_KINDS`** only because the guard already refused every DB where the reverted v13 put `'restore'` there (M2).
++- **Same text as the reverted strings:** these two strings are byte-identical to `4ec115e:service/migrations.py:310-311`. That is unavoidable, because both are derived from m5's CHECK text (`migrations.py:151-152`). The constants and function are written from m5/m6, not copied from the reverted commit.
+ 
+ **Other job changes:**
+ - **Capture stays inside `cleanup`.** There is no `capture` kind (design:87-96).
+@@ -530,7 +531,7 @@
+            "INTEGER NOT NULL DEFAULT 0 CHECK (snapshot_enabled IN (0, 1))")
+ ```
+ 
+-- **In the DB:** the API decides `save_snapshot` from this flag at booking time (design:38-39), and handlers never read YAML (`migrations.py:211-215`).
++- **In the DB:** the API decides `save_snapshot` from this flag at booking time (design:38-39), and handlers never read YAML (`migrations.py:215-219`).
+ - **Default 0:** every existing setup stays status quo.
+ - **Admin-controlled (Q-18):** it is set through an admin action (a later task), like `availability`, and is **not** in `catalog.sync`'s `fields` (`catalog.py:520-526`). Sync then never resets it, and an admin can drain the setup before disabling (design:41).
+ - With E-13 (errata:22): the one-time decision at enable defaults to preserving the current home. A wipe is a two-admin `home_discard` (§3.6).
+@@ -638,7 +639,7 @@
+ 
+ ## 6. Test plan for the build steps
+ - Synthetic DBs only: `:memory:` or `tmp_path`.
+-- **Never** `~/dao-lab-selfserve/var`, `var/showcase.db*` or any real DB.
++- **Never** a real checkout's `var/` (e.g. `var/showcase.db*`) or any real DB.
+ - Reverted shapes are built in the test from **literal DDL fixtures copied from FINDINGS §3** (the fingerprint), not by importing reverted code.
+ - Red first: each test is committed failing, then the code makes it pass. `make test` after every change.
+ 
+@@ -666,6 +667,8 @@
+ 
+ ### 6.2 Migrations 12, 13 and 14
+ 
++Implemented in `tests/test_migration_14.py` as `test_tN_*` (T-2 is `tests/test_migrations_guard.py::test_t2_placeholders_change_nothing_but_user_version`; T-18 is the full suite). The v4.1 tests and the extras follow the table.
++
+ | ID | Case |
+ |---|---|
+ | T-1 | fresh DB reaches 14; `applied` includes 12 and 13 (existing `test_fresh_db_reaches_latest`, `tests/test_migrations.py:44-50`, keeps passing) |
+@@ -690,16 +693,25 @@
+ | T-17 | **`execute_after`**: `executed_at < execute_after` refused; `executed_at >= execute_after` accepted; `execute_after <= created_at` refused; NULL `execute_after` (tripwire) executes at once |
+ | T-18 | the full existing suite stays green (`make test`), on both venvs as for B-103 |
+ 
++| ID | Case | pytest |
++|---|---|---|
++| V-1 (v4.1-1) | a second `lost_key_reset` for the same target is refused while the first is approved and not executed; allowed again once it is executed or cancelled | `test_v41_1_second_reset_refused_while_first_is_approved_and_unexecuted[executed]`, `[cancelled]` |
++| V-2 (v4.1-2) | `activated_by` without `activated_at`, and the reverse, refused | `test_v41_2_keys_activation_pair[activated_by without activated_at]`, `[activated_at without activated_by]` |
++| V-3 (v4.1-3) | the rewrite raises (and rolls back) when the old kinds text occurs 0 or 2 times; skips when the new text is present | `test_t12_rewrite_refuses_unless_old_kinds_occur_exactly_once[old text 0 times]`, `[old text 2 times]`; `test_t12_rewrite_skips_when_new_kinds_already_present` |
++| V-4 (v4.1-4) | execution when the key is no longer active (retired or revoked): no revoke, no deletion, every snapshot of the key kept | `test_v41_4_execution_when_key_no_longer_active_deletes_nothing[retired]`, `[revoked]` |
++| X-1 | one transaction: a failure injected after the rewrite leaves no new table, index or column, the old jobs.kind CHECK and user_version 13 | `test_m14_is_one_transaction` |
++| X-2 | `PRAGMA integrity_check` ok and `foreign_key_check` empty after an upgrade from v11 with rows | `test_m14_integrity_and_foreign_key_check_clean` |
++
+ ### 6.3 What `ddl-check.py` already verifies on the draft
+-`~/notes/b104/ddl-check.py` parses this file's `sql` blocks (the `CREATE TABLE` blocks and the §3.5 retention prune), `add_column` calls and `_OLD/_NEW_JOB_KINDS` strings. It applies them to a synthetic v11 DB in the §3.1 order and exercises a sample of T-5…T-21. Output: `ddl-check-out.txt`.
++`ddl-check.py` parses this file's `sql` blocks (the `CREATE TABLE` blocks and the §3.5 retention prune), `add_column` calls and `_OLD/_NEW_JOB_KINDS` strings. It applies them to a synthetic v11 DB in the §3.1 order and exercises a sample of T-5…T-21. Output: `ddl-check-out.txt`.
+ 
+ ---
+ 
+ ## 7. Decisions (signed off by Rama, 2026-11-23)
+ 
+ **Status:**
+-- Every item below is **APPROVED** (as proposed) or **APPROVED WITH CHANGES** (the changes are applied in v4).
+-- The one exception is Q-13, which was not in the sign-off list (see item 11).
++- Every item below is **APPROVED** (as proposed) or **APPROVED WITH CHANGES** (the changes are applied in v4 and v4.1).
++- Q-13 (item 11), the delete-sweep rule and the table order: **SIGNED OFF (24 Nov)**.
+ 
+ The numbers are kept from v1 for traceability:
+ - Q-2, Q-17 and Q-22 are folded into the text (§2.3, §2.1, §2.4);
+@@ -711,8 +723,7 @@
+ 2. **Q-3 — Guard placement beyond `daolab init`. APPROVED.**
+    B-104 places the guard in `migrations.apply()` only (covers `daolab init`). Two follow-ups:
+    - (a) the API gains a startup check, the same `have == want` test as `engine.py:629-633`, plus the guard, in the task that owns `api.py` startup;
+-   - (b) the engine calls the guard beside `engine.py:629`, as a one-line change for Akshay (the file owner) to approve separately.
+-   Until then, the engine is already protected by its version check (a reverted DB is at 12/13, the code at 14).
++   - (b) the engine calls the guard beside `engine.py:629`: done in PR A (`engine.py:634-638`), approved by Akshay as the file owner.
+ 3. **Q-4 — Exception shape. APPROVED.** A new `RevertedSchema(Exception)`, caught with `SchemaTooNew` in a tuple at `cli.py:46`; `SchemaTooNew` is not reparented.
+ 4. **Q-5 — One migration or several. APPROVED.** One migration 14 (§3.1).
+ 5. **Q-6 — Key lifecycle and the lost-key reset. APPROVED WITH CHANGES.**
+@@ -748,15 +759,19 @@
+ 9. **Q-11 — `admin_approvals` actions and targets. APPROVED; final.**
+    - **The four actions:** `lost_key_reset`, `tripwire_accept`, `tripwire_rebaseline`, `home_discard`.
+    - **`home_discard`:** two admins, a 24h hold (`execute_after = now + 24h`), visible to the owner, owner-cancellable by `cancel_delete` on `approval:<id>` (design:112). It also covers the E-13 legacy-home wipe ("wipe only with explicit two-admin approval", errata:22).
+-   - **Targets:** `user:<id>` (reset), the `hw_class` (tripwire), the setup name (discard).
+-   - Pending approvals don't expire. An admin can `cancel` them, and the one-open index stops duplicates.
++   - **Targets:** `key:<id>` (reset; **APPROVED 24 Nov as a change to Q-11**, was `user:<id>`), the `hw_class` (tripwire), `setup:<name>` (discard).
++   - Pending approvals don't expire. An admin can `cancel` them, and the one-open index (pending, or approved and not yet executed; v4.1-1) stops duplicates.
++   - **Rama's code rules for the later tasks (B-105/B-106), 24 Nov:**
++     - the target must resolve to an active key at request and approval;
++     - at execution, act only if that key is still active; otherwise no-op/cancel with audit and no deletion;
++     - no rotation while a reset on that key is pending or approved-unexecuted;
++     - reject a second open reset for the same user (a code rule, since the index is per target, i.e. per key).
+ 10. **Q-12 — At most 3 open challenges. APPROVED.** A count inside `BEGIN IMMEDIATE` in code, with no trigger. Consumed and expired rows are kept; pruning them is a later decision.
+-11. **Q-13 — Where holds live. Not in Rama's sign-off list; status unchanged (proposed).** The text is updated for the Q-6 changes.
++11. **Q-13 — Where holds live. SIGNED OFF (24 Nov).** The text is updated for the Q-6 changes.
+     - No fifth table.
+     - **Own delete holds:** `snapshots.delete_after` + `snapshots.delete_requested_by` (FK `users`), with `hold_approval_id` NULL.
+     - **Approval holds:** the same two columns plus `snapshots.hold_approval_id` (FK `admin_approvals`). `admin_approvals.execute_after` holds the reset and discard deadlines, and for a reset it carries the same instant as the rows' `delete_after` (§3.6).
+-    - Cancel and execution match rows by `hold_approval_id`. The generic delete sweep handles only `hold_approval_id IS NULL` rows (inferred).
+-    - Q-6's approval already depends on these columns, so this item is very likely settled in substance. Ask Rama to confirm it explicitly.
++    - Cancel and execution match rows by `hold_approval_id`. The generic delete sweep handles only `hold_approval_id IS NULL` rows (SIGNED OFF, 24 Nov).
+ 12. **Q-14 — Restore job. APPROVED.** Option A: a `restore` job kind via the m6-style CHECK rewrite (§3.8). Capture stays inside `cleanup`.
+ 13. **Q-15 — Snapshot states. APPROVED.**
+     - States: `capturing / saved / failed`.
+@@ -794,7 +809,25 @@
+ 
+ ## 10. Outside B-104, for Rama
+ 
+-- **`reservations.access_password` is an existing plaintext secret column** (migration 10, `service/migrations.py:239-248`; FINDINGS §2).
++- **`reservations.access_password` is an existing plaintext secret column** (migration 10, `service/migrations.py:243-252`; FINDINGS §2).
+   - It holds the generated deploy password while a slot is live; it is "wiped when it ends" per the m10 docstring.
+   - E-10 (errata:19) applies file-only secrets to *new* Phase 8 code, so B-104 leaves it alone. It is still a secret in the DB and in DB backups (`deploy/backup/backup-db.sh`, design:34).
+   - Worth a separate decision: hash it, move it out of the DB, or document the exposure window.
++
++## 11. v4.1 changes (signed off 24 Nov)
++
++**v4.1-1, the one-open approval index.** `idx_admin_approvals_one_open` keeps its name and columns, and its `WHERE` becomes `state = 'pending' OR (state = 'approved' AND executed_at IS NULL)`. In v4, a second `lost_key_reset` (or `home_discard`) for the same target could be opened and approved while the first was approved but not yet executed, which leaves the execution of two approvals undefined. Test: V-1, `test_v41_1_second_reset_refused_while_first_is_approved_and_unexecuted`.
++
++**v4.1-2, the activation pair.** `keys` keeps `CHECK ((state = 'pending') = (activated_by IS NULL))` and adds `CHECK ((activated_by IS NULL) = (activated_at IS NULL))`. v4 accepted an `active` key with `activated_by` set and `activated_at` NULL. `admin_approvals` already pairs `decided_by` with `decided_at`. Test: V-2, `test_v41_2_keys_activation_pair`.
++
++**v4.1-3, an exact jobs.kind rewrite.** The rewrite skips only when the exact `_NEW_JOB_KINDS` text is present, and otherwise requires `_OLD_JOB_KINDS` exactly once. If not, it raises the §3.8 `RuntimeError`, and `apply()` rolls back, so `user_version` and the schema are unchanged. v4 skipped on any `'restore'` and replaced the first of possibly several matches. Tests: V-3, `test_t12_rewrite_refuses_unless_old_kinds_occur_exactly_once` and `test_t12_rewrite_skips_when_new_kinds_already_present`; also `test_t4_m14_twice_in_one_transaction_is_a_noop`.
++
++**v4.1-4, `lost_key_reset` targets `key:<id>`.** This was `user:<id>`, and the change is approved as a change to Q-11. The approval names the key under reset, so a later rotation can't change which key a reset revokes. Rama's code rules for B-105/B-106 are in §7 Q-11, and include "at execution act only if that key is still active; otherwise no-op/cancel with audit and no deletion". DDL: a comment in §3.6 only, because the `target_ref` CHECK already admits `key:12`. Tests: T-16, T-19, T-20 and V-1 use `key:<id>`; V-4, `test_v41_4_execution_when_key_no_longer_active_deletes_nothing`, covers the execution rule as the tests implement it.
++
++**v4.1-5, `home_discard` targets `setup:<name>`.** The `admin_approvals` target now matches the `discard_home` challenge's `setup:<name>` (Q-10), instead of the bare setup name. DDL: a comment in §3.6 only. Tests: T-6 and T-17 use `setup:tb-01`.
++
++**v4.1-6, "(inferred)" tags.** Only the DDL tag on `idx_admin_approvals_one_open` is removed (v4.1-1 is signed off). The tag at v4:368, `CHECK (delete_after IS NULL OR state = 'saved')`, "purge with hold 0 [design:112] (inferred)", stays: it is about which rows can be held (design:112), not Q-13. In the prose, the tags on Q-13, the delete-sweep rule and the table order now read SIGNED OFF (24 Nov). Every other tag stays. Test: none, since these are comments; the doc-vs-code check shows this document's SQL is exactly what `_m14_snapshots_v1` sends.
++
++## 12. Operator note
++
++After upgrading to a build that contains this migration, run `daolab init` once per DB before starting the engine. The latest schema version is now 14, and the engine refuses any mismatch (`engine.py:629-633`). `daolab init` is idempotent, applies only the pending migrations (13 → 14 on a current DB), and refuses a DB from the reverted Phase 8 attempt (§2).
