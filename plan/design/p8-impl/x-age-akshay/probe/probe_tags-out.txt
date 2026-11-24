@@ -1,0 +1,146 @@
+## .venv: ansible-playbook [core 2.21.6]
+  -- (a) --list-tasks, no tags: rc=0
+       play #1 (localhost): resolve the setup	TAGS: []
+           load the setup YAML (manual runs only)	TAGS: [always]
+           build the member list from the setup YAML (manual runs only)	TAGS: [always]
+           load the use-case YAML (manual, non-diy runs only)	TAGS: [always]
+           where the playbooks live (imported playbooks see their own playbook_dir)	TAGS: [always]
+           fill in what a manual run did not pass	TAGS: [always]
+           find the DPU member and the dom0s	TAGS: [always]
+           a setup must have at least one XCP-ng host	TAGS: [always]
+           add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)	TAGS: [always]
+           add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)	TAGS: [always]
+       play #2 (r_dpu): the DPU	TAGS: []
+           the operator account can sudo without a password	TAGS: []
+           the tools and trees the runbooks use	TAGS: []
+           step: hw_class marker	TAGS: []
+           remember what is missing on the DPU	TAGS: []
+       play #3 (r_dom0): the XCP-ng hosts (only with VMs; through Xen Orchestra, B-93)	TAGS: []
+           the templates are in the host's pool	TAGS: []
+           the SR-IOV networks are in the host's pool	TAGS: []
+           remember what is missing on the host	TAGS: []
+       play #4 (r_dpu): age v1.1.1 on the DPU (only with --tags age)	TAGS: []
+       play #5 (localhost): report	TAGS: []
+           everything that is missing	TAGS: []
+           the testbed is ready for deploys	TAGS: []
+  -- (b1) --list-tasks --tags age: rc=0
+       play #1 (localhost): resolve the setup	TAGS: []
+           load the setup YAML (manual runs only)	TAGS: [always]
+           build the member list from the setup YAML (manual runs only)	TAGS: [always]
+           load the use-case YAML (manual, non-diy runs only)	TAGS: [always]
+           where the playbooks live (imported playbooks see their own playbook_dir)	TAGS: [always]
+           fill in what a manual run did not pass	TAGS: [always]
+           find the DPU member and the dom0s	TAGS: [always]
+           a setup must have at least one XCP-ng host	TAGS: [always]
+           add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)	TAGS: [always]
+           add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)	TAGS: [always]
+       play #2 (r_dpu): the DPU	TAGS: []
+       play #3 (r_dom0): the XCP-ng hosts (only with VMs; through Xen Orchestra, B-93)	TAGS: []
+       play #4 (r_dpu): age v1.1.1 on the DPU (only with --tags age)	TAGS: []
+           AGE-STUB controller step	TAGS: [age, never]
+           AGE-STUB dpu step	TAGS: [age, never]
+       play #5 (localhost): report	TAGS: []
+  -- (b2) run --tags age: rc=0
+     PLAY [resolve the setup] *******************************************************
+     TASK [load the setup YAML (manual runs only)] **********************************
+     TASK [build the member list from the setup YAML (manual runs only)] ************
+     TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+     TASK [where the playbooks live (imported playbooks see their own playbook_dir)] ***
+     ok: [localhost]
+     TASK [fill in what a manual run did not pass] **********************************
+     ok: [localhost]
+     TASK [find the DPU member and the dom0s] ***************************************
+     ok: [localhost]
+     TASK [a setup must have at least one XCP-ng host] ******************************
+     ok: [localhost] => {
+     TASK [add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)] ***
+     TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+     ok: [localhost]
+     PLAY [the DPU] *****************************************************************
+     PLAY [the XCP-ng hosts (only with VMs; through Xen Orchestra, B-93)] ***********
+     skipping: no hosts matched
+     PLAY [age v1.1.1 on the DPU (only with --tags age)] ****************************
+     TASK [AGE-STUB controller step] ************************************************
+     ok: [dpu-01 -> localhost] => {
+     TASK [AGE-STUB dpu step] *******************************************************
+     ok: [dpu-01] => {
+     PLAY [report] ******************************************************************
+  -- (b3) run with ANSIBLE_RUN_TAGS=age (the harness way): rc=0, 'dpu dpu-01' in output: True
+  -- (a2) run with no tags: rc=2, 'AGE-STUB' in output: False, 'ready: nothing missing' in output: False
+  -- (c1) copy bad.bin over an existing target, pin = good.bin's sha: rc=2; target sha before 02e74f177ed6c6df after 02e74f177ed6c6df unchanged=True
+     fatal: [localhost]: FAILED! => {"ansible_facts": {"discovered_interpreter_python": "/home/akshay/dao-lab-selfserve/.venv/bin/python3.12"}, "changed": false, "checksum": "402290552ed423f1eabde38a2c3f0c
+  -- (c2) copy good.bin: rc=0; target now == good.bin: True; mode 0o755
+  -- (c3) copy bad.bin to a new path: rc=2; target created: False
+## .venv-220: ansible-playbook [core 2.20.11]
+  -- (a) --list-tasks, no tags: rc=0
+       play #1 (localhost): resolve the setup	TAGS: []
+           load the setup YAML (manual runs only)	TAGS: [always]
+           build the member list from the setup YAML (manual runs only)	TAGS: [always]
+           load the use-case YAML (manual, non-diy runs only)	TAGS: [always]
+           where the playbooks live (imported playbooks see their own playbook_dir)	TAGS: [always]
+           fill in what a manual run did not pass	TAGS: [always]
+           find the DPU member and the dom0s	TAGS: [always]
+           a setup must have at least one XCP-ng host	TAGS: [always]
+           add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)	TAGS: [always]
+           add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)	TAGS: [always]
+       play #2 (r_dpu): the DPU	TAGS: []
+           the operator account can sudo without a password	TAGS: []
+           the tools and trees the runbooks use	TAGS: []
+           step: hw_class marker	TAGS: []
+           remember what is missing on the DPU	TAGS: []
+       play #3 (r_dom0): the XCP-ng hosts (only with VMs; through Xen Orchestra, B-93)	TAGS: []
+           the templates are in the host's pool	TAGS: []
+           the SR-IOV networks are in the host's pool	TAGS: []
+           remember what is missing on the host	TAGS: []
+       play #4 (r_dpu): age v1.1.1 on the DPU (only with --tags age)	TAGS: []
+       play #5 (localhost): report	TAGS: []
+           everything that is missing	TAGS: []
+           the testbed is ready for deploys	TAGS: []
+  -- (b1) --list-tasks --tags age: rc=0
+       play #1 (localhost): resolve the setup	TAGS: []
+           load the setup YAML (manual runs only)	TAGS: [always]
+           build the member list from the setup YAML (manual runs only)	TAGS: [always]
+           load the use-case YAML (manual, non-diy runs only)	TAGS: [always]
+           where the playbooks live (imported playbooks see their own playbook_dir)	TAGS: [always]
+           fill in what a manual run did not pass	TAGS: [always]
+           find the DPU member and the dom0s	TAGS: [always]
+           a setup must have at least one XCP-ng host	TAGS: [always]
+           add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)	TAGS: [always]
+           add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)	TAGS: [always]
+       play #2 (r_dpu): the DPU	TAGS: []
+       play #3 (r_dom0): the XCP-ng hosts (only with VMs; through Xen Orchestra, B-93)	TAGS: []
+       play #4 (r_dpu): age v1.1.1 on the DPU (only with --tags age)	TAGS: []
+           AGE-STUB controller step	TAGS: [age, never]
+           AGE-STUB dpu step	TAGS: [age, never]
+       play #5 (localhost): report	TAGS: []
+  -- (b2) run --tags age: rc=0
+     PLAY [resolve the setup] *******************************************************
+     TASK [load the setup YAML (manual runs only)] **********************************
+     TASK [build the member list from the setup YAML (manual runs only)] ************
+     TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+     TASK [where the playbooks live (imported playbooks see their own playbook_dir)] ***
+     ok: [localhost]
+     TASK [fill in what a manual run did not pass] **********************************
+     ok: [localhost]
+     TASK [find the DPU member and the dom0s] ***************************************
+     ok: [localhost]
+     TASK [a setup must have at least one XCP-ng host] ******************************
+     ok: [localhost] => {
+     TASK [add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)] ***
+     TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+     ok: [localhost]
+     PLAY [the DPU] *****************************************************************
+     PLAY [the XCP-ng hosts (only with VMs; through Xen Orchestra, B-93)] ***********
+     skipping: no hosts matched
+     PLAY [age v1.1.1 on the DPU (only with --tags age)] ****************************
+     TASK [AGE-STUB controller step] ************************************************
+     ok: [dpu-01 -> localhost] => {
+     TASK [AGE-STUB dpu step] *******************************************************
+     ok: [dpu-01] => {
+     PLAY [report] ******************************************************************
+  -- (b3) run with ANSIBLE_RUN_TAGS=age (the harness way): rc=0, 'dpu dpu-01' in output: True
+  -- (a2) run with no tags: rc=2, 'AGE-STUB' in output: False, 'ready: nothing missing' in output: False
+  -- (c1) copy bad.bin over an existing target, pin = good.bin's sha: rc=2; target sha before 02e74f177ed6c6df after 02e74f177ed6c6df unchanged=True
+     fatal: [localhost]: FAILED! => {"ansible_facts": {"discovered_interpreter_python": "/home/akshay/dao-lab-selfserve/.venv/bin/python3.12"}, "changed": false, "checksum": "402290552ed423f1eabde38a2c3f0c
+  -- (c2) copy good.bin: rc=0; target now == good.bin: True; mode 0o755
+  -- (c3) copy bad.bin to a new path: rc=2; target created: False

@@ -1,0 +1,13 @@
+# date: 2026-11-24T16:12:24Z  real age v1.1.1 linux-amd64, downloaded with curl --fail --location from the GitHub release URL
+# tarball sha256: cf16cbb108fc56e2064b00ba2b65d9fb1b8d7002ca5e38260ee1cc34f6aaa8f9
+# verify-age.sh (x-age @ 5641830): verify-age: OK age-v1.1.1-linux-amd64.tar.gz (tarball, age/age and age/age-keygen match the pins) rc=0
+# extracted from a cmp-identical copy; binary sha256:
+0c6ddc31c276f55e9414fe27af4aada4579ce2fb824c1ec3f207873a77a49752  age/age
+e279f64ccd11347e57b8d28304e3e358ae1a5ef4f19107e7a1f9c9156fdcad91  age/age-keygen
+## age/age --version: rc=0 stdout_bytes=7 stderr_bytes=0; stdout via od -c:
+0000000   v   1   .   1   .   1  \n
+0000007
+## age/age-keygen --version: rc=0 stdout_bytes=7 stderr_bytes=0; stdout via od -c:
+0000000   v   1   .   1   .   1  \n
+0000007
+## age-keygen --bogus: rc=2 (flags are really parsed)
