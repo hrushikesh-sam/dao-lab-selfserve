@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230969da'/%3E%3C/svg%3E">
 <title>daolab</title>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<!-- SRI = sha384 of the decoded file at this exact URL: curl -sSL URL | openssl dgst -sha384 -binary | openssl base64 -A -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js" integrity="sha384-WmdflGW9aGfoBdHc4rRyWzYuAjEmDwMdGdiPNacbwfGKxBW/SO6guzuQ76qjnSlr" crossorigin="anonymous"></script>
 <style>
   :root { --bg:#f6f8fa; --card:#fff; --line:#d0d7de; --text:#1f2328; --muted:#656d76;
           --accent:#0969da; --green:#1a7f37; --amber:#9a6700; --red:#cf222e; }
@@ -103,11 +104,11 @@
   <h1>daolab</h1>
   <span class="spacer"></span>
   <span id="identity" class="muted" style="color:#c8d1da"></span>
-  <button onclick="changeToken()">change token</button>
-  <button onclick="refresh()">refresh</button>
+  <button data-action="change-token">change token</button>
+  <button data-action="refresh">refresh</button>
 </header>
 <main>
-  <div id="banner"><span class="close" onclick="hideBanner()">&times;</span><span id="banner-msg"></span><details id="banner-detail" hidden><summary>detail</summary><pre id="banner-pre"></pre></details></div>
+  <div id="banner"><span class="close" data-action="hide-banner">&times;</span><span id="banner-msg"></span><details id="banner-detail" hidden><summary>detail</summary><pre id="banner-pre"></pre></details></div>
   <div id="apidown">API unreachable — retrying</div>
 
   <section>
@@ -134,7 +135,7 @@
     <h3>daolab token</h3>
     <p class="muted">Paste the bearer token printed by <code>daolab add-user</code>.</p>
     <input type="password" id="gate-token" placeholder="token">
-    <div class="actions"><button class="act" onclick="saveToken()">Save</button></div>
+    <div class="actions"><button class="act" data-action="save-token">Save</button></div>
   </div>
 </div>
 
@@ -142,7 +143,7 @@
   <div class="modal wide">
     <h3 id="im-title"></h3>
     <div id="im-body"></div>
-    <div class="actions"><button class="act" onclick="closeInfo()">Close</button></div>
+    <div class="actions"><button class="act" data-action="close-info">Close</button></div>
   </div>
 </div>
 
@@ -156,8 +157,8 @@
     <div class="login-line" id="rm-login" hidden></div>
     <label>how will you log in?</label>
     <div class="pick">
-      <label><input type="radio" name="rm-auth" value="key" checked onchange="authPick()"> my SSH key</label>
-      <label><input type="radio" name="rm-auth" value="password" onchange="authPick()"> a generated password</label>
+      <label><input type="radio" name="rm-auth" value="key" checked> my SSH key</label>
+      <label><input type="radio" name="rm-auth" value="password"> a generated password</label>
     </div>
     <div id="rm-keybox">
       <textarea id="rm-key" rows="3" placeholder="ssh-ed25519 AAAA... you@laptop"></textarea>
@@ -172,27 +173,49 @@
       <datalist id="rm-setup-list"></datalist>
       <label>templates (one per VM host of the setup)</label>
       <div id="rm-templates"></div>
-      <div class="row"><button type="button" onclick="addTemplateRow('','')">+ add host</button></div>
+      <div class="row"><button type="button" data-action="add-template">+ add host</button></div>
     </div>
     <div class="actions">
-      <button class="act secondary" onclick="closeReserve()">Cancel</button>
-      <button class="act" id="rm-submit" onclick="submitReserve()">Deploy</button>
+      <button class="act secondary" data-action="close-reserve">Cancel</button>
+      <button class="act" id="rm-submit" data-action="submit-reserve">Deploy</button>
     </div>
   </div>
 </div>
 
 <script>
-// Own key per page: the two pages share the origin, so one key let the admin token replace the
-// user's and the user page then deployed as dev-admin (B-86, reservations 1-4).
 const TOKEN_KEY = "daolab_token_user";
 const getToken  = () => localStorage.getItem(TOKEN_KEY);
 let ME = null, SETUPS = null, POLL_MS = 15000, FAST_MS = 4000, FAST = false;
 
 class ApiError extends Error {
-  constructor(status, err) {            // err = {code, message, detail} per the API error model
+  constructor(status, err) {
     super(err.message);
     this.status = status; this.code = err.code; this.detail = err.detail;
   }
+}
+
+const ESCAPES = {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;","\u0060":"&#96;"};
+const esc = s => String(s ?? "").replace(/[&<>"'\x60]/g, c => ESCAPES[c]);
+
+function text(tag, value, cls) {
+  const node = document.createElement(tag);
+  node.textContent = value == null ? "" : String(value);
+  if (cls) node.className = cls;
+  return node;
+}
+function button(label, cls, action, data) {
+  const node = text("button", label, cls);
+  node.type = "button";
+  node.dataset.action = action;
+  for (const [key, value] of Object.entries(data || {})) node.dataset[key] = String(value);
+  return node;
+}
+function badge(label, cls) { return text("span", label, "badge " + (cls || "b-grey")); }
+function safeUrl(value) {
+  try {
+    const url = new URL(value, window.location.href);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : "#";
+  } catch (e) { return "#"; }
 }
 
 async function api(path, {method = "GET", body = null} = {}) {
@@ -217,11 +240,8 @@ async function api(path, {method = "GET", body = null} = {}) {
   return data;
 }
 
-const toUtc = v =>                       // datetime-local (local tz) -> UTC ISO-8601 Z
+const toUtc = v =>
   v ? new Date(v).toISOString().replace(/\.\d{3}Z$/, "Z") : "now";
-
-const esc = s => String(s ?? "").replace(/[&<>"]/g,
-  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 function showBanner(msg, detail, ok=false) {
   const b = document.getElementById("banner");
@@ -248,154 +268,271 @@ async function saveToken() {
 
 const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
                      cleaning:"b-amber", quarantined:"b-red", released:"b-muted", failed:"b-red"};
-const CANCELABLE = ["queued"];                      // not started yet: cancel (DELETE)
-const ENDABLE = ["ready", "active"];                 // running: end now (POST .../cleanup)
-const BUSY = ["provisioning", "cleaning"];           // poll faster while these move
+const CANCELABLE = ["queued"];
+const ENDABLE = ["ready", "active"];
+const BUSY = ["provisioning", "cleaning"];
 const HEALTH_BADGE = {healthy:"b-green", degraded:"b-amber", down:"b-red", unknown:"b-grey"};
-const PW = {};                                       // reservation id -> password (never in the DOM until shown)
+const PW = {};
 
 if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
 let MERMAID_N = 0;
-async function renderMermaidInto(elId, source) {       // falls back to the raw source if mermaid is unavailable
+function diagramFallback(el, source) { el.innerHTML = `<pre>${esc(source)}</pre>`; }
+function appendDiagram(el, svg) {
+  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (doc.querySelector("parsererror")) { diagramFallback(el, svg); return; }
+  doc.querySelectorAll("script, foreignObject").forEach(node => node.remove());
+  doc.querySelectorAll("*").forEach(node => {
+    [...node.attributes].forEach(attr => {
+      if (attr.name.toLowerCase().startsWith("on")) node.removeAttributeNode(attr);
+    });
+  });
+  el.replaceChildren(doc.documentElement);
+}
+async function renderMermaidInto(elId, source) {
   const el = document.getElementById(elId);
   if (!el) return;
-  if (!window.mermaid) { el.innerHTML = `<pre>${esc(source)}</pre>`; return; }
+  if (!window.mermaid) { diagramFallback(el, source); return; }
   try {
     const {svg} = await mermaid.render("mm" + (++MERMAID_N), source);
-    el.innerHTML = svg;
-  } catch (e) { el.innerHTML = `<pre>${esc(source)}</pre>`; }
+    appendDiagram(el, svg);
+  } catch (e) { diagramFallback(el, source); }
 }
 
-// a start moved by a minute or more (taken slot, maintenance); not the rounding of "now" to a slot
 const movedSlot = r => r.shifted && new Date(r.start_at) - new Date(r.requested_start_at) >= 60000;
 
 function availabilityCell(r) {
+  const frag = document.createDocumentFragment();
   if (r.available) {
-    let txt = "available";
-    if (r.next_free_at && new Date(r.next_free_at) > new Date()) txt += ` · next free ${r.next_free_at}`;
-    return `<span class="badge b-green">available</span>${r.next_free_at && new Date(r.next_free_at) > new Date() ? ` <span class="muted">next free ${esc(r.next_free_at)}</span>` : ""}`;
+    frag.append(badge("available", "b-green"));
+    if (r.next_free_at && new Date(r.next_free_at) > new Date()) {
+      frag.append(document.createTextNode(" "), text("span", "next free " + r.next_free_at, "muted"));
+    }
+  } else if (r.reason === "no_yaml") {
+    frag.append(text("span", "planned — no YAML yet", "muted"));
+  } else if (r.reason === "not_enabled") {
+    frag.append(text("span", "not enabled on this lab yet", "muted"));
+  } else if (r.reason === "unmet_capability") {
+    frag.append(badge("missing: " + r.missing.join(", "), "b-red"));
+  } else if (r.reason === "no_free_slot") {
+    frag.append(badge("no free slot within horizon", "b-amber"));
   }
-  if (r.reason === "no_yaml") return `<span class="muted">planned — no YAML yet</span>`;
-  if (r.reason === "not_enabled") return `<span class="muted">not enabled on this lab yet</span>`;
-  if (r.reason === "unmet_capability") return `<span class="badge b-red">missing: ${esc(r.missing.join(", "))}</span>`;
-  if (r.reason === "no_free_slot") return `<span class="badge b-amber">no free slot within horizon</span>`;
-  return "";
+  return frag;
 }
 
 let CATALOG = [];
 async function loadCatalog() {
-  // ready-to-deploy first, then the rest of the active ones ("coming soon"), then the planned
   const rank = r => r.deployable ? 0 : r.status === "active" ? 1 : 2;
   const rows = (await api("/usecases")).map((r, i) => ({...r, i}))
                                        .sort((a, b) => rank(a) - rank(b) || a.i - b.i);
   CATALOG = rows;
   const tbody = document.querySelector("#catalog tbody");
+  tbody.replaceChildren();
   document.getElementById("catalog-empty").hidden = rows.length > 0;
-  tbody.innerHTML = rows.map(r => `
-    <tr class="${r.deployable ? "ready" : ""}">
-      <td><code>${esc(r.name)}</code>${r.variant ? `<span class="variant">${esc(r.variant)}</span>` : ""}</td>
-      <td>${esc(r.description)}</td>
-      <td>${r.deployable ? '<span class="badge b-green">ready to deploy</span>'
-            : r.status === "active" ? '<span class="badge b-grey">coming soon</span>'
-            : `<span class="badge b-grey">${esc(r.status)}</span>`}</td>
-      <td>${availabilityCell(r)}</td>
-      <td style="white-space:nowrap"><button class="info" title="about this use case" onclick="openInfo('${esc(r.name)}')">i</button>${r.available ? `<button class="act" onclick="openReserve('${esc(r.name)}')">Deploy</button>` : ""}</td>
-    </tr>`).join("");
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    if (r.deployable) tr.className = "ready";
+    const name = document.createElement("td");
+    name.append(text("code", r.name));
+    if (r.variant) name.append(text("span", r.variant, "variant"));
+    tr.append(name, text("td", r.description));
+    const status = document.createElement("td");
+    if (r.deployable) status.append(badge("ready to deploy", "b-green"));
+    else if (r.status === "active") status.append(badge("coming soon", "b-grey"));
+    else status.append(badge(r.status, "b-grey"));
+    tr.append(status);
+    const avail = document.createElement("td");
+    avail.append(availabilityCell(r));
+    tr.append(avail);
+    const actions = document.createElement("td");
+    actions.style.whiteSpace = "nowrap";
+    const info = button("i", "info", "info", {name: r.name});
+    info.title = "about this use case";
+    actions.append(info);
+    if (r.available) actions.append(button("Deploy", "act", "reserve", {name: r.name}));
+    tr.append(actions);
+    tbody.append(tr);
+  });
 }
 
 function accessBlock(r) {
-  // the DPU login, spelled out: every reservation logs in as the same username (`lab`)
   const a = r.access;
-  if (!a) return "";
-  let secret;
+  if (!a) return document.createDocumentFragment();
+  const wrap = document.createElement("div");
+  wrap.className = "access" + (a.live ? " live" : "");
+  const head = document.createElement("div");
+  head.className = "cred-head";
+  head.append(text("b", "DPU credentials"), document.createTextNode(" "));
+  head.append(a.live ? badge("login open", "b-green") : badge("login opens " + r.start_at, "b-grey"));
+  if (a.live) head.append(document.createTextNode(" "), text("span", "until " + r.end_at, "muted"));
+  wrap.append(head);
+  const table = document.createElement("table");
+  table.className = "cred";
+  const addRow = (label, valueNode) => {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.append(valueNode);
+    tr.append(text("th", label), td);
+    table.append(tr);
+  };
+  const withCopy = value => {
+    const frag = document.createDocumentFragment();
+    frag.append(text("code", value), document.createTextNode(" "),
+                button("copy", null, "copy-text", {value: value}));
+    return frag;
+  };
+  addRow("host", withCopy(a.host));
+  addRow("username", withCopy(a.login));
   if (a.auth === "password") {
+    const secret = document.createDocumentFragment();
     if (a.password) {
       PW[r.id] = a.password;
-      secret = `<code id="pw-${r.id}">••••••••••••</code>
-                <button onclick="togglePw(${r.id})">show</button><button onclick="copyPw(${r.id})">copy</button>`;
-    } else secret = `<span class="muted">generated for you, shown here once your slot is live</span>`;
+      const code = text("code", "••••••••••••");
+      code.id = "pw-" + r.id;
+      secret.append(code, document.createTextNode(" "),
+                    button("show", null, "toggle-pw", {id: r.id}),
+                    button("copy", null, "copy-pw", {id: r.id}));
+    } else {
+      secret.append(text("span", "generated for you, shown here once your slot is live", "muted"));
+    }
+    addRow("password", secret);
   } else {
-    secret = `your SSH key${a.key ? ` <code>${esc(a.key)}</code>` : ""} <span class="muted">(no password)</span>`;
+    const key = document.createDocumentFragment();
+    key.append(document.createTextNode("your SSH key "));
+    if (a.key) key.append(text("code", a.key), document.createTextNode(" "));
+    key.append(text("span", "(no password)", "muted"));
+    addRow("login with", key);
   }
-  const status = a.live
-    ? `<span class="badge b-green">login open</span> <span class="muted">until ${esc(r.end_at)}</span>`
-    : `<span class="badge b-grey">login opens ${esc(r.start_at)}</span>`;
-  const copy = v => `<button onclick="copyText('${esc(v)}')">copy</button>`;
-  return `<div class="access ${a.live ? "live" : ""}">
-    <div class="cred-head"><b>DPU credentials</b> ${status}</div>
-    <table class="cred">
-      <tr><th>host</th><td><code>${esc(a.host)}</code> ${copy(a.host)}</td></tr>
-      <tr><th>username</th><td><code>${esc(a.login)}</code> ${copy(a.login)}</td></tr>
-      <tr><th>${a.auth === "password" ? "password" : "login with"}</th><td>${secret}</td></tr>
-      <tr><th>connect</th><td><code>${esc(a.ssh)}</code> ${copy(a.ssh)}</td></tr>
-    </table>
-  </div>`;
+  addRow("connect", withCopy(a.ssh));
+  wrap.append(table);
+  return wrap;
 }
 
 function progressLine(r) {
   const j = r.job;
-  if (!j) return "";
-  const last = j.last_step ? `${esc(j.last_step.name)}${j.last_step.state === "failed" ? " ✗" : ""}` : "starting";
-  if (j.state === "pending" || j.state === "running")
-    return `<div class="progress"><span class="badge b-amber">${esc(j.kind)} · ${esc(j.state)}</span>
-            <span class="muted">step ${j.steps}: ${last}</span></div>`;
-  if (j.state === "failed")
-    return `<div class="progress"><span class="badge b-red">${esc(j.kind)} failed</span>
-            <span class="muted">${esc(j.error || "")}</span></div>`;
-  return "";
+  if (!j) return document.createDocumentFragment();
+  const div = document.createElement("div");
+  div.className = "progress";
+  if (j.state === "pending" || j.state === "running") {
+    const last = j.last_step ? j.last_step.name + (j.last_step.state === "failed" ? " ✗" : "") : "starting";
+    div.append(badge(j.kind + " · " + j.state, "b-amber"), document.createTextNode(" "),
+               text("span", "step " + j.steps + ": " + last, "muted"));
+  } else if (j.state === "failed") {
+    div.append(badge(j.kind + " failed", "b-red"), document.createTextNode(" "),
+               text("span", j.error || "", "muted"));
+  } else return document.createDocumentFragment();
+  return div;
 }
 
 function healthBadge(r) {
-  if (!r.health || !ENDABLE.includes(r.state)) return "";
-  return ` <span class="badge ${HEALTH_BADGE[r.health.verdict] || "b-grey"}" title="${esc(r.health.reason || "")}">${esc(r.health.verdict)}</span>`;
+  if (!r.health || !ENDABLE.includes(r.state)) return null;
+  const node = badge(r.health.verdict, HEALTH_BADGE[r.health.verdict] || "b-grey");
+  node.title = r.health.reason || "";
+  return node;
 }
 
 function actionsCell(r) {
-  if (CANCELABLE.includes(r.state))
-    return `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>`;
-  if (ENDABLE.includes(r.state))
-    return `<span class="actions-cell"><button class="end" onclick="endReservation(${r.id})">End now</button>
-            <button onclick="probe(${r.id})" title="run the use case's check now">Re-check</button></span>`;
-  return "";
+  const frag = document.createDocumentFragment();
+  if (CANCELABLE.includes(r.state)) {
+    frag.append(button("Cancel", "cancel", "cancel-reservation", {id: r.id}));
+  } else if (ENDABLE.includes(r.state)) {
+    const wrap = document.createElement("span");
+    wrap.className = "actions-cell";
+    wrap.append(button("End now", "end", "end-reservation", {id: r.id}));
+    const probe = button("Re-check", null, "probe", {id: r.id});
+    probe.title = "run the use case's check now";
+    wrap.append(probe);
+    frag.append(wrap);
+  }
+  return frag;
 }
 
 async function loadReservations() {
   const rows = await api("/reservations");
   const tbody = document.querySelector("#reservations tbody");
+  tbody.replaceChildren();
   document.getElementById("res-empty").hidden = rows.length > 0;
   FAST = rows.some(r => BUSY.includes(r.state) || (r.state === "queued" && r.job));
-  tbody.innerHTML = rows.map(r => {
-    const shifted = movedSlot(r) ? ` <span class="shift">shifted from ${esc(r.requested_start_at)}</span>` : "";
-    const fail = r.state === "failed" && r.failure_reason
-      ? `<tr class="vms"><td></td><td colspan="5"><span class="badge b-red">${esc(r.failure_reason)}</span></td></tr>` : "";
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    const uc = document.createElement("td");
+    uc.append(text("code", r.usecase));
+    if (r.diy) uc.append(document.createTextNode(" "), badge("diy", "b-grey"));
+    const state = document.createElement("td");
+    state.append(badge(r.state, STATE_BADGE[r.state] || "b-grey"));
+    const health = healthBadge(r);
+    if (health) state.append(document.createTextNode(" "), health);
+    const slot = text("td", `${r.start_at} → ${r.end_at}`);
+    if (movedSlot(r)) slot.append(document.createTextNode(" "),
+                                  text("span", "shifted from " + r.requested_start_at, "shift"));
+    const actions = document.createElement("td");
+    actions.append(actionsCell(r));
+    tr.append(text("td", r.id), uc, text("td", r.setup), state, slot, actions);
+    tbody.append(tr);
+    if (r.state === "failed" && r.failure_reason) {
+      const fail = document.createElement("tr");
+      fail.className = "vms";
+      const cell = text("td");
+      cell.colSpan = 5;
+      cell.append(badge(r.failure_reason, "b-red"));
+      fail.append(text("td"), cell);
+      tbody.append(fail);
+    }
     const live = !["released", "failed"].includes(r.state);
-    const extra = live && (r.access || r.job) ? `
-      <tr class="vms"><td></td><td colspan="5">${accessBlock(r)}${progressLine(r)}</td></tr>` : "";
+    if (live && (r.access || r.job)) {
+      const extra = document.createElement("tr");
+      extra.className = "vms";
+      const cell = text("td");
+      cell.colSpan = 5;
+      cell.append(accessBlock(r), progressLine(r));
+      extra.append(text("td"), cell);
+      tbody.append(extra);
+    }
     const vmsWithName = r.vms.filter(vm => vm.name);
-    const vms = live && vmsWithName.length ? `
-      <tr class="vms"><td></td><td colspan="5">
-        <table class="creds">
-          <thead><tr><th>VM</th><th>where</th><th>ip</th><th>login</th></tr></thead>
-          <tbody>${vmsWithName.map(vm => `
-            <tr><td><code>${esc(vm.role)}</code> <span class="muted">${esc(vm.name)}</span></td><td>${esc(vm.host)}</td>
-                <td>${vm.ip ? `<code>${esc(vm.ip)}</code>` : r.vms_provisioned === false
-                      ? '<span class="badge b-grey">not provisioned</span>' : '<span class="muted">waiting for IP</span>'}</td>
-                <td>${vm.ssh ? `<code>${esc(vm.ssh)}</code> · ${vm.auth === "password" ? "the password above" : "your SSH key"}` : '<span class="muted">—</span>'}</td></tr>`).join("")}
-          </tbody>
-        </table>
-        ${r.vms_provisioned === false ? `<div class="muted" style="font-size:12px;margin:2px 0 0 16px">This lab
-          deploys the DPU only for now; the use case's VMs come with the Xen Orchestra pools.</div>` : ""}
-        ${r.diagram ? `<div class="topo" id="res-diagram-${r.id}"></div>` : ""}
-      </td></tr>` : "";
-    return `
-      <tr>
-        <td>${r.id}</td><td><code>${esc(r.usecase)}</code>${r.diy ? ' <span class="badge b-grey">diy</span>' : ""}</td>
-        <td>${esc(r.setup)}</td>
-        <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span>${healthBadge(r)}</td>
-        <td>${esc(r.start_at)} → ${esc(r.end_at)}${shifted}</td>
-        <td>${actionsCell(r)}</td>
-      </tr>${fail}${extra}${vms}`;
-  }).join("");
+    if (live && vmsWithName.length) {
+      const vmRow = document.createElement("tr");
+      vmRow.className = "vms";
+      const cell = text("td");
+      cell.colSpan = 5;
+      const table = document.createElement("table");
+      table.className = "creds";
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["VM", "where", "ip", "login"].forEach(label => headRow.append(text("th", label)));
+      thead.append(headRow);
+      const vbody = document.createElement("tbody");
+      vmsWithName.forEach(vm => {
+        const row = document.createElement("tr");
+        const name = document.createElement("td");
+        name.append(text("code", vm.role), document.createTextNode(" "), text("span", vm.name, "muted"));
+        row.append(name, text("td", vm.host));
+        const ip = document.createElement("td");
+        if (vm.ip) ip.append(text("code", vm.ip));
+        else if (r.vms_provisioned === false) ip.append(badge("not provisioned", "b-grey"));
+        else ip.append(text("span", "waiting for IP", "muted"));
+        row.append(ip);
+        const login = document.createElement("td");
+        if (vm.ssh) {
+          login.append(text("code", vm.ssh), document.createTextNode(" · "),
+                       text("span", vm.auth === "password" ? "the password above" : "your SSH key"));
+        } else login.append(text("span", "—", "muted"));
+        row.append(login);
+        vbody.append(row);
+      });
+      table.append(thead, vbody);
+      cell.append(table);
+      if (r.vms_provisioned === false) {
+        cell.append(text("div", "This lab deploys the DPU only for now; the use case's VMs come with the Xen Orchestra pools.", "muted"));
+      }
+      if (r.diagram) {
+        const diagram = document.createElement("div");
+        diagram.className = "topo";
+        diagram.id = "res-diagram-" + r.id;
+        cell.append(diagram);
+      }
+      vmRow.append(text("td"), cell);
+      tbody.append(vmRow);
+    }
+  });
   rows.filter(r => r.diagram && document.getElementById("res-diagram-" + r.id))
       .forEach(r => renderMermaidInto("res-diagram-" + r.id, r.diagram));
 }
@@ -406,11 +543,10 @@ function togglePw(id) {
   el.textContent = shown ? "••••••••••••" : PW[id];
   el.dataset.shown = shown ? "0" : "1";
 }
-async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); showBanner("copied", null, true); }
-  catch (e) { prompt("copy:", text); }
+async function copyText(value) {
+  try { await navigator.clipboard.writeText(value); showBanner("copied", null, true); }
+  catch (e) { prompt("copy:", value); }
 }
-function copyPw(id) { copyText(PW[id]); }
 
 async function endReservation(id) {
   if (!confirm(`End reservation #${id} now? Your access stops and the testbed is cleaned up.`)) return;
@@ -438,64 +574,130 @@ async function cancelReservation(id) {
   } catch (e) { reportError(e); }
 }
 
-// ---- use-case info modal ---------------------------------------------------
 const ON_LABEL = {dpu: "the OCTEON DPU", dpu_host: "VM on the DPU-node host",
                   tg_host: "VM on the TG-node host"};
 
 function openInfo(name) {
   const r = CATALOG.find(x => x.name === name);
   if (!r) return;
-  document.getElementById("im-title").innerHTML =
-    `<code>${esc(r.name)}</code>${r.variant ? `<span class="variant">${esc(r.variant)}</span>` : ""}
-     <span class="badge ${r.status === "active" ? "b-green" : "b-grey"}" style="margin-left:8px">${esc(r.status)}</span>`;
-  let html = "";
-  if (r.doc_summary) html += `<blockquote>${esc(r.doc_summary)}</blockquote>`;
-  if (r.doc_url) html += `<p><a href="${esc(r.doc_url)}" target="_blank" rel="noopener">DAO documentation for ${esc(r.name)} ↗</a></p>`;
+  const title = document.getElementById("im-title");
+  title.replaceChildren();
+  title.append(text("code", r.name));
+  if (r.variant) title.append(document.createTextNode(" "), text("span", r.variant, "variant"));
+  const status = badge(r.status, r.status === "active" ? "b-green" : "b-grey");
+  status.style.marginLeft = "8px";
+  title.append(status);
+  const body = document.getElementById("im-body");
+  body.replaceChildren();
+  if (r.doc_summary) body.append(text("blockquote", r.doc_summary));
+  if (r.doc_url) {
+    const p = document.createElement("p");
+    const link = text("a", "DAO documentation for " + r.name + " ↗");
+    link.href = safeUrl(r.doc_url);
+    link.target = "_blank";
+    link.rel = "noopener";
+    p.append(link);
+    body.append(p);
+  }
   if (r.status === "planned") {
-    html += `<p class="muted">Not onboarded yet — this row becomes reservable once
-             <code>usecases/${esc(r.name)}.yml</code> exists and <code>daolab sync</code> runs.</p>`;
+    const p = document.createElement("p");
+    p.className = "muted";
+    p.append(document.createTextNode("Not onboarded yet — this row becomes reservable once "));
+    p.append(text("code", "usecases/" + r.name + ".yml"));
+    p.append(document.createTextNode(" exists and daolab sync runs."));
+    body.append(p);
   } else {
-    if (r.requires && r.requires.length)
-      html += `<h4>requires</h4><p>${r.requires.map(c => `<span class="cap">${esc(c)}</span>`).join("")}
-               ${r.hw_class ? `&nbsp; DPU personality: <code>${esc(r.hw_class)}</code>` : ""}</p>`;
+    if (r.requires && r.requires.length) {
+      body.append(text("h4", "requires"));
+      const p = document.createElement("p");
+      r.requires.forEach(c => p.append(text("span", c, "cap")));
+      if (r.hw_class) {
+        p.append(document.createTextNode("  DPU personality: "), text("code", r.hw_class));
+      }
+      body.append(p);
+    }
     const roles = Object.entries(r.roles || {});
     if (roles.length) {
-      html += `<h4>roles</h4><table class="creds">
-        <thead><tr><th>role</th><th>runs on</th><th>software</th><th>wiring</th></tr></thead><tbody>` +
-        roles.map(([rn, s]) => `
-          <tr><td><code>${esc(rn)}</code></td><td>${esc(ON_LABEL[s.on] || s.on)}</td>
-              <td>${esc(s.app || s.vm || "")}${s.install ? ` + ${esc(Array.isArray(s.install) ? s.install.join(", ") : s.install)}` : ""}</td>
-              <td>${s.connect ? `<code>${esc(s.connect)}</code>` : ""}${s.upstream ? `${s.connect ? " · " : ""}upstream → <code>${esc(s.upstream)}</code>` : ""}${!s.connect && !s.upstream ? '<span class="muted">—</span>' : ""}</td></tr>`).join("") +
-        `</tbody></table>`;
+      body.append(text("h4", "roles"));
+      const table = document.createElement("table");
+      table.className = "creds";
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["role", "runs on", "software", "wiring"].forEach(label => headRow.append(text("th", label)));
+      thead.append(headRow);
+      const vbody = document.createElement("tbody");
+      roles.forEach(([rn, s]) => {
+        const row = document.createElement("tr");
+        const role = document.createElement("td");
+        role.append(text("code", rn));
+        row.append(role, text("td", ON_LABEL[s.on] || s.on));
+        const software = document.createElement("td");
+        software.append(text("span", s.app || s.vm || ""));
+        if (s.install) {
+          const installs = Array.isArray(s.install) ? s.install.join(", ") : s.install;
+          software.append(document.createTextNode(" + "), text("span", installs));
+        }
+        row.append(software);
+        const wiring = document.createElement("td");
+        if (s.connect) wiring.append(text("code", s.connect));
+        if (s.upstream) {
+          if (s.connect) wiring.append(document.createTextNode(" · "));
+          wiring.append(document.createTextNode("upstream → "), text("code", s.upstream));
+        }
+        if (!s.connect && !s.upstream) wiring.append(text("span", "—", "muted"));
+        row.append(wiring);
+        vbody.append(row);
+      });
+      table.append(thead, vbody);
+      body.append(table);
     }
     if ((r.setups || []).length) {
       r.setups.forEach((s, i) => {
-        const memberBits = s.members.map(m => `<code>${esc(m.name)}</code> (${esc(m.kind)} on ${esc(m.host)})`).join(" + ");
-        const linkBits = (s.links || []).map(l => `<code>${esc(l.a)}</code> ↔ <code>${esc(l.b)}</code> (${esc(l.capability)})`).join(", ");
-        html += `<h4>testbed · ${esc(s.name)}</h4>
-          <p class="muted">This use case runs on ${esc(s.name)}: ${memberBits}${linkBits ? `, wired ${linkBits}` : ""}.</p>
-          <div class="topo" id="im-diagram-${i}"></div>`;
+        body.append(text("h4", "testbed · " + s.name));
+        const p = document.createElement("p");
+        p.className = "muted";
+        p.append(document.createTextNode("This use case runs on " + s.name + ": "));
+        s.members.forEach((m, j) => {
+          if (j) p.append(document.createTextNode(" + "));
+          p.append(text("code", m.name), document.createTextNode(" (" + m.kind + " on " + m.host + ")"));
+        });
+        if ((s.links || []).length) {
+          p.append(document.createTextNode(", wired "));
+          s.links.forEach((l, j) => {
+            if (j) p.append(document.createTextNode(", "));
+            p.append(text("code", l.a), document.createTextNode(" ↔ "),
+                     text("code", l.b), document.createTextNode(" (" + l.capability + ")"));
+          });
+        }
+        p.append(document.createTextNode("."));
+        body.append(p);
+        const diagram = document.createElement("div");
+        diagram.className = "topo";
+        diagram.id = "im-diagram-" + i;
+        body.append(diagram);
       });
     } else {
-      html += `<p class="muted">No setup currently satisfies this use case's capabilities.</p>`;
+      body.append(text("p", "No setup currently satisfies this use case's capabilities.", "muted"));
     }
   }
-  document.getElementById("im-body").innerHTML = html;
   document.getElementById("info-modal").style.display = "block";
   (r.setups || []).forEach((s, i) => renderMermaidInto("im-diagram-" + i, s.diagram));
 }
 function closeInfo() { document.getElementById("info-modal").style.display = "none"; }
 
-// ---- reserve modal ---------------------------------------------------------
 let RM_USECASE = null;
 
 function addTemplateRow(host, template) {
   const div = document.createElement("div");
   div.className = "row";
-  div.innerHTML = `<input placeholder="host" value="${esc(host)}">
-                   <input placeholder="template" value="${esc(template || "tpl-ubuntu2204-dao")}">
-                   <button type="button" onclick="this.parentElement.remove()">&minus;</button>`;
-  document.getElementById("rm-templates").appendChild(div);
+  const h = document.createElement("input");
+  h.placeholder = "host";
+  h.value = host || "";
+  const t = document.createElement("input");
+  t.placeholder = "template";
+  t.value = template || "tpl-ubuntu2204-dao";
+  div.append(h, t, button("−", null, "remove-template"));
+  document.getElementById("rm-templates").append(div);
 }
 
 function authPick() {
@@ -511,9 +713,17 @@ async function openReserve(name) {
   const dpu = uc && (uc.setups || []).flatMap(st => st.members).find(m => m.kind === "dpu" && m.address);
   const line = document.getElementById("rm-login");
   line.hidden = !(uc && uc.dpu_login);
-  if (uc && uc.dpu_login)
-    line.innerHTML = `You will log in to the DPU as username <b><code>${esc(uc.dpu_login)}</code></b>`
-      + (dpu ? ` at <code>${esc(dpu.address)}</code>: <code>ssh ${esc(uc.dpu_login)}@${esc(dpu.address)}</code>` : "");
+  line.replaceChildren();
+  if (uc && uc.dpu_login) {
+    line.append(document.createTextNode("You will log in to the DPU as username "));
+    const who = document.createElement("b");
+    who.append(text("code", uc.dpu_login));
+    line.append(who);
+    if (dpu) {
+      line.append(document.createTextNode(" at "), text("code", dpu.address),
+                  document.createTextNode(": "), text("code", "ssh " + uc.dpu_login + "@" + dpu.address));
+    }
+  }
   document.getElementById("rm-start").value = "";
   document.getElementById("rm-hours").value = "1";
   document.getElementById("rm-key").value = (ME && ME.ssh_pubkey) || "";
@@ -523,19 +733,16 @@ async function openReserve(name) {
   document.getElementById("rm-diy").hidden = !diy;
   if (diy) {
     document.getElementById("rm-setup").value = "";
-    document.getElementById("rm-templates").innerHTML = "";
+    document.getElementById("rm-templates").replaceChildren();
     addTemplateRow("", "");
-    if (ME && ME.role === "admin") {                       // dropdown assist: /setups is admin-only
+    if (ME && ME.role === "admin") {
       try {
         SETUPS = await api("/setups");
-        document.getElementById("rm-setup-list").innerHTML =
-          SETUPS.map(s => `<option value="${esc(s.name)}">`).join("");
-        document.getElementById("rm-setup").onchange = () => {
-          const s = SETUPS.find(x => x.name === document.getElementById("rm-setup").value);
-          if (!s) return;
-          document.getElementById("rm-templates").innerHTML = "";
-          [...new Set(s.members.map(m => m.host))].forEach(h => addTemplateRow(h, ""));
-        };
+        document.getElementById("rm-setup-list").replaceChildren(...SETUPS.map(s => {
+          const option = document.createElement("option");
+          option.value = s.name;
+          return option;
+        }));
       } catch (e) { /* plain users type the name */ }
     }
   }
@@ -572,7 +779,6 @@ async function submitReserve() {
   } catch (e) { reportError(e); }
 }
 
-// ---- boot + polling --------------------------------------------------------
 async function refresh() {
   try { await Promise.all([loadCatalog(), loadReservations()]); }
   catch (e) { reportError(e); }
@@ -587,6 +793,40 @@ async function boot() {
   await refresh();
 }
 
+function wireActions() {
+  document.addEventListener("click", ev => {
+    const target = ev.target.closest?.("[data-action]");
+    if (!target) return;
+    const action = target.dataset.action;
+    if (action === "change-token") { ev.preventDefault(); changeToken(); }
+    else if (action === "refresh") refresh();
+    else if (action === "hide-banner") hideBanner();
+    else if (action === "save-token") saveToken();
+    else if (action === "close-info") closeInfo();
+    else if (action === "info") openInfo(target.dataset.name);
+    else if (action === "reserve") openReserve(target.dataset.name);
+    else if (action === "close-reserve") closeReserve();
+    else if (action === "submit-reserve") submitReserve();
+    else if (action === "add-template") addTemplateRow("", "");
+    else if (action === "remove-template") target.closest(".row").remove();
+    else if (action === "toggle-pw") togglePw(target.dataset.id);
+    else if (action === "copy-pw") copyText(PW[target.dataset.id]);
+    else if (action === "copy-text") copyText(target.dataset.value);
+    else if (action === "end-reservation") endReservation(target.dataset.id);
+    else if (action === "probe") probe(target.dataset.id);
+    else if (action === "cancel-reservation") cancelReservation(target.dataset.id);
+  });
+  document.querySelectorAll('input[name="rm-auth"]').forEach(radio =>
+    radio.addEventListener("change", authPick));
+  document.getElementById("rm-setup").addEventListener("change", () => {
+    const chosen = document.getElementById("rm-setup").value;
+    const s = (SETUPS || []).find(x => x.name === chosen);
+    if (!s) return;
+    document.getElementById("rm-templates").replaceChildren();
+    [...new Set(s.members.map(m => m.host))].forEach(h => addTemplateRow(h, ""));
+  });
+}
+
 function poll(fn, ms) {
   setInterval(() => { if (!document.hidden && getToken()) fn(); }, ms);
   document.addEventListener("visibilitychange", () => {
@@ -594,6 +834,7 @@ function poll(fn, ms) {
   });
 }
 
+wireActions();
 boot();
 poll(refresh, POLL_MS);
 setInterval(() => { if (FAST && !document.hidden && getToken()) loadReservations().catch(reportError); }, FAST_MS);
