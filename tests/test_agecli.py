@@ -191,6 +191,24 @@ def test_age_error_carries_rc_but_never_stderr(monkeypatch):
         assert exc.value.message in agecli.FIXED_MESSAGES
 
 
+def test_run_times_out_with_the_calls_fixed_message(monkeypatch):
+    seen = []
+
+    def hang(argv, **kw):
+        seen.append(kw)
+        raise subprocess.TimeoutExpired(argv, 60, output=CANARY.encode(),
+                                        stderr=b"leaked stderr " + CANARY.encode())
+
+    monkeypatch.setattr(agecli.subprocess, "run", hang)
+    with pytest.raises(agecli.AgeError) as timed_out:
+        agecli._run([config.settings.age_bin, "-r", RECIPIENT], agecli.ENCRYPT_FAILED,
+                    input=CANARY.encode())
+    assert timed_out.value.message == agecli.ENCRYPT_FAILED
+    assert timed_out.value.rc is None
+    assert CANARY not in str(timed_out.value) and "leaked stderr" not in str(timed_out.value)
+    assert seen[0]["timeout"] == 60
+
+
 @pytest.mark.requires_age
 def test_real_age_round_trip(tmp_path):
     identity, recipient = agecli.keygen()

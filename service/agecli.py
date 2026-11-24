@@ -32,13 +32,15 @@ class AgeError(Exception):
 
 def _run(argv: list[str], message: str, *, input: bytes | None = None,
          stdin: int | None = None):
-    kwargs = {"capture_output": True}
+    kwargs = {"capture_output": True, "timeout": 60}
     if input is not None:
         kwargs["input"] = input
     if stdin is not None:
         kwargs["stdin"] = stdin
     try:
         return subprocess.run(argv, **kwargs)
+    except subprocess.TimeoutExpired as exc:
+        raise AgeError(message) from None
     except OSError as exc:
         raise AgeError(message) from exc
 
