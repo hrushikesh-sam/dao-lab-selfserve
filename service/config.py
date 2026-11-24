@@ -55,6 +55,7 @@ class Settings:
     xo_token_file: str
     age_bin: str
     age_keygen_bin: str
+    identity_file: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -111,6 +112,7 @@ class Settings:
             # X-AGE: the pinned age v1.1.1 CLI (deploy/age/install-age.sh). Paths, not secrets.
             age_bin=env("DAOLAB_AGE_BIN", "age"),
             age_keygen_bin=env("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"),
+            identity_file=env("DAOLAB_IDENTITY_FILE", "~/.config/daolab/age-identity.txt"),
         )
 
 

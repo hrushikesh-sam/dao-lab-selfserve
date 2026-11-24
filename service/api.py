@@ -20,7 +20,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from . import access, config, ipam, models, otel, scheduler
+from . import access, approvals, config, ipam, keys, models, otel, scheduler
 from . import health as health_eval     # `health` is the liveness route below
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
@@ -145,6 +145,17 @@ class ForceClean(BaseModel):
 class UserPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     enabled: bool
+
+
+class KeyEnroll(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    recipient: str
+
+
+class ApprovalCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["lost_key_reset", "home_discard", "tripwire_accept", "tripwire_rebaseline"]
+    target_ref: str
 
 
 # ---- access: SSH key or generated password ----------------------------------
@@ -650,6 +661,134 @@ def admin_audit(limit: int = 100, admin: sqlite3.Row = Depends(require_admin),
              "object_type": r["object_type"], "object_id": r["object_id"],
              "detail": models.from_json(r["detail"]) if r["detail"] else None,
              "trace_id": r["trace_id"], "created_at": r["created_at"]} for r in rows]
+
+
+def _raise_service(exc) -> None:
+    raise DaolabError(exc.code, exc.http_status, exc.message, exc.detail)
+
+
+def _key_object(row, admin: bool = False) -> dict:
+    out = {"id": row["id"], "fingerprint": row["fingerprint"], "state": row["state"],
+           "created_at": row["created_at"], "activated_at": row["activated_at"]}
+    if admin:
+        out["user_id"] = row["user_id"]
+    return out
+
+
+def _approval_object(row) -> dict:
+    return {name: row[name] for name in (
+        "id", "action", "target_ref", "requested_by", "decided_by", "state", "decided_at",
+        "execute_after", "executed_at", "created_at")}
+
+
+@app.post("/keys", status_code=201)
+def enroll_key(body: KeyEnroll, user: sqlite3.Row = Depends(current_user),
+               conn: sqlite3.Connection = Depends(db_conn)):
+    try:
+        key_id = keys.enroll(conn, user["id"], body.recipient)
+    except keys.KeyServiceError as exc:
+        _raise_service(exc)
+    return {"id": key_id, "fingerprint": keys.fingerprint(body.recipient), "state": "pending"}
+
+
+@app.get("/keys")
+def my_keys(user: sqlite3.Row = Depends(current_user),
+            conn: sqlite3.Connection = Depends(db_conn)):
+    rows = conn.execute(
+        """SELECT id, fingerprint, state, created_at, activated_at FROM keys
+           WHERE user_id = ? ORDER BY id""", (user["id"],)).fetchall()
+    return [_key_object(row) for row in rows]
+
+
+@app.get("/admin/keys")
+def admin_keys(state: Literal["pending", "active", "retired", "revoked"] | None = None,
+               admin: sqlite3.Row = Depends(require_admin),
+               conn: sqlite3.Connection = Depends(db_conn)):
+    sql = """SELECT k.*, u.username FROM keys k JOIN users u ON u.id = k.user_id"""
+    params = ()
+    if state is not None:
+        sql += " WHERE k.state = ?"
+        params = (state,)
+    rows = conn.execute(sql + " ORDER BY k.id", params).fetchall()
+    return [{**_key_object(row, admin=True), "username": row["username"]} for row in rows]
+
+
+@app.post("/admin/keys/{key_id}/activate")
+def activate_key(key_id: int, admin: sqlite3.Row = Depends(require_admin),
+                 conn: sqlite3.Connection = Depends(db_conn)):
+    try:
+        keys.activate(conn, key_id, admin)
+    except keys.KeyServiceError as exc:
+        _raise_service(exc)
+    row = conn.execute("SELECT * FROM keys WHERE id = ?", (key_id,)).fetchone()
+    return {**_key_object(row, admin=True), "activated_by": row["activated_by"]}
+
+
+@app.post("/admin/approvals", status_code=201)
+def request_approval(body: ApprovalCreate, admin: sqlite3.Row = Depends(require_admin),
+                     conn: sqlite3.Connection = Depends(db_conn)):
+    try:
+        approval_id = approvals.request(conn, body.action, body.target_ref, admin)
+    except approvals.ApprovalServiceError as exc:
+        _raise_service(exc)
+    return {"id": approval_id, "action": body.action, "target_ref": body.target_ref,
+            "state": "pending", "requested_by": admin["id"]}
+
+
+@app.get("/admin/approvals")
+def admin_approvals(state: Literal["pending", "approved", "rejected", "cancelled"] | None = None,
+                    admin: sqlite3.Row = Depends(require_admin),
+                    conn: sqlite3.Connection = Depends(db_conn)):
+    sql = "SELECT * FROM admin_approvals"
+    params = ()
+    if state is not None:
+        sql += " WHERE state = ?"
+        params = (state,)
+    rows = conn.execute(sql + " ORDER BY id", params).fetchall()
+    return [_approval_object(row) for row in rows]
+
+
+def _decide_approval(approval_id: int, admin: sqlite3.Row, conn: sqlite3.Connection,
+                     approve: bool) -> dict:
+    try:
+        approvals.decide(conn, approval_id, admin, approve, models.utcnow())
+    except approvals.ApprovalServiceError as exc:
+        _raise_service(exc)
+    return _approval_object(conn.execute("SELECT * FROM admin_approvals WHERE id = ?",
+                                         (approval_id,)).fetchone())
+
+
+@app.post("/admin/approvals/{approval_id}/approve")
+def approve_approval(approval_id: int, admin: sqlite3.Row = Depends(require_admin),
+                     conn: sqlite3.Connection = Depends(db_conn)):
+    return _decide_approval(approval_id, admin, conn, True)
+
+
+@app.post("/admin/approvals/{approval_id}/reject")
+def reject_approval(approval_id: int, admin: sqlite3.Row = Depends(require_admin),
+                    conn: sqlite3.Connection = Depends(db_conn)):
+    return _decide_approval(approval_id, admin, conn, False)
+
+
+@app.get("/approvals")
+def my_approvals(user: sqlite3.Row = Depends(current_user),
+                 conn: sqlite3.Connection = Depends(db_conn)):
+    rows = conn.execute(
+        "SELECT id, target_ref FROM admin_approvals WHERE action = 'lost_key_reset' ORDER BY id").fetchall()
+    key_ids = []
+    for row in rows:
+        ref = row["target_ref"]
+        suffix = ref[4:] if ref.startswith("key:") else ""
+        if suffix.isdigit():
+            key_ids.append((row["id"], int(suffix)))
+    mine = {row["id"] for row in conn.execute(
+        "SELECT id FROM keys WHERE user_id = ?", (user["id"],)).fetchall()}
+    visible = [aid for aid, key_id in key_ids if key_id in mine]
+    if not visible:
+        return []
+    marks = ",".join("?" for _ in visible)
+    return [_approval_object(row) for row in conn.execute(
+        f"SELECT * FROM admin_approvals WHERE id IN ({marks}) ORDER BY id", visible).fetchall()]
 
 
 def _parse_start(value: str | None, now: datetime) -> datetime:

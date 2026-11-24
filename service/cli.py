@@ -3,6 +3,7 @@ directly; reserve/status are thin HTTP clients over DAOLAB_API_URL using DAOLAB_
 import argparse
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
 import sys
@@ -11,7 +12,7 @@ import urllib.request
 from datetime import timedelta
 from typing import NoReturn, cast
 
-from . import catalog, config, migrations, models
+from . import agecli, catalog, config, keys, migrations, models
 
 
 def _die(msg: str) -> NoReturn:
@@ -187,6 +188,68 @@ def cmd_status(args) -> int:
     return 0
 
 
+def cmd_key_init(args) -> int:
+    path = os.path.expanduser(config.settings.identity_file)
+    if not path or os.path.lexists(path):
+        _die("identity file already exists")
+    try:
+        agecli.version()
+        identity, recipient = agecli.keygen()
+    except agecli.AgeError as exc:
+        _die(exc.message)
+    parent = os.path.dirname(path) or "."
+    try:
+        if not os.path.isdir(parent):
+            os.makedirs(parent, mode=0o700, exist_ok=True)
+        if os.name == "posix" and parent != ".":
+            os.chmod(parent, 0o700)
+    except OSError as exc:
+        _die(f"cannot secure identity directory: {type(exc).__name__}")
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        _die("identity file already exists")
+    except OSError as exc:
+        _die(f"cannot create identity file: {type(exc).__name__}")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(identity)
+    except OSError as exc:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        _die(f"cannot write identity file: {type(exc).__name__}")
+    try:
+        result = cast("dict", _api("POST", "/keys", {"recipient": recipient}))
+    except SystemExit:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
+    print(f"fingerprint: {result.get('fingerprint', keys.fingerprint(recipient))}")
+    print("next: ask an admin to activate your pending key")
+    return 0
+
+
+def cmd_key_status(args) -> int:
+    rows = cast("list", _api("GET", "/keys"))
+    if not rows:
+        print("no keys")
+        return 0
+    print(f"{'id':<6}{'fingerprint':<66}{'state':<12}{'activated_at'}")
+    for row in rows:
+        print(f"{row['id']:<6}{row['fingerprint']:<66}{row['state']:<12}"
+              f"{row['activated_at'] or '-'}")
+    return 0
+
+
+def cmd_key(args) -> int:
+    handler = {"init": cmd_key_init, "status": cmd_key_status}[args.key_command]
+    return handler(args)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="daolab", description="DAO use-case reservation system")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -220,10 +283,15 @@ def main() -> None:
     p = sub.add_parser("status", help="list reservations via the API")
     p.add_argument("--all", action="store_true", help="every user's (admin token required)")
 
+    p = sub.add_parser("key", help="manage your local age recovery key")
+    key_sub = p.add_subparsers(dest="key_command", required=True)
+    key_sub.add_parser("init", help="create an identity locally and enroll its recipient")
+    key_sub.add_parser("status", help="list your enrolled keys via the API")
+
     args = parser.parse_args()
     handler = {"init": cmd_init, "sync": cmd_sync, "add-user": cmd_add_user,
                "revoke-token": cmd_revoke_token,
-               "reserve": cmd_reserve, "status": cmd_status}[args.command]
+               "reserve": cmd_reserve, "status": cmd_status, "key": cmd_key}[args.command]
     sys.exit(handler(args))
 
 

@@ -529,6 +529,8 @@ AUDIT_ACTIONS = (
     "cancel", "admin_override",                        # written by the API today
     "deploy", "cleanup", "redeploy", "force_clean",    # written by the engine (B-20/B-23)
     "reconcile", "orphan_sweep",                       # engine: B-71/B-72, B-73
+    "key_enroll", "key_activate", "approval_request", "approval_decide",
+    "key_reset_execute", "key_reset_noop",
 )
 
 
