@@ -12,6 +12,7 @@ import secrets
 import sqlite3
 import string
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -20,13 +21,21 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from . import access, approvals, config, ipam, keys, models, otel, scheduler
+from . import (access, approvals, config, hostcheck, ipam, keys, migrations, models, otel,
+               scheduler)
 from . import health as health_eval     # `health` is the liveness route below
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
 log = logging.getLogger("daolab.api")
 
-app = FastAPI(title="daolab", docs_url=None, redoc_url=None)
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    startup_checks()
+    yield
+
+
+app = FastAPI(title="daolab", docs_url=None, redoc_url=None, lifespan=_lifespan)
 
 otel.setup_tracing(app, "daolab-api")
 
@@ -70,6 +79,27 @@ def db_conn():
         yield conn
     finally:
         conn.close()
+
+
+def startup_checks(conn: sqlite3.Connection | None = None) -> None:
+    own = conn is None
+    if own:
+        conn = models.connect(config.settings.db_path)
+    try:
+        have, want = migrations.current_version(conn), migrations.latest_version()
+        if have != want:
+            raise RuntimeError(
+                f"error: database schema is v{have} but this checkout expects v{want}; "
+                "run `daolab init` first")
+        try:
+            migrations.refuse_reverted_schema(conn)
+        except migrations.RevertedSchema as exc:
+            raise RuntimeError(f"error: {exc}") from None
+        if hostcheck.snapshots_in_use(conn):
+            hostcheck.require_safe_swap()
+    finally:
+        if own:
+            conn.close()
 
 
 def current_user(authorization: str | None = Header(None),
