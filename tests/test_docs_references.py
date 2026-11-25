@@ -39,6 +39,13 @@ def test_e15_uses_the_split_task_id():
     assert "- B-108:" not in text
 
 
+def test_errata_authority_and_e15_status_are_unambiguous():
+    text = ERRATA.read_text(encoding="utf-8")
+    assert "- This file records the v1.2 decisions as signed off in `plan/design/p8-impl/B-104-DDL.md` §0, §7 and §11, with B-104 as the task authority." not in text
+    assert "Transient root-only ciphertext staging on the DPU was decided in PR #11 on 24 Nov 2026 (Q-E15); the rest of E-15 remains UNSIGNED DRAFT." in text
+    assert "is DECIDED (Q-E15). Owners:" not in text
+
+
 def test_dao_doc_verification_refs_resolve():
     text = (Path(REPO) / "docs" / "dao-doc-verification.md").read_text(encoding="utf-8")
     assert "Clean reinstall ...md" not in text
