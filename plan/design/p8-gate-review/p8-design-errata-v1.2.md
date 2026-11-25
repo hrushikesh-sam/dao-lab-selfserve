@@ -1,7 +1,9 @@
-# P8 workspace snapshots: design errata v1.1 → v1.2 (SIGNED OFF by Rama, 23 Nov 2026)
+# P8 workspace snapshots: design errata v1.1 → v1.2 (SIGNED OFF by Rama, 23 Nov 2026; E-15 UNSIGNED DRAFT)
 
 Collected during the Phase 8 gate, 22–23 Nov 2026, from facts measured on the laptop controller and on xeon3-oct-112.
 Rama's decisions of 23 Nov are recorded in the **Status / decision** column. Where he amended or rejected the proposal, his wording governs.
+
+Status key: **SIGNED OFF / AGREED / DECIDED / CLOSED / OPEN** as recorded in each row; **UNSIGNED DRAFT** = recorded for visibility but not signed into v1.2.
 
 ## Authority
 
@@ -9,7 +11,7 @@ Rama's decisions of 23 Nov are recorded in the **Status / decision** column. Whe
 - This file records the v1.2 decisions as signed off in `plan/design/p8-impl/B-104-DDL.md` §0, §7 and §11, with B-104 as the task authority.
 - `design:NN` citations refer to `plan/design/p8-gate-review/p8-snapshot-design-v1.1.md` line NN in the gate evidence bundle.
 - The Phase 8 task table called for by B-104 §0 R-1 is `plan/design/p8-gate-review/snapshot-design.md` §8.
-- Storage/quota sizing is not in v1.2; it remains an OPEN follow-up.
+- Storage/quota sizing is not in v1.2; E-15 below is an UNSIGNED DRAFT and the full draft is `plan/design/p8-gate-review/E-15-storage-quota.md`.
 
 ## Errata
 
@@ -29,6 +31,7 @@ Rama's decisions of 23 Nov are recorded in the **Status / decision** column. Whe
 | E-12 | Who can name a VM | Not stated | XO mirrors pool VM names: anyone with XCP-ng pool access (XO, XCP-ng Center, `xe`) can set one. | **Document pool access in the threat model**, and ask the pool admin who has XCP-ng pool access. | **OPEN, non-blocking.** |
 | E-13 | Legacy home disposition (D-7-5) | Per-setup decision | tb-01: 6 files, the 2 foreign files are a known user's test output. | For **tb-01, treat the current home as the user's data.** The one-time decision at enable **defaults to preserve (`save_snapshot=0`)**; **wipe only with explicit two-admin approval.** | **DECIDED** (as amended). |
 | E-14 | Exact DDL | — | — | Written with **B-104, starting at migration 14** (E-4). | **OPEN** until the DDL is written with B-104. |
+| E-15 | Storage and quota | Not in v1.1 | Unsigned research draft from the Phase 8 gate. | Persistent snapshots live only on the controller's dedicated `snapshot_root`, never on the DPU; the DPU holds only the live `/home/lab`. 512 MiB raw cap x 3 per (user, setup) gives ~15 GiB for 10 users and ~45 GiB for 30 on one setup. Require free-space/headroom checks, per-user and global quotas, pruning of the oldest unheld saved snapshots, fail closed plus quarantine on insufficient space, and a synthetic 30-user capacity test. Peak is 4 per (user, setup) briefly while the new snapshot is written before the prune, plus held rows that retention does not count (Q-16), so size headroom for the peak. Transient root-only ciphertext staging on the DPU is DECIDED (Q-E15). Owners: headroom B-109c, quotas B-108a, capacity test B-114. | **UNSIGNED DRAFT.** Not signed into v1.2; tracked in `plan/design/p8-gate-review/E-15-storage-quota.md`. |
 
 ## Later decisions
 
