@@ -186,6 +186,7 @@ function button(label, cls, action, data) {
   return node;
 }
 function badge(label, cls) { return text("span", label, "badge " + (cls || "b-grey")); }
+function cell(node) { const td = document.createElement("td"); td.append(node); return td; }
 
 async function api(path, {method = "GET", body = null} = {}) {
   let res;
@@ -414,7 +415,7 @@ async function loadAllReservations() {
     if (CANCELABLE.includes(r.state)) actions.append(button("Cancel", "cancel", "cancel-reservation", {id: r.id}));
     else if (ENDABLE.includes(r.state)) actions.append(button("End now", "endnow", "end-reservation", {id: r.id}));
     tr.append(text("td", r.id), text("td", r.user), usecase, text("td", r.setup),
-              badge(r.state, STATE_BADGE[r.state] || "b-grey"), slot, actions);
+              cell(badge(r.state, STATE_BADGE[r.state] || "b-grey")), slot, actions);
     tbody.append(tr);
   });
 }
@@ -656,8 +657,8 @@ async function loadUsers() {
     if (self) username.append(document.createTextNode(" "), text("span", "(you)", "muted"));
     const tr = document.createElement("tr");
     tr.append(text("td", u.id), username,
-              badge(u.role, u.role === "admin" ? "b-amber" : "b-grey"),
-              badge(u.enabled ? "enabled" : "disabled", u.enabled ? "b-green" : "b-red"),
+              cell(badge(u.role, u.role === "admin" ? "b-amber" : "b-grey")),
+              cell(badge(u.enabled ? "enabled" : "disabled", u.enabled ? "b-green" : "b-red")),
               text("td", u.active_reservations));
     const action = document.createElement("td");
     action.append(toggle);

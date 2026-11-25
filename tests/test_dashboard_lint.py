@@ -212,3 +212,11 @@ def test_mermaid_is_pinned_with_sri():
            'crossorigin="anonymous"></script>')
     for path in PAGES:
         assert tag in page_source(path), f"{path.name}: missing pinned mermaid tag"
+
+
+def test_admin_badges_are_wrapped_in_cells():
+    script = inline_script(page_source(REPO / "dashboard" / "admin.html"))
+    assert "function cell(" in script, "admin.html: missing cell() helper"
+    assert re.search(r"cell\(badge\(r\.state", script), "admin.html: reservation state badge is not in a cell"
+    assert re.search(r"cell\(badge\(u\.role", script), "admin.html: user role badge is not in a cell"
+    assert re.search(r"cell\(badge\(u\.enabled", script), "admin.html: user enabled badge is not in a cell"

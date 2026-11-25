@@ -170,3 +170,28 @@ def test_an_admin_sees_the_quarantine_and_clears_it(stack, browser):
     admin.wait_for_timeout(1000)
     assert "available" in admin.locator("#detail-body .kv").first.inner_text()
     assert admin.locator(".quarantine").count() == 0
+
+
+def test_admin_tables_have_matching_cell_counts(stack, browser):
+    user = browser.new_page()
+    _login(user, stack.base, stack.tokens["alice"])
+    user.locator("#catalog tbody tr", has=user.locator("code", has_text=re.compile("^vpp$"))) \
+        .locator("button:has-text('Deploy')").click()
+    user.click("#rm-submit")
+    _wait_state(user, ["ready", "active"])
+
+    admin = browser.new_page()
+    _login(admin, stack.base, stack.tokens["boss"], "/admin.html")
+    for _ in range(60):
+        admin.click("header button:has-text('refresh')")
+        admin.wait_for_timeout(700)
+        if admin.locator("#all-res tbody tr").count():
+            break
+    admin.wait_for_selector("#all-res tbody tr")
+    for table in ("all-res", "users"):
+        expected = admin.locator(f"#{table} thead tr th").count()
+        rows = admin.locator(f"#{table} tbody tr")
+        assert rows.count() > 0, f"#{table}: no body rows"
+        counts = rows.evaluate_all("rs => rs.map(r => r.querySelectorAll('td').length)")
+        assert all(count == expected for count in counts), \
+            f"#{table}: header has {expected} columns, body rows have {counts}"
