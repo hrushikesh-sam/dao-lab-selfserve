@@ -1,12 +1,14 @@
 """`daolab init | sync | add-user | reserve | status` — init/sync/add-user open the DB
 directly; reserve/status are thin HTTP clients over DAOLAB_API_URL using DAOLAB_TOKEN."""
 import argparse
+import base64
 import hashlib
 import json
 import os
 import secrets
 import sqlite3
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import timedelta
@@ -261,6 +263,49 @@ def cmd_key(args) -> int:
     return handler(args)
 
 
+def answer(purpose: str, target_ref: str) -> tuple[int, str]:
+    result = cast("dict", _api("POST", "/challenges", {"purpose": purpose,
+                                                       "target_ref": target_ref}))
+    identity_path = os.path.expanduser(config.settings.identity_file)
+    try:
+        with open(identity_path, "rb") as fh:
+            identity = fh.read()
+    except OSError as exc:
+        _die(f"cannot read identity file: {type(exc).__name__}")
+    ciphertext = result["ciphertext"]
+    if isinstance(ciphertext, str):
+        ciphertext = ciphertext.encode("ascii")
+    fd, path = tempfile.mkstemp(prefix="daolab-challenge-", suffix=".age")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(ciphertext)
+        os.chmod(path, 0o600)
+        nonce = agecli.decrypt_file(identity, path)
+    except agecli.AgeError as exc:
+        _die(exc.message)
+    except OSError as exc:
+        _die(f"cannot prepare challenge ciphertext: {type(exc).__name__}")
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+    return result["challenge_id"], base64.b64encode(nonce).decode("ascii")
+
+
+def cmd_approvals_cancel(args) -> int:
+    challenge_id, nonce_b64 = answer("cancel_delete", f"approval:{args.approval_id}")
+    _api("POST", f"/approvals/{args.approval_id}/cancel",
+         {"challenge_id": challenge_id, "nonce_b64": nonce_b64})
+    print(f"cancelled: {args.approval_id}")
+    return 0
+
+
+def cmd_approvals(args) -> int:
+    handler = {"cancel": cmd_approvals_cancel}[args.approval_command]
+    return handler(args)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="daolab", description="DAO use-case reservation system")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -299,10 +344,16 @@ def main() -> None:
     key_sub.add_parser("init", help="create an identity locally and enroll its recipient")
     key_sub.add_parser("status", help="list your enrolled keys via the API")
 
+    p = sub.add_parser("approvals", help="act on approvals visible to you")
+    approval_sub = p.add_subparsers(dest="approval_command", required=True)
+    cancel = approval_sub.add_parser("cancel", help="cancel an approved hold with your key")
+    cancel.add_argument("approval_id", type=int)
+
     args = parser.parse_args()
     handler = {"init": cmd_init, "sync": cmd_sync, "add-user": cmd_add_user,
                "revoke-token": cmd_revoke_token,
-               "reserve": cmd_reserve, "status": cmd_status, "key": cmd_key}[args.command]
+               "reserve": cmd_reserve, "status": cmd_status, "key": cmd_key,
+               "approvals": cmd_approvals}[args.command]
     sys.exit(handler(args))
 
 
