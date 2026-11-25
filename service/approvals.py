@@ -3,7 +3,7 @@ import re
 import sqlite3
 from datetime import timedelta
 
-from . import keys, models
+from . import challenges, keys, models
 
 ACTIONS = ("lost_key_reset", "home_discard", "tripwire_accept", "tripwire_rebaseline")
 HOLD_ACTIONS = frozenset({"lost_key_reset", "home_discard"})
@@ -161,5 +161,33 @@ def decide(conn: sqlite3.Connection, approval_id: int, admin_row, approve: bool,
         raise
 
 
-def cancel_by_owner(conn: sqlite3.Connection, approval_id: int, user_row, now: str) -> None:
-    raise NotImplementedError
+def cancel_by_owner(conn: sqlite3.Connection, approval_id: int, user_row, now: str,
+                    nonce: bytes, challenge_id: int) -> None:
+    target = f"approval:{approval_id}"
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        challenges.consume(conn, challenge_id, user_row, "cancel_delete", target, nonce, now)
+        approval = conn.execute("SELECT * FROM admin_approvals WHERE id = ?",
+                                (approval_id,)).fetchone()
+        if approval is None:
+            raise ApprovalServiceError("not_found", "unknown approval", 404,
+                                       {"approval_id": approval_id})
+        if not challenges.approval_holds_user(conn, user_row["id"], approval_id):
+            raise ApprovalServiceError("invalid_state", "approval is not a cancellable hold for this user")
+        cas = conn.execute(
+            """UPDATE admin_approvals SET state = 'cancelled', updated_at = ?
+               WHERE id = ? AND state = 'approved' AND executed_at IS NULL""",
+            (now, approval_id))
+        if cas.rowcount != 1:
+            raise ApprovalServiceError("invalid_state", "approval is not approved and unexecuted")
+        cleared = conn.execute(
+            """UPDATE snapshots SET delete_after = NULL, delete_requested_by = NULL,
+                                    hold_approval_id = NULL, updated_at = ?
+               WHERE hold_approval_id = ?""", (now, approval_id)).rowcount
+        models.audit(conn, user_row["username"], "approval_cancel", "approval", approval_id, {
+            "approval_id": approval_id, "action": approval["action"], "state": "cancelled",
+            "cleared": cleared})
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
