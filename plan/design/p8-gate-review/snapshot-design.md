@@ -2,7 +2,7 @@
 
 ## 8. Task table
 
-This is the Phase 8 task table called for by B-104 §0 R-1. It records the split from `p8-task-breakdown.md` §2.1 that was missing from `plan/10-backend-tasksheet.md`. Statuses are as of 2026-11-24 after X-AGE merged as `7a2dbad`.
+This is the Phase 8 task table called for by B-104 §0 R-1. It records the Phase 8 split in §8 that was missing from `plan/10-backend-tasksheet.md`. Statuses are as of 2026-11-24 after X-AGE merged as `7a2dbad`.
 
 | ID | Task | Files | Depends | Done when | Owner | Status |
 |---|---|---|---|---|---|---|
@@ -28,7 +28,7 @@ This is the Phase 8 task table called for by B-104 §0 R-1. It records the split
 | B-113b | Dashboard snapshot/key/approval/tripwire views | dashboard templates/tests | B-108a, B-112 | DOM APIs only; owner/admin views show only allowed data | Rama | blocked by B-108a/B-112 |
 | B-114 | Acceptance tooling | acceptance scripts/docs, tests | B-109, B-110, B-112 | Synthetic 512 MiB timing, held-row retention, restore/quarantine and safe-output gates pass | Akshay builds, Rama reviews | todo |
 
-Corrected dependency notes from design v1.1 §1: X-AGE precedes all age-using tasks. B-109 <- B-103, B-104, B-105; B-108 <- B-104, B-106 and, for snapshot files, B-109c; B-107 <- B-103, B-104. Critical path: X-AGE -> B-105 -> B-109c -> B-110 -> B-111/B-112 -> B-114.
+Corrected dependency notes from `origin/akshay-p8-gate:plan/design/p8-gate-review/p8-snapshot-design-v1.1.md` §1: X-AGE precedes all age-using tasks. B-109 <- B-103, B-104, B-105; B-108 <- B-104, B-106 and, for snapshot files, B-109c; B-107 <- B-103, B-104. Critical path: X-AGE -> B-105 -> B-109c -> B-110 -> B-111/B-112 -> B-114.
 
 ## 9. Operational notes
 

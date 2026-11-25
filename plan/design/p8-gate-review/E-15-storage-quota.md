@@ -2,7 +2,7 @@
 
 Date: 2026-11-24. Status: **OPEN / PROPOSED**; not signed into errata v1.2 and not implemented.
 
-Sources: `p11-snapshot-storage-capacity-research.md` (outside the repo; read-only report against an older bundle), `fils/p8-task-breakdown.md` §6 and the confirmed PR #11 answer, `plan/design/p8-impl/B-104-DDL.md` §4.1, §7 Q-21 and §11, `plan/design/p8-gate-review/p8-design-errata-v1.2.md`, and `plan/design/p8-gate-review/snapshot-design.md` §8. Labels: **CONFIRMED**, **DECIDED**, **SIGNED OFF**, **PROPOSED**, **REFUTED**, **OPEN**, **UNVERIFIED**.
+Sources: the confirmed PR #11 answer, `plan/design/p8-impl/B-104-DDL.md` §4.1, §7 Q-21 and §11, `plan/design/p8-gate-review/p8-design-errata-v1.2.md` E-15 and its E-8 later decision, and `plan/design/p8-gate-review/snapshot-design.md` §8. The older research report and local task breakdown are outside the repo and are not cited as resolvable paths. Labels: **CONFIRMED**, **DECIDED**, **SIGNED OFF**, **PROPOSED**, **REFUTED**, **OPEN**, **UNVERIFIED**.
 
 The research report predates merged PR #10. Where it says a flow is only proposed, B-104 now overrides it: restore S via tmpfs ticket and SSH stdin is **SIGNED OFF** in B-104 §4.1. PR #11 confirmed Q-E15 and compression: transient root-only ciphertext staging on the DPU and `gzip -1` before `age` are **DECIDED**. Where the report assumes a DB size column, B-104 §7 Q-21 says there is none in v1; that conflict is recorded below.
 
@@ -91,7 +91,7 @@ Existing timing knobs from the report: `DAOLAB_SLOT_MIN=30`, `DAOLAB_CLEANUP_MIN
 
 ## 5. Metadata conflict to resolve
 
-B-104 §7 Q-21 says **no snapshot metadata column in the DB in v1**: size, `.age` sha256, `hw_class`, use case, device profile and `compression: "gzip"` live in `hdr.json` and `daolab-profile/1`. The research report recommends DB-recorded sizes for quota accounting.
+B-104 §7 Q-21 says **no snapshot metadata column in the DB in v1**: size, `.age` sha256, `hw_class`, use case and device profile live in `hdr.json` and `daolab-profile/1`; the `compression: "gzip"` decision is recorded in errata v1.2 E-8's 24 Nov decision. The research report recommends DB-recorded sizes for quota accounting.
 
 E-15 cannot assume `snapshots.size_bytes` exists. Sign-off must choose:
 
@@ -105,7 +105,7 @@ Until that choice is made, quota implementation is OPEN. The config names and de
 The report's B-task numbers were UNVERIFIED. The signed §8 task table now gives the mapping:
 
 - B-107: ticket directory, swap check and startup guard context.
-- B-108: snapshot-enabled booking refusal and admin-visible capacity numbers.
+- B-108a: snapshot-enabled booking refusal and admin-visible capacity numbers.
 - B-109a/B-109c: capture mount check, raw-stream cap, in-script `gzip -1`, free-space guard, temp/rename write path, `home:lab` and quarantine.
 - B-110: `age -d -> gunzip -> tar` in both restore passes, refusal of any `compression` value other than `"gzip"`, quota accounting, prune logic, restore-source exclusion and capacity failure handling.
 - B-114: synthetic 30-user, capacity, mount, compression and booking acceptance tests.
@@ -128,7 +128,7 @@ No test should allocate 45 GiB.
 
 ## 8. OPEN items and contradictions
 
-- SD:308 says capacity is "sized in `plan/08`"; `plan/08` has no disk/capacity sizing.
+- The external snapshot design draft says capacity is "sized in `plan/08`"; `plan/08` has no disk/capacity sizing.
 - Original design's DPU tmpfs staging, DPU unsaved stash and DPU restore copy are superseded; mark them as such so they are not reintroduced.
 - Number of setups to size for.
 - Real home sizes beyond one reported sample.

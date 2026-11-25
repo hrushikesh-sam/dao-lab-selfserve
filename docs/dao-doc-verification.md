@@ -4,11 +4,11 @@ Date: 2026-11-18. Scope: every page of Marvell's DAO documentation that constrai
 (`gsg/`, `howtoguides/`, `applications/`), cross-checked against this repo's use-case YAMLs,
 inventory, catalog and blocker doc. Includes Akshay's `origin/akshay` `02b6b3d` (TLS proxy
 without SDP, B-102) merged the same day. Live facts are from the 2026-11-14 check recorded in
-`docs/sdp-blocker.md` and from `dao-smartnic/Clean reinstall ...md`; no new root login was taken
+`docs/sdp-blocker.md` and from `dao-smartnic/Clean reinstall of dao-smart-nic on CN10K DPU (xeon3-oct-112).md`; no new root login was taken
 during this pass, so items marked **UNVERIFIED** need one command on the board.
 
 Doc base used: <https://marvellembeddedprocessors.github.io/dao/guides/>. The catalog's
-`dao-devel/` URLs resolve too (checked `vpp.html`); no dead links found.
+`dao-devel/applications/` URLs resolve too (checked `vpp.html` there); no dead links found.
 
 ## 1. Minimum / maximum numbers the docs actually state
 
@@ -51,7 +51,7 @@ Doc base used: <https://marvellembeddedprocessors.github.io/dao/guides/>. The ca
 | `tls-proxy-nginx` | `usecases/tls-proxy-nginx.yml:11-16`: `crypto: cpt-vfs`; backend on `tg_host` over `connect: mgmt`; client on an E810 VF | Doc: NGINX on OCTEON with **CPT VFs = nproc** (24); backend is any IP via `proxy_pass`. No SDP. | Matches after Akshay's 2026-11-17 change (`e4b859b`, B-102); CPT VFs already bound (`dpu-01.yml:25-50`). Doc-conformant. |
 | `ovs-offload` (planned) | Not implemented | Requires `octep_cp_agent` running, 1 SDP VF + 1 RPM VF + ESW VF per interface | No conflict between CP agent and OVS is documented; see §3. |
 | `crypto-agent` (planned) | Catalog summary says "on the Liquid Crypto Card" | Correct, but the lab has no Liquid Crypto Card | Keep planned. |
-| 11 remaining planned apps | catalog.py:36-121, verbatim doc intros | Intros match the doc text | Catalog text is faithful. |
+| 11 remaining planned apps | service/catalog.py:33-127, verbatim doc intros | Intros match the doc text | Catalog text is faithful. |
 
 ## 3. Errors and contradictions found
 
@@ -76,7 +76,7 @@ bound to vfio by both OVS-offload and SmartNIC.
 `howtoguides/virtio_host.html` requires Linux **>= 6.5** (or 6.1 + DAO patches). XCP-ng 4.19
 dom0 is outside the supported matrix, `modinfo octeon_ep` fails, the PF is held by `pciback`,
 and `sriov_numvfs = 0`. That is the whole host-side blocker. Our own SmartNIC run
-(`dao-smartnic/Clean reinstall ...md:411-456`) already bound the **nine SDP VFs** to vfio and
+(`dao-smartnic/Clean reinstall of dao-smart-nic on CN10K DPU (xeon3-oct-112).md:411-438`) already bound the **nine SDP VFs** to vfio and
 ran the app on the DPU, with the SDP PF left on `rvu_af`; no conflict occurred.
 
 ### E3. The 8-VF number is right, but for a different reason than "1 PF, 8 VFs"
@@ -86,7 +86,7 @@ Docs: the host PF consumes Octeon SDP **VF0**; host VF[n] <-> Octeon VF[n+1]; ma
 comment "SDP, 1 PF, 8 VFs" is fine; the assumption that the board only exposes one SDP function
 is not.
 
-### E4. `plan/07-usecase-tls-proxy.md:145` and `README.md:49` overstate host readiness
+### E4. `plan/07-usecase-tls-proxy.md:152` and `README.md:49` overstate host readiness
 
 The plan says dom0 "sees the SDP PF plus 8 VFs ... already claimed by pciback". Live state:
 PF hidden by pciback, **zero VFs** (`sriov_numvfs = 0`). VFs can only be created after a
@@ -116,8 +116,8 @@ the EBF lead time; and `requires` omits `sdp`, which is what the doc path would 
 
 ### E8. Catalog duplicates SmartNIC
 
-`service/catalog.py:73` seeds `smartnic-turnkey` (planned) while `usecases/smartnic.yml` adds
-`smartnic` (active). `tests/test_api.py:87` locks this in as 17 rows. The same Marvell app
+`service/catalog.py:78` seeds `smartnic-turnkey` (planned) while `usecases/smartnic.yml` adds
+`smartnic` (active). `tests/test_api.py:88` locks this in as 17 rows. The same Marvell app
 ("Universal SmartNIC Turnkey App") therefore appears twice, once as planned, which is
 misleading now that it deploys.
 

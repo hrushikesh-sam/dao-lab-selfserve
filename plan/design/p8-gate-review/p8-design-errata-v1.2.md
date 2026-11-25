@@ -9,7 +9,7 @@ Status key: **SIGNED OFF / AGREED / DECIDED / CLOSED / OPEN** as recorded in eac
 
 - This file records the v1.2 decisions signed off by Rama on 23 Nov 2026. The E-1..E-14 wording below is copied from the signed errata; later decisions are recorded separately with their dates.
 - This file records the v1.2 decisions as signed off in `plan/design/p8-impl/B-104-DDL.md` §0, §7 and §11, with B-104 as the task authority.
-- `design:NN` citations refer to `plan/design/p8-gate-review/p8-snapshot-design-v1.1.md` line NN in the gate evidence bundle.
+- `design:NN` citations refer to `origin/akshay-p8-gate:plan/design/p8-gate-review/p8-snapshot-design-v1.1.md` line NN in the gate evidence bundle.
 - The Phase 8 task table called for by B-104 §0 R-1 is `plan/design/p8-gate-review/snapshot-design.md` §8.
 - Storage/quota sizing is not in v1.2; E-15 below is an UNSIGNED DRAFT and the full draft is `plan/design/p8-gate-review/E-15-storage-quota.md`.
 
