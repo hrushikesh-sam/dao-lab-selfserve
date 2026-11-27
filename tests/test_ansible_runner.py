@@ -264,7 +264,17 @@ def real_runner(lab, tmp_path):
     s = dataclasses.replace(config.settings, artifacts_dir=str(tmp_path / "jobs"),
                             playbooks_dir=os.path.join(REPO, "playbooks"),
                             inventory=str(lab.inventory), otel_endpoint="")
-    return AnsibleRunner(s)
+    from tests.test_playbooks import CAN_BECOME
+    if CAN_BECOME:
+        return AnsibleRunner(s)
+    import ansible_runner
+
+    def run(**kw):
+        # the same rule as Lab.run: where sudo needs a password, become is off (an extra var
+        # the runner itself passes still wins); root and CI keep become on
+        return ansible_runner.run(**{**kw, "extravars": {"ansible_become": False,
+                                                         **kw["extravars"]}})
+    return AnsibleRunner(s, run=run)
 
 
 def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):

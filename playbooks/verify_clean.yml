@@ -8,6 +8,11 @@
 #   dpu_session:lab  processes of the shared DPU login are still running
 #   dpu_app:<unit>   a use-case app unit (daolab-app-*.service) is still active on the DPU,
 #   dpu_app:<proc>   or an app process the runbooks start by hand (vpp, dao-smart-nic) runs
+#   dpu_app:ml-tvm   ml-tvm left something: its saved state, a process holding the ML device,
+#                    or ML DPDK files (/var/run/dpdk/<prefix>*, <prefix>*map_* hugepage files).
+#                    On a DPU whose inventory names no ML device (bdf.ml / ml_pci) only the
+#                    holder check is skipped, and the log says so; an ml-tvm deploy refuses
+#                    such a DPU, so no ml-tvm reservation can be there.
 #   ip:<address>     an address leased to the reservation still answers ping
 #
 # A host that cannot be reached fails the run (rc != 0), so the runner reports "could not
@@ -68,6 +73,40 @@
       register: _huge
       changed_when: false
 
+    - name: the ML device of this DPU (bdf.ml; '' when its inventory names none)
+      ansible.builtin.set_fact:
+        _ml_dev: "{{ ml_pci | default(bdf.ml | default('')) }}"
+
+    - name: ML device holder check skipped (no ML device address)
+      ansible.builtin.debug:
+        msg: >-
+          ML device check skipped: no ML device address (ml_pci / bdf.ml) for this DPU; the
+          ml-tvm state and DPDK file checks still run, and an ml-tvm deploy refuses this DPU
+      when: _ml_dev | length == 0
+
+    - name: what ml-tvm left behind (saved state, ML device holders, ML DPDK files)
+      become: true
+      ansible.builtin.shell: |
+        left=""
+        [ -e {{ ml_state_dir | default('/var/lib/daolab/ml') }}/state.json ] && left="$left state"
+        dev='{{ _ml_dev }}'
+        if [ -n "$dev" ]; then
+          g=$(readlink {{ daolab_sysfs | default('/sys') }}/bus/pci/devices/$dev/iommu_group 2>/dev/null); g=${g##*/}
+          if [ -n "$g" ]; then
+            for fd in {{ daolab_procfs | default('/proc') }}/[0-9]*/fd/*; do
+              [ "$(readlink "$fd" 2>/dev/null)" = "{{ daolab_vfio_dir | default('/dev/vfio') }}/$g" ] && { left="$left holder"; break; }
+            done
+          fi
+        fi
+        p={{ ml_file_prefix | default('ml') }}
+        r={{ daolab_dpdk_run_dir | default('/var/run/dpdk') }}
+        # either one is a leftover (`ls -d a b` fails when one of them is missing)
+        [ -n "$(ls -d $r/$p $r/$p-* 2>/dev/null)" ] && left="$left runtime"
+        [ -n "$(find {{ daolab_hugetlbfs | default('/dev/hugepages /mnt/huge') }} -maxdepth 1 -name "${p}*map_*" 2>/dev/null)" ] && left="$left hugepages"
+        [ -n "$left" ] && echo "ml-tvm" || true
+      register: _ml_left
+      changed_when: false
+
     - name: collect this host's residue
       ansible.builtin.set_fact:
         daolab_residue: >-
@@ -76,7 +115,8 @@
              + (_apps.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list)
              + (_procs.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list)
              + (['dpu_hugepages:' ~ (_huge.stdout | trim)]
-                if (_huge.stdout | trim | int(0)) > (daolab_hugepages_baseline | default(2) | int) else []) }}
+                if (_huge.stdout | trim | int(0)) > (daolab_hugepages_baseline | default(2) | int) else [])
+             + (_ml_left.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list) }}
 
 - name: check the leased addresses are silent
   hosts: r_dom0[0]

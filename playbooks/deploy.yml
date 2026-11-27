@@ -134,4 +134,8 @@
     - name: verify
       ansible.builtin.include_role:
         name: verify
-      when: daolab_deploy_vms | default(true) | bool
+      # Also without VMs when the use case verifies from its DPU role (DPU-only: ml-tvm).
+      when: >-
+        daolab_deploy_vms | default(true) | bool
+        or ((daolab_verify.from | default('')) | length > 0
+            and daolab_verify.from == (daolab_dpu_role | default('')))

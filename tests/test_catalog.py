@@ -27,7 +27,7 @@ def conn():
 def test_sync_happy_path(conn):
     catalog.sync(conn, UC_DIR, ST_DIR, INV)
     setup = models.setup_by_name(conn, "tb-01")
-    assert models.from_json(setup["capabilities"]) == ["e810", "octeon-cn106", "sdp", "wire"]
+    assert models.from_json(setup["capabilities"]) == ["e810", "mlip", "octeon-cn106", "sdp", "wire"]
     uc = models.usecase_by_name(conn, "tls-proxy-nginx")
     assert uc["yaml_path"] and uc["variant"] == "separate-backend"
     assert uc["description"]                              # seeded description preserved
