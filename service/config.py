@@ -57,6 +57,8 @@ class Settings:
     age_keygen_bin: str
     identity_file: str
     ticket_dir: str
+    snapshot_root: str
+    snapshot_cap_bytes: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -115,7 +117,19 @@ class Settings:
             age_keygen_bin=env("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"),
             identity_file=env("DAOLAB_IDENTITY_FILE", "~/.config/daolab/age-identity.txt"),
             ticket_dir=env("DAOLAB_TICKET_DIR", "/run/daolab/tickets"),
+            # B-109c: where the sealed snapshots live (u<uid>/<public_id>.{age,key.age,hdr.json},
+            # dirs 0700, files 0600) and the cap on the raw tar stream of one capture (E-8).
+            # A path and a number, not secrets.
+            snapshot_root=env("DAOLAB_SNAPSHOT_ROOT", "./var/snapshots"),
+            snapshot_cap_bytes=_cap_bytes(env("DAOLAB_SNAPSHOT_CAP_BYTES", "536870912")),
         )
+
+
+def _cap_bytes(text: str) -> int:
+    value = int(text)
+    if not 1 <= value <= 2 ** 40:
+        raise ValueError(f"DAOLAB_SNAPSHOT_CAP_BYTES must be 1 .. 2**40, got {value}")
+    return value
 
 
 # F-5-1b: load_dotenv() copied .env into os.environ, and ansible-runner writes the whole process
