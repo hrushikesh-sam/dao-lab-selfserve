@@ -14,9 +14,11 @@ supports ``res["id"]``, e.g. a sqlite Row or dict) and a *step sink*: a callable
 visible while the job is still running. `job_sink` builds a sink that writes the steps onto a
 job row. Each function returns a `RunResult`.
 """
+import hashlib
 import json
 import logging
 import os
+import re
 import tempfile
 import threading
 import time
@@ -33,8 +35,9 @@ log = logging.getLogger("daolab.runner")
 
 RUNNER_NAMES = ("ansible", "mock")
 # `health` (B-68) drops the mock's per-reservation exporter so the health badge can be
-# observed going healthy -> unknown/down.
-MOCK_FAIL_TARGETS = ("deploy", "cleanup", "health")
+# observed going healthy -> unknown/down. `capture` (B-109c) makes the mock's snapshot capture
+# report `refused`, so the keep-the-home-and-quarantine path can be exercised.
+MOCK_FAIL_TARGETS = ("deploy", "cleanup", "health", "capture")
 
 # Where the mock exporter drops Prometheus file_sd target files (B-68); Prometheus in
 # deploy/otel/ reads the same directory (mounted at /etc/prometheus/targets).
@@ -49,6 +52,12 @@ VERIFY_CLEAN_STEPS = ("check_vms", "check_vfs", "check_sessions", "check_ips")
 RECONCILE_STEPS = ("destroy_vms", "rebind_vfs", "stop_app", "kill_sessions")   # B-72
 PROBE_STEPS = ("ping_vms", "check_dpu_app")
 FAIL_AT_DEPLOY_STEP = "create_vms"       # where DAOLAB_MOCK_FAIL=deploy breaks the deploy
+# B-109c: the end-of-slot save (snapshot_capture.yml, home_wipe.yml, verify_clean.yml's home check)
+CAPTURE_STEPS = ("capture", "fetch_snapshot")
+WIPE_STEPS = ("wipe_home",)
+HOME_CHECK_STEP = "check_home"
+SNAPSHOT_PUBLIC_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+SNAPSHOT_RECIPIENT_RE = re.compile(r"^age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$")
 
 
 class RunnerError(Exception):
@@ -72,10 +81,16 @@ class RunResult:
 #   dpu_app:<unit>          a use-case app unit is still active on the DPU
 #   ip:10.30.0.101          a leased address still answers ping
 #   dpu_hugepages:6         512 MB hugepages still reserved above the board's baseline
-RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "ip")
+# Phase 8 (§5.7; DDL v4.1 §4.4), only on snapshot-enabled setups:
+#   home:lab                /home/lab is not proven equal to /etc/skel (kept: no saved snapshot)
+#   tripwire:<class>:<n>    B-112: n findings of a tripwire class outside the home
+#   restore_incomplete:<public_id>   B-110: a restore that did not finish
+RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "ip",
+                 "home", "tripwire", "restore_incomplete")
 CHECK_FOR_KIND = {"vm": "check_vms", "vf": "check_vfs", "dpu_session": "check_sessions",
                   "dpu_app": "check_sessions", "dpu_hugepages": "check_sessions",
-                  "ip": "check_ips"}
+                  "ip": "check_ips", "home": HOME_CHECK_STEP, "tripwire": "check_tripwire",
+                  "restore_incomplete": HOME_CHECK_STEP}
 
 
 def residue_item(kind: str, ident: str) -> str:
@@ -117,6 +132,20 @@ class Runner(Protocol):
     # P-0d: listing gives (XO id, name) pairs; destroying takes XO ids only, never a name.
     def tagged_vms(self) -> list[models.TaggedVm]: ...
     def destroy_vms(self, ids: list[str], step: StepSink) -> RunResult: ...
+    # B-109c, the end-of-slot save (optional: without them a snapshot-enabled setup fails closed,
+    # keeps its home and is quarantined). capture returns (result, the capture script's report).
+    def capture(self, res: Mapping, step: StepSink, *, recipient: str, public_id: str,
+                cap_bytes: int, fetch_to: str) -> tuple[RunResult, dict | None]: ...
+    def wipe(self, res: Mapping, step: StepSink, *, allowed: bool) -> RunResult: ...
+
+
+def snapshot_args_ok(recipient, public_id, cap_bytes, fetch_to) -> bool:
+    """The capture's inputs have the shapes snapshot_capture.yml asserts (B-109c)."""
+    return (isinstance(recipient, str) and SNAPSHOT_RECIPIENT_RE.fullmatch(recipient) is not None
+            and isinstance(public_id, str) and SNAPSHOT_PUBLIC_ID_RE.fullmatch(public_id) is not None
+            and isinstance(cap_bytes, int) and not isinstance(cap_bytes, bool) and cap_bytes > 0
+            and isinstance(fetch_to, str) and os.path.isabs(fetch_to)
+            and fetch_to.endswith(f"/{public_id}.age.part"))
 
 
 _MOCK_VM_NS = uuid.UUID("5f0d7c1e-3a2b-4c6d-9e8f-0a1b2c3d4e5f")
@@ -129,7 +158,7 @@ def mock_vm_id(name: str) -> str:
 
 def parse_mock_fail(text: str) -> frozenset[str]:
     """``DAOLAB_MOCK_FAIL`` is empty or a comma-separated subset of ``MOCK_FAIL_TARGETS``
-    (``deploy`` / ``cleanup`` / ``health``)."""
+    (``deploy`` / ``cleanup`` / ``health`` / ``capture``)."""
     names = [n.strip() for n in (text or "").split(",") if n.strip()]
     unknown = [n for n in names if n not in MOCK_FAIL_TARGETS]
     if unknown:
@@ -295,7 +324,12 @@ class MockRunner:
     With an `api` (an InternalApi; get_runner passes one when DAOLAB_INTERNAL_SECRET is set)
     the deploy calls the real endpoints like deploy.yml does (B-44): `lease_ips` leases an
     address for every VM role of the reservation and `post_vm_ips` reports them through
-    `/internal/vm-ip`, so the reservation shows its leased IPs. Without one it only sleeps."""
+    `/internal/vm-ip`, so the reservation shows its leased IPs. Without one it only sleeps.
+
+    B-109c: `capture` writes a stand-in ciphertext to `fetch_to` and reports it like
+    daolab-capture.py (``fail={"capture"}`` reports `refused`; ``empty_home = True`` reports
+    `empty`); `wipe` runs only with ``allowed is True``. For a snapshot-enabled reservation
+    `verify_clean` also checks the home: `home:lab` until it was wiped (or found empty)."""
 
     def __init__(self, step_sec: float = 0.0, fail: frozenset[str] = frozenset(),
                  sleep: Callable[[float], None] = time.sleep,
@@ -310,6 +344,9 @@ class MockRunner:
         self._exporters: dict[int, MockExporter] = {}
         self.api = api
         self.vms: set[str] = set()       # the "testbed": VM names a deploy created (B-73)
+        self.empty_home = False          # B-109c: the capture finds the home equal to skel
+        self.captured: list[str] = []    # public ids of the captures run (public, not secret)
+        self.wiped: set[int] = set()     # reservations whose home was wiped
 
     def _work(self, name: str, step: StepSink) -> None:
         self._sleep(self.step_sec)
@@ -426,9 +463,64 @@ class MockRunner:
         self._stop_exporter(res)
         return RunResult(ok=True)
 
+    def capture(self, res: Mapping, step: StepSink, *, recipient: str, public_id: str,
+                cap_bytes: int, fetch_to: str) -> tuple[RunResult, dict | None]:
+        """B-109c: snapshot_capture.yml without a DPU."""
+        if not snapshot_args_ok(recipient, public_id, cap_bytes, fetch_to):
+            return RunResult(ok=False, error="snapshot capture: bad input"), None
+        self._sleep(self.step_sec)
+        self.captured.append(public_id)
+        if "capture" in self.fail:
+            msg = "mock failure injected (DAOLAB_MOCK_FAIL=capture)"
+            step(CAPTURE_STEPS[0], "failed", msg)
+            return (RunResult(ok=False, error=f"capture refused: tar_failed ({msg})"),
+                    {"status": "refused", "reason": "tar_failed", "raw_bytes": 0,
+                     "age_bytes": 0, "age_sha256": ""})
+        if self.empty_home:
+            step(CAPTURE_STEPS[0])
+            step(CAPTURE_STEPS[1], "skipped")
+            return RunResult(ok=True), {"status": "empty", "reason": "empty_home",
+                                        "raw_bytes": 0, "age_bytes": 0, "age_sha256": ""}
+        data = b"daolab-mock-sealed:" + public_id.encode() + os.urandom(16)
+        fd = os.open(fetch_to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        step(CAPTURE_STEPS[0])
+        step(CAPTURE_STEPS[1])
+        return RunResult(ok=True), {"status": "saved", "reason": "ok", "raw_bytes": 10240,
+                                    "age_bytes": len(data),
+                                    "age_sha256": hashlib.sha256(data).hexdigest()}
+
+    def wipe(self, res: Mapping, step: StepSink, *, allowed: bool) -> RunResult:
+        """B-109c: home_wipe.yml without a DPU (the same gate: exactly True)."""
+        self._sleep(self.step_sec)
+        if allowed is not True:
+            msg = "home wipe refused: not allowed by the engine"
+            step(WIPE_STEPS[0], "failed", msg)
+            return RunResult(ok=False, error=msg)
+        self.wiped.add(res["id"])
+        step(WIPE_STEPS[0])
+        return RunResult(ok=True)
+
     def verify_clean(self, res: Mapping, step: StepSink) -> RunResult:
         residue = self._residue(res)
+        if _field(res, "snapshot_enabled", False):                 # B-109c, enabled setups only
+            if not (self.empty_home or res["id"] in self.wiped):
+                residue = residue + (residue_item("home", "lab"),)
+            return self._verify_steps(residue, VERIFY_CLEAN_STEPS + (HOME_CHECK_STEP,), step)
         for name in VERIFY_CLEAN_STEPS:
+            self._sleep(self.step_sec)
+            found = [r for r in residue if CHECK_FOR_KIND.get(parse_residue(r)[0]) == name]
+            if found:
+                step(name, "failed", "; ".join(found))
+            else:
+                step(name)
+        if residue:
+            return RunResult(ok=False, error="residue found after cleanup", residue=residue)
+        return RunResult(ok=True)
+
+    def _verify_steps(self, residue: tuple[str, ...], steps, step: StepSink) -> RunResult:
+        for name in steps:
             self._sleep(self.step_sec)
             found = [r for r in residue if CHECK_FOR_KIND.get(parse_residue(r)[0]) == name]
             if found:
@@ -447,6 +539,7 @@ class AnsibleRunner:
       deploy        deploy.yml        (B-80)          cleanup     cleanup.yml   (B-82)
       probe         probe.yml         (verify only)   reconcile   reconcile.yml (B-72)
       verify_clean  verify_clean.yml  (B-70)          orphans     orphans.yml   (B-73)
+      capture       snapshot_capture.yml (B-109)      wipe        home_wipe.yml (B-109)
 
     Extra vars are the playbook contract (plan/04): the reservation context's scalars plus the
     structured `daolab_*` facts, the API URL + internal secret for the callbacks, and the
@@ -464,7 +557,8 @@ class AnsibleRunner:
 
     PLAYBOOKS = {"deploy": "deploy.yml", "cleanup": "cleanup.yml", "probe": "probe.yml",
                  "verify_clean": "verify_clean.yml", "reconcile": "reconcile.yml",
-                 "orphans": "orphans.yml"}
+                 "orphans": "orphans.yml", "snapshot_capture": "snapshot_capture.yml",
+                 "home_wipe": "home_wipe.yml"}
     STEP_PREFIX = "step: "
     _DONE = {"runner_on_ok": "ok", "runner_on_skipped": "skipped",
              "runner_on_failed": "failed", "runner_on_unreachable": "failed"}
@@ -641,8 +735,25 @@ class AnsibleRunner:
     def reconcile(self, res, step):
         return self._play("reconcile", "reconcile", res, step)[0]
 
+    def capture(self, res, step, *, recipient, public_id, cap_bytes, fetch_to):
+        """B-109c: snapshot_capture.yml with exactly the four snapshot extra vars (S's PUBLIC
+        recipient, the row's public_id, the raw cap, the controller fetch path). Returns
+        (result, the capture script's report or None)."""
+        if not snapshot_args_ok(recipient, public_id, cap_bytes, fetch_to):
+            return RunResult(ok=False, error="snapshot capture: bad input"), None
+        return self._play("snapshot_capture", "snapshot_capture", res, step, extra={
+            "daolab_snapshot_recipient": recipient, "daolab_snapshot_public_id": public_id,
+            "daolab_snapshot_cap_bytes": int(cap_bytes), "daolab_snapshot_fetch_to": fetch_to})
+
+    def wipe(self, res, step, *, allowed):
+        """B-109c: home_wipe.yml; daolab_wipe_allowed is True only for exactly True."""
+        return self._play("home_wipe", "home_wipe", res, step,
+                          extra={"daolab_wipe_allowed": allowed is True})[0]
+
     def verify_clean(self, res, step):
-        result, residue = self._play("verify_clean", "verify_clean", res, step)
+        # B-109c: the home check only for a snapshot-enabled setup; otherwise today's extra vars
+        extra = {"daolab_snapshot_enabled": True} if _field(res, "snapshot_enabled", False) else None
+        result, residue = self._play("verify_clean", "verify_clean", res, step, extra=extra)
         residue = tuple(residue or ())
         if residue:
             return RunResult(ok=False, error=result.error or "residue found after cleanup",

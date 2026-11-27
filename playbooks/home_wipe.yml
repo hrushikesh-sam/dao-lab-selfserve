@@ -1,0 +1,106 @@
+# playbooks/home_wipe.yml — B-109b: the GATED wipe of /home/lab (design v1.1 §6 step 7; E-6).
+#
+#   play 0   localhost  resolve the setup; refuse unless daolab_wipe_allowed is exactly true
+#   play 1   the DPU    the same gate again (before anything on the DPU), lab's uid, then
+#                       daolab-wipe.py --mode wipe as root with `python3 -I`: remove every entry of
+#                       the home without following links, copy /etc/skel back (modes kept, owned
+#                       by lab), prove home == skel; its JSON (status, reason, removed) goes to
+#                       daolab_output_file
+#
+# daolab_wipe_allowed is computed by the ENGINE from the database (B-109c): the reservation's
+# snapshot row is `saved` (committed before this runs), or the capture found the home equal to
+# skel. Anything else (missing, false, a string, a number) refuses with a fixed message and the
+# home is kept. The engine does not even start this playbook when the wipe is not allowed; the
+# gate here is the second layer, for every other caller.
+#
+# Extra vars: reservation_id, setup + what play 0 reads, daolab_wipe_allowed, daolab_output_file.
+# For tests only: daolab_dpu_root (a prefix for /home and /etc/skel).
+- name: resolve the setup and check the gate
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: the engine allowed the wipe
+      ansible.builtin.assert:
+        that:
+          - daolab_wipe_allowed is defined
+          - daolab_wipe_allowed is sameas true
+        fail_msg: "home wipe refused: not allowed by the engine"
+        quiet: true
+
+    - name: resolve
+      ansible.builtin.import_tasks: tasks/resolve.yml
+
+- name: wipe the home on the DPU
+  hosts: r_dpu
+  gather_facts: false
+  vars:
+    _dpu_root: "{{ daolab_dpu_root | default('') }}"
+    _login: "{{ daolab_access_login | default('lab') }}"
+    _home: "{{ _dpu_root }}/home/{{ _login }}"
+    _skel: "{{ _dpu_root }}/etc/skel"
+    _reasons: [ok, bad_args, path_unsafe, home_missing, home_not_dir, home_owner,
+               mount_under_home, skel_failed, remove_failed, not_clean]
+  tasks:
+    - name: the engine allowed the wipe (again, before anything on the DPU)
+      ansible.builtin.assert:
+        that:
+          - daolab_wipe_allowed is defined
+          - daolab_wipe_allowed is sameas true
+          - _login is match('^[a-z_][a-z0-9_-]{0,31}$')
+          - _dpu_root == '' or _dpu_root is match('^/[A-Za-z0-9._/-]+$')
+        fail_msg: "home wipe refused: not allowed by the engine"
+        quiet: true
+
+    - name: the lab login's uid on this DPU
+      ansible.builtin.command: getent passwd {{ _login }}
+      register: _acct
+      changed_when: false
+
+    - name: the owner uid
+      ansible.builtin.set_fact:
+        _owner_uid: "{{ (_acct.stdout | regex_findall('^[^:]*:[^:]*:([0-9]{1,10}):') + [''])[0] }}"
+
+    - name: the uid is a number
+      ansible.builtin.assert:
+        that: _owner_uid is match('^[0-9]{1,10}$')
+        fail_msg: "home wipe refused: no uid for the lab login"
+        quiet: true
+
+    - name: "step: wipe_home"
+      become: true
+      ansible.builtin.script:
+        cmd: >-
+          daolab-wipe.py --mode wipe --home {{ _home | quote }} --skel {{ _skel | quote }}
+          --owner-uid {{ _owner_uid }}
+        executable: /usr/bin/python3 -I
+      register: _wipe
+      changed_when: false
+      failed_when: _wipe.rc not in [0, 1]
+
+    - name: the report (one JSON line, no paths)
+      ansible.builtin.set_fact:
+        _wreport: "{{ _wipe.stdout_lines | map('trim') | select | list | last | from_json }}"
+
+    - name: the report has the contract's shape
+      ansible.builtin.assert:
+        that:
+          - _wreport is mapping
+          - (_wreport.keys() | list) == ['status', 'reason', 'removed']
+          - _wreport.status in ['wiped', 'refused']
+          - _wreport.reason in _reasons
+          - (_wreport.status == 'refused') == (_wipe.rc == 1)
+        fail_msg: "home wipe: bad report"
+        quiet: true
+
+    - name: the report for the runner
+      delegate_to: localhost
+      ansible.builtin.copy:
+        content: "{{ _wreport | to_json }}"
+        dest: "{{ daolab_output_file }}"
+        mode: "0600"
+      when: daolab_output_file is defined
+
+    - name: a refused wipe keeps what is left and stops here
+      ansible.builtin.fail:
+        msg: "home wipe refused: {{ _wreport.reason }}"
+      when: _wreport.status != 'wiped'

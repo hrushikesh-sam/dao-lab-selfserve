@@ -14,6 +14,12 @@
 #                    holder check is skipped, and the log says so; an ml-tvm deploy refuses
 #                    such a DPU, so no ml-tvm reservation can be there.
 #   ip:<address>     an address leased to the reservation still answers ping
+#   home:lab         B-109b, ONLY when daolab_snapshot_enabled is true (the engine passes it for a
+#                    snapshot-enabled setup): /home/lab is not proven equal to /etc/skel
+#                    (daolab-wipe.py --mode check, read-only, root; the same meaning of "equal" as
+#                    daolab-capture.py's empty check). Missing, unreadable or refused counts as
+#                    residue too. With the flag off (the default) that play ends before its first
+#                    task, so the checks, the job steps and the residue are exactly today's.
 #
 # A host that cannot be reached fails the run (rc != 0), so the runner reports "could not
 # verify" and the engine treats the setup as not clean: verification is fail-safe.
@@ -118,6 +124,52 @@
                 if (_huge.stdout | trim | int(0)) > (daolab_hugepages_baseline | default(2) | int) else [])
              + (_ml_left.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list) }}
 
+- name: check the home (B-109b; snapshot-enabled setups only)
+  hosts: r_dpu
+  gather_facts: false
+  vars:
+    _dpu_root: "{{ daolab_dpu_root | default('') }}"
+    _login: "{{ daolab_access_login | default('lab') }}"
+    _home: "{{ _dpu_root }}/home/{{ _login }}"
+    _skel: "{{ _dpu_root }}/etc/skel"
+  tasks:
+    - name: only on a snapshot-enabled setup (flag off = today's checks exactly)
+      ansible.builtin.meta: end_play
+      when: not (daolab_snapshot_enabled | default(false) | bool)
+
+    - name: the lab login's uid on this DPU
+      ansible.builtin.command: getent passwd {{ _login }}
+      register: _acct
+      changed_when: false
+      failed_when: false
+
+    - name: the owner uid ('' when the login is missing)
+      ansible.builtin.set_fact:
+        _owner_uid: "{{ (_acct.stdout | default('') | regex_findall('^[^:]*:[^:]*:([0-9]{1,10}):') + [''])[0] }}"
+
+    - name: "step: check_home"
+      become: true
+      ansible.builtin.script:
+        cmd: >-
+          daolab-wipe.py --mode check --home {{ _home | quote }} --skel {{ _skel | quote }}
+          --owner-uid {{ _owner_uid }}
+        executable: /usr/bin/python3 -I
+      register: _home_check
+      changed_when: false
+      failed_when: false
+      when:
+        - _owner_uid is match('^[0-9]{1,10}$')
+        - _login is match('^[a-z_][a-z0-9_-]{0,31}$')
+        - _dpu_root == '' or _dpu_root is match('^/[A-Za-z0-9._/-]+$')
+
+    - name: collect the home residue (only a home proven equal to skel is clean)
+      ansible.builtin.set_fact:
+        daolab_home_residue: >-
+          {{ [] if ((_home_check.rc | default(1)) == 0 and (_hdoc.status | default('')) == 'clean')
+             else ['home:' ~ _login] }}
+      vars:
+        _hdoc: "{{ (['{}'] + (_home_check.stdout_lines | default([]) | map('trim') | select | list))[-1] | from_json }}"
+
 - name: check the leased addresses are silent
   hosts: r_dom0[0]
   gather_facts: false
@@ -143,7 +195,8 @@
       ansible.builtin.set_fact:
         _residue: >-
           {{ (_residue | default([])) + (hostvars[item].daolab_residue | default([]))
-             + (hostvars[item].daolab_ip_residue | default([])) }}
+             + (hostvars[item].daolab_ip_residue | default([]))
+             + (hostvars[item].daolab_home_residue | default([])) }}
       loop: "{{ (groups['r_dom0'] | default([])) + (groups['r_dpu'] | default([])) }}"
 
     - name: write the residue list for the runner

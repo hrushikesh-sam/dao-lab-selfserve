@@ -79,10 +79,24 @@ What a finished job does to its reservation:
                       if nothing else on it is dirty; residue -> the job fails and the setup
                       stays (or goes back to) quarantined.
   * health_probe   -> only the job is recorded
+
+Snapshot-enabled setups (B-109c; setups.snapshot_enabled = 1, design v1.1 §6 "End of slot -
+save"): a cleanup job first runs the save (service/snapshots.py: revoke + capture through
+snapshot_capture.yml, the sealed file and key.age and hdr.json on the controller, `saved`
+COMMITTED), then the cleanup, then the GATED wipe (home_wipe.yml; only when the DB row is `saved`
+or the capture found the home equal to skel; otherwise it is not even started), then verify_clean
+with the home check (`home:lab` while the home is kept) and the reconcile loop, then the
+retention prune (3 unheld saved per user and setup), then the usual finish. A reconcile job
+(force-clean) runs the same save first, so a failed capture is retried on the same row (D-7-4),
+and a saved one is wiped again. No owner key, save_snapshot = 0, or any capture failure: no wipe,
+the home is kept, `home:lab` is reported and the setup is quarantined. Every tick also fails the
+`capturing` rows no running job works on (after crash recovery). With snapshot_enabled = 0 none
+of this runs: the cleanup and reconcile jobs are exactly as above.
 """
 import argparse
 import json
 import logging
+import os
 import re
 import sqlite3
 import signal
@@ -94,6 +108,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from . import config, health, ipam, migrations, models, otel, runner as runner_mod, scheduler
+from . import snapshots
 from .runner import RunResult
 
 log = logging.getLogger("daolab.engine")
@@ -241,10 +256,15 @@ def _call(fn, ctx, sink, what: str) -> RunResult:
 
 
 def _context(db, job, res) -> dict:
-    """What the runner gets instead of a DB row: the reservation context (models) plus the job."""
-    return {**models.reservation_context(db, res["id"]),
-            "job_id": job["id"], "job_kind": job["kind"], "attempt": job["attempt"],
-            "job_created_at": job["created_at"]}
+    """What the runner gets instead of a DB row: the reservation context (models) plus the job.
+    B-109c: `snapshot_enabled: True` only for a snapshot-enabled setup (never a False key, so a
+    flag-off context is exactly today's)."""
+    ctx = {**models.reservation_context(db, res["id"]),
+           "job_id": job["id"], "job_kind": job["kind"], "attempt": job["attempt"],
+           "job_created_at": job["created_at"]}
+    if _snapshot_enabled(db, res):
+        ctx["snapshot_enabled"] = True
+    return ctx
 
 
 def _audit(db, job, action: str, detail: dict) -> None:
@@ -329,6 +349,8 @@ def _maybe_free_setup(db, setup_id: int) -> None:
 
 
 def _run_cleanup(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+    if ctx.get("snapshot_enabled"):                     # B-109c; flag off: the code below, as is
+        return _run_cleanup_snapshot(db, rn, job, res, ctx, sink, out)
     cleaned = _call(rn.cleanup, ctx, sink, "cleanup")
     verified = _call(rn.verify_clean, ctx, sink, "verify_clean")   # whatever the cleanup said
     reconcile, attempts = getattr(rn, "reconcile", None), 0
@@ -361,6 +383,8 @@ def _run_cleanup(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
 
 
 def _run_reconcile(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+    if ctx.get("snapshot_enabled"):                     # B-109c; flag off: the code below, as is
+        return _run_reconcile_snapshot(db, rn, job, res, ctx, sink, out)
     reconciled = _call(rn.reconcile, ctx, sink, "reconcile")
     verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
     result = _residue_result(verified, "reconcile")
@@ -375,6 +399,118 @@ def _run_reconcile(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
             _quarantine_setup(db, res)
         _audit(db, job, "reconcile", {"ok": result.ok, "reconcile_ok": reconciled.ok,
                                       "residue": list(verified.residue), "error": result.error})
+    return result
+
+
+# ---- B-109c: the end-of-slot save on snapshot-enabled setups ------------------------------
+
+def _snapshot_enabled(db, res) -> bool:
+    row = db.execute("SELECT snapshot_enabled FROM setups WHERE id = ?",
+                     (res["setup_id"],)).fetchone()
+    return row is not None and row["snapshot_enabled"] == 1
+
+
+def _snapshot_root() -> str:
+    return os.path.abspath(config.settings.snapshot_root)
+
+
+def _snapshot_save(db, rn, job, res, ctx, sink) -> snapshots.Outcome:
+    """Design §6 steps 2-5 (snapshots.save). Any Exception fails closed: no wipe follows."""
+    try:
+        return snapshots.save(db, rn, job, res, ctx, sink)
+    except Exception as e:                           # noqa: BLE001 — keep the home
+        log.error("snapshot save of reservation %s failed: %s", res["id"], type(e).__name__)
+        return snapshots.Outcome("failed", "internal_error")
+
+
+def _snapshot_wipe(db, rn, res, ctx, sink, saved: snapshots.Outcome) -> bool:
+    """Step 7, the wipe gate, re-read from the DB. When the wipe is not allowed the playbook is
+    not even started (home_wipe.yml's own gate is the second layer). True if the home was wiped."""
+    wipe = getattr(rn, "wipe", None)
+    try:
+        allowed = snapshots.wipe_allowed(db, res, _snapshot_root(), saved)
+    except Exception as e:                           # noqa: BLE001 — not proven: no wipe
+        log.error("wipe gate of reservation %s failed: %s", res["id"], type(e).__name__)
+        allowed = False
+    if not allowed or not callable(wipe):
+        return False
+    return _call(lambda c, s: wipe(c, s, allowed=True), ctx, sink, "wipe").ok
+
+
+def _snapshot_prune(db, res, saved: snapshots.Outcome) -> int:
+    """Step 9: retention, after a save (before the finish, so a crash replays it)."""
+    if saved.status != "saved":
+        return 0
+    root = _snapshot_root()
+    try:
+        return snapshots.prune_retention(db, res["user_id"], res["setup_id"],
+                                         lambda conn, row: snapshots.delete_snapshot(conn, row, root))
+    except Exception as e:                           # noqa: BLE001 — the next save prunes again
+        log.error("retention prune for reservation %s failed: %s", res["id"], type(e).__name__)
+        return 0
+
+
+def _fail_stale_captures(db) -> None:
+    """Every tick, after crash recovery: `capturing` rows no running job works on -> failed."""
+    try:
+        snapshots.fail_stale_captures(db, _snapshot_root())
+    except Exception as e:                           # noqa: BLE001 — never stop the tick
+        log.error("stale snapshot step failed: %s", type(e).__name__)
+
+
+def _run_cleanup_snapshot(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+    saved = _snapshot_save(db, rn, job, res, ctx, sink)              # revoke + capture + saved
+    cleaned = _call(rn.cleanup, ctx, sink, "cleanup")               # apps cleanup + VMs
+    wiped = _snapshot_wipe(db, rn, res, ctx, sink, saved)           # gated wipe
+    verified = _call(rn.verify_clean, ctx, sink, "verify_clean")    # with the home check
+    reconcile, attempts = getattr(rn, "reconcile", None), 0
+    while not _is_clean(verified) and reconcile is not None \
+            and attempts < config.settings.reconcile_attempts:
+        attempts += 1
+        _call(reconcile, ctx, sink, "reconcile")
+        verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
+    _snapshot_prune(db, res, saved)
+    result = _residue_result(verified, "cleanup")
+    with _txn(db):
+        _finish(db, job["id"], result)
+        if result.ok:
+            ipam.release(db, res["id"])
+            if _move(db, res["id"], "released", from_state=res["state"]):
+                out.released += 1
+            _maybe_free_setup(db, res["setup_id"])
+        else:
+            _quarantine_setup(db, res)
+            if res["state"] == "cleaning" and _move(db, res["id"], "quarantined",
+                                                    from_state="cleaning"):
+                out.quarantined += 1
+        _audit(db, job, "cleanup", {"ok": result.ok, "cleanup_ok": cleaned.ok,
+                                    "reconcile_attempts": attempts,
+                                    "residue": list(verified.residue), "error": result.error,
+                                    "snapshot": saved.status, "snapshot_reason": saved.reason,
+                                    "wiped": wiped})
+    return result
+
+
+def _run_reconcile_snapshot(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+    saved = _snapshot_save(db, rn, job, res, ctx, sink)              # D-7-4 retry, or the saved row
+    reconciled = _call(rn.reconcile, ctx, sink, "reconcile")
+    wiped = _snapshot_wipe(db, rn, res, ctx, sink, saved)
+    verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
+    _snapshot_prune(db, res, saved)
+    result = _residue_result(verified, "reconcile")
+    with _txn(db):
+        _finish(db, job["id"], result)
+        if result.ok:
+            ipam.clear(db, res["id"])
+            if _move(db, res["id"], "released", from_state=res["state"]):
+                out.reconciled += 1
+            _maybe_free_setup(db, res["setup_id"])
+        else:
+            _quarantine_setup(db, res)
+        _audit(db, job, "reconcile", {"ok": result.ok, "reconcile_ok": reconciled.ok,
+                                      "residue": list(verified.residue), "error": result.error,
+                                      "snapshot": saved.status, "snapshot_reason": saved.reason,
+                                      "wiped": wiped})
     return result
 
 
@@ -581,6 +717,7 @@ def tick(db: sqlite3.Connection, now: datetime, rn=None,
         job_timeout_sec = config.settings.job_timeout_sec
     out = TickResult()
     out.recovered = _recover_stale_jobs(db, now, job_timeout_sec)
+    _fail_stale_captures(db)                         # B-109c: after recovery, before the jobs
     out.activated = _promote_ready_to_active(db, now)
     out.expired = _expire_active(db, now)
     out.started = _start_due(db, now, cfg)

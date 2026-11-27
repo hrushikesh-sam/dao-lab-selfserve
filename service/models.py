@@ -531,6 +531,7 @@ AUDIT_ACTIONS = (
     "reconcile", "orphan_sweep",                       # engine: B-71/B-72, B-73
     "key_enroll", "key_activate", "approval_request", "approval_decide",
     "key_reset_execute", "key_reset_noop", "approval_cancel",
+    "snapshot_capture", "snapshot_delete",             # B-109c (snapshot_delete: B-108a reuses it)
 )
 
 
