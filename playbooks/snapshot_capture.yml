@@ -1,0 +1,195 @@
+# playbooks/snapshot_capture.yml — B-109b: seal /home/lab on the DPU and bring it to the controller
+# (design v1.1 §6 "End of slot - save", steps 1-3; errata E-6, E-7, E-8; Q-E15).
+#
+#   play 0   localhost  resolve the setup
+#   play 1   the DPU    revoke the owner's access FIRST (idempotent: cleanup.yml repeats it), check
+#                       every input's strict shape before any use, look up lab's uid, make sure
+#                       the root-only capture dir exists (0700) and holds no leftover of a dead
+#                       run, run daolab-capture.py as root with `python3 -I`, read its one JSON
+#                       line, fetch the sealed file to the controller when it says `saved`, and
+#                       delete it on the DPU whatever happened (block / always)
+#
+# The engine (B-109c) commits `saved` BETWEEN this playbook and home_wipe.yml, so capture and wipe
+# are separate playbooks. Order of the end-of-slot save: revoke -> capture (this) -> apps cleanup
+# (cleanup.yml) -> gated wipe (home_wipe.yml) -> verify_clean.yml.
+#
+# S never exists here: only S's PUBLIC recipient comes in. The script prints no path or file
+# name; its JSON (status, reason, raw_bytes, age_bytes, age_sha256) goes to daolab_output_file
+# for the runner. A refused capture leaves the home untouched and fails this playbook with
+# "capture refused: <reason>" (a fixed code); the engine then keeps the home and quarantines.
+#
+# Extra vars: reservation_id, setup + what play 0 reads (tasks/resolve.yml),
+#   daolab_snapshot_recipient   age1... (S's public recipient)
+#   daolab_snapshot_public_id   32 lowercase hex (the snapshot row's public_id)
+#   daolab_snapshot_cap_bytes   the raw tar cap (E-8, 512 MiB by default)
+#   daolab_snapshot_fetch_to    the controller path, <root>/u<uid>/.incoming/<public_id>.age.part
+#   daolab_output_file          where the report goes (the runner)
+# For tests only: daolab_dpu_root (a prefix for /home, /etc/skel, /var/lib/daolab) and
+# daolab_age_root (a prefix for /usr/local/bin, as tasks/install_age.yml).
+#
+# Script delivery: ansible.builtin.script copies the script into the connecting account's private
+# remote tmp dir, runs it as root with `/usr/bin/python3 -I` (no script-dir or cwd on sys.path,
+# no PYTHON* variables) and removes it afterwards; nothing stays on the board.
+# Known cost (Follow-up, measure in Phase 9): with become, `fetch` reads the file through `slurp`,
+# i.e. base64 in memory on both sides.
+- name: resolve the setup
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: resolve
+      ansible.builtin.import_tasks: tasks/resolve.yml
+
+- name: capture the home on the DPU
+  hosts: r_dpu
+  gather_facts: false
+  vars:
+    _dpu_root: "{{ daolab_dpu_root | default('') }}"
+    _login: "{{ daolab_access_login | default('lab') }}"
+    _home: "{{ _dpu_root }}/home/{{ _login }}"
+    _skel: "{{ _dpu_root }}/etc/skel"
+    _capdir: "{{ _dpu_root }}/var/lib/daolab/capture"
+    _out: "{{ _capdir }}/{{ daolab_snapshot_public_id }}.age"
+    _age: "{{ daolab_age_root | default('') }}/usr/local/bin/age"
+    _reasons: [ok, empty_home, path_unsafe, home_missing, home_not_dir, home_owner,
+               mount_under_home, sysctl_unsafe, tar_failed, cap_exceeded, age_failed,
+               out_exists, bad_args]
+  tasks:
+    - name: access ends first
+      ansible.builtin.include_role:
+        name: dpu_access
+        tasks_from: revoke
+
+    - name: every input has its strict shape (before any use)
+      ansible.builtin.assert:
+        that:
+          - daolab_snapshot_public_id is defined
+          - daolab_snapshot_public_id is string
+          - daolab_snapshot_public_id is match('^[0-9a-f]{32}$')
+          - daolab_snapshot_recipient is defined
+          - daolab_snapshot_recipient is string
+          - daolab_snapshot_recipient is match('^age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$')
+          - daolab_snapshot_cap_bytes is defined
+          - (daolab_snapshot_cap_bytes | string) is match('^[0-9]{1,13}$')
+          - (daolab_snapshot_cap_bytes | int) > 0
+          - daolab_snapshot_fetch_to is defined
+          - daolab_snapshot_fetch_to is string
+          - daolab_snapshot_fetch_to is match('^/[A-Za-z0-9._/-]+$')
+          - "'/../' not in daolab_snapshot_fetch_to and '/./' not in daolab_snapshot_fetch_to"
+          - "'//' not in daolab_snapshot_fetch_to"
+          - daolab_snapshot_fetch_to.endswith('/' ~ daolab_snapshot_public_id ~ '.age.part')
+          - _login is match('^[a-z_][a-z0-9_-]{0,31}$')
+          - _dpu_root == '' or _dpu_root is match('^/[A-Za-z0-9._/-]+$')
+        fail_msg: "snapshot capture: bad input"
+        quiet: true
+
+    - name: the lab login's uid on this DPU
+      ansible.builtin.command: getent passwd {{ _login }}
+      register: _acct
+      changed_when: false
+
+    - name: the owner uid the script checks the home against
+      ansible.builtin.set_fact:
+        _owner_uid: "{{ (_acct.stdout | regex_findall('^[^:]*:[^:]*:([0-9]{1,10}):') + [''])[0] }}"
+
+    - name: the uid is a number
+      ansible.builtin.assert:
+        that: _owner_uid is match('^[0-9]{1,10}$')
+        fail_msg: "snapshot capture: no uid for the lab login"
+        quiet: true
+
+    - name: the capture dir exists, 0700 (the script refuses unless root owns it)
+      become: true
+      ansible.builtin.file:
+        path: "{{ _capdir }}"
+        state: directory
+        mode: "0700"
+
+    - name: what a dead earlier run left in it (ciphertext only)
+      become: true
+      ansible.builtin.find:
+        paths: "{{ _capdir }}"
+        patterns: "*.age"
+        file_type: file
+      register: _left
+
+    - name: remove the leftovers
+      become: true
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ _left.files }}"
+      loop_control:
+        label: leftover
+
+    - name: count the leftovers (count only)
+      ansible.builtin.debug:
+        msg: "capture dir leftovers removed: {{ _left.matched }}"
+
+    - name: capture
+      block:
+        - name: "step: capture"
+          become: true
+          ansible.builtin.script:
+            cmd: >-
+              daolab-capture.py --home {{ _home | quote }} --skel {{ _skel | quote }}
+              --recipient {{ daolab_snapshot_recipient }} --out {{ _out | quote }}
+              --cap-bytes {{ daolab_snapshot_cap_bytes | int }} --age {{ _age | quote }}
+              --owner-uid {{ _owner_uid }}
+            executable: /usr/bin/python3 -I
+          register: _cap
+          changed_when: false
+          failed_when: _cap.rc not in [0, 1]
+
+        - name: the report (one JSON line, no paths)
+          ansible.builtin.set_fact:
+            _report: "{{ _cap.stdout_lines | map('trim') | select | list | last | from_json }}"
+
+        - name: the report has the contract's shape
+          ansible.builtin.assert:
+            that:
+              - _report is mapping
+              - (_report.keys() | list) == ['status', 'reason', 'raw_bytes', 'age_bytes', 'age_sha256']
+              - _report.status in ['saved', 'empty', 'refused']
+              - _report.reason in _reasons
+              - (_report.status == 'refused') == (_cap.rc == 1)
+            fail_msg: "snapshot capture: bad report"
+            quiet: true
+
+        - name: the report is good
+          ansible.builtin.set_fact:
+            _report_ok: true
+
+        - name: "step: fetch_snapshot"
+          become: true
+          ansible.builtin.fetch:
+            src: "{{ _out }}"
+            dest: "{{ daolab_snapshot_fetch_to }}"
+            flat: true
+            fail_on_missing: true
+          when: _report.status == 'saved'
+
+      always:
+        - name: the sealed file leaves the DPU, whatever happened
+          become: true
+          ansible.builtin.file:
+            path: "{{ _out }}"
+            state: absent
+
+        - name: the report for the runner
+          delegate_to: localhost
+          ansible.builtin.copy:
+            content: "{{ _report | to_json }}"
+            dest: "{{ daolab_output_file }}"
+            mode: "0600"
+          when: (_report_ok | default(false)) and daolab_output_file is defined
+
+    - name: the device profile (B-111 adds tasks/profile_capture.yml; skipped until then)
+      ansible.builtin.include_tasks: tasks/profile_capture.yml
+      when:
+        - daolab_profile_enabled | default(false) | bool
+        - _report.status == 'saved'
+
+    - name: a refused capture keeps the home and stops here
+      ansible.builtin.fail:
+        msg: "capture refused: {{ _report.reason }}"
+      when: _report.status not in ['saved', 'empty']

@@ -341,7 +341,8 @@ def _users(state):
 def getent(args):
     state = load()
     if args[:1] == ["passwd"] and args[1] in _users(state):
-        print(f"{args[1]}:x:1001:1001::/home/{args[1]}:/bin/bash")
+        uid = int(_users(state)[args[1]].get("uid", 1001))      # B-109b: a test may set it
+        print(f"{args[1]}:x:{uid}:{uid}::/home/{args[1]}:/bin/bash")
         return
     sys.exit(2)
 
