@@ -1,0 +1,208 @@
+# date:        2026-11-25T08:38:38Z
+# worktree:    /home/akshay/x-ml (branch x-ml)
+# HEAD:        8bfcf4bdf6e9709c3f231e58682725787fb7450d
+# write-tree:  1c122a2384c206f0ce32371b3c9afd2d285770b0   (index; staged changes only)
+# status:      18 entries (git status --short, venvs excluded)
+#    M COMPLETION_LOG.md
+#    M README.md
+#    M docs/dao-doc-verification.md
+#    M inventory/host_vars/dpu-01.yml
+#    M playbooks/deploy.yml
+#    M playbooks/files/daolab-app-exporter
+#    M playbooks/probe.yml
+#    M playbooks/roles/verify/tasks/run.yml
+#    M playbooks/verify_clean.yml
+#    M scripts/run/showcase.sh
+#    M service/runner.py
+#    M setups/tb-01.yml
+#    M tests/test_catalog.py
+#    M tests/test_playbooks.py
+#   ?? playbooks/apps/ml-tvm/
+#   ?? playbooks/files/daolab-ml-smoke
+#   ?? tests/test_ml_tvm.py
+#   ?? usecases/ml-tvm.yml
+# venv:        /home/akshay/x-ml/.venv-220
+# python:      3.12.13
+# ansible-core: 2.20.11
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# service pkg: /home/akshay/x-ml/service/__init__.py
+# age:         v1.1.1
+# ansible-playbook: /home/akshay/x-ml/.venv-220/bin/ansible-playbook = /home/akshay/x-ml/.venv-220/bin/ansible-playbook
+# ansible-playbook --version: ansible-playbook [core 2.20.11]
+# command:     .venv-220/bin/python -m pytest tests/test_ml_tvm.py -k every_ml_cleanup_delete_target or only_the_holder_check or fails_closed or no_new_ml_var or no_secret_reaches -q -rsfp -p no:cacheprovider
+
+......FFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+__________ test_every_ml_cleanup_delete_target_is_under_the_test_dir ___________
+
+lab = <tests.test_playbooks.Lab object at 0x795855651fd0>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-9/test_every_ml_cleanup_delete_t0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x79585565e160>, override=<function books.<locals>.<lambda> at 0x79585565ea20>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x79585567bad0>
+
+    @needs_ansible
+    def test_every_ml_cleanup_delete_target_is_under_the_test_dir(lab, books, ml):
+        """Decision 5: in a test run, cleanup's rm and find -delete only ever reach the fake
+        board under tmp_path. Off-tree targets are refused by the stand-ins, so a red run cannot
+        delete anything of the test machine's."""
+        ml.on("vfio-pci")
+        ml.pages(4, 2)
+        ml.save_state()
+        ml.leftovers()
+        board(lab)
+        log, root = _guard_rm_and_find(lab)
+        ml_cleanup(lab, books, ml)
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        deletes = [c for c in calls if c["cmd"] == "rm" or c["delete"]]
+        assert {c["cmd"] for c in deletes} == {"rm", "find"}               # both steps did run
+        outside = sorted({t for c in deletes for t in c["targets"]
+                          if not os.path.realpath(t).startswith(root + os.sep)})
+>       assert outside == []
+E       AssertionError: assert ['/dev/hugepa...dpdk/ml', ...] == []
+E         
+E         Left contains 7 more items, first extra item: '/dev/hugepages'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:627: AssertionError
+______ test_without_an_ml_address_only_the_holder_check_is_skipped[state] ______
+
+lab = <tests.test_playbooks.Lab object at 0x79585570a2a0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x79585570a4e0>, left = 'state'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "runtime", "hugepages"])
+    def test_without_an_ml_address_only_the_holder_check_is_skipped(lab, ml, left):
+        """The skip drops the device-holder check only: what ml-tvm leaves in its state dir and its
+        DPDK files is still reported."""
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "runtime":
+            (ml.run_dir / "ml").mkdir()
+        else:
+            (ml.huge[0] / "mlmap_0").write_text("x")
+        assert lab.run("verify_clean.yml", usecase="ml-tvm", **_without_ml_address(ml)) == 0, \
+            lab.stdout[-2000:]
+        assert lab.output() == ["dpu_app:ml-tvm"]
+>       assert "ML device check skipped: no ML device address (ml_pci / bdf.ml)" in lab.stdout
+E       assert 'ML device check skipped: no ML device address (ml_pci / bdf.ml)' in "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n"
+E        +  where "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x79585570a2a0>.stdout
+
+tests/test_ml_tvm.py:688: AssertionError
+_____ test_without_an_ml_address_only_the_holder_check_is_skipped[runtime] _____
+
+lab = <tests.test_playbooks.Lab object at 0x79585570a7e0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x79585570ae70>, left = 'runtime'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "runtime", "hugepages"])
+    def test_without_an_ml_address_only_the_holder_check_is_skipped(lab, ml, left):
+        """The skip drops the device-holder check only: what ml-tvm leaves in its state dir and its
+        DPDK files is still reported."""
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "runtime":
+            (ml.run_dir / "ml").mkdir()
+        else:
+            (ml.huge[0] / "mlmap_0").write_text("x")
+        assert lab.run("verify_clean.yml", usecase="ml-tvm", **_without_ml_address(ml)) == 0, \
+            lab.stdout[-2000:]
+>       assert lab.output() == ["dpu_app:ml-tvm"]
+E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+E         
+E         Right contains one more item: 'dpu_app:ml-tvm'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:687: AssertionError
+____ test_without_an_ml_address_only_the_holder_check_is_skipped[hugepages] ____
+
+lab = <tests.test_playbooks.Lab object at 0x79585570b1d0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x79585570b740>, left = 'hugepages'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "runtime", "hugepages"])
+    def test_without_an_ml_address_only_the_holder_check_is_skipped(lab, ml, left):
+        """The skip drops the device-holder check only: what ml-tvm leaves in its state dir and its
+        DPDK files is still reported."""
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "runtime":
+            (ml.run_dir / "ml").mkdir()
+        else:
+            (ml.huge[0] / "mlmap_0").write_text("x")
+        assert lab.run("verify_clean.yml", usecase="ml-tvm", **_without_ml_address(ml)) == 0, \
+            lab.stdout[-2000:]
+>       assert lab.output() == ["dpu_app:ml-tvm"]
+E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+E         
+E         Right contains one more item: 'dpu_app:ml-tvm'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:687: AssertionError
+_________ test_ml_deploy_fails_closed_without_an_ml_address[address0] __________
+
+lab = <tests.test_playbooks.Lab object at 0x79585570bb90>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-9/test_ml_deploy_fails_closed_wi0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x795855705800>, override=<function books.<locals>.<lambda> at 0x7958557058a0>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x79585570bc50>
+address = {'ml_pci': ''}
+
+    @needs_ansible
+    @pytest.mark.parametrize("address", [{"ml_pci": ""}, {}])      # set to '', or no ml_pci and no bdf
+    def test_ml_deploy_fails_closed_without_an_ml_address(lab, books, ml, address):
+        """No ml-tvm reservation can exist on a DPU whose inventory names no ML device, so the
+        verify_clean skip above cannot hide one's residue."""
+        ml.on("")
+        board(lab)
+        v = {**_without_ml_address(ml), **address}
+        ev = {"daolab_app": "ml-tvm", "usecase": "ml-tvm", "daolab_roles": ML_ROLES,
+              "daolab_verify": {"from": "infer", "cmd": "true", **ML_VERIFY_MATCH},
+              "daolab_deploy_vms": False, "hw_class": "", "daolab_api_url": "http://127.0.0.1:1",
+              "daolab_internal_secret": "x", "reservation_id": 0, "daolab_vms": [], **v}
+        assert app_run(lab, books, "deploy.yml", **ev) != 0
+>       assert "ml-tvm needs the DPU's ML device address" in lab.stdout
+E       assert "ml-tvm needs the DPU's ML device address" in "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n"
+E        +  where "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x79585570bb90>.stdout
+
+tests/test_ml_tvm.py:704: AssertionError
+_________ test_ml_deploy_fails_closed_without_an_ml_address[address1] __________
+
+lab = <tests.test_playbooks.Lab object at 0x79585567bce0>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-9/test_ml_deploy_fails_closed_wi1/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x795855704d60>, override=<function books.<locals>.<lambda> at 0x795855704cc0>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x79585567be90>, address = {}
+
+    @needs_ansible
+    @pytest.mark.parametrize("address", [{"ml_pci": ""}, {}])      # set to '', or no ml_pci and no bdf
+    def test_ml_deploy_fails_closed_without_an_ml_address(lab, books, ml, address):
+        """No ml-tvm reservation can exist on a DPU whose inventory names no ML device, so the
+        verify_clean skip above cannot hide one's residue."""
+        ml.on("")
+        board(lab)
+        v = {**_without_ml_address(ml), **address}
+        ev = {"daolab_app": "ml-tvm", "usecase": "ml-tvm", "daolab_roles": ML_ROLES,
+              "daolab_verify": {"from": "infer", "cmd": "true", **ML_VERIFY_MATCH},
+              "daolab_deploy_vms": False, "hw_class": "", "daolab_api_url": "http://127.0.0.1:1",
+              "daolab_internal_secret": "x", "reservation_id": 0, "daolab_vms": [], **v}
+        assert app_run(lab, books, "deploy.yml", **ev) != 0
+>       assert "ml-tvm needs the DPU's ML device address" in lab.stdout
+E       assert "ml-tvm needs the DPU's ML device address" in "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n"
+E        +  where "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x79585567bce0>.stdout
+
+tests/test_ml_tvm.py:704: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ml_tvm.py::test_every_ml_cleanup_delete_target_is_under_the_test_dir
+FAILED tests/test_ml_tvm.py::test_without_an_ml_address_only_the_holder_check_is_skipped[state]
+FAILED tests/test_ml_tvm.py::test_without_an_ml_address_only_the_holder_check_is_skipped[runtime]
+FAILED tests/test_ml_tvm.py::test_without_an_ml_address_only_the_holder_check_is_skipped[hugepages]
+FAILED tests/test_ml_tvm.py::test_ml_deploy_fails_closed_without_an_ml_address[address0]
+FAILED tests/test_ml_tvm.py::test_ml_deploy_fails_closed_without_an_ml_address[address1]
+PASSED tests/test_ml_tvm.py::test_no_new_ml_var_is_a_runner_extravar
+PASSED tests/test_ml_tvm.py::test_no_secret_reaches_the_ml_tvm_files[apps/ml-tvm/deploy.yml]
+PASSED tests/test_ml_tvm.py::test_no_secret_reaches_the_ml_tvm_files[apps/ml-tvm/cleanup.yml]
+PASSED tests/test_ml_tvm.py::test_no_secret_reaches_the_ml_tvm_files[files/daolab-ml-smoke]
+PASSED tests/test_ml_tvm.py::test_no_secret_reaches_the_ml_tvm_files[verify_clean.yml]
+PASSED tests/test_ml_tvm.py::test_no_secret_reaches_the_ml_tvm_files[probe.yml]
+6 failed, 6 passed, 40 deselected in 21.25s
+# exit: 1

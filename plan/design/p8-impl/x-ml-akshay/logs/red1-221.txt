@@ -1,0 +1,1397 @@
+# date:        2026-11-25T08:03:31Z
+# worktree:    /home/akshay/x-ml (branch x-ml)
+# HEAD:        8bfcf4bdf6e9709c3f231e58682725787fb7450d
+# write-tree:  1c122a2384c206f0ce32371b3c9afd2d285770b0   (index; staged changes only)
+# status:      4 entries (git status --short, venvs excluded)
+#    M scripts/run/showcase.sh
+#    M tests/test_catalog.py
+#    M tests/test_playbooks.py
+#   ?? tests/test_ml_tvm.py
+# venv:        /home/akshay/x-ml/.venv
+# python:      3.12.13
+# ansible-core: 2.21.6
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# service pkg: /home/akshay/x-ml/service/__init__.py
+# age:         v1.1.1
+# ansible-playbook: /home/akshay/x-ml/.venv/bin/ansible-playbook = /home/akshay/x-ml/.venv/bin/ansible-playbook
+# ansible-playbook --version: ansible-playbook [core 2.21.6]
+# command:     .venv/bin/python -m pytest tests/test_ml_tvm.py tests/test_catalog.py -q -rsfp -p no:cacheprovider
+
+FFF.FF.FFFFFFF.FFFFFFFFFFFFFFFFFFFFFFFFFFF......................         [100%]
+=================================== FAILURES ===================================
+________________________ test_the_catalog_loads_ml_tvm _________________________
+
+    def test_the_catalog_loads_ml_tvm():
+        ucs, errors = catalog.load_usecases(UC_DIR)
+        assert errors == []
+>       ml = {u["name"]: u for u in ucs}["ml-tvm"]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'ml-tvm'
+
+tests/test_ml_tvm.py:46: KeyError
+________ test_sync_turns_the_seeded_ml_tvm_row_into_the_yaml_backed_row ________
+
+conn = <sqlite3.Connection object at 0x76d9f42304f0>
+
+    def test_sync_turns_the_seeded_ml_tvm_row_into_the_yaml_backed_row(conn):
+        seeded = models.usecase_by_name(conn, "ml-tvm")
+        assert seeded["yaml_path"] is None                                # "coming soon" before
+        catalog.sync(conn, UC_DIR, ST_DIR, INV)
+        rows = conn.execute("SELECT * FROM usecases WHERE name = 'ml-tvm'").fetchall()
+        assert len(rows) == 1                                             # updated, not duplicated
+        row = rows[0]
+        assert row["id"] == seeded["id"]
+>       assert row["yaml_path"].endswith(os.path.join("usecases", "ml-tvm.yml"))
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'NoneType' object has no attribute 'endswith'
+
+tests/test_ml_tvm.py:62: AttributeError
+_ test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable0-True] __
+
+conn = <sqlite3.Connection object at 0x76d9f42306d0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76d9f4207a10>
+deployable = ('vpp', 'smartnic', 'tls-proxy-nginx', 'ml-tvm'), expected = True
+
+    @pytest.mark.parametrize("deployable,expected", [
+        (("vpp", "smartnic", "tls-proxy-nginx", "ml-tvm"), True),        # the showcase default now
+        (("vpp", "smartnic", "tls-proxy-nginx"), False),                  # not listed: coming soon
+        ((), True),                                                       # DAOLAB_DEPLOYABLE unset
+    ])
+    def test_ml_tvm_is_deployable_when_daolab_deployable_lists_it(conn, monkeypatch, deployable,
+                                                                  expected):
+        from service import api
+        catalog.sync(conn, UC_DIR, ST_DIR, INV)
+        monkeypatch.setattr(config, "settings",
+                            dataclasses.replace(config.settings, deployable=deployable))
+>       assert api._deployable(models.usecase_by_name(conn, "ml-tvm")) is expected
+E       AssertionError: assert False is True
+E        +  where False = <function _deployable at 0x76d9f357ab60>(<sqlite3.Row object at 0x76d9f332f850>)
+E        +    where <function _deployable at 0x76d9f357ab60> = <module 'service.api' from '/home/akshay/x-ml/service/api.py'>._deployable
+E        +    and   <sqlite3.Row object at 0x76d9f332f850> = <function usecase_by_name at 0x76d9f44cc860>(<sqlite3.Connection object at 0x76d9f42306d0>, 'ml-tvm')
+E        +      where <function usecase_by_name at 0x76d9f44cc860> = models.usecase_by_name
+
+tests/test_ml_tvm.py:80: AssertionError
+_ test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable2-True] __
+
+conn = <sqlite3.Connection object at 0x76d9f42307c0>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x76d9f332f830>
+deployable = (), expected = True
+
+    @pytest.mark.parametrize("deployable,expected", [
+        (("vpp", "smartnic", "tls-proxy-nginx", "ml-tvm"), True),        # the showcase default now
+        (("vpp", "smartnic", "tls-proxy-nginx"), False),                  # not listed: coming soon
+        ((), True),                                                       # DAOLAB_DEPLOYABLE unset
+    ])
+    def test_ml_tvm_is_deployable_when_daolab_deployable_lists_it(conn, monkeypatch, deployable,
+                                                                  expected):
+        from service import api
+        catalog.sync(conn, UC_DIR, ST_DIR, INV)
+        monkeypatch.setattr(config, "settings",
+                            dataclasses.replace(config.settings, deployable=deployable))
+>       assert api._deployable(models.usecase_by_name(conn, "ml-tvm")) is expected
+E       AssertionError: assert False is True
+E        +  where False = <function _deployable at 0x76d9f357ab60>(<sqlite3.Row object at 0x76d9f332f190>)
+E        +    where <function _deployable at 0x76d9f357ab60> = <module 'service.api' from '/home/akshay/x-ml/service/api.py'>._deployable
+E        +    and   <sqlite3.Row object at 0x76d9f332f190> = <function usecase_by_name at 0x76d9f44cc860>(<sqlite3.Connection object at 0x76d9f42307c0>, 'ml-tvm')
+E        +      where <function usecase_by_name at 0x76d9f44cc860> = models.usecase_by_name
+
+tests/test_ml_tvm.py:80: AssertionError
+______ test_the_mock_exporter_serves_the_series_the_ml_health_rules_read _______
+
+    def test_the_mock_exporter_serves_the_series_the_ml_health_rules_read():
+        ucs, _ = catalog.load_usecases(UC_DIR)
+>       ml = {u["name"]: u for u in ucs}["ml-tvm"]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'ml-tvm'
+
+tests/test_ml_tvm.py:85: KeyError
+_________________ test_the_inventory_names_the_ml_device_role __________________
+
+    def test_the_inventory_names_the_ml_device_role():
+        with open(HOST_VARS, encoding="utf-8") as fh:
+            hv = yaml.safe_load(fh)
+>       assert hv["bdf"]["ml"] == PCI
+               ^^^^^^^^^^^^^^^
+E       KeyError: 'ml'
+
+tests/test_ml_tvm.py:101: KeyError
+___________ test_ml_pci_resolves_to_the_ml_role[{{ ml_pci }}-False] ____________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-4/test_ml_pci_resolves_to_the_ml0')
+expr = '{{ ml_pci }}', drop_ml_pci = False
+
+    @needs_ansible
+    @pytest.mark.parametrize("expr,drop_ml_pci", [
+        ("{{ ml_pci }}", False),                                         # the app playbooks
+        (ML_FALLBACK, False),                                            # verify_clean / probe
+        (ML_FALLBACK, True),                                             # ... falling back to bdf.ml
+    ])
+    def test_ml_pci_resolves_to_the_ml_role(tmp_path, expr, drop_ml_pci):
+        """Through ansible itself, with dpu-01's real host_vars beside a local-only inventory (no
+        address, nothing is contacted)."""
+        inv = tmp_path / "inv"
+        (inv / "host_vars").mkdir(parents=True)
+        with open(HOST_VARS, encoding="utf-8") as fh:
+            hv = fh.read()
+        if drop_ml_pci:
+            hv = re.sub(r"(?m)^ml_pci:.*$", "", hv)
+            assert "ml_pci:" not in hv
+        (inv / "host_vars" / "dpu-01.yml").write_text(hv)
+        (inv / "hosts.json").write_text(json.dumps({"all": {"hosts": {"dpu-01": {
+            "ansible_connection": "local",
+            "ansible_python_interpreter": "{{ ansible_playbook_python }}"}}}}))
+        out = tmp_path / "ml_pci.txt"
+        play = tmp_path / "resolve.yml"
+        play.write_text(yaml.safe_dump([{"hosts": "dpu-01", "gather_facts": False, "tasks": [
+            {"ansible.builtin.copy": {"content": expr, "dest": str(out)}}]}]))
+        env = {**os.environ, "ANSIBLE_LOCAL_TEMP": str(tmp_path / "tmp"),
+               "ANSIBLE_HOME": str(tmp_path / "ansible-home"), "ANSIBLE_NOCOLOR": "1"}
+        p = subprocess.run([ANSIBLE, "-i", str(inv / "hosts.json"), str(play)], env=env,
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+>       assert p.returncode == 0, (p.stdout + p.stderr)[-2000:]
+E       AssertionError: 
+E         PLAY [dpu-01] ******************************************************************
+E         
+E         TASK [ansible.builtin.copy] ****************************************************
+E         [ERROR]: Task failed: Finalization of task args for 'ansible.builtin.copy' failed: Error while resolving value for 'content': 'ml_pci' is undefined
+E         
+E         Task failed: Finalization of task args for 'ansible.builtin.copy' failed.
+E         Origin: /tmp/pytest-of-akshay/pytest-4/test_ml_pci_resolves_to_the_ml0/resolve.yml:4:5
+E         
+E         2   hosts: dpu-01
+E         3   tasks:
+E         4   - ansible.builtin.copy:
+E               ^ column 5
+E         
+E         <<< caused by >>>
+E         
+E         Error while resolving value for 'content': 'ml_pci' is undefined
+E         Origin: /tmp/pytest-of-akshay/pytest-4/test_ml_pci_resolves_to_the_ml0/resolve.yml:5:16
+E         
+E         3   tasks:
+E         4   - ansible.builtin.copy:
+E         5       content: '{{ ml_pci }}'
+E                          ^ column 16
+E         
+E         fatal: [dpu-01]: FAILED! => {"changed": false, "msg": "Task failed: Finalization of task args for 'ansible.builtin.copy' failed: Error while resolving value for 'content': 'ml_pci' is undefined"}
+E         
+E         PLAY RECAP *********************************************************************
+E         dpu-01                     : ok=0    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+E         
+E         
+E       assert 2 == 0
+E        +  where 2 = CompletedProcess(args=['/home/akshay/x-ml/.venv/bin/ansible-playbook', '-i', '/tmp/pytest-of-akshay/pytest-4/test_ml_p...            : ok=0    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   \n\n', stderr='').returncode
+
+tests/test_ml_tvm.py:137: AssertionError
+_ test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-False] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-4/test_ml_pci_resolves_to_the_ml1')
+expr = "{{ ml_pci | default(bdf.ml | default('')) }}", drop_ml_pci = False
+
+    @needs_ansible
+    @pytest.mark.parametrize("expr,drop_ml_pci", [
+        ("{{ ml_pci }}", False),                                         # the app playbooks
+        (ML_FALLBACK, False),                                            # verify_clean / probe
+        (ML_FALLBACK, True),                                             # ... falling back to bdf.ml
+    ])
+    def test_ml_pci_resolves_to_the_ml_role(tmp_path, expr, drop_ml_pci):
+        """Through ansible itself, with dpu-01's real host_vars beside a local-only inventory (no
+        address, nothing is contacted)."""
+        inv = tmp_path / "inv"
+        (inv / "host_vars").mkdir(parents=True)
+        with open(HOST_VARS, encoding="utf-8") as fh:
+            hv = fh.read()
+        if drop_ml_pci:
+            hv = re.sub(r"(?m)^ml_pci:.*$", "", hv)
+            assert "ml_pci:" not in hv
+        (inv / "host_vars" / "dpu-01.yml").write_text(hv)
+        (inv / "hosts.json").write_text(json.dumps({"all": {"hosts": {"dpu-01": {
+            "ansible_connection": "local",
+            "ansible_python_interpreter": "{{ ansible_playbook_python }}"}}}}))
+        out = tmp_path / "ml_pci.txt"
+        play = tmp_path / "resolve.yml"
+        play.write_text(yaml.safe_dump([{"hosts": "dpu-01", "gather_facts": False, "tasks": [
+            {"ansible.builtin.copy": {"content": expr, "dest": str(out)}}]}]))
+        env = {**os.environ, "ANSIBLE_LOCAL_TEMP": str(tmp_path / "tmp"),
+               "ANSIBLE_HOME": str(tmp_path / "ansible-home"), "ANSIBLE_NOCOLOR": "1"}
+        p = subprocess.run([ANSIBLE, "-i", str(inv / "hosts.json"), str(play)], env=env,
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        assert p.returncode == 0, (p.stdout + p.stderr)[-2000:]
+>       assert out.read_text() == PCI
+E       AssertionError: assert '' == '0000:00:10.0'
+E         
+E         - 0000:00:10.0
+
+tests/test_ml_tvm.py:138: AssertionError
+_ test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-True] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-4/test_ml_pci_resolves_to_the_ml2')
+expr = "{{ ml_pci | default(bdf.ml | default('')) }}", drop_ml_pci = True
+
+    @needs_ansible
+    @pytest.mark.parametrize("expr,drop_ml_pci", [
+        ("{{ ml_pci }}", False),                                         # the app playbooks
+        (ML_FALLBACK, False),                                            # verify_clean / probe
+        (ML_FALLBACK, True),                                             # ... falling back to bdf.ml
+    ])
+    def test_ml_pci_resolves_to_the_ml_role(tmp_path, expr, drop_ml_pci):
+        """Through ansible itself, with dpu-01's real host_vars beside a local-only inventory (no
+        address, nothing is contacted)."""
+        inv = tmp_path / "inv"
+        (inv / "host_vars").mkdir(parents=True)
+        with open(HOST_VARS, encoding="utf-8") as fh:
+            hv = fh.read()
+        if drop_ml_pci:
+            hv = re.sub(r"(?m)^ml_pci:.*$", "", hv)
+            assert "ml_pci:" not in hv
+        (inv / "host_vars" / "dpu-01.yml").write_text(hv)
+        (inv / "hosts.json").write_text(json.dumps({"all": {"hosts": {"dpu-01": {
+            "ansible_connection": "local",
+            "ansible_python_interpreter": "{{ ansible_playbook_python }}"}}}}))
+        out = tmp_path / "ml_pci.txt"
+        play = tmp_path / "resolve.yml"
+        play.write_text(yaml.safe_dump([{"hosts": "dpu-01", "gather_facts": False, "tasks": [
+            {"ansible.builtin.copy": {"content": expr, "dest": str(out)}}]}]))
+        env = {**os.environ, "ANSIBLE_LOCAL_TEMP": str(tmp_path / "tmp"),
+               "ANSIBLE_HOME": str(tmp_path / "ansible-home"), "ANSIBLE_NOCOLOR": "1"}
+        p = subprocess.run([ANSIBLE, "-i", str(inv / "hosts.json"), str(play)], env=env,
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        assert p.returncode == 0, (p.stdout + p.stderr)[-2000:]
+>       assert out.read_text() == PCI
+E       AssertionError: assert '' == '0000:00:10.0'
+E         
+E         - 0000:00:10.0
+
+tests/test_ml_tvm.py:138: AssertionError
+_____________ test_every_ml_address_fallback_is_the_inventory_role _____________
+
+    def test_every_ml_address_fallback_is_the_inventory_role():
+        """Q-C: the exporter's and the smoke test's own defaults equal bdf.ml, and the playbooks
+        fall back to bdf.ml itself, never to a second copy of the address."""
+        with open(HOST_VARS, encoding="utf-8") as fh:
+>           ml = yaml.safe_load(fh)["bdf"]["ml"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'ml'
+
+tests/test_ml_tvm.py:145: KeyError
+_ test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/deploy.yml] __
+
+rel = 'apps/ml-tvm/deploy.yml'
+
+    @pytest.mark.parametrize("rel", ML_PLAYBOOKS[:3])
+    def test_no_ml_host_path_is_a_literal_outside_a_default(rel):
+>       code = re.sub(r"""default\((['"])[^'"]*\1\)""", "default()", _code(_read(rel)))
+                                                                           ^^^^^^^^^^
+
+tests/test_ml_tvm.py:181: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rel = 'apps/ml-tvm/deploy.yml'
+
+    def _read(rel):
+>       with open(os.path.join(PLAYBOOKS, rel), encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml'
+
+tests/test_ml_tvm.py:37: FileNotFoundError
+_ test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/cleanup.yml] _
+
+rel = 'apps/ml-tvm/cleanup.yml'
+
+    @pytest.mark.parametrize("rel", ML_PLAYBOOKS[:3])
+    def test_no_ml_host_path_is_a_literal_outside_a_default(rel):
+>       code = re.sub(r"""default\((['"])[^'"]*\1\)""", "default()", _code(_read(rel)))
+                                                                           ^^^^^^^^^^
+
+tests/test_ml_tvm.py:181: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rel = 'apps/ml-tvm/cleanup.yml'
+
+    def _read(rel):
+>       with open(os.path.join(PLAYBOOKS, rel), encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml'
+
+tests/test_ml_tvm.py:37: FileNotFoundError
+_______________ test_the_ml_host_path_defaults_are_todays_values _______________
+
+    def test_the_ml_host_path_defaults_are_todays_values():
+        found = {}
+        for rel in ML_PLAYBOOKS[:3]:
+>           for var, val in re.findall(r"""\b(\w+) \| default\((?:'([^']*)')\)""", _code(_read(rel))):
+                                                                                         ^^^^^^^^^^
+
+tests/test_ml_tvm.py:188: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rel = 'apps/ml-tvm/deploy.yml'
+
+    def _read(rel):
+>       with open(os.path.join(PLAYBOOKS, rel), encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml'
+
+tests/test_ml_tvm.py:37: FileNotFoundError
+_____ test_the_smoke_test_host_paths_are_overridable_with_todays_defaults ______
+
+    def test_the_smoke_test_host_paths_are_overridable_with_todays_defaults():
+        """Q-B: like DAOLAB_SYSFS, every host path the smoke test reads or deletes comes from the
+        environment, defaulting to the board's value."""
+>       with open(SMOKE, encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'
+
+tests/test_ml_tvm.py:202: FileNotFoundError
+________ test_the_env_file_path_lines_are_the_smoke_tests_own_defaults _________
+
+    def test_the_env_file_path_lines_are_the_smoke_tests_own_defaults():
+        """Q-B / point 3: with no override, every DAOLAB_* line deploy writes equals the smoke
+        script's built-in default, so the board runs exactly as before."""
+>       env = _env_file_template()
+              ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ml_tvm.py:228: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_ml_tvm.py:217: in _env_file_template
+    plays = yaml.safe_load(_read("apps/ml-tvm/deploy.yml"))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rel = 'apps/ml-tvm/deploy.yml'
+
+    def _read(rel):
+>       with open(os.path.join(PLAYBOOKS, rel), encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml'
+
+tests/test_ml_tvm.py:37: FileNotFoundError
+_________________ test_the_env_file_holds_nothing_secret_like __________________
+
+    def test_the_env_file_holds_nothing_secret_like():
+        """F-5-1: no secret-like name or value, and no secret variable, in /etc/default/daolab-ml."""
+>       env = _env_file_template()
+              ^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ml_tvm.py:238: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_ml_tvm.py:217: in _env_file_template
+    plays = yaml.safe_load(_read("apps/ml-tvm/deploy.yml"))
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+rel = 'apps/ml-tvm/deploy.yml'
+
+    def _read(rel):
+>       with open(os.path.join(PLAYBOOKS, rel), encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml'
+
+tests/test_ml_tvm.py:37: FileNotFoundError
+_______ test_the_smoke_test_runs_one_inference_and_leaves_no_dpdk_files ________
+
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33f8980>
+
+    def test_the_smoke_test_runs_one_inference_and_leaves_no_dpdk_files(ml):
+        ml.on("vfio-pci")
+        ml.leftovers()
+        before = ml.files()
+        p = _smoke(ml)
+>       assert p.returncode == 0, p.stdout + p.stderr
+E       AssertionError: bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or directory
+E         
+E       assert 127 == 0
+E        +  where 127 = CompletedProcess(args=['bash', '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'], returncode=127, stdout='', stderr='bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or directory\n').returncode
+
+tests/test_ml_tvm.py:422: AssertionError
+______________ test_the_smoke_test_fails_when_the_inference_fails ______________
+
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33fb8f0>
+
+    def test_the_smoke_test_fails_when_the_inference_fails(ml):
+        ml.on("vfio-pci")
+        ml.verdict.write_text("Failed")
+        p = _smoke(ml)
+>       assert p.returncode == 1 and p.stdout.splitlines()[-1] == "daolab-ml-smoke: success=0"
+E       AssertionError: assert (127 == 1)
+E        +  where 127 = CompletedProcess(args=['bash', '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'], returncode=127, stdout='', stderr='bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or directory\n').returncode
+
+tests/test_ml_tvm.py:436: AssertionError
+_ test_the_smoke_test_reports_the_last_result_while_the_owner_holds_the_device _
+
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33f9700>
+
+    def test_the_smoke_test_reports_the_last_result_while_the_owner_holds_the_device(ml):
+        ml.on("vfio-pci")
+        ml.state.mkdir()
+        (ml.state / "last-smoke.log").write_text("Result: Success\n")
+        ml.holder()
+        p = _smoke(ml)
+>       assert p.returncode == 0, p.stdout + p.stderr
+E       AssertionError: bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or directory
+E         
+E       assert 127 == 0
+E        +  where 127 = CompletedProcess(args=['bash', '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'], returncode=127, stdout='', stderr='bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or directory\n').returncode
+
+tests/test_ml_tvm.py:445: AssertionError
+_____________ test_the_smoke_test_refuses_a_device_not_on_vfio_pci _____________
+
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33e5dc0>
+
+    def test_the_smoke_test_refuses_a_device_not_on_vfio_pci(ml):
+        ml.on("")
+        p = _smoke(ml)
+>       assert p.returncode == 1 and "not vfio-pci" in p.stdout
+E       AssertionError: assert (127 == 1)
+E        +  where 127 = CompletedProcess(args=['bash', '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'], returncode=127, stdout='', stderr='bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or directory\n').returncode
+
+tests/test_ml_tvm.py:453: AssertionError
+_ test_the_exporter_reports_the_ml_device_and_the_last_smoke[vfio-pci-ML: done\nResult: Success\n-want0] _
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['--app', 'ml', '--ml-pci', '0000:00:10.0', '--pci-sysfs', '/tmp/pytest-of-akshay/pytest-4/test_the_exporter_reports_the_0/devices', ...]
+namespace = Namespace(app=None, listen='127.0.0.1:9273', vppctl='vppctl', vpp_socket='', nginx_addr='127.0.0.1:443', stub_status='', process='dao-smart-nic', pci='', netdev='', sysfs='/sys/class/net', once=False)
+intermixed = False
+
+    def _parse_known_args2(self, args, namespace, intermixed):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace, intermixed)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1943: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2184: in _parse_known_args
+    start_index = consume_optional(start_index)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2113: in consume_optional
+    take_action(action, args, option_string)
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2003: in take_action
+    argument_values = self._get_values(action, argument_strings)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2514: in _get_values
+    self._check_value(action, value)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _StoreAction(option_strings=['--app'], dest='app', nargs=None, const=None, default=None, type=None, choices=['nginx', 'smartnic', 'vpp'], required=True, help=None, metavar=None)
+value = 'ml'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        choices = action.choices
+        if choices is not None:
+            if isinstance(choices, str):
+                choices = iter(choices)
+            if value not in choices:
+                args = {'value': str(value),
+                        'choices': ', '.join(map(str, action.choices))}
+                msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>               raise ArgumentError(action, msg % args)
+E               argparse.ArgumentError: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2573: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-4/test_the_exporter_reports_the_0')
+capsys = <_pytest.capture.CaptureFixture object at 0x76d9f33e59d0>
+driver = 'vfio-pci', result = 'ML: done\nResult: Success\n'
+want = {'ml_up': 1.0, 'ml_last_smoke_ok': 1.0}
+
+    @pytest.mark.parametrize("driver,result,want", [
+        ("vfio-pci", "ML: done\nResult: Success\n", {"ml_up": 1.0, "ml_last_smoke_ok": 1.0}),
+        ("", "Result: Failed\n", {"ml_up": 0.0, "ml_last_smoke_ok": 0.0}),
+        ("vfio-pci", None, {"ml_up": 1.0, "ml_last_smoke_ok": 0.0}),
+    ])
+    def test_the_exporter_reports_the_ml_device_and_the_last_smoke(tmp_path, capsys, driver,
+                                                                   result, want):
+        devs = tmp_path / "devices"
+        (devs / PCI).mkdir(parents=True)
+        if driver:
+            (tmp_path / "drivers" / driver).mkdir(parents=True)
+            (devs / PCI / "driver").symlink_to(tmp_path / "drivers" / driver)
+        res = tmp_path / "last-smoke.log"
+        if result is not None:
+            res.write_text(result)
+>       exp.main(["--app", "ml", "--ml-pci", PCI, "--pci-sysfs", str(devs), "--ml-result", str(res),
+                  "--once"])
+
+tests/test_ml_tvm.py:474: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+playbooks/files/daolab-app-exporter:149: in main
+    args = p.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1904: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1914: in parse_known_args
+    return self._parse_known_args2(args, namespace, intermixed=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1945: in _parse_known_args2
+    self.error(str(err))
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2650: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "__main__.py: error: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2637: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: __main__.py [-h] --app {nginx,smartnic,vpp} [--listen LISTEN]
+                   [--vppctl VPPCTL] [--vpp-socket VPP_SOCKET]
+                   [--nginx-addr NGINX_ADDR] [--stub-status STUB_STATUS]
+                   [--process PROCESS] [--pci PCI] [--netdev NETDEV]
+                   [--sysfs SYSFS] [--once]
+__main__.py: error: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+_ test_the_exporter_reports_the_ml_device_and_the_last_smoke[-Result: Failed\n-want1] _
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['--app', 'ml', '--ml-pci', '0000:00:10.0', '--pci-sysfs', '/tmp/pytest-of-akshay/pytest-4/test_the_exporter_reports_the_1/devices', ...]
+namespace = Namespace(app=None, listen='127.0.0.1:9273', vppctl='vppctl', vpp_socket='', nginx_addr='127.0.0.1:443', stub_status='', process='dao-smart-nic', pci='', netdev='', sysfs='/sys/class/net', once=False)
+intermixed = False
+
+    def _parse_known_args2(self, args, namespace, intermixed):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace, intermixed)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1943: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2184: in _parse_known_args
+    start_index = consume_optional(start_index)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2113: in consume_optional
+    take_action(action, args, option_string)
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2003: in take_action
+    argument_values = self._get_values(action, argument_strings)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2514: in _get_values
+    self._check_value(action, value)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _StoreAction(option_strings=['--app'], dest='app', nargs=None, const=None, default=None, type=None, choices=['nginx', 'smartnic', 'vpp'], required=True, help=None, metavar=None)
+value = 'ml'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        choices = action.choices
+        if choices is not None:
+            if isinstance(choices, str):
+                choices = iter(choices)
+            if value not in choices:
+                args = {'value': str(value),
+                        'choices': ', '.join(map(str, action.choices))}
+                msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>               raise ArgumentError(action, msg % args)
+E               argparse.ArgumentError: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2573: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-4/test_the_exporter_reports_the_1')
+capsys = <_pytest.capture.CaptureFixture object at 0x76d9f33e6450>, driver = ''
+result = 'Result: Failed\n', want = {'ml_up': 0.0, 'ml_last_smoke_ok': 0.0}
+
+    @pytest.mark.parametrize("driver,result,want", [
+        ("vfio-pci", "ML: done\nResult: Success\n", {"ml_up": 1.0, "ml_last_smoke_ok": 1.0}),
+        ("", "Result: Failed\n", {"ml_up": 0.0, "ml_last_smoke_ok": 0.0}),
+        ("vfio-pci", None, {"ml_up": 1.0, "ml_last_smoke_ok": 0.0}),
+    ])
+    def test_the_exporter_reports_the_ml_device_and_the_last_smoke(tmp_path, capsys, driver,
+                                                                   result, want):
+        devs = tmp_path / "devices"
+        (devs / PCI).mkdir(parents=True)
+        if driver:
+            (tmp_path / "drivers" / driver).mkdir(parents=True)
+            (devs / PCI / "driver").symlink_to(tmp_path / "drivers" / driver)
+        res = tmp_path / "last-smoke.log"
+        if result is not None:
+            res.write_text(result)
+>       exp.main(["--app", "ml", "--ml-pci", PCI, "--pci-sysfs", str(devs), "--ml-result", str(res),
+                  "--once"])
+
+tests/test_ml_tvm.py:474: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+playbooks/files/daolab-app-exporter:149: in main
+    args = p.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1904: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1914: in parse_known_args
+    return self._parse_known_args2(args, namespace, intermixed=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1945: in _parse_known_args2
+    self.error(str(err))
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2650: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "__main__.py: error: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2637: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: __main__.py [-h] --app {nginx,smartnic,vpp} [--listen LISTEN]
+                   [--vppctl VPPCTL] [--vpp-socket VPP_SOCKET]
+                   [--nginx-addr NGINX_ADDR] [--stub-status STUB_STATUS]
+                   [--process PROCESS] [--pci PCI] [--netdev NETDEV]
+                   [--sysfs SYSFS] [--once]
+__main__.py: error: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+_ test_the_exporter_reports_the_ml_device_and_the_last_smoke[vfio-pci-None-want2] _
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+args = ['--app', 'ml', '--ml-pci', '0000:00:10.0', '--pci-sysfs', '/tmp/pytest-of-akshay/pytest-4/test_the_exporter_reports_the_2/devices', ...]
+namespace = Namespace(app=None, listen='127.0.0.1:9273', vppctl='vppctl', vpp_socket='', nginx_addr='127.0.0.1:443', stub_status='', process='dao-smart-nic', pci='', netdev='', sysfs='/sys/class/net', once=False)
+intermixed = False
+
+    def _parse_known_args2(self, args, namespace, intermixed):
+        if args is None:
+            # args default to the system args
+            args = _sys.argv[1:]
+        else:
+            # make sure that args are mutable
+            args = list(args)
+    
+        # default Namespace built from parser defaults
+        if namespace is None:
+            namespace = Namespace()
+    
+        # add any action defaults that aren't present
+        for action in self._actions:
+            if action.dest is not SUPPRESS:
+                if not hasattr(namespace, action.dest):
+                    if action.default is not SUPPRESS:
+                        setattr(namespace, action.dest, action.default)
+    
+        # add any parser defaults that aren't present
+        for dest in self._defaults:
+            if not hasattr(namespace, dest):
+                setattr(namespace, dest, self._defaults[dest])
+    
+        # parse the arguments and exit if there are any errors
+        if self.exit_on_error:
+            try:
+>               namespace, args = self._parse_known_args(args, namespace, intermixed)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1943: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2184: in _parse_known_args
+    start_index = consume_optional(start_index)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2113: in consume_optional
+    take_action(action, args, option_string)
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2003: in take_action
+    argument_values = self._get_values(action, argument_strings)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2514: in _get_values
+    self._check_value(action, value)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+action = _StoreAction(option_strings=['--app'], dest='app', nargs=None, const=None, default=None, type=None, choices=['nginx', 'smartnic', 'vpp'], required=True, help=None, metavar=None)
+value = 'ml'
+
+    def _check_value(self, action, value):
+        # converted value must be one of the choices (if specified)
+        choices = action.choices
+        if choices is not None:
+            if isinstance(choices, str):
+                choices = iter(choices)
+            if value not in choices:
+                args = {'value': str(value),
+                        'choices': ', '.join(map(str, action.choices))}
+                msg = _('invalid choice: %(value)r (choose from %(choices)s)')
+>               raise ArgumentError(action, msg % args)
+E               argparse.ArgumentError: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2573: ArgumentError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-4/test_the_exporter_reports_the_2')
+capsys = <_pytest.capture.CaptureFixture object at 0x76d9f33e5820>
+driver = 'vfio-pci', result = None
+want = {'ml_up': 1.0, 'ml_last_smoke_ok': 0.0}
+
+    @pytest.mark.parametrize("driver,result,want", [
+        ("vfio-pci", "ML: done\nResult: Success\n", {"ml_up": 1.0, "ml_last_smoke_ok": 1.0}),
+        ("", "Result: Failed\n", {"ml_up": 0.0, "ml_last_smoke_ok": 0.0}),
+        ("vfio-pci", None, {"ml_up": 1.0, "ml_last_smoke_ok": 0.0}),
+    ])
+    def test_the_exporter_reports_the_ml_device_and_the_last_smoke(tmp_path, capsys, driver,
+                                                                   result, want):
+        devs = tmp_path / "devices"
+        (devs / PCI).mkdir(parents=True)
+        if driver:
+            (tmp_path / "drivers" / driver).mkdir(parents=True)
+            (devs / PCI / "driver").symlink_to(tmp_path / "drivers" / driver)
+        res = tmp_path / "last-smoke.log"
+        if result is not None:
+            res.write_text(result)
+>       exp.main(["--app", "ml", "--ml-pci", PCI, "--pci-sysfs", str(devs), "--ml-result", str(res),
+                  "--once"])
+
+tests/test_ml_tvm.py:474: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+playbooks/files/daolab-app-exporter:149: in main
+    args = p.parse_args(argv)
+           ^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1904: in parse_args
+    args, argv = self.parse_known_args(args, namespace)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1914: in parse_known_args
+    return self._parse_known_args2(args, namespace, intermixed=False)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:1945: in _parse_known_args2
+    self.error(str(err))
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2650: in error
+    self.exit(2, _('%(prog)s: error: %(message)s\n') % args)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ArgumentParser(prog='__main__.py', usage=None, description="daolab-app-exporter — the DPU app's health as Prometheus metrics (B-81, plan/09 §8).", formatter_class=<class 'argparse.HelpFormatter'>, conflict_handler='error', add_help=True)
+status = 2
+message = "__main__.py: error: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)\n"
+
+    def exit(self, status=0, message=None):
+        if message:
+            self._print_message(message, _sys.stderr)
+>       _sys.exit(status)
+E       SystemExit: 2
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/argparse.py:2637: SystemExit
+----------------------------- Captured stderr call -----------------------------
+usage: __main__.py [-h] --app {nginx,smartnic,vpp} [--listen LISTEN]
+                   [--vppctl VPPCTL] [--vpp-socket VPP_SOCKET]
+                   [--nginx-addr NGINX_ADDR] [--stub-status STUB_STATUS]
+                   [--process PROCESS] [--pci PCI] [--netdev NETDEV]
+                   [--sysfs SYSFS] [--once]
+__main__.py: error: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+_______________ test_ml_deploy_without_sign_off_touches_nothing ________________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33fa9f0>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_deploy_without_sign_of0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f33925c0>, override=<function books.<locals>.<lambda> at 0x76d9f3391800>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33f90d0>
+
+    @needs_ansible
+    def test_ml_deploy_without_sign_off_touches_nothing(lab, books, ml):
+        ml.on("")                                                         # the board at rest
+        board(lab)
+        assert ml_deploy(lab, books, ml, allow_destructive_changes=False) != 0
+>       assert "Set DAOLAB_ALLOW_DESTRUCTIVE=true" in lab.stdout
+E       assert 'Set DAOLAB_ALLOW_DESTRUCTIVE=true' in "[WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a director.../ml-tvm/deploy.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.\n"
+E        +  where "[WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a director.../ml-tvm/deploy.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.\n" = <tests.test_playbooks.Lab object at 0x76d9f33fa9f0>.stdout
+
+tests/test_ml_tvm.py:486: AssertionError
+_______________ test_ml_deploy_refuses_a_board_that_is_not_ready _______________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33f9520>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_deploy_refuses_a_board0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f3391b20>, override=<function books.<locals>.<lambda> at 0x76d9f3392840>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f332f920>
+
+    @needs_ansible
+    def test_ml_deploy_refuses_a_board_that_is_not_ready(lab, books, ml):
+        ml.on("vfio-pci")
+        board(lab)
+        (ml.models / f"{MODEL}-output.bin").unlink()
+        assert ml_deploy(lab, books, ml) != 0
+>       assert "the board is not ready for ml-tvm" in lab.stdout
+E       assert 'the board is not ready for ml-tvm' in "[WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a director.../ml-tvm/deploy.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.\n"
+E        +  where "[WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a director.../ml-tvm/deploy.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.\n" = <tests.test_playbooks.Lab object at 0x76d9f33f9520>.stdout
+
+tests/test_ml_tvm.py:498: AssertionError
+___________ test_ml_deploy_proves_the_mlip_and_verifies_from_the_dpu ___________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f4237a10>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_deploy_proves_the_mlip0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f33916c0>, override=<function books.<locals>.<lambda> at 0x76d9f3393100>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a7050>
+
+    @needs_ansible
+    def test_ml_deploy_proves_the_mlip_and_verifies_from_the_dpu(lab, books, ml):
+        ml.on("vfio-pci")
+        board(lab)
+>       assert ml_deploy(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: [WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a directory
+E         [ERROR]: Unable to retrieve file contents. Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' on the Ansible Controller: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.
+E         
+E       assert 1 == 0
+E        +  where 1 = ml_deploy(<tests.test_playbooks.Lab object at 0x76d9f4237a10>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_deploy_proves_the_mlip0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f33916c0>, override=<function books.<locals>.<lambda> at 0x76d9f3393100>), <tests.test_ml_tvm.MlBoard object at 0x76d9f33a7050>)
+
+tests/test_ml_tvm.py:505: AssertionError
+_____________ test_a_second_ml_deploy_keeps_the_first_saved_state ______________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a4800>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_a_second_ml_deploy_keeps_0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f3393240>, override=<function books.<locals>.<lambda> at 0x76d9f3393560>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a4d40>
+
+    @needs_ansible
+    def test_a_second_ml_deploy_keeps_the_first_saved_state(lab, books, ml):
+        ml.on("vfio-pci")
+        board(lab)
+>       assert ml_deploy(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: [WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a directory
+E         [ERROR]: Unable to retrieve file contents. Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' on the Ansible Controller: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.
+E         
+E       assert 1 == 0
+E        +  where 1 = ml_deploy(<tests.test_playbooks.Lab object at 0x76d9f33a4800>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_a_second_ml_deploy_keeps_0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f3393240>, override=<function books.<locals>.<lambda> at 0x76d9f3393560>), <tests.test_ml_tvm.MlBoard object at 0x76d9f33a4d40>)
+
+tests/test_ml_tvm.py:527: AssertionError
+_____________________ test_ml_cleanup_gives_the_board_back _____________________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a5f70>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_cleanup_gives_the_boar0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f33936a0>, override=<function books.<locals>.<lambda> at 0x76d9f33939c0>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a5850>
+
+    @needs_ansible
+    def test_ml_cleanup_gives_the_board_back(lab, books, ml):
+        ml.on("vfio-pci")
+        ml.pages(4, 2)
+        ml.save_state()                                                   # deploy bound it, +2 pages
+        ml.leftovers()
+        holder = ml.holder()
+        board(lab)
+>       assert ml_cleanup(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: [WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a directory
+E         [ERROR]: Unable to retrieve file contents. Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml' on the Ansible Controller: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.
+E         
+E       assert 1 == 0
+E        +  where 1 = ml_cleanup(<tests.test_playbooks.Lab object at 0x76d9f33a5f70>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_cleanup_gives_the_boar0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f33936a0>, override=<function books.<locals>.<lambda> at 0x76d9f33939c0>), <tests.test_ml_tvm.MlBoard object at 0x76d9f33a5850>)
+
+tests/test_ml_tvm.py:542: AssertionError
+_______________ test_ml_cleanup_of_a_clean_board_changes_nothing _______________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a4c50>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_cleanup_of_a_clean_boa0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f3393ba0>, override=<function books.<locals>.<lambda> at 0x76d9f3393d80>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a47d0>
+
+    @needs_ansible
+    def test_ml_cleanup_of_a_clean_board_changes_nothing(lab, books, ml):
+        ml.on("")
+        board(lab)
+>       assert ml_cleanup(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: [WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a directory
+E         [ERROR]: Unable to retrieve file contents. Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml' on the Ansible Controller: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.
+E         
+E       assert 1 == 0
+E        +  where 1 = ml_cleanup(<tests.test_playbooks.Lab object at 0x76d9f33a4c50>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_cleanup_of_a_clean_boa0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f3393ba0>, override=<function books.<locals>.<lambda> at 0x76d9f3393d80>), <tests.test_ml_tvm.MlBoard object at 0x76d9f33a47d0>)
+
+tests/test_ml_tvm.py:556: AssertionError
+______________ test_verify_clean_reports_what_ml_tvm_left[state] _______________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a5a60>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a4320>, left = 'state'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "holder", "runtime", "hugepages"])
+    def test_verify_clean_reports_what_ml_tvm_left(lab, ml, left):
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "holder":
+            ml.holder()
+        elif left == "runtime":
+            (ml.run_dir / "ml-smoke").mkdir()
+        else:
+            (ml.huge[1] / "mlmap_0").write_text("x")
+>       residue = ml_verify_clean(lab, ml)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ml_tvm.py:574: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a5a60>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a4320>, over = {}
+
+    def ml_verify_clean(lab, ml, **over):
+>       assert lab.run("verify_clean.yml", usecase="ml-tvm", **{**ml.vars, **over}) == 0, \
+            lab.stdout[-2000:]
+E       AssertionError: 
+E         PLAY [resolve the setup] *******************************************************
+E         
+E         TASK [load the setup YAML (manual runs only)] **********************************
+E         skipping: [localhost]
+E         
+E         TASK [build the member list from the setup YAML (manual runs only)] ************
+E         skipping: [localhost]
+E         
+E         TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+E         [ERROR]: Task failed: Action failed: Unknown error.
+E         Origin: /home/akshay/x-ml/playbooks/tasks/resolve.yml:27:3
+E         
+E         25   when: daolab_members is not defined
+E         26
+E         27 - name: load the use-case YAML (manual, non-diy runs only)
+E              ^ column 3
+E         
+E         fatal: [localhost]: FAILED! => {"ansible_facts": {"_usecase_yaml": {}}, "ansible_included_var_files": [], "changed": false, "message": "Could not find or access '/home/akshay/x-ml/playbooks/../usecases/ml-tvm.yml' on the Ansible Controller.", "msg": "Task failed: Action failed: Unknown error."}
+E         
+E         PLAY RECAP *********************************************************************
+E         localhost                  : ok=0    changed=0    unreachable=0    failed=1    skipped=2    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = run('verify_clean.yml', usecase='ml-tvm', **{'ml_pci': '0000:00:10.0', 'ml_fw': '/tmp/pytest-of-akshay/pytest-4/test_verify_clean_reports_what0/firmware/mlip-fw.bin', 'ml_lcores': '14-17', 'ml_file_prefix': 'ml', ...})
+E        +    where run = <tests.test_playbooks.Lab object at 0x76d9f33a5a60>.run
+
+tests/test_ml_tvm.py:405: AssertionError
+______________ test_verify_clean_reports_what_ml_tvm_left[holder] ______________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33e1010>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33e1670>, left = 'holder'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "holder", "runtime", "hugepages"])
+    def test_verify_clean_reports_what_ml_tvm_left(lab, ml, left):
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "holder":
+            ml.holder()
+        elif left == "runtime":
+            (ml.run_dir / "ml-smoke").mkdir()
+        else:
+            (ml.huge[1] / "mlmap_0").write_text("x")
+>       residue = ml_verify_clean(lab, ml)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ml_tvm.py:574: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33e1010>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33e1670>, over = {}
+
+    def ml_verify_clean(lab, ml, **over):
+>       assert lab.run("verify_clean.yml", usecase="ml-tvm", **{**ml.vars, **over}) == 0, \
+            lab.stdout[-2000:]
+E       AssertionError: 
+E         PLAY [resolve the setup] *******************************************************
+E         
+E         TASK [load the setup YAML (manual runs only)] **********************************
+E         skipping: [localhost]
+E         
+E         TASK [build the member list from the setup YAML (manual runs only)] ************
+E         skipping: [localhost]
+E         
+E         TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+E         [ERROR]: Task failed: Action failed: Unknown error.
+E         Origin: /home/akshay/x-ml/playbooks/tasks/resolve.yml:27:3
+E         
+E         25   when: daolab_members is not defined
+E         26
+E         27 - name: load the use-case YAML (manual, non-diy runs only)
+E              ^ column 3
+E         
+E         fatal: [localhost]: FAILED! => {"ansible_facts": {"_usecase_yaml": {}}, "ansible_included_var_files": [], "changed": false, "message": "Could not find or access '/home/akshay/x-ml/playbooks/../usecases/ml-tvm.yml' on the Ansible Controller.", "msg": "Task failed: Action failed: Unknown error."}
+E         
+E         PLAY RECAP *********************************************************************
+E         localhost                  : ok=0    changed=0    unreachable=0    failed=1    skipped=2    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = run('verify_clean.yml', usecase='ml-tvm', **{'ml_pci': '0000:00:10.0', 'ml_fw': '/tmp/pytest-of-akshay/pytest-4/test_verify_clean_reports_what1/firmware/mlip-fw.bin', 'ml_lcores': '14-17', 'ml_file_prefix': 'ml', ...})
+E        +    where run = <tests.test_playbooks.Lab object at 0x76d9f33e1010>.run
+
+tests/test_ml_tvm.py:405: AssertionError
+_____________ test_verify_clean_reports_what_ml_tvm_left[runtime] ______________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a5bb0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a6ae0>, left = 'runtime'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "holder", "runtime", "hugepages"])
+    def test_verify_clean_reports_what_ml_tvm_left(lab, ml, left):
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "holder":
+            ml.holder()
+        elif left == "runtime":
+            (ml.run_dir / "ml-smoke").mkdir()
+        else:
+            (ml.huge[1] / "mlmap_0").write_text("x")
+>       residue = ml_verify_clean(lab, ml)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ml_tvm.py:574: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a5bb0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a6ae0>, over = {}
+
+    def ml_verify_clean(lab, ml, **over):
+>       assert lab.run("verify_clean.yml", usecase="ml-tvm", **{**ml.vars, **over}) == 0, \
+            lab.stdout[-2000:]
+E       AssertionError: 
+E         PLAY [resolve the setup] *******************************************************
+E         
+E         TASK [load the setup YAML (manual runs only)] **********************************
+E         skipping: [localhost]
+E         
+E         TASK [build the member list from the setup YAML (manual runs only)] ************
+E         skipping: [localhost]
+E         
+E         TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+E         [ERROR]: Task failed: Action failed: Unknown error.
+E         Origin: /home/akshay/x-ml/playbooks/tasks/resolve.yml:27:3
+E         
+E         25   when: daolab_members is not defined
+E         26
+E         27 - name: load the use-case YAML (manual, non-diy runs only)
+E              ^ column 3
+E         
+E         fatal: [localhost]: FAILED! => {"ansible_facts": {"_usecase_yaml": {}}, "ansible_included_var_files": [], "changed": false, "message": "Could not find or access '/home/akshay/x-ml/playbooks/../usecases/ml-tvm.yml' on the Ansible Controller.", "msg": "Task failed: Action failed: Unknown error."}
+E         
+E         PLAY RECAP *********************************************************************
+E         localhost                  : ok=0    changed=0    unreachable=0    failed=1    skipped=2    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = run('verify_clean.yml', usecase='ml-tvm', **{'ml_pci': '0000:00:10.0', 'ml_fw': '/tmp/pytest-of-akshay/pytest-4/test_verify_clean_reports_what2/firmware/mlip-fw.bin', 'ml_lcores': '14-17', 'ml_file_prefix': 'ml', ...})
+E        +    where run = <tests.test_playbooks.Lab object at 0x76d9f33a5bb0>.run
+
+tests/test_ml_tvm.py:405: AssertionError
+____________ test_verify_clean_reports_what_ml_tvm_left[hugepages] _____________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a78c0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a6d80>, left = 'hugepages'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "holder", "runtime", "hugepages"])
+    def test_verify_clean_reports_what_ml_tvm_left(lab, ml, left):
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "holder":
+            ml.holder()
+        elif left == "runtime":
+            (ml.run_dir / "ml-smoke").mkdir()
+        else:
+            (ml.huge[1] / "mlmap_0").write_text("x")
+>       residue = ml_verify_clean(lab, ml)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ml_tvm.py:574: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a78c0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a6d80>, over = {}
+
+    def ml_verify_clean(lab, ml, **over):
+>       assert lab.run("verify_clean.yml", usecase="ml-tvm", **{**ml.vars, **over}) == 0, \
+            lab.stdout[-2000:]
+E       AssertionError: 
+E         PLAY [resolve the setup] *******************************************************
+E         
+E         TASK [load the setup YAML (manual runs only)] **********************************
+E         skipping: [localhost]
+E         
+E         TASK [build the member list from the setup YAML (manual runs only)] ************
+E         skipping: [localhost]
+E         
+E         TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+E         [ERROR]: Task failed: Action failed: Unknown error.
+E         Origin: /home/akshay/x-ml/playbooks/tasks/resolve.yml:27:3
+E         
+E         25   when: daolab_members is not defined
+E         26
+E         27 - name: load the use-case YAML (manual, non-diy runs only)
+E              ^ column 3
+E         
+E         fatal: [localhost]: FAILED! => {"ansible_facts": {"_usecase_yaml": {}}, "ansible_included_var_files": [], "changed": false, "message": "Could not find or access '/home/akshay/x-ml/playbooks/../usecases/ml-tvm.yml' on the Ansible Controller.", "msg": "Task failed: Action failed: Unknown error."}
+E         
+E         PLAY RECAP *********************************************************************
+E         localhost                  : ok=0    changed=0    unreachable=0    failed=1    skipped=2    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = run('verify_clean.yml', usecase='ml-tvm', **{'ml_pci': '0000:00:10.0', 'ml_fw': '/tmp/pytest-of-akshay/pytest-4/test_verify_clean_reports_what3/firmware/mlip-fw.bin', 'ml_lcores': '14-17', 'ml_file_prefix': 'ml', ...})
+E        +    where run = <tests.test_playbooks.Lab object at 0x76d9f33a78c0>.run
+
+tests/test_ml_tvm.py:405: AssertionError
+______ test_verify_clean_skips_the_ml_device_check_without_an_ml_address _______
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33a4d10>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33a52e0>
+
+    @needs_ansible
+    def test_verify_clean_skips_the_ml_device_check_without_an_ml_address(lab, ml):
+        """Another use case on a DPU whose inventory names no ML device: the holder check is
+        skipped, and the job log says so."""
+        ml.on("vfio-pci")
+        ml.holder()                                         # would be found if the check ran
+        assert lab.run("verify_clean.yml", usecase="vpp", **_without_ml_address(ml)) == 0, \
+            lab.stdout[-2000:]
+        assert lab.output() == []
+>       assert "ML device check skipped: no ML device address (ml_pci / bdf.ml)" in lab.stdout
+E       assert 'ML device check skipped: no ML device address (ml_pci / bdf.ml)' in "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n"
+E        +  where "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x76d9f33a4d10>.stdout
+
+tests/test_ml_tvm.py:592: AssertionError
+_______ test_an_ml_tvm_reservation_is_never_clean_without_an_ml_address ________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f332f2c0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f332fe00>
+
+    @needs_ansible
+    def test_an_ml_tvm_reservation_is_never_clean_without_an_ml_address(lab, ml):
+        """The skip must never be why an ml-tvm reservation looks clean: the run fails, which the
+        runner reports as "could not verify" (not clean), like an unreachable host."""
+        ml.on("vfio-pci")
+        ml.holder()
+        assert lab.run("verify_clean.yml", usecase="ml-tvm", **_without_ml_address(ml)) != 0
+>       assert "cannot check an ml-tvm reservation: no ML device address" in lab.stdout
+E       assert 'cannot check an ml-tvm reservation: no ML device address' in "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n"
+E        +  where "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x76d9f332f2c0>.stdout
+
+tests/test_ml_tvm.py:602: AssertionError
+_______________ test_verify_clean_ignores_other_apps_dpdk_files ________________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33f8ef0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33fbc50>
+
+    @needs_ansible
+    def test_verify_clean_ignores_other_apps_dpdk_files(lab, ml):
+        ml.on("vfio-pci")
+        (ml.run_dir / "e_cpt_engine82558").mkdir()
+        (ml.huge[0] / "e_cpt_engine82558map_0").write_text("x")
+>       assert ml_verify_clean(lab, ml) == []
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_ml_tvm.py:611: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33f8ef0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33fbc50>, over = {}
+
+    def ml_verify_clean(lab, ml, **over):
+>       assert lab.run("verify_clean.yml", usecase="ml-tvm", **{**ml.vars, **over}) == 0, \
+            lab.stdout[-2000:]
+E       AssertionError: 
+E         PLAY [resolve the setup] *******************************************************
+E         
+E         TASK [load the setup YAML (manual runs only)] **********************************
+E         skipping: [localhost]
+E         
+E         TASK [build the member list from the setup YAML (manual runs only)] ************
+E         skipping: [localhost]
+E         
+E         TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+E         [ERROR]: Task failed: Action failed: Unknown error.
+E         Origin: /home/akshay/x-ml/playbooks/tasks/resolve.yml:27:3
+E         
+E         25   when: daolab_members is not defined
+E         26
+E         27 - name: load the use-case YAML (manual, non-diy runs only)
+E              ^ column 3
+E         
+E         fatal: [localhost]: FAILED! => {"ansible_facts": {"_usecase_yaml": {}}, "ansible_included_var_files": [], "changed": false, "message": "Could not find or access '/home/akshay/x-ml/playbooks/../usecases/ml-tvm.yml' on the Ansible Controller.", "msg": "Task failed: Action failed: Unknown error."}
+E         
+E         PLAY RECAP *********************************************************************
+E         localhost                  : ok=0    changed=0    unreachable=0    failed=1    skipped=2    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = run('verify_clean.yml', usecase='ml-tvm', **{'ml_pci': '0000:00:10.0', 'ml_fw': '/tmp/pytest-of-akshay/pytest-4/test_verify_clean_ignores_othe0/firmware/mlip-fw.bin', 'ml_lcores': '14-17', 'ml_file_prefix': 'ml', ...})
+E        +    where run = <tests.test_playbooks.Lab object at 0x76d9f33f8ef0>.run
+
+tests/test_ml_tvm.py:405: AssertionError
+_______________ test_ml_tvm_residue_is_reported_and_then_cleared _______________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33f8110>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_tvm_residue_is_reporte0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f3393740>, override=<function books.<locals>.<lambda> at 0x76d9f33931a0>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33e6bd0>
+
+    @needs_ansible
+    def test_ml_tvm_residue_is_reported_and_then_cleared(lab, books, ml):
+        ml.on("vfio-pci")
+        board(lab)
+>       assert ml_deploy(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: [WARNING]: Ignoring invalid path provided to plugin path: '/home/akshay/x-ml/playbooks/apps/ml-tvm' is not a directory
+E         [ERROR]: Unable to retrieve file contents. Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' on the Ansible Controller: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' If you are using a module and expect the file to exist on the remote, see the remote_src option.
+E         
+E       assert 1 == 0
+E        +  where 1 = ml_deploy(<tests.test_playbooks.Lab object at 0x76d9f33f8110>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-4/test_ml_tvm_residue_is_reporte0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x76d9f3393740>, override=<function books.<locals>.<lambda> at 0x76d9f33931a0>), <tests.test_ml_tvm.MlBoard object at 0x76d9f33e6bd0>)
+
+tests/test_ml_tvm.py:618: AssertionError
+_____________ test_probe_without_vms_verifies_ml_tvm_from_the_dpu ______________
+
+lab = <tests.test_playbooks.Lab object at 0x76d9f33e2c00>
+ml = <tests.test_ml_tvm.MlBoard object at 0x76d9f33e3d70>
+
+    @needs_ansible
+    def test_probe_without_vms_verifies_ml_tvm_from_the_dpu(lab, ml):
+        """The probe falls back to bdf.ml when ml_pci is not set (Q-C)."""
+        args = lab.dir / "exporter-args"
+        exporter = lab.dir / "fake-exporter"
+        exporter.write_text(f"#!/bin/sh\necho \"$*\" > {args}\necho '# TYPE ml_up gauge'\n"
+                            "echo 'ml_up 1'\n")
+        exporter.chmod(0o755)
+        v = {k: v for k, v in ml.vars.items() if k != "ml_pci"}
+        rc = lab.run("probe.yml", usecase="ml-tvm", daolab_roles=ML_ROLES, daolab_app="ml-tvm",
+                     daolab_verify={"from": "infer", "cmd": "echo 'daolab-ml-smoke: success=1'",
+                                    **ML_VERIFY_MATCH},
+                     daolab_deploy_vms=False, daolab_vms=[], app_exporter_bin=str(exporter),
+                     bdf={"ml": PCI}, **v)
+        assert rc == 0, lab.stdout[-3000:]
+>       assert "localhost -> dpu-01" in lab.stdout and "verify ok: success = 1" in lab.stdout
+E       assert ('localhost -> dpu-01' in "\nPLAY [probe] *******************************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n")
+E        +  where "\nPLAY [probe] *******************************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x76d9f33e2c00>.stdout
+
+tests/test_ml_tvm.py:643: AssertionError
+_____________________________ test_sync_happy_path _____________________________
+
+conn = <sqlite3.Connection object at 0x76d9f32d0b80>
+
+    def test_sync_happy_path(conn):
+        catalog.sync(conn, UC_DIR, ST_DIR, INV)
+        setup = models.setup_by_name(conn, "tb-01")
+>       assert models.from_json(setup["capabilities"]) == ["e810", "mlip", "octeon-cn106", "sdp", "wire"]
+E       AssertionError: assert ['e810', 'oct...'sdp', 'wire'] == ['e810', 'mli...'sdp', 'wire']
+E         
+E         At index 1 diff: 'octeon-cn106' != 'mlip'
+E         Right contains one more item: 'wire'
+E         Use -v to get more diff
+
+tests/test_catalog.py:30: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ml_tvm.py::test_the_catalog_loads_ml_tvm - KeyError: 'ml-tvm'
+FAILED tests/test_ml_tvm.py::test_sync_turns_the_seeded_ml_tvm_row_into_the_yaml_backed_row
+FAILED tests/test_ml_tvm.py::test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable0-True]
+FAILED tests/test_ml_tvm.py::test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable2-True]
+FAILED tests/test_ml_tvm.py::test_the_mock_exporter_serves_the_series_the_ml_health_rules_read
+FAILED tests/test_ml_tvm.py::test_the_inventory_names_the_ml_device_role - Ke...
+FAILED tests/test_ml_tvm.py::test_ml_pci_resolves_to_the_ml_role[{{ ml_pci }}-False]
+FAILED tests/test_ml_tvm.py::test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-False]
+FAILED tests/test_ml_tvm.py::test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-True]
+FAILED tests/test_ml_tvm.py::test_every_ml_address_fallback_is_the_inventory_role
+FAILED tests/test_ml_tvm.py::test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/deploy.yml]
+FAILED tests/test_ml_tvm.py::test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/cleanup.yml]
+FAILED tests/test_ml_tvm.py::test_the_ml_host_path_defaults_are_todays_values
+FAILED tests/test_ml_tvm.py::test_the_smoke_test_host_paths_are_overridable_with_todays_defaults
+FAILED tests/test_ml_tvm.py::test_the_env_file_path_lines_are_the_smoke_tests_own_defaults
+FAILED tests/test_ml_tvm.py::test_the_env_file_holds_nothing_secret_like - Fi...
+FAILED tests/test_ml_tvm.py::test_the_smoke_test_runs_one_inference_and_leaves_no_dpdk_files
+FAILED tests/test_ml_tvm.py::test_the_smoke_test_fails_when_the_inference_fails
+FAILED tests/test_ml_tvm.py::test_the_smoke_test_reports_the_last_result_while_the_owner_holds_the_device
+FAILED tests/test_ml_tvm.py::test_the_smoke_test_refuses_a_device_not_on_vfio_pci
+FAILED tests/test_ml_tvm.py::test_the_exporter_reports_the_ml_device_and_the_last_smoke[vfio-pci-ML: done\nResult: Success\n-want0]
+FAILED tests/test_ml_tvm.py::test_the_exporter_reports_the_ml_device_and_the_last_smoke[-Result: Failed\n-want1]
+FAILED tests/test_ml_tvm.py::test_the_exporter_reports_the_ml_device_and_the_last_smoke[vfio-pci-None-want2]
+FAILED tests/test_ml_tvm.py::test_ml_deploy_without_sign_off_touches_nothing
+FAILED tests/test_ml_tvm.py::test_ml_deploy_refuses_a_board_that_is_not_ready
+FAILED tests/test_ml_tvm.py::test_ml_deploy_proves_the_mlip_and_verifies_from_the_dpu
+FAILED tests/test_ml_tvm.py::test_a_second_ml_deploy_keeps_the_first_saved_state
+FAILED tests/test_ml_tvm.py::test_ml_cleanup_gives_the_board_back - Assertion...
+FAILED tests/test_ml_tvm.py::test_ml_cleanup_of_a_clean_board_changes_nothing
+FAILED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[state]
+FAILED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[holder]
+FAILED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[runtime]
+FAILED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[hugepages]
+FAILED tests/test_ml_tvm.py::test_verify_clean_skips_the_ml_device_check_without_an_ml_address
+FAILED tests/test_ml_tvm.py::test_an_ml_tvm_reservation_is_never_clean_without_an_ml_address
+FAILED tests/test_ml_tvm.py::test_verify_clean_ignores_other_apps_dpdk_files
+FAILED tests/test_ml_tvm.py::test_ml_tvm_residue_is_reported_and_then_cleared
+FAILED tests/test_ml_tvm.py::test_probe_without_vms_verifies_ml_tvm_from_the_dpu
+FAILED tests/test_catalog.py::test_sync_happy_path - AssertionError: assert [...
+PASSED tests/test_ml_tvm.py::test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable1-False]
+PASSED tests/test_ml_tvm.py::test_ml_tvm_residue_is_an_existing_kind
+PASSED tests/test_ml_tvm.py::test_no_ml_host_path_is_a_literal_outside_a_default[verify_clean.yml]
+PASSED tests/test_catalog.py::test_sync_idempotent_preserves_hw_class
+PASSED tests/test_catalog.py::test_validation_errors_all_or_nothing
+PASSED tests/test_catalog.py::test_unknown_host_rejected
+PASSED tests/test_catalog.py::test_removal_blocked_by_active_reservation
+PASSED tests/test_catalog.py::test_health_rules_loaded
+PASSED tests/test_catalog.py::test_sync_stores_health_rules_on_the_usecase
+PASSED tests/test_catalog.py::test_malformed_health_rule_rejected
+PASSED tests/test_catalog.py::test_sync_loads_ip_pool
+PASSED tests/test_catalog.py::test_sync_shrinks_range_but_keeps_live_leases
+PASSED tests/test_catalog.py::test_bad_ip_pool_rejected
+PASSED tests/test_catalog.py::test_verify_match_with_numeric_checks_loads
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '(unclosed', expect: {x: '== 1'}}-verify.match: not a regex]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '\\d+ ok', expect: {x: '== 1'}}-needs at least one named group]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: '== 1'}-a map of group]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: {m: '== 1'}}-verify.expect.m: no group]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: {n: 'lots'}}-verify.expect.n: must be]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, expect: {n: '== 1'}}-verify.expect: a non-empty string]
+PASSED tests/test_catalog.py::test_bad_httpcheck_is_named[{on: dpu, app: a, httpcheck: ['https://x/']}-httpcheck: only on VM roles]
+PASSED tests/test_catalog.py::test_bad_httpcheck_is_named[{on: tg_host, vm: t, connect: e810-vf, httpcheck: 'https://x/'}-a non-empty list of http(s) URLs]
+PASSED tests/test_catalog.py::test_bad_httpcheck_is_named[{on: tg_host, vm: t, connect: e810-vf, httpcheck: ['ftp://x/']}-a non-empty list of http(s) URLs]
+PASSED tests/test_catalog.py::test_bad_httpcheck_is_named[{on: tg_host, vm: t, connect: e810-vf, httpcheck: ['https://{nope_ip}/']}-{nope_ip} names no role]
+PASSED tests/test_catalog.py::test_shipped_usecases_use_parsed_verify_checks
+39 failed, 25 passed in 15.53s
+# exit: 1

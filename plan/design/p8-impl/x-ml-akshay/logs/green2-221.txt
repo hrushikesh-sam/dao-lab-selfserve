@@ -1,0 +1,54 @@
+# date:        2026-11-25T08:45:25Z
+# worktree:    /home/akshay/x-ml (branch x-ml)
+# HEAD:        8bfcf4bdf6e9709c3f231e58682725787fb7450d
+# write-tree:  1c122a2384c206f0ce32371b3c9afd2d285770b0   (index; staged changes only)
+# status:      19 entries (git status --short, venvs excluded)
+#    M COMPLETION_LOG.md
+#    M README.md
+#    M docs/dao-doc-verification.md
+#    M inventory/host_vars/dpu-01.yml
+#    M playbooks/deploy.yml
+#    M playbooks/files/daolab-app-exporter
+#    M playbooks/probe.yml
+#    M playbooks/roles/verify/tasks/run.yml
+#    M playbooks/verify_clean.yml
+#    M scripts/run/showcase.sh
+#    M service/runner.py
+#    M setups/tb-01.yml
+#    M tests/test_ansible_runner.py
+#    M tests/test_catalog.py
+#    M tests/test_playbooks.py
+#   ?? playbooks/apps/ml-tvm/
+#   ?? playbooks/files/daolab-ml-smoke
+#   ?? tests/test_ml_tvm.py
+#   ?? usecases/ml-tvm.yml
+# venv:        /home/akshay/x-ml/.venv
+# python:      3.12.13
+# ansible-core: 2.21.6
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# service pkg: /home/akshay/x-ml/service/__init__.py
+# age:         v1.1.1
+# ansible-playbook: /home/akshay/x-ml/.venv/bin/ansible-playbook = /home/akshay/x-ml/.venv/bin/ansible-playbook
+# ansible-playbook --version: ansible-playbook [core 2.21.6]
+# command:     .venv/bin/python -m pytest tests/test_ml_tvm.py tests/test_playbooks.py tests/test_ansible_runner.py tests/test_catalog.py tests/test_app_exporter.py tests/test_pubkey_strict.py tests/test_deploy_access.py tests/test_catalog_template_guard.py tests/test_runner_secret.py tests/test_secret_env_rule.py tests/test_secret_env_scrub.py tests/test_orphans_canary.py tests/test_vm_names_strict.py tests/test_vm_names_review.py -q -rsf -p no:cacheprovider
+
+........................................................................ [ 12%]
+...................................................s.................... [ 25%]
+........................................................................ [ 38%]
+........................................................................ [ 51%]
+........................................................................ [ 64%]
+........................................................................ [ 77%]
+........................................................................ [ 90%]
+....................................................                     [100%]
+=============================== warnings summary ===============================
+tests/test_pubkey_strict.py::test_the_api_refuses_an_unsafe_key[ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDeploy+Key/0 {{ 7*7 }}]
+  /home/akshay/x-ml/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_playbooks.py:1154: sshd not installed
+555 passed, 1 skipped, 1 warning in 933.54s (0:15:33)
+# exit: 0

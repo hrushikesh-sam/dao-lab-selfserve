@@ -1,0 +1,85 @@
+# generated from red2-221.txt: first E/fatal/sudo lines per failing test
+test_the_inventory_names_the_ml_device_role
+    E       KeyError: 'ml'
+test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-True]
+    E       AssertionError: assert '' == '0000:00:10.0'
+    E         - 0000:00:10.0
+test_every_ml_address_fallback_is_the_inventory_role
+    E           KeyError: 'ml'
+test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/deploy.yml]
+    E       AssertionError: assert ['/usr/local/...k-test-mldev'] == []
+    E         Left contains 3 more items, first extra item: '/usr/local/bin/daolab-ml-smoke'
+    E         Use -v to get more diff
+test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/cleanup.yml]
+    E       AssertionError: assert ['/dev/hugepa..., '/dev/vfio'] == []
+    E         Left contains 5 more items, first extra item: '/dev/hugepages'
+    E         Use -v to get more diff
+test_no_ml_host_path_is_a_literal_outside_a_default[verify_clean.yml]
+    E       AssertionError: assert ['/dev/hugepa..., '/dev/vfio'] == []
+    E         Left contains 5 more items, first extra item: '/dev/hugepages'
+    E         Use -v to get more diff
+test_the_ml_host_path_defaults_are_todays_values
+    E           AssertionError: daolab_hugetlbfs
+    E           assert None == {'/dev/hugepages /mnt/huge'}
+    E            +  where None = <built-in method get of dict object at 0x75059a264f40>('daolab_hugetlbfs')
+test_the_smoke_test_host_paths_are_overridable_with_todays_defaults
+    E       AssertionError: assert {'DAOLAB_SYSFS': '/sys'} == {'DAOLAB_SYSF...un/dpdk', ...}
+    E         Omitting 1 identical items, use -vv to show
+    E         Right contains 4 more items:
+test_the_env_file_path_lines_are_the_smoke_tests_own_defaults
+    E       AssertionError: assert {'ML_FW', 'ML...E_MODEL', ...} == {'DAOLAB_DPDK... 'ML_FW', ...}
+    E         Extra items in the right set:
+    E         'DAOLAB_PROCFS'
+test_the_smoke_test_runs_one_inference_and_leaves_no_dpdk_files
+    E       AssertionError: assert (['e_cpt_engi...', 'mlmap_0']) == (['e_cpt_engi...', 'mlmap_0'])
+    E         At index 0 diff: ['e_cpt_engine82558', 'ml', 'ml-smoke'] != ['e_cpt_engine82558', 'ml']
+    E         Use -v to get more diff
+test_the_smoke_test_reports_the_last_result_while_the_owner_holds_the_device
+    E       AssertionError: assert ('busy' in 'ML: inference done\nResult: Success\ndaolab-ml-smoke: success=1\n')
+    E        +  where 'ML: inference done\nResult: Success\ndaolab-ml-smoke: success=1\n' = CompletedProcess(args=['bash', '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'], returncode=0, stdout='ML: inference done\nResult: Success
+test_ml_deploy_without_sign_off_touches_nothing
+    E       assert 'Set DAOLAB_ALLOW_DESTRUCTIVE=true' in "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping call
+    E        +  where "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opent
+test_ml_deploy_proves_the_mlip_and_verifies_from_the_dpu
+    E       AssertionError: so no play reaches them)] ***
+    E         skipping: [localhost]
+    E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+test_a_second_ml_deploy_keeps_the_first_saved_state
+    E       AssertionError: so no play reaches them)] ***
+    E         skipping: [localhost]
+    E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+test_ml_cleanup_gives_the_board_back
+    E       AssertionError:
+    E         PLAY [localhost] ***************************************************************
+    E         TASK [load the setup YAML (manual runs only)] **********************************
+test_ml_cleanup_of_a_clean_board_changes_nothing
+    E       AssertionError:
+    E         PLAY [localhost] ***************************************************************
+    E         TASK [load the setup YAML (manual runs only)] **********************************
+test_verify_clean_reports_what_ml_tvm_left[holder]
+    E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+    E         Right contains one more item: 'dpu_app:ml-tvm'
+    E         Use -v to get more diff
+test_verify_clean_reports_what_ml_tvm_left[runtime]
+    E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+    E         Right contains one more item: 'dpu_app:ml-tvm'
+    E         Use -v to get more diff
+test_verify_clean_reports_what_ml_tvm_left[hugepages]
+    E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+    E         Right contains one more item: 'dpu_app:ml-tvm'
+    E         Use -v to get more diff
+test_verify_clean_skips_the_ml_device_check_without_an_ml_address
+    E       assert 'ML device check skipped: no ML device address (ml_pci / bdf.ml)' in "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0 
+    E        +  where "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opent
+test_an_ml_tvm_reservation_is_never_clean_without_an_ml_address
+    E       AssertionError: assert 0 != 0
+    E        +  where 0 = run('verify_clean.yml', usecase='ml-tvm', **{'ml_fw': '/tmp/pytest-of-akshay/pytest-6/test_an_ml_tvm_reservation_is_0/firmware/mlip-fw.bin', 'ml_lcores': '14-17', 'ml_file_prefix': 'ml', 'ml_hugepage_kb': 524
+    E        +    where run = <tests.test_playbooks.Lab object at 0x75059a27a0f0>.run
+test_ml_tvm_residue_is_reported_and_then_cleared
+    E       AssertionError: so no play reaches them)] ***
+    E         skipping: [localhost]
+    E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+test_real_verify_clean_and_reconcile_round_trip
+    E       AssertionError: assert [] == ['dpu_app:dao...lab-r12-sink']
+    E         Right contains 4 more items, first extra item: 'dpu_app:daolab-app-dao-vpp.service'
+    E         Use -v to get more diff

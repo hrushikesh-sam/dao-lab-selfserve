@@ -1,0 +1,1039 @@
+# date:        2026-11-25T08:05:43Z
+# worktree:    /home/akshay/x-ml (branch x-ml)
+# HEAD:        8bfcf4bdf6e9709c3f231e58682725787fb7450d
+# write-tree:  1c122a2384c206f0ce32371b3c9afd2d285770b0   (index; staged changes only)
+# status:      18 entries (git status --short, venvs excluded)
+#    M COMPLETION_LOG.md
+#    M README.md
+#    M docs/dao-doc-verification.md
+#    M inventory/host_vars/dpu-01.yml
+#    M playbooks/deploy.yml
+#    M playbooks/files/daolab-app-exporter
+#    M playbooks/probe.yml
+#    M playbooks/roles/verify/tasks/run.yml
+#    M playbooks/verify_clean.yml
+#    M scripts/run/showcase.sh
+#    M service/runner.py
+#    M setups/tb-01.yml
+#    M tests/test_catalog.py
+#    M tests/test_playbooks.py
+#   ?? playbooks/apps/ml-tvm/
+#   ?? playbooks/files/daolab-ml-smoke
+#   ?? tests/test_ml_tvm.py
+#   ?? usecases/ml-tvm.yml
+# venv:        /home/akshay/x-ml/.venv
+# python:      3.12.13
+# ansible-core: 2.21.6
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# service pkg: /home/akshay/x-ml/service/__init__.py
+# age:         v1.1.1
+# ansible-playbook: /home/akshay/x-ml/.venv/bin/ansible-playbook = /home/akshay/x-ml/.venv/bin/ansible-playbook
+# ansible-playbook --version: ansible-playbook [core 2.21.6]
+# command:     .venv/bin/python -m pytest tests/test_ml_tvm.py tests/test_catalog.py tests/test_ansible_runner.py tests/test_playbooks.py tests/test_catalog_template_guard.py tests/test_app_exporter.py -q -rsfp -p no:cacheprovider
+
+.......F..FFFFFFFF.F.F....F.FFFF.FFFFF.F................................ [ 36%]
+...F.................................................................... [ 72%]
+..........s.............................................                 [100%]
+=================================== FAILURES ===================================
+_________________ test_the_inventory_names_the_ml_device_role __________________
+
+    def test_the_inventory_names_the_ml_device_role():
+        with open(HOST_VARS, encoding="utf-8") as fh:
+            hv = yaml.safe_load(fh)
+>       assert hv["bdf"]["ml"] == PCI
+               ^^^^^^^^^^^^^^^
+E       KeyError: 'ml'
+
+tests/test_ml_tvm.py:101: KeyError
+_ test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-True] _
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-6/test_ml_pci_resolves_to_the_ml2')
+expr = "{{ ml_pci | default(bdf.ml | default('')) }}", drop_ml_pci = True
+
+    @needs_ansible
+    @pytest.mark.parametrize("expr,drop_ml_pci", [
+        ("{{ ml_pci }}", False),                                         # the app playbooks
+        (ML_FALLBACK, False),                                            # verify_clean / probe
+        (ML_FALLBACK, True),                                             # ... falling back to bdf.ml
+    ])
+    def test_ml_pci_resolves_to_the_ml_role(tmp_path, expr, drop_ml_pci):
+        """Through ansible itself, with dpu-01's real host_vars beside a local-only inventory (no
+        address, nothing is contacted)."""
+        inv = tmp_path / "inv"
+        (inv / "host_vars").mkdir(parents=True)
+        with open(HOST_VARS, encoding="utf-8") as fh:
+            hv = fh.read()
+        if drop_ml_pci:
+            hv = re.sub(r"(?m)^ml_pci:.*$", "", hv)
+            assert "ml_pci:" not in hv
+        (inv / "host_vars" / "dpu-01.yml").write_text(hv)
+        (inv / "hosts.json").write_text(json.dumps({"all": {"hosts": {"dpu-01": {
+            "ansible_connection": "local",
+            "ansible_python_interpreter": "{{ ansible_playbook_python }}"}}}}))
+        out = tmp_path / "ml_pci.txt"
+        play = tmp_path / "resolve.yml"
+        play.write_text(yaml.safe_dump([{"hosts": "dpu-01", "gather_facts": False, "tasks": [
+            {"ansible.builtin.copy": {"content": expr, "dest": str(out)}}]}]))
+        env = {**os.environ, "ANSIBLE_LOCAL_TEMP": str(tmp_path / "tmp"),
+               "ANSIBLE_HOME": str(tmp_path / "ansible-home"), "ANSIBLE_NOCOLOR": "1"}
+        p = subprocess.run([ANSIBLE, "-i", str(inv / "hosts.json"), str(play)], env=env,
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        assert p.returncode == 0, (p.stdout + p.stderr)[-2000:]
+>       assert out.read_text() == PCI
+E       AssertionError: assert '' == '0000:00:10.0'
+E         
+E         - 0000:00:10.0
+
+tests/test_ml_tvm.py:138: AssertionError
+_____________ test_every_ml_address_fallback_is_the_inventory_role _____________
+
+    def test_every_ml_address_fallback_is_the_inventory_role():
+        """Q-C: the exporter's and the smoke test's own defaults equal bdf.ml, and the playbooks
+        fall back to bdf.ml itself, never to a second copy of the address."""
+        with open(HOST_VARS, encoding="utf-8") as fh:
+>           ml = yaml.safe_load(fh)["bdf"]["ml"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'ml'
+
+tests/test_ml_tvm.py:145: KeyError
+_ test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/deploy.yml] __
+
+rel = 'apps/ml-tvm/deploy.yml'
+
+    @pytest.mark.parametrize("rel", ML_PLAYBOOKS[:3])
+    def test_no_ml_host_path_is_a_literal_outside_a_default(rel):
+        code = re.sub(r"""default\((['"])[^'"]*\1\)""", "default()", _code(_read(rel)))
+>       assert [lit for lit in LITERALS if lit in code] == []
+E       AssertionError: assert ['/usr/local/...k-test-mldev'] == []
+E         
+E         Left contains 3 more items, first extra item: '/usr/local/bin/daolab-ml-smoke'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:182: AssertionError
+_ test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/cleanup.yml] _
+
+rel = 'apps/ml-tvm/cleanup.yml'
+
+    @pytest.mark.parametrize("rel", ML_PLAYBOOKS[:3])
+    def test_no_ml_host_path_is_a_literal_outside_a_default(rel):
+        code = re.sub(r"""default\((['"])[^'"]*\1\)""", "default()", _code(_read(rel)))
+>       assert [lit for lit in LITERALS if lit in code] == []
+E       AssertionError: assert ['/dev/hugepa..., '/dev/vfio'] == []
+E         
+E         Left contains 5 more items, first extra item: '/dev/hugepages'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:182: AssertionError
+____ test_no_ml_host_path_is_a_literal_outside_a_default[verify_clean.yml] _____
+
+rel = 'verify_clean.yml'
+
+    @pytest.mark.parametrize("rel", ML_PLAYBOOKS[:3])
+    def test_no_ml_host_path_is_a_literal_outside_a_default(rel):
+        code = re.sub(r"""default\((['"])[^'"]*\1\)""", "default()", _code(_read(rel)))
+>       assert [lit for lit in LITERALS if lit in code] == []
+E       AssertionError: assert ['/dev/hugepa..., '/dev/vfio'] == []
+E         
+E         Left contains 5 more items, first extra item: '/dev/hugepages'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:182: AssertionError
+_______________ test_the_ml_host_path_defaults_are_todays_values _______________
+
+    def test_the_ml_host_path_defaults_are_todays_values():
+        found = {}
+        for rel in ML_PLAYBOOKS[:3]:
+            for var, val in re.findall(r"""\b(\w+) \| default\((?:'([^']*)')\)""", _code(_read(rel))):
+                found.setdefault(var, set()).add(val)
+        for var, val in PATH_DEFAULTS.items():
+>           assert found.get(var) == {val}, var
+E           AssertionError: daolab_hugetlbfs
+E           assert None == {'/dev/hugepages /mnt/huge'}
+E            +  where None = <built-in method get of dict object at 0x75059a264f40>('daolab_hugetlbfs')
+E            +    where <built-in method get of dict object at 0x75059a264f40> = {'daolab_sysfs': {'/sys'}, 'added_hugepages': {'0'}, 'saved_override': {''}, 'saved_driver': {''}, ...}.get
+
+tests/test_ml_tvm.py:191: AssertionError
+_____ test_the_smoke_test_host_paths_are_overridable_with_todays_defaults ______
+
+    def test_the_smoke_test_host_paths_are_overridable_with_todays_defaults():
+        """Q-B: like DAOLAB_SYSFS, every host path the smoke test reads or deletes comes from the
+        environment, defaulting to the board's value."""
+        with open(SMOKE, encoding="utf-8") as fh:
+            code = _code(fh.read())
+        found = dict(re.findall(r"\$\{(DAOLAB_[A-Z_]+):-([^}]*)\}", code))
+>       assert found == SMOKE_DEFAULTS
+E       AssertionError: assert {'DAOLAB_SYSFS': '/sys'} == {'DAOLAB_SYSF...un/dpdk', ...}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Right contains 4 more items:
+E         {'DAOLAB_DPDK_RUN_DIR': '/var/run/dpdk',
+E          'DAOLAB_HUGETLBFS': '/dev/hugepages /mnt/huge',
+E          'DAOLAB_PROCFS': '/proc',
+E          'DAOLAB_VFIO_DIR': '/dev/vfio'}
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:205: AssertionError
+________ test_the_env_file_path_lines_are_the_smoke_tests_own_defaults _________
+
+    def test_the_env_file_path_lines_are_the_smoke_tests_own_defaults():
+        """Q-B / point 3: with no override, every DAOLAB_* line deploy writes equals the smoke
+        script's built-in default, so the board runs exactly as before."""
+        env = _env_file_template()
+>       assert set(env) == ML_ENV_KEYS | set(SMOKE_DEFAULTS)
+E       AssertionError: assert {'ML_FW', 'ML...E_MODEL', ...} == {'DAOLAB_DPDK... 'ML_FW', ...}
+E         
+E         Extra items in the right set:
+E         'DAOLAB_PROCFS'
+E         'DAOLAB_DPDK_RUN_DIR'
+E         'DAOLAB_SYSFS'
+E         'DAOLAB_HUGETLBFS'
+E         'DAOLAB_VFIO_DIR'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:229: AssertionError
+_______ test_the_smoke_test_runs_one_inference_and_leaves_no_dpdk_files ________
+
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a3c9ac0>
+
+    def test_the_smoke_test_runs_one_inference_and_leaves_no_dpdk_files(ml):
+        ml.on("vfio-pci")
+        ml.leftovers()
+        before = ml.files()
+        p = _smoke(ml)
+        assert p.returncode == 0, p.stdout + p.stderr
+        assert p.stdout.splitlines()[-1] == "daolab-ml-smoke: success=1"
+        log = (ml.state / "last-smoke.log").read_text()
+        assert "Result: Success" in log and "\x1b" not in log             # plain text (c736d4b)
+        assert "--file-prefix ml-smoke" in ml.mldev_log.read_text()
+        # only its own prefix (ml-smoke) is removed; the user's `ml` files and nginx-tls's stay
+>       assert ml.files() == (sorted(set(before[0]) - {"ml-smoke"}),
+                              sorted(set(before[1]) - {"ml-smokemap_3"}))
+E       AssertionError: assert (['e_cpt_engi...', 'mlmap_0']) == (['e_cpt_engi...', 'mlmap_0'])
+E         
+E         At index 0 diff: ['e_cpt_engine82558', 'ml', 'ml-smoke'] != ['e_cpt_engine82558', 'ml']
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:428: AssertionError
+_ test_the_smoke_test_reports_the_last_result_while_the_owner_holds_the_device _
+
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059b2aec90>
+
+    def test_the_smoke_test_reports_the_last_result_while_the_owner_holds_the_device(ml):
+        ml.on("vfio-pci")
+        ml.state.mkdir()
+        (ml.state / "last-smoke.log").write_text("Result: Success\n")
+        ml.holder()
+        p = _smoke(ml)
+        assert p.returncode == 0, p.stdout + p.stderr
+>       assert "busy" in p.stdout and p.stdout.splitlines()[-1] == "daolab-ml-smoke: success=1"
+E       AssertionError: assert ('busy' in 'ML: inference done\nResult: Success\ndaolab-ml-smoke: success=1\n')
+E        +  where 'ML: inference done\nResult: Success\ndaolab-ml-smoke: success=1\n' = CompletedProcess(args=['bash', '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'], returncode=0, stdout='ML: inference done\nResult: Success\ndaolab-ml-smoke: success=1\n', stderr='').stdout
+
+tests/test_ml_tvm.py:446: AssertionError
+_______________ test_ml_deploy_without_sign_off_touches_nothing ________________
+
+lab = <tests.test_playbooks.Lab object at 0x75059b22b4d0>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_deploy_without_sign_of0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a33b240>, override=<function books.<locals>.<lambda> at 0x75059a33b100>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a316b70>
+
+    @needs_ansible
+    def test_ml_deploy_without_sign_off_touches_nothing(lab, books, ml):
+        ml.on("")                                                         # the board at rest
+        board(lab)
+        assert ml_deploy(lab, books, ml, allow_destructive_changes=False) != 0
+>       assert "Set DAOLAB_ALLOW_DESTRUCTIVE=true" in lab.stdout
+E       assert 'Set DAOLAB_ALLOW_DESTRUCTIVE=true' in "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n"
+E        +  where "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x75059b22b4d0>.stdout
+
+tests/test_ml_tvm.py:486: AssertionError
+___________ test_ml_deploy_proves_the_mlip_and_verifies_from_the_dpu ___________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a3178c0>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_deploy_proves_the_mlip0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a33b1a0>, override=<function books.<locals>.<lambda> at 0x75059a33b7e0>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a316e10>
+
+    @needs_ansible
+    def test_ml_deploy_proves_the_mlip_and_verifies_from_the_dpu(lab, books, ml):
+        ml.on("vfio-pci")
+        board(lab)
+>       assert ml_deploy(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: so no play reaches them)] ***
+E         skipping: [localhost]
+E         
+E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+E         ok: [localhost]
+E         
+E         TASK [load the data-plane addressing] ******************************************
+E         ok: [localhost]
+E         
+E         TASK [find the DPU / NIC members' XCP-ng hosts] ********************************
+E         ok: [localhost]
+E         
+E         TASK [list the VM roles (use case)] ********************************************
+E         ok: [localhost]
+E         
+E         TASK [list the VM roles (diy)] *************************************************
+E         skipping: [localhost]
+E         
+E         TASK [plan each VM (role, host, template, wiring)] *****************************
+E         skipping: [localhost]
+E         
+E         TASK [give each VM its VF index (k-th role of its host and VF family)] *********
+E         skipping: [localhost]
+E         
+E         TASK [no VM roles at all] ******************************************************
+E         ok: [localhost]
+E         
+E         TASK [every VM must land on a host of the setup] *******************************
+E         skipping: [localhost]
+E         
+E         TASK [the DPU's addresses] *****************************************************
+E         ok: [localhost]
+E         
+E         TASK [the data-plane address of every role that has one] ***********************
+E         ok: [localhost] => (item=infer)
+E         
+E         TASK [step: lease_ips] *********************************************************
+E         skipping: [localhost]
+E         
+E         PLAY [the DPU's personality] ***************************************************
+E         
+E         TASK [personality] *************************************************************
+E         skipping: [dpu-01]
+E         
+E         PLAY [ML - read the board] *****************************************************
+E         
+E         TASK [which driver holds the ML device] ****************************************
+E         ok: [dpu-01]
+E         
+E         TASK [and its driver override] *************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [the hugepage pool] *******************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [was this board already set up for ML (saved state)] **********************
+E         ok: [dpu-01]
+E         
+E         TASK [the tools, firmware and smoke model are there] ***************************
+E         ok: [dpu-01]
+E         
+E         TASK [nothing is missing] ******************************************************
+E         [ERROR]: Task failed: Action failed: the board is not ready for ml-tvm: missing: /usr/bin/dpdk-test-mldev
+E         Origin: /home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml:53:7
+E         
+E         51       changed_when: false
+E         52
+E         53     - name: nothing is missing
+E                  ^ column 7
+E         
+E         fatal: [dpu-01]: FAILED! => {
+E             "assertion": "_ml_missing.stdout | trim | length == 0",
+E             "changed": false,
+E             "evaluated_to": false,
+E             "msg": "the board is not ready for ml-tvm: missing: /usr/bin/dpdk-test-mldev"
+E         }
+E         
+E         PLAY RECAP *********************************************************************
+E         dpu-01                     : ok=5    changed=0    unreachable=0    failed=1    skipped=1    rescued=0    ignored=0   
+E         localhost                  : ok=11   changed=0    unreachable=0    failed=0    skipped=9    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = ml_deploy(<tests.test_playbooks.Lab object at 0x75059a3178c0>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_deploy_proves_the_mlip0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a33b1a0>, override=<function books.<locals>.<lambda> at 0x75059a33b7e0>), <tests.test_ml_tvm.MlBoard object at 0x75059a316e10>)
+
+tests/test_ml_tvm.py:505: AssertionError
+_____________ test_a_second_ml_deploy_keeps_the_first_saved_state ______________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a3cb830>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_a_second_ml_deploy_keeps_0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a33b600>, override=<function books.<locals>.<lambda> at 0x75059a33bc40>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a3ca600>
+
+    @needs_ansible
+    def test_a_second_ml_deploy_keeps_the_first_saved_state(lab, books, ml):
+        ml.on("vfio-pci")
+        board(lab)
+>       assert ml_deploy(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: so no play reaches them)] ***
+E         skipping: [localhost]
+E         
+E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+E         ok: [localhost]
+E         
+E         TASK [load the data-plane addressing] ******************************************
+E         ok: [localhost]
+E         
+E         TASK [find the DPU / NIC members' XCP-ng hosts] ********************************
+E         ok: [localhost]
+E         
+E         TASK [list the VM roles (use case)] ********************************************
+E         ok: [localhost]
+E         
+E         TASK [list the VM roles (diy)] *************************************************
+E         skipping: [localhost]
+E         
+E         TASK [plan each VM (role, host, template, wiring)] *****************************
+E         skipping: [localhost]
+E         
+E         TASK [give each VM its VF index (k-th role of its host and VF family)] *********
+E         skipping: [localhost]
+E         
+E         TASK [no VM roles at all] ******************************************************
+E         ok: [localhost]
+E         
+E         TASK [every VM must land on a host of the setup] *******************************
+E         skipping: [localhost]
+E         
+E         TASK [the DPU's addresses] *****************************************************
+E         ok: [localhost]
+E         
+E         TASK [the data-plane address of every role that has one] ***********************
+E         ok: [localhost] => (item=infer)
+E         
+E         TASK [step: lease_ips] *********************************************************
+E         skipping: [localhost]
+E         
+E         PLAY [the DPU's personality] ***************************************************
+E         
+E         TASK [personality] *************************************************************
+E         skipping: [dpu-01]
+E         
+E         PLAY [ML - read the board] *****************************************************
+E         
+E         TASK [which driver holds the ML device] ****************************************
+E         ok: [dpu-01]
+E         
+E         TASK [and its driver override] *************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [the hugepage pool] *******************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [was this board already set up for ML (saved state)] **********************
+E         ok: [dpu-01]
+E         
+E         TASK [the tools, firmware and smoke model are there] ***************************
+E         ok: [dpu-01]
+E         
+E         TASK [nothing is missing] ******************************************************
+E         [ERROR]: Task failed: Action failed: the board is not ready for ml-tvm: missing: /usr/bin/dpdk-test-mldev
+E         Origin: /home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml:53:7
+E         
+E         51       changed_when: false
+E         52
+E         53     - name: nothing is missing
+E                  ^ column 7
+E         
+E         fatal: [dpu-01]: FAILED! => {
+E             "assertion": "_ml_missing.stdout | trim | length == 0",
+E             "changed": false,
+E             "evaluated_to": false,
+E             "msg": "the board is not ready for ml-tvm: missing: /usr/bin/dpdk-test-mldev"
+E         }
+E         
+E         PLAY RECAP *********************************************************************
+E         dpu-01                     : ok=5    changed=0    unreachable=0    failed=1    skipped=1    rescued=0    ignored=0   
+E         localhost                  : ok=11   changed=0    unreachable=0    failed=0    skipped=9    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = ml_deploy(<tests.test_playbooks.Lab object at 0x75059a3cb830>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_a_second_ml_deploy_keeps_0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a33b600>, override=<function books.<locals>.<lambda> at 0x75059a33bc40>), <tests.test_ml_tvm.MlBoard object at 0x75059a3ca600>)
+
+tests/test_ml_tvm.py:527: AssertionError
+_____________________ test_ml_cleanup_gives_the_board_back _____________________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a3cb470>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_cleanup_gives_the_boar0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a2180e0>, override=<function books.<locals>.<lambda> at 0x75059a218540>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a3ca6f0>
+
+    @needs_ansible
+    def test_ml_cleanup_gives_the_board_back(lab, books, ml):
+        ml.on("vfio-pci")
+        ml.pages(4, 2)
+        ml.save_state()                                                   # deploy bound it, +2 pages
+        ml.leftovers()
+        holder = ml.holder()
+        board(lab)
+>       assert ml_cleanup(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: 
+E         PLAY [localhost] ***************************************************************
+E         
+E         TASK [load the setup YAML (manual runs only)] **********************************
+E         skipping: [localhost]
+E         
+E         TASK [build the member list from the setup YAML (manual runs only)] ************
+E         skipping: [localhost]
+E         
+E         TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+E         skipping: [localhost]
+E         
+E         TASK [where the playbooks live (imported playbooks see their own playbook_dir)] ***
+E         ok: [localhost]
+E         
+E         TASK [fill in what a manual run did not pass] **********************************
+E         ok: [localhost]
+E         
+E         TASK [find the DPU member and the dom0s] ***************************************
+E         ok: [localhost]
+E         
+E         TASK [a setup must have at least one XCP-ng host] ******************************
+E         ok: [localhost] => {
+E             "changed": false,
+E             "msg": "All assertions passed"
+E         }
+E         
+E         TASK [add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)] ***
+E         ok: [localhost] => (item=tb-01-xcp)
+E         
+E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+E         ok: [localhost]
+E         
+E         TASK [ansible.builtin.set_fact] ************************************************
+E         ok: [localhost]
+E         
+E         PLAY [ML cleanup] **************************************************************
+E         
+E         TASK [stop the health exporter] ************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [step: stop_app] **********************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [step: ml_leftovers] ******************************************************
+E         [ERROR]: Task failed: Module failed: The command exited with a non-zero return code.
+E         Origin: /home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml:43:7
+E         
+E         41       changed_when: "'stopping' in _ml_stop.stdout"
+E         42
+E         43     - name: "step: ml_leftovers"
+E                  ^ column 7
+E         
+E         fatal: [dpu-01]: FAILED! => {"changed": false, "changed_when_result": false, "cmd": "rm -rfv /var/run/dpdk/ml /var/run/dpdk/ml-* 2>/dev/null | grep -c . || true\nfind /dev/hugepages /mnt/huge -maxdepth 1 -name 'ml*map_*' -print -delete 2>/dev/null\n", "delta": "0:00:00.004983", "end": "2026-11-25 13:36:12.096987", "msg": "The command exited with a non-zero return code.", "rc": 1, "start": "2026-11-25 13:36:12.092004", "stderr": "", "stderr_lines": [], "stdout": "0", "stdout_lines": ["0"]}
+E         
+E         PLAY RECAP *********************************************************************
+E         dpu-01                     : ok=2    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+E         localhost                  : ok=7    changed=0    unreachable=0    failed=0    skipped=3    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = ml_cleanup(<tests.test_playbooks.Lab object at 0x75059a3cb470>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_cleanup_gives_the_boar0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a2180e0>, override=<function books.<locals>.<lambda> at 0x75059a218540>), <tests.test_ml_tvm.MlBoard object at 0x75059a3ca6f0>)
+
+tests/test_ml_tvm.py:542: AssertionError
+_______________ test_ml_cleanup_of_a_clean_board_changes_nothing _______________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a3c85f0>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_cleanup_of_a_clean_boa0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a218900>, override=<function books.<locals>.<lambda> at 0x75059a218ae0>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a3cbd70>
+
+    @needs_ansible
+    def test_ml_cleanup_of_a_clean_board_changes_nothing(lab, books, ml):
+        ml.on("")
+        board(lab)
+>       assert ml_cleanup(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: 
+E         PLAY [localhost] ***************************************************************
+E         
+E         TASK [load the setup YAML (manual runs only)] **********************************
+E         skipping: [localhost]
+E         
+E         TASK [build the member list from the setup YAML (manual runs only)] ************
+E         skipping: [localhost]
+E         
+E         TASK [load the use-case YAML (manual, non-diy runs only)] **********************
+E         skipping: [localhost]
+E         
+E         TASK [where the playbooks live (imported playbooks see their own playbook_dir)] ***
+E         ok: [localhost]
+E         
+E         TASK [fill in what a manual run did not pass] **********************************
+E         ok: [localhost]
+E         
+E         TASK [find the DPU member and the dom0s] ***************************************
+E         ok: [localhost]
+E         
+E         TASK [a setup must have at least one XCP-ng host] ******************************
+E         ok: [localhost] => {
+E             "changed": false,
+E             "msg": "All assertions passed"
+E         }
+E         
+E         TASK [add the dom0s to r_dom0 (not when VMs are off - DAOLAB_DEPLOY_VMS - so no play reaches them)] ***
+E         ok: [localhost] => (item=tb-01-xcp)
+E         
+E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+E         ok: [localhost]
+E         
+E         TASK [ansible.builtin.set_fact] ************************************************
+E         ok: [localhost]
+E         
+E         PLAY [ML cleanup] **************************************************************
+E         
+E         TASK [stop the health exporter] ************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [step: stop_app] **********************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [step: ml_leftovers] ******************************************************
+E         [ERROR]: Task failed: Module failed: The command exited with a non-zero return code.
+E         Origin: /home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml:43:7
+E         
+E         41       changed_when: "'stopping' in _ml_stop.stdout"
+E         42
+E         43     - name: "step: ml_leftovers"
+E                  ^ column 7
+E         
+E         fatal: [dpu-01]: FAILED! => {"changed": false, "changed_when_result": false, "cmd": "rm -rfv /var/run/dpdk/ml /var/run/dpdk/ml-* 2>/dev/null | grep -c . || true\nfind /dev/hugepages /mnt/huge -maxdepth 1 -name 'ml*map_*' -print -delete 2>/dev/null\n", "delta": "0:00:00.003767", "end": "2026-11-25 13:36:15.740171", "msg": "The command exited with a non-zero return code.", "rc": 1, "start": "2026-11-25 13:36:15.736404", "stderr": "", "stderr_lines": [], "stdout": "0", "stdout_lines": ["0"]}
+E         
+E         PLAY RECAP *********************************************************************
+E         dpu-01                     : ok=2    changed=0    unreachable=0    failed=1    skipped=0    rescued=0    ignored=0   
+E         localhost                  : ok=7    changed=0    unreachable=0    failed=0    skipped=3    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = ml_cleanup(<tests.test_playbooks.Lab object at 0x75059a3c85f0>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_cleanup_of_a_clean_boa0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a218900>, override=<function books.<locals>.<lambda> at 0x75059a218ae0>), <tests.test_ml_tvm.MlBoard object at 0x75059a3cbd70>)
+
+tests/test_ml_tvm.py:556: AssertionError
+______________ test_verify_clean_reports_what_ml_tvm_left[holder] ______________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a3c9a30>
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a3cab10>, left = 'holder'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "holder", "runtime", "hugepages"])
+    def test_verify_clean_reports_what_ml_tvm_left(lab, ml, left):
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "holder":
+            ml.holder()
+        elif left == "runtime":
+            (ml.run_dir / "ml-smoke").mkdir()
+        else:
+            (ml.huge[1] / "mlmap_0").write_text("x")
+        residue = ml_verify_clean(lab, ml)
+>       assert residue == ["dpu_app:ml-tvm"]
+E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+E         
+E         Right contains one more item: 'dpu_app:ml-tvm'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:575: AssertionError
+_____________ test_verify_clean_reports_what_ml_tvm_left[runtime] ______________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a27af60>
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a279280>, left = 'runtime'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "holder", "runtime", "hugepages"])
+    def test_verify_clean_reports_what_ml_tvm_left(lab, ml, left):
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "holder":
+            ml.holder()
+        elif left == "runtime":
+            (ml.run_dir / "ml-smoke").mkdir()
+        else:
+            (ml.huge[1] / "mlmap_0").write_text("x")
+        residue = ml_verify_clean(lab, ml)
+>       assert residue == ["dpu_app:ml-tvm"]
+E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+E         
+E         Right contains one more item: 'dpu_app:ml-tvm'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:575: AssertionError
+____________ test_verify_clean_reports_what_ml_tvm_left[hugepages] _____________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a279e80>
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a27a840>, left = 'hugepages'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "holder", "runtime", "hugepages"])
+    def test_verify_clean_reports_what_ml_tvm_left(lab, ml, left):
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "holder":
+            ml.holder()
+        elif left == "runtime":
+            (ml.run_dir / "ml-smoke").mkdir()
+        else:
+            (ml.huge[1] / "mlmap_0").write_text("x")
+        residue = ml_verify_clean(lab, ml)
+>       assert residue == ["dpu_app:ml-tvm"]
+E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+E         
+E         Right contains one more item: 'dpu_app:ml-tvm'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:575: AssertionError
+______ test_verify_clean_skips_the_ml_device_check_without_an_ml_address _______
+
+lab = <tests.test_playbooks.Lab object at 0x75059a278380>
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a279070>
+
+    @needs_ansible
+    def test_verify_clean_skips_the_ml_device_check_without_an_ml_address(lab, ml):
+        """Another use case on a DPU whose inventory names no ML device: the holder check is
+        skipped, and the job log says so."""
+        ml.on("vfio-pci")
+        ml.holder()                                         # would be found if the check ran
+        assert lab.run("verify_clean.yml", usecase="vpp", **_without_ml_address(ml)) == 0, \
+            lab.stdout[-2000:]
+        assert lab.output() == []
+>       assert "ML device check skipped: no ML device address (ml_pci / bdf.ml)" in lab.stdout
+E       assert 'ML device check skipped: no ML device address (ml_pci / bdf.ml)' in "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n"
+E        +  where "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...  rescued=0    ignored=0   \n\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x75059a278380>.stdout
+
+tests/test_ml_tvm.py:592: AssertionError
+_______ test_an_ml_tvm_reservation_is_never_clean_without_an_ml_address ________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a27a0f0>
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a27a930>
+
+    @needs_ansible
+    def test_an_ml_tvm_reservation_is_never_clean_without_an_ml_address(lab, ml):
+        """The skip must never be why an ml-tvm reservation looks clean: the run fails, which the
+        runner reports as "could not verify" (not clean), like an unreachable host."""
+        ml.on("vfio-pci")
+        ml.holder()
+>       assert lab.run("verify_clean.yml", usecase="ml-tvm", **_without_ml_address(ml)) != 0
+E       AssertionError: assert 0 != 0
+E        +  where 0 = run('verify_clean.yml', usecase='ml-tvm', **{'ml_fw': '/tmp/pytest-of-akshay/pytest-6/test_an_ml_tvm_reservation_is_0/firmware/mlip-fw.bin', 'ml_lcores': '14-17', 'ml_file_prefix': 'ml', 'ml_hugepage_kb': 524288, ...})
+E        +    where run = <tests.test_playbooks.Lab object at 0x75059a27a0f0>.run
+E        +    and   {'ml_fw': '/tmp/pytest-of-akshay/pytest-6/test_an_ml_tvm_reservation_is_0/firmware/mlip-fw.bin', 'ml_lcores': '14-17', 'ml_file_prefix': 'ml', 'ml_hugepage_kb': 524288, ...} = _without_ml_address(<tests.test_ml_tvm.MlBoard object at 0x75059a27a930>)
+
+tests/test_ml_tvm.py:601: AssertionError
+_______________ test_ml_tvm_residue_is_reported_and_then_cleared _______________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a27b290>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_tvm_residue_is_reporte0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a21a020>, override=<function books.<locals>.<lambda> at 0x75059a219ee0>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x75059a27a060>
+
+    @needs_ansible
+    def test_ml_tvm_residue_is_reported_and_then_cleared(lab, books, ml):
+        ml.on("vfio-pci")
+        board(lab)
+>       assert ml_deploy(lab, books, ml) == 0, lab.stdout[-3000:]
+E       AssertionError: so no play reaches them)] ***
+E         skipping: [localhost]
+E         
+E         TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] ***
+E         ok: [localhost]
+E         
+E         TASK [load the data-plane addressing] ******************************************
+E         ok: [localhost]
+E         
+E         TASK [find the DPU / NIC members' XCP-ng hosts] ********************************
+E         ok: [localhost]
+E         
+E         TASK [list the VM roles (use case)] ********************************************
+E         ok: [localhost]
+E         
+E         TASK [list the VM roles (diy)] *************************************************
+E         skipping: [localhost]
+E         
+E         TASK [plan each VM (role, host, template, wiring)] *****************************
+E         skipping: [localhost]
+E         
+E         TASK [give each VM its VF index (k-th role of its host and VF family)] *********
+E         skipping: [localhost]
+E         
+E         TASK [no VM roles at all] ******************************************************
+E         ok: [localhost]
+E         
+E         TASK [every VM must land on a host of the setup] *******************************
+E         skipping: [localhost]
+E         
+E         TASK [the DPU's addresses] *****************************************************
+E         ok: [localhost]
+E         
+E         TASK [the data-plane address of every role that has one] ***********************
+E         ok: [localhost] => (item=infer)
+E         
+E         TASK [step: lease_ips] *********************************************************
+E         skipping: [localhost]
+E         
+E         PLAY [the DPU's personality] ***************************************************
+E         
+E         TASK [personality] *************************************************************
+E         skipping: [dpu-01]
+E         
+E         PLAY [ML - read the board] *****************************************************
+E         
+E         TASK [which driver holds the ML device] ****************************************
+E         ok: [dpu-01]
+E         
+E         TASK [and its driver override] *************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [the hugepage pool] *******************************************************
+E         ok: [dpu-01]
+E         
+E         TASK [was this board already set up for ML (saved state)] **********************
+E         ok: [dpu-01]
+E         
+E         TASK [the tools, firmware and smoke model are there] ***************************
+E         ok: [dpu-01]
+E         
+E         TASK [nothing is missing] ******************************************************
+E         [ERROR]: Task failed: Action failed: the board is not ready for ml-tvm: missing: /usr/bin/dpdk-test-mldev
+E         Origin: /home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml:53:7
+E         
+E         51       changed_when: false
+E         52
+E         53     - name: nothing is missing
+E                  ^ column 7
+E         
+E         fatal: [dpu-01]: FAILED! => {
+E             "assertion": "_ml_missing.stdout | trim | length == 0",
+E             "changed": false,
+E             "evaluated_to": false,
+E             "msg": "the board is not ready for ml-tvm: missing: /usr/bin/dpdk-test-mldev"
+E         }
+E         
+E         PLAY RECAP *********************************************************************
+E         dpu-01                     : ok=5    changed=0    unreachable=0    failed=1    skipped=1    rescued=0    ignored=0   
+E         localhost                  : ok=11   changed=0    unreachable=0    failed=0    skipped=9    rescued=0    ignored=0   
+E         
+E         [WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load
+E         
+E       assert 2 == 0
+E        +  where 2 = ml_deploy(<tests.test_playbooks.Lab object at 0x75059a27b290>, namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-6/test_ml_tvm_residue_is_reporte0/books/vpp', 'daola...et=<function books.<locals>.<lambda> at 0x75059a21a020>, override=<function books.<locals>.<lambda> at 0x75059a219ee0>), <tests.test_ml_tvm.MlBoard object at 0x75059a27a060>)
+
+tests/test_ml_tvm.py:618: AssertionError
+_______________ test_real_verify_clean_and_reconcile_round_trip ________________
+
+lab = <tests.test_playbooks.Lab object at 0x75059a3c9b80>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-6/test_real_verify_clean_and_rec0')
+
+    def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
+        from tests.test_playbooks import MEMBERS, clean_state, dirty
+        lab.set(dirty(clean_state()))
+        rn = real_runner(lab, tmp_path)
+        handlers = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+        ctx = {"id": 12, "job_id": 1, "setup": "tb-01", "usecase": "vpp", "members": MEMBERS,
+               "leases": ["10.30.0.101"]}
+        steps = Steps()
+        dirty_result = rn.verify_clean(ctx, steps)
+        assert dirty_result.ok is False
+>       assert sorted(dirty_result.residue) == sorted([
+            "vm:daolab-r12-sink", "dpu_session:lab",       # the VF goes with its VM (B-93)
+            "dpu_app:daolab-app-dao-vpp.service", "ip:10.30.0.101"])
+E       AssertionError: assert [] == ['dpu_app:dao...lab-r12-sink']
+E         
+E         Right contains 4 more items, first extra item: 'dpu_app:daolab-app-dao-vpp.service'
+E         Use -v to get more diff
+
+tests/test_ansible_runner.py:280: AssertionError
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_playbooks.py:1154: sshd not installed
+FAILED tests/test_ml_tvm.py::test_the_inventory_names_the_ml_device_role - Ke...
+FAILED tests/test_ml_tvm.py::test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-True]
+FAILED tests/test_ml_tvm.py::test_every_ml_address_fallback_is_the_inventory_role
+FAILED tests/test_ml_tvm.py::test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/deploy.yml]
+FAILED tests/test_ml_tvm.py::test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/cleanup.yml]
+FAILED tests/test_ml_tvm.py::test_no_ml_host_path_is_a_literal_outside_a_default[verify_clean.yml]
+FAILED tests/test_ml_tvm.py::test_the_ml_host_path_defaults_are_todays_values
+FAILED tests/test_ml_tvm.py::test_the_smoke_test_host_paths_are_overridable_with_todays_defaults
+FAILED tests/test_ml_tvm.py::test_the_env_file_path_lines_are_the_smoke_tests_own_defaults
+FAILED tests/test_ml_tvm.py::test_the_smoke_test_runs_one_inference_and_leaves_no_dpdk_files
+FAILED tests/test_ml_tvm.py::test_the_smoke_test_reports_the_last_result_while_the_owner_holds_the_device
+FAILED tests/test_ml_tvm.py::test_ml_deploy_without_sign_off_touches_nothing
+FAILED tests/test_ml_tvm.py::test_ml_deploy_proves_the_mlip_and_verifies_from_the_dpu
+FAILED tests/test_ml_tvm.py::test_a_second_ml_deploy_keeps_the_first_saved_state
+FAILED tests/test_ml_tvm.py::test_ml_cleanup_gives_the_board_back - Assertion...
+FAILED tests/test_ml_tvm.py::test_ml_cleanup_of_a_clean_board_changes_nothing
+FAILED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[holder]
+FAILED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[runtime]
+FAILED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[hugepages]
+FAILED tests/test_ml_tvm.py::test_verify_clean_skips_the_ml_device_check_without_an_ml_address
+FAILED tests/test_ml_tvm.py::test_an_ml_tvm_reservation_is_never_clean_without_an_ml_address
+FAILED tests/test_ml_tvm.py::test_ml_tvm_residue_is_reported_and_then_cleared
+FAILED tests/test_ansible_runner.py::test_real_verify_clean_and_reconcile_round_trip
+PASSED tests/test_ml_tvm.py::test_the_catalog_loads_ml_tvm
+PASSED tests/test_ml_tvm.py::test_sync_turns_the_seeded_ml_tvm_row_into_the_yaml_backed_row
+PASSED tests/test_ml_tvm.py::test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable0-True]
+PASSED tests/test_ml_tvm.py::test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable1-False]
+PASSED tests/test_ml_tvm.py::test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable2-True]
+PASSED tests/test_ml_tvm.py::test_the_mock_exporter_serves_the_series_the_ml_health_rules_read
+PASSED tests/test_ml_tvm.py::test_ml_tvm_residue_is_an_existing_kind
+PASSED tests/test_ml_tvm.py::test_ml_pci_resolves_to_the_ml_role[{{ ml_pci }}-False]
+PASSED tests/test_ml_tvm.py::test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-False]
+PASSED tests/test_ml_tvm.py::test_the_env_file_holds_nothing_secret_like
+PASSED tests/test_ml_tvm.py::test_the_smoke_test_fails_when_the_inference_fails
+PASSED tests/test_ml_tvm.py::test_the_smoke_test_refuses_a_device_not_on_vfio_pci
+PASSED tests/test_ml_tvm.py::test_the_exporter_reports_the_ml_device_and_the_last_smoke[vfio-pci-ML: done\nResult: Success\n-want0]
+PASSED tests/test_ml_tvm.py::test_the_exporter_reports_the_ml_device_and_the_last_smoke[-Result: Failed\n-want1]
+PASSED tests/test_ml_tvm.py::test_the_exporter_reports_the_ml_device_and_the_last_smoke[vfio-pci-None-want2]
+PASSED tests/test_ml_tvm.py::test_ml_deploy_refuses_a_board_that_is_not_ready
+PASSED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[state]
+PASSED tests/test_ml_tvm.py::test_verify_clean_ignores_other_apps_dpdk_files
+PASSED tests/test_ml_tvm.py::test_probe_without_vms_verifies_ml_tvm_from_the_dpu
+PASSED tests/test_catalog.py::test_sync_happy_path
+PASSED tests/test_catalog.py::test_sync_idempotent_preserves_hw_class
+PASSED tests/test_catalog.py::test_validation_errors_all_or_nothing
+PASSED tests/test_catalog.py::test_unknown_host_rejected
+PASSED tests/test_catalog.py::test_removal_blocked_by_active_reservation
+PASSED tests/test_catalog.py::test_health_rules_loaded
+PASSED tests/test_catalog.py::test_sync_stores_health_rules_on_the_usecase
+PASSED tests/test_catalog.py::test_malformed_health_rule_rejected
+PASSED tests/test_catalog.py::test_sync_loads_ip_pool
+PASSED tests/test_catalog.py::test_sync_shrinks_range_but_keeps_live_leases
+PASSED tests/test_catalog.py::test_bad_ip_pool_rejected
+PASSED tests/test_catalog.py::test_verify_match_with_numeric_checks_loads
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '(unclosed', expect: {x: '== 1'}}-verify.match: not a regex]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '\\d+ ok', expect: {x: '== 1'}}-needs at least one named group]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: '== 1'}-a map of group]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: {m: '== 1'}}-verify.expect.m: no group]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, match: '(?P<n>\\d+)', expect: {n: 'lots'}}-verify.expect.n: must be]
+PASSED tests/test_catalog.py::test_bad_verify_checks_are_named[{from: r1, cmd: c, expect: {n: '== 1'}}-verify.expect: a non-empty string]
+PASSED tests/test_catalog.py::test_bad_httpcheck_is_named[{on: dpu, app: a, httpcheck: ['https://x/']}-httpcheck: only on VM roles]
+PASSED tests/test_catalog.py::test_bad_httpcheck_is_named[{on: tg_host, vm: t, connect: e810-vf, httpcheck: 'https://x/'}-a non-empty list of http(s) URLs]
+PASSED tests/test_catalog.py::test_bad_httpcheck_is_named[{on: tg_host, vm: t, connect: e810-vf, httpcheck: ['ftp://x/']}-a non-empty list of http(s) URLs]
+PASSED tests/test_catalog.py::test_bad_httpcheck_is_named[{on: tg_host, vm: t, connect: e810-vf, httpcheck: ['https://{nope_ip}/']}-{nope_ip} names no role]
+PASSED tests/test_catalog.py::test_shipped_usecases_use_parsed_verify_checks
+PASSED tests/test_ansible_runner.py::test_deploy_runs_deploy_yml_with_the_playbook_contract
+PASSED tests/test_ansible_runner.py::test_every_kind_runs_its_playbook
+PASSED tests/test_ansible_runner.py::test_step_tasks_become_job_steps_and_failures_say_where
+PASSED tests/test_ansible_runner.py::test_a_failed_task_that_is_not_a_step_is_still_recorded
+PASSED tests/test_ansible_runner.py::test_a_run_that_fails_without_events_still_has_an_error
+PASSED tests/test_ansible_runner.py::test_verify_clean_reads_the_residue_the_playbook_wrote
+PASSED tests/test_ansible_runner.py::test_the_orphan_sweep_lists_and_destroys_through_orphans_yml
+PASSED tests/test_ansible_runner.py::test_all_playbook_output_of_a_job_goes_to_one_log
+PASSED tests/test_ansible_runner.py::test_a_fresh_db_job_does_not_append_to_an_old_jobs_log
+PASSED tests/test_ansible_runner.py::test_the_job_span_is_handed_to_ansible_as_traceparent
+PASSED tests/test_ansible_runner.py::test_the_engine_links_the_real_job_log
+PASSED tests/test_ansible_runner.py::test_real_orphan_sweep
+PASSED tests/test_ansible_runner.py::test_the_sign_off_switch_and_the_app_reach_the_playbooks
+PASSED tests/test_ansible_runner.py::test_with_vms_off_the_orphan_sweep_asks_no_xcp_host
+PASSED tests/test_ansible_runner.py::test_the_runner_uses_the_ansible_playbook_of_its_own_environment
+PASSED tests/test_ansible_runner.py::test_the_job_timeout_is_handed_to_ansible_runner
+PASSED tests/test_ansible_runner.py::test_a_timed_out_playbook_fails_its_job_and_names_the_limit
+PASSED tests/test_ansible_runner.py::test_a_hung_playbook_is_stopped_within_the_timeout
+PASSED tests/test_playbooks.py::test_verify_clean_on_a_clean_testbed_reports_nothing
+PASSED tests/test_playbooks.py::test_verify_clean_reports_every_kind_of_residue
+PASSED tests/test_playbooks.py::test_verify_clean_ignores_other_reservations
+PASSED tests/test_playbooks.py::test_verify_clean_is_read_only
+PASSED tests/test_playbooks.py::test_verify_clean_reports_hugepages_left_reserved
+PASSED tests/test_playbooks.py::test_verify_clean_accepts_hugepages_at_the_baseline
+PASSED tests/test_playbooks.py::test_reconcile_destroys_every_kind_of_residue_and_verify_then_agrees
+PASSED tests/test_playbooks.py::test_reconcile_gives_the_hugepages_back
+PASSED tests/test_playbooks.py::test_reconcile_destroys_through_xen_orchestra_and_never_logs_in_to_a_dom0
+PASSED tests/test_playbooks.py::test_reconcile_is_safe_on_a_clean_testbed_and_changes_nothing
+PASSED tests/test_playbooks.py::test_reconcile_leaves_other_reservations_and_foreign_vms_alone
+PASSED tests/test_playbooks.py::test_reconcile_ignores_a_caller_supplied_list_and_destroys_only_its_own_reservation
+PASSED tests/test_playbooks.py::test_reconcile_skips_a_listed_vm_whose_id_is_not_a_uuid
+PASSED tests/test_playbooks.py::test_reconcile_twice_in_a_row
+PASSED tests/test_playbooks.py::test_orphans_lists_every_daolab_tagged_vm
+PASSED tests/test_playbooks.py::test_orphans_destroys_exactly_the_given_ids
+PASSED tests/test_playbooks.py::test_orphans_never_destroys_a_vm_that_only_shares_a_name
+PASSED tests/test_playbooks.py::test_otel_agent_retries_a_failed_download_before_failing
+PASSED tests/test_playbooks.py::test_otel_agent_renders_the_daolab_attributes_and_starts_the_unit
+PASSED tests/test_playbooks.py::test_otel_agent_second_run_restarts_nothing
+PASSED tests/test_playbooks.py::test_otel_agent_without_a_collector_does_nothing
+PASSED tests/test_playbooks.py::test_otel_agent_render_only_for_cloud_init
+PASSED tests/test_playbooks.py::test_otel_agent_on_a_vm_writes_its_config_and_starts_the_agent
+PASSED tests/test_playbooks.py::test_otel_agent_on_a_vm_without_a_rendered_config_says_so
+PASSED tests/test_playbooks.py::test_otel_agent_on_a_vm_without_a_collector_does_nothing
+PASSED tests/test_playbooks.py::test_otel_agent_accepts_a_single_url_for_httpcheck
+PASSED tests/test_playbooks.py::test_deploy_vpp_end_to_end
+PASSED tests/test_playbooks.py::test_deploy_with_a_collector_starts_the_agent_on_every_vm
+PASSED tests/test_playbooks.py::test_every_seed_value_fits_the_xenstore_quota
+PASSED tests/test_playbooks.py::test_a_paused_vm_stops_the_deploy_instead_of_another_start
+PASSED tests/test_playbooks.py::test_deploy_without_a_collector_reaches_no_vm
+PASSED tests/test_playbooks.py::test_deploy_twice_changes_nothing
+PASSED tests/test_playbooks.py::test_a_conflicting_address_is_swapped_before_use
+PASSED tests/test_playbooks.py::test_an_unreachable_dom0_fails_the_lease_instead_of_passing_as_free
+PASSED tests/test_playbooks.py::test_a_failed_verify_fails_the_deploy_and_says_why
+PASSED tests/test_playbooks.py::test_a_board_on_another_personality_stops_with_the_manual_flash_message
+PASSED tests/test_playbooks.py::test_a_missing_template_is_named
+PASSED tests/test_playbooks.py::test_running_out_of_vfs_is_named
+PASSED tests/test_playbooks.py::test_an_unknown_install_id_is_refused
+PASSED tests/test_playbooks.py::test_deploy_diy_makes_bare_vms_only
+PASSED tests/test_playbooks.py::test_a_manual_run_takes_its_addresses_and_calls_no_api
+PASSED tests/test_playbooks.py::test_probe_runs_verify_against_the_recorded_addresses
+PASSED tests/test_playbooks.py::test_a_failing_probe_fails
+PASSED tests/test_playbooks.py::test_vpp_deploy_runs_only_the_runbook_steps_the_board_needs[False-False-rvu_nicpf-steps0]
+PASSED tests/test_playbooks.py::test_vpp_deploy_runs_only_the_runbook_steps_the_board_needs[True-False-rvu_nicpf-steps1]
+PASSED tests/test_playbooks.py::test_vpp_deploy_runs_only_the_runbook_steps_the_board_needs[True-False-vfio-pci-steps2]
+PASSED tests/test_playbooks.py::test_vpp_deploy_runs_only_the_runbook_steps_the_board_needs[True-True-vfio-pci-steps3]
+PASSED tests/test_playbooks.py::test_vpp_deploy_without_sign_off_touches_nothing
+PASSED tests/test_playbooks.py::test_a_running_vpp_needs_no_sign_off_to_redeploy
+PASSED tests/test_playbooks.py::test_vpp_cleanup_gives_the_board_back
+PASSED tests/test_playbooks.py::test_vpp_cleanup_of_a_board_at_rest_only_makes_sure_nginx_runs
+PASSED tests/test_playbooks.py::test_smartnic_deploy_builds_and_launches_only_when_needed[False-False-steps0]
+PASSED tests/test_playbooks.py::test_smartnic_deploy_builds_and_launches_only_when_needed[True-False-steps1]
+PASSED tests/test_playbooks.py::test_smartnic_deploy_builds_and_launches_only_when_needed[True-True-steps2]
+PASSED tests/test_playbooks.py::test_smartnic_cleanup_runs_the_runbook_cleanup
+PASSED tests/test_playbooks.py::test_smartnic_cleanup_gives_back_the_six_512mb_hugepages
+PASSED tests/test_playbooks.py::test_cleanup_removes_a_hugepage_file_nothing_maps_and_keeps_one_in_use
+PASSED tests/test_playbooks.py::test_smartnic_cleanup_leaves_hugepages_at_the_baseline_alone
+PASSED tests/test_playbooks.py::test_cleanup_gives_nginx_tls_its_pages_back_when_none_are_left
+PASSED tests/test_playbooks.py::test_cleanup_clears_engine_files_on_every_hugetlbfs_mount
+PASSED tests/test_playbooks.py::test_vpp_cleanup_removes_the_hugepage_file_vpp_left
+PASSED tests/test_playbooks.py::test_tls_proxy_deploy_keeps_nginx_tls_running
+PASSED tests/test_playbooks.py::test_tls_proxy_points_nginx_at_the_reservations_backend_and_cleanup_restores_it
+PASSED tests/test_playbooks.py::test_tls_proxy_cleanup_keeps_a_hand_edit_of_the_resting_config
+PASSED tests/test_playbooks.py::test_tls_proxy_deploy_gives_the_engine_its_hugepages
+PASSED tests/test_playbooks.py::test_a_board_without_a_personality_marker_is_assumed_to_match
+PASSED tests/test_playbooks.py::test_deploy_access_with_a_key
+PASSED tests/test_playbooks.py::test_deploy_access_with_a_generated_password
+PASSED tests/test_playbooks.py::test_deploy_access_twice_reports_no_change
+PASSED tests/test_playbooks.py::test_revoke_kills_sessions_and_shuts_every_door
+PASSED tests/test_playbooks.py::test_revoke_without_the_login_is_harmless
+PASSED tests/test_playbooks.py::test_cleanup_revokes_access_first_and_destroys_the_vms
+PASSED tests/test_playbooks.py::test_cleanup_runs_the_apps_runbook_cleanup
+PASSED tests/test_playbooks.py::test_cleanup_is_safe_on_a_clean_testbed
+PASSED tests/test_playbooks.py::test_verify_clean_sees_an_app_process_left_running
+PASSED tests/test_playbooks.py::test_deploy_gives_the_owner_the_lab_login
+PASSED tests/test_playbooks.py::test_a_password_deploy_reaches_the_vms_too
+PASSED tests/test_playbooks.py::test_without_vms_verify_cleanup_and_reconcile_never_touch_the_dom0
+PASSED tests/test_playbooks.py::test_bringup_lists_everything_missing
+PASSED tests/test_playbooks.py::test_bringup_of_a_ready_board_passes_and_keeps_an_existing_marker
+PASSED tests/test_playbooks.py::test_deployed_keys_stop_working_at_the_end_of_the_slot
+PASSED tests/test_playbooks.py::test_probe_without_vms_asks_the_dpu_app[1-True]
+PASSED tests/test_playbooks.py::test_probe_without_vms_asks_the_dpu_app[0-False]
+PASSED tests/test_playbooks.py::test_taking_the_port_first_pins_its_override_so_the_runbook_cleanup_can_restore_it
+PASSED tests/test_playbooks.py::test_a_running_vpp_leaves_the_override_alone
+PASSED tests/test_playbooks.py::test_a_drop_in_sshd_rejects_is_removed_again
+PASSED tests/test_playbooks.py::test_a_running_vpp_is_seen_by_its_real_process_name_vpp_main
+PASSED tests/test_playbooks.py::test_verify_clean_reports_a_vpp_main_left_running
+PASSED tests/test_playbooks.py::test_ansible_cfg_keeps_pipelining_off
+PASSED tests/test_playbooks.py::test_a_dpu_only_vpp_deploy_checks_eth0_is_up_with_its_address
+PASSED tests/test_playbooks.py::test_a_dpu_only_vpp_deploy_fails_when_eth0_is_down
+PASSED tests/test_playbooks.py::test_a_dpu_only_vpp_deploy_fails_when_eth0_has_no_address
+PASSED tests/test_playbooks.py::test_parsed_verify_passes_on_the_right_numbers
+PASSED tests/test_playbooks.py::test_parsed_verify_names_the_number_that_is_wrong
+PASSED tests/test_playbooks.py::test_verify_fails_on_a_nonzero_exit_even_with_the_right_text
+PASSED tests/test_playbooks.py::test_verify_says_when_the_output_does_not_match
+PASSED tests/test_playbooks.py::test_httpcheck_urls_reach_the_vm_agent_with_data_plane_addresses
+PASSED tests/test_catalog_template_guard.py::test_canary_lookup_in_verify_cmd_fails_sync_and_never_runs
+PASSED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{{]
+PASSED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{%]
+PASSED tests/test_catalog_template_guard.py::test_each_template_delimiter_is_rejected[{#]
+PASSED tests/test_catalog_template_guard.py::test_single_brace_commands_are_still_accepted[ping -c 4 -W 2 {r1_ip}]
+PASSED tests/test_catalog_template_guard.py::test_single_brace_commands_are_still_accepted[curl -sk https://{r1_ip}/ | grep -c ok]
+PASSED tests/test_catalog_template_guard.py::test_single_brace_commands_are_still_accepted[awk '{print $1}' /proc/loadavg]
+PASSED tests/test_catalog_template_guard.py::test_no_template_delimiter_anywhere_in_usecases_or_setups
+PASSED tests/test_app_exporter.py::test_vpp_show_interface_is_parsed_per_interface
+PASSED tests/test_app_exporter.py::test_vpp_metrics_match_the_vpp_rules
+PASSED tests/test_app_exporter.py::test_vpp_down_is_zero_and_no_counters
+PASSED tests/test_app_exporter.py::test_vppctl_missing_is_down
+PASSED tests/test_app_exporter.py::test_nginx_is_up_when_its_port_accepts
+PASSED tests/test_app_exporter.py::test_nginx_with_stub_status_adds_the_counters
+PASSED tests/test_app_exporter.py::test_nginx_down_when_nothing_listens
+PASSED tests/test_app_exporter.py::test_smartnic_up_follows_the_process
+PASSED tests/test_app_exporter.py::test_smartnic_offload_counter_from_a_netdev
+PASSED tests/test_app_exporter.py::test_the_vpp_socket_is_passed_to_vppctl
+PASSED tests/test_app_exporter.py::test_the_once_flag_prints_the_exposition
+23 failed, 176 passed, 1 skipped in 823.64s (0:13:43)
+# exit: 1

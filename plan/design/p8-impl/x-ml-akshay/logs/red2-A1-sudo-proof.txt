@@ -1,0 +1,5 @@
+# A-1 red proof, generated 2026-11-25T08:37:30Z; basetemp under the session scratchpad
+221: occurrences of 'sudo: a password is required' in job *.log: 2
+221: task(s) whose fatal carries it: TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] TASK [collect this host's residue] TASK [count the 512 MB hugepages still reserved] TASK [list active use-case app units] TASK [list the DAO app processes the runbooks start by hand (VPP, SmartNIC)] TASK [step: check_sessions] TASK [step: check_vms] TASK [what ml-tvm left behind (saved state, ML device holders, ML DPDK files)] 
+220: occurrences of 'sudo: a password is required' in job *.log: 2
+220: task(s) whose fatal carries it: TASK [add the DPU to r_dpu (and `dpu`, the group the VPP / SmartNIC runbook playbooks target)] TASK [collect this host's residue] TASK [count the 512 MB hugepages still reserved] TASK [list active use-case app units] TASK [list the DAO app processes the runbooks start by hand (VPP, SmartNIC)] TASK [step: check_sessions] TASK [step: check_vms] TASK [what ml-tvm left behind (saved state, ML device holders, ML DPDK files)] 

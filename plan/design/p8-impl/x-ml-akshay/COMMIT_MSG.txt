@@ -1,0 +1,141 @@
+Port the ml-tvm use case to rama with gate fixes (X-ML)
+
+What
+----
+Bring the ml-tvm use case (the MLIP on the DPU: ML device to vfio-pci,
+extra hugepages, one TVM inference as the smoke test, an exporter for its
+health) from akshay onto rama. Source: 9134632 (use case), c736d4b (smoke
+colour codes), f9ac36b (POSIX holder test), e8eb2bc (docs). The reverted
+snapshot attempt (4ec115e, 2490387, e75c2b5; reverted in 9c8a089) is not
+part of the port. Also includes A-1 (the real-runner become rule) and the
+CAN_BECOME test harness that A-1 needs.
+
+Why
+---
+rama's base predates the ml-tvm commits, so the extravar matrix, C-1/G-2,
+the apply checks and the full suite never covered ml-tvm. This port puts
+ml-tvm on rama behind those gates, and fixes what the gates found.
+
+Files (20)
+----------
+  COMPLETION_LOG.md
+  README.md
+  docs/dao-doc-verification.md
+  inventory/host_vars/dpu-01.yml
+  playbooks/apps/ml-tvm/cleanup.yml        (new)
+  playbooks/apps/ml-tvm/deploy.yml         (new)
+  playbooks/deploy.yml
+  playbooks/files/daolab-app-exporter
+  playbooks/files/daolab-ml-smoke          (new)
+  playbooks/probe.yml
+  playbooks/roles/verify/tasks/run.yml
+  playbooks/verify_clean.yml
+  scripts/run/showcase.sh                  (one DAOLAB_DEPLOYABLE line, applied by hand)
+  service/runner.py                        (MockExporter.GAUGES only)
+  setups/tb-01.yml
+  tests/test_ansible_runner.py
+  tests/test_catalog.py
+  tests/test_ml_tvm.py                     (new)
+  tests/test_playbooks.py
+  usecases/ml-tvm.yml                      (new)
+
+Port adjustments
+----------------
+- Path variables. Every host path in the ml-tvm playbooks and in the
+  verify_clean ml-tvm task is a variable that defaults to today's value:
+  daolab_sysfs, daolab_procfs, daolab_vfio_dir, daolab_dpdk_run_dir,
+  daolab_hugetlbfs, ml_test_mldev, ml_smoke_bin, ml_env_file.
+  daolab-ml-smoke takes the same overrides as environment variables.
+  A guard test fails on any literal /dev/hugepages, /mnt/huge or
+  /var/run/dpdk outside a default(). The tests point every path at the
+  test dir, so a root or CI run never kills a real process or deletes
+  a real file.
+- ml_pci default and deploy fail-safe. The inventory's bdf.ml is the one
+  source of the ML address; ml_pci is "{{ bdf.ml }}". The playbooks fall
+  back to bdf.ml, not a literal BDF. A test checks that all four
+  fallbacks agree with bdf.ml. An ml-tvm deploy on a DPU with no ML
+  address fails closed in its first task, before anything is read or
+  written.
+- verify_clean skip with a recorded reason. With no ML address, only the
+  ML-device holder check is skipped. A named debug task records why in
+  the job log. The state, runtime-dir and hugepage checks still run. This
+  is not a step: task, so the step list of existing use cases is
+  unchanged.
+- Env-file DAOLAB_* lines pinned to the smoke defaults. The
+  /etc/default/daolab-ml path lines are the smoke script's own defaults
+  unless a test overrides them. Only board values and paths go in that
+  file, and a test checks it holds nothing secret-like.
+- The ls -d leftover-check bug from 9134632 is fixed. verify_clean's
+  "ls -d $r/$p $r/$p-* && left=..." fails when either pattern is
+  missing, so a leftover ml (or ml-*) DPDK dir alone was never reported.
+  The check is now [ -n "$(ls -d ... 2>/dev/null)" ].
+- A-1 real_runner and the tests' sudo -n true probe. CAN_BECOME
+  (_can_become(): root, or sudo -n true succeeds) and Lab.run's
+  ansible_become=False line come from akshay's test harness. They are
+  test-only, with no snapshot code. A-1's real_runner turns become off
+  the same way where sudo needs a password; root and CI keep it on.
+- ansible_remote_tmp in the tests. The ml tests point ansible's remote
+  tmp at the test dir, so ansible's own module temp files stay there too.
+- COMPLETION_LOG keeps the 2026-11-20 entry as written, and adds a
+  "superseded" line under it (devices live in the snapshot profile
+  daolab-profile/1, per DDL v4.1 R-6; snapshots are switched by
+  setups.snapshot_enabled).
+
+Verified
+--------
+Base 8bfcf4b. Baseline at 8bfcf4b: 1578 passed, 4 skipped on each venv.
+
+- Full suite, ansible-core 2.21.6:
+    pytest tests/ -q -rsf -p no:cacheprovider
+    1630 passed, 4 skipped, 1 warning in 1105.98s (0:18:25), exit 0
+    (1578 baseline + 52 new tests)
+- Ansible-dependent files, ansible-core 2.20.11: the 18 files matched by
+  grep -l ansible tests/*.py, plus tests/test_catalog.py
+    817 passed, 1 skipped, 1 warning in 1018.66s (0:16:58), exit 0
+- The two venvs have the same Python 3.12.13 and the same code. They
+  differ only in ansible-core, so only ansible-touching tests can behave
+  differently.
+- Targeted run (test_ml_tvm, test_playbooks, test_ansible_runner,
+  test_catalog, plus the gate files below; 25 Nov,
+  superseded by the final runs above):
+    2.21.6: 555 passed, 1 skipped, 1 warning in 933.54s (0:15:33)
+    2.20.11: 555 passed, 1 skipped, 1 warning in 892.92s (0:14:52)
+- A-1 red -> green, on both venvs. The red run is the port without A-1,
+  on a machine where sudo needs a password:
+    test_ansible_runner.py::test_real_verify_clean_and_reconcile_round_trip
+    red:   1 failed ("sudo: a password is required", 2 per venv)
+    green: 1 passed (2.21.6 and 2.20.11)
+- Gates:
+    P-0: no new runner extravar. AnsibleRunner.extravars() is unchanged,
+         and a test pins it. No user-controlled value reaches a new
+         template. The new inputs are admin-set inventory host_vars and
+         catalog YAML.
+    C-1/G-2: the repo scan covers usecases/ml-tvm.yml, whose verify.cmd
+         has no template markers.
+    F-5-1: no secret reaches the ml-tvm files (a test checks).
+    Residue: dpu_app:ml-tvm is an existing kind. It is reported during
+         a reservation and cleared by cleanup.
+    Flag-off parity: the clean-board residue list of a vpp reservation
+         is unchanged.
+  The gate tests (test_app_exporter, test_pubkey_strict,
+  test_deploy_access, test_catalog_template_guard, test_runner_secret,
+  test_secret_env_rule, test_secret_env_scrub, test_orphans_canary,
+  test_vm_names_strict, test_vm_names_review) are green in the
+  targeted and full runs.
+
+Follow-ups
+----------
+- verify reads the smoke script's built-in defaults, not the inventory:
+  verify.cmd does not source /etc/default/daolab-ml. A test pins the
+  script's ML_PCI default to dpu-01's bdf.ml. Revisit in B-111 (roles
+  by name).
+- ~/.ansible/tmp holds empty ansible-tmp-* dirs from earlier guarded
+  runs (before ansible_remote_tmp pointed at the test dir). Left
+  untouched.
+
+Evidence
+--------
+Branch akshay-p8-gate, plan/design/p8-impl/x-ml-akshay/
+(findings, state, extravar addendum, logs, patch).
+
+Patch sha256: 03a4388bba630b18323af34649a1f0de81debb149f9e9c5ea395231883004b84

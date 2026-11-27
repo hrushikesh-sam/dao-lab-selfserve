@@ -1,0 +1,22 @@
+# generated from red3-220.txt: first E lines per failing test
+test_every_ml_cleanup_delete_target_is_under_the_test_dir
+    E       AssertionError: assert ['/dev/hugepa...dpdk/ml', ...] == []
+    E         Left contains 7 more items, first extra item: '/dev/hugepages'
+    E         Use -v to get more diff
+test_without_an_ml_address_only_the_holder_check_is_skipped[state]
+    E       assert 'ML device check skipped: no ML device address (ml_pci / bdf.ml)' in "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.commun
+    E        +  where "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opent
+test_without_an_ml_address_only_the_holder_check_is_skipped[runtime]
+    E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+    E         Right contains one more item: 'dpu_app:ml-tvm'
+    E         Use -v to get more diff
+test_without_an_ml_address_only_the_holder_check_is_skipped[hugepages]
+    E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+    E         Right contains one more item: 'dpu_app:ml-tvm'
+    E         Use -v to get more diff
+test_ml_deploy_fails_closed_without_an_ml_address[address0]
+    E       assert "ml-tvm needs the DPU's ML device address" in "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skippi
+    E        +  where "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opent
+test_ml_deploy_fails_closed_without_an_ml_address[address1]
+    E       assert "ml-tvm needs the DPU's ML device address" in "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skippi
+    E        +  where "\nPLAY [resolve, plan and lease] *************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opent

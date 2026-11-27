@@ -1,0 +1,103 @@
+# generated from red1-220.txt: first E/fatal lines per failing test
+test_the_catalog_loads_ml_tvm
+    E       KeyError: 'ml-tvm'
+test_sync_turns_the_seeded_ml_tvm_row_into_the_yaml_backed_row
+    E       AttributeError: 'NoneType' object has no attribute 'endswith'
+test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable0-True]
+    E       AssertionError: assert False is True
+    E        +  where False = <function _deployable at 0x775c1ad84f40>(<sqlite3.Row object at 0x775c1ab33f10>)
+test_ml_tvm_is_deployable_when_daolab_deployable_lists_it[deployable2-True]
+    E       AssertionError: assert False is True
+    E        +  where False = <function _deployable at 0x775c1ad84f40>(<sqlite3.Row object at 0x775c1ab33e20>)
+test_the_mock_exporter_serves_the_series_the_ml_health_rules_read
+    E       KeyError: 'ml-tvm'
+test_the_inventory_names_the_ml_device_role
+    E       KeyError: 'ml'
+test_ml_pci_resolves_to_the_ml_role[{{ ml_pci }}-False]
+    E       AssertionError:
+    E         PLAY [dpu-01] ******************************************************************
+test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-False]
+    E       AssertionError: assert '' == '0000:00:10.0'
+    E         - 0000:00:10.0
+test_ml_pci_resolves_to_the_ml_role[{{ ml_pci | default(bdf.ml | default('')) }}-True]
+    E       AssertionError: assert '' == '0000:00:10.0'
+    E         - 0000:00:10.0
+test_every_ml_address_fallback_is_the_inventory_role
+    E           KeyError: 'ml'
+test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/deploy.yml]
+    E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml'
+test_no_ml_host_path_is_a_literal_outside_a_default[apps/ml-tvm/cleanup.yml]
+    E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml'
+test_the_ml_host_path_defaults_are_todays_values
+    E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml'
+test_the_smoke_test_host_paths_are_overridable_with_todays_defaults
+    E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'
+test_the_env_file_path_lines_are_the_smoke_tests_own_defaults
+    E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml'
+test_the_env_file_holds_nothing_secret_like
+    E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml'
+test_the_smoke_test_runs_one_inference_and_leaves_no_dpdk_files
+    E       AssertionError: bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or directory
+    E       assert 127 == 0
+test_the_smoke_test_fails_when_the_inference_fails
+    E       AssertionError: assert (127 == 1)
+    E        +  where 127 = CompletedProcess(args=['bash', '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'], returncode=127, stdout='', stderr='bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or dir
+test_the_smoke_test_reports_the_last_result_while_the_owner_holds_the_device
+    E       AssertionError: bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or directory
+    E       assert 127 == 0
+test_the_smoke_test_refuses_a_device_not_on_vfio_pci
+    E       AssertionError: assert (127 == 1)
+    E        +  where 127 = CompletedProcess(args=['bash', '/home/akshay/x-ml/playbooks/files/daolab-ml-smoke'], returncode=127, stdout='', stderr='bash: /home/akshay/x-ml/playbooks/files/daolab-ml-smoke: No such file or dir
+test_the_exporter_reports_the_ml_device_and_the_last_smoke[vfio-pci-ML: done\nResult: Success\n-want0]
+    E               argparse.ArgumentError: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+    E       SystemExit: 2
+test_the_exporter_reports_the_ml_device_and_the_last_smoke[-Result: Failed\n-want1]
+    E               argparse.ArgumentError: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+    E       SystemExit: 2
+test_the_exporter_reports_the_ml_device_and_the_last_smoke[vfio-pci-None-want2]
+    E               argparse.ArgumentError: argument --app: invalid choice: 'ml' (choose from nginx, smartnic, vpp)
+    E       SystemExit: 2
+test_ml_deploy_without_sign_off_touches_nothing
+test_ml_deploy_refuses_a_board_that_is_not_ready
+test_ml_deploy_proves_the_mlip_and_verifies_from_the_dpu
+    E         [ERROR]: Unable to retrieve file contents.
+    E         Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' on the Ansible Controller.
+test_a_second_ml_deploy_keeps_the_first_saved_state
+    E         [ERROR]: Unable to retrieve file contents.
+    E         Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' on the Ansible Controller.
+test_ml_cleanup_gives_the_board_back
+    E         [ERROR]: Unable to retrieve file contents.
+    E         Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml' on the Ansible Controller.
+test_ml_cleanup_of_a_clean_board_changes_nothing
+    E         [ERROR]: Unable to retrieve file contents.
+    E         Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/cleanup.yml' on the Ansible Controller.
+test_verify_clean_reports_what_ml_tvm_left[state]
+    E       AssertionError:
+    E         PLAY [resolve the setup] *******************************************************
+test_verify_clean_reports_what_ml_tvm_left[holder]
+    E       AssertionError:
+    E         PLAY [resolve the setup] *******************************************************
+test_verify_clean_reports_what_ml_tvm_left[runtime]
+    E       AssertionError:
+    E         PLAY [resolve the setup] *******************************************************
+test_verify_clean_reports_what_ml_tvm_left[hugepages]
+    E       AssertionError:
+    E         PLAY [resolve the setup] *******************************************************
+test_verify_clean_skips_the_ml_device_check_without_an_ml_address
+    E       assert 'ML device check skipped: no ML device address (ml_pci / bdf.ml)' in "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...nsible_collecti
+    E        +  where "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.gen
+test_an_ml_tvm_reservation_is_never_clean_without_an_ml_address
+    E       assert 'cannot check an ml-tvm reservation: no ML device address' in "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.com
+    E        +  where "\nPLAY [resolve the setup] *******************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.gen
+test_verify_clean_ignores_other_apps_dpdk_files
+    E       AssertionError:
+    E         PLAY [resolve the setup] *******************************************************
+test_ml_tvm_residue_is_reported_and_then_cleared
+    E         [ERROR]: Unable to retrieve file contents.
+    E         Could not find or access '/home/akshay/x-ml/playbooks/apps/ml-tvm/deploy.yml' on the Ansible Controller.
+test_probe_without_vms_verifies_ml_tvm_from_the_dpu
+    E       assert ('localhost -> dpu-01' in "\nPLAY [probe] *******************************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callbac
+    E        +  where "\nPLAY [probe] *******************************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.gen
+test_sync_happy_path
+    E       AssertionError: assert ['e810', 'oct...'sdp', 'wire'] == ['e810', 'mli...'sdp', 'wire']
+    E         At index 1 diff: 'octeon-cn106' != 'mlip'

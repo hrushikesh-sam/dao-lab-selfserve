@@ -1,0 +1,184 @@
+# date:        2026-11-25T08:42:40Z
+# worktree:    /home/akshay/x-ml (branch x-ml)
+# HEAD:        8bfcf4bdf6e9709c3f231e58682725787fb7450d
+# write-tree:  1c122a2384c206f0ce32371b3c9afd2d285770b0   (index; staged changes only)
+# status:      18 entries (git status --short, venvs excluded)
+#    M COMPLETION_LOG.md
+#    M README.md
+#    M docs/dao-doc-verification.md
+#    M inventory/host_vars/dpu-01.yml
+#    M playbooks/deploy.yml
+#    M playbooks/files/daolab-app-exporter
+#    M playbooks/probe.yml
+#    M playbooks/roles/verify/tasks/run.yml
+#    M playbooks/verify_clean.yml
+#    M scripts/run/showcase.sh
+#    M service/runner.py
+#    M setups/tb-01.yml
+#    M tests/test_catalog.py
+#    M tests/test_playbooks.py
+#   ?? playbooks/apps/ml-tvm/
+#   ?? playbooks/files/daolab-ml-smoke
+#   ?? tests/test_ml_tvm.py
+#   ?? usecases/ml-tvm.yml
+# venv:        /home/akshay/x-ml/.venv-220
+# python:      3.12.13
+# ansible-core: 2.20.11
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# service pkg: /home/akshay/x-ml/service/__init__.py
+# age:         v1.1.1
+# ansible-playbook: /home/akshay/x-ml/.venv-220/bin/ansible-playbook = /home/akshay/x-ml/.venv-220/bin/ansible-playbook
+# ansible-playbook --version: ansible-playbook [core 2.20.11]
+# command:     .venv-220/bin/python -m pytest tests/test_ml_tvm.py -q -rsf -p no:cacheprovider
+
+........F...........................FF...F...F....F.                     [100%]
+=================================== FAILURES ===================================
+_______ test_no_secret_reaches_the_ml_tvm_files[apps/ml-tvm/deploy.yml] ________
+
+rel = 'apps/ml-tvm/deploy.yml'
+
+    @pytest.mark.parametrize("rel", ["apps/ml-tvm/deploy.yml", "apps/ml-tvm/cleanup.yml",
+                                     "files/daolab-ml-smoke", "verify_clean.yml", "probe.yml"])
+    def test_no_secret_reaches_the_ml_tvm_files(rel):
+        """F-5-1: the ml-tvm playbooks and the smoke test reference no secret."""
+>       assert not re.search(r"secret|token|password", _read(rel), re.I)
+E       AssertionError: assert not <re.Match object; span=(7875, 7881), match='secret'>
+E        +  where <re.Match object; span=(7875, 7881), match='secret'> = <function search at 0x7ae51ebcb6a0>('secret|token|password', '# playbooks/apps/ml-tvm/deploy.yml — the MLIP on the DPU (ml-tvm use case), as validated by hand\n# on xeon3-oct-112 ...      vars:\n        app_exporter_args: --app ml --ml-pci {{ ml_pci }} --ml-result {{ ml_state_dir }}/last-smoke.log\n', re.IGNORECASE)
+E        +    where <function search at 0x7ae51ebcb6a0> = re.search
+E        +    and   '# playbooks/apps/ml-tvm/deploy.yml — the MLIP on the DPU (ml-tvm use case), as validated by hand\n# on xeon3-oct-112 ...      vars:\n        app_exporter_args: --app ml --ml-pci {{ ml_pci }} --ml-result {{ ml_state_dir }}/last-smoke.log\n' = _read('apps/ml-tvm/deploy.yml')
+E        +    and   re.IGNORECASE = re.I
+
+tests/test_ml_tvm.py:114: AssertionError
+_____________________ test_ml_cleanup_gives_the_board_back _____________________
+
+lab = <tests.test_playbooks.Lab object at 0x7ae51cbd2b70>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-11/test_ml_cleanup_gives_the_boar0/books/vpp', 'daol...et=<function books.<locals>.<lambda> at 0x7ae51cbec720>, override=<function books.<locals>.<lambda> at 0x7ae51cbec2c0>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x7ae51cbd30e0>
+
+    @needs_ansible
+    def test_ml_cleanup_gives_the_board_back(lab, books, ml):
+        ml.on("vfio-pci")
+        ml.pages(4, 2)
+        ml.save_state()                                                   # deploy bound it, +2 pages
+        ml.leftovers()
+        holder = ml.holder()
+        board(lab)
+        assert ml_cleanup(lab, books, ml) == 0, lab.stdout[-3000:]
+        assert holder.wait(timeout=10) is not None                        # the device holder stopped
+>       assert "stopping ML device holders" in lab.stdout
+E       assert 'stopping ML device holders' in "\nPLAY [localhost] ***************************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n"
+E        +  where "\nPLAY [localhost] ***************************************************************\n\nTASK [load the setup YAML (manu...nsible_collections.community'\n[WARNING]: Skipping callback plugin 'community.general.opentelemetry', unable to load\n" = <tests.test_playbooks.Lab object at 0x7ae51cbd2b70>.stdout
+
+tests/test_ml_tvm.py:565: AssertionError
+__________ test_every_ml_cleanup_delete_target_is_under_the_test_dir ___________
+
+lab = <tests.test_playbooks.Lab object at 0x7ae51cbd2570>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-11/test_every_ml_cleanup_delete_t0/books/vpp', 'daol...et=<function books.<locals>.<lambda> at 0x7ae51cbec360>, override=<function books.<locals>.<lambda> at 0x7ae51cbec400>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x7ae51cbd26c0>
+
+    @needs_ansible
+    def test_every_ml_cleanup_delete_target_is_under_the_test_dir(lab, books, ml):
+        """Decision 5: in a test run, cleanup's rm and find -delete only ever reach the fake
+        board under tmp_path. Off-tree targets are refused by the stand-ins, so a red run cannot
+        delete anything of the test machine's."""
+        ml.on("vfio-pci")
+        ml.pages(4, 2)
+        ml.save_state()
+        ml.leftovers()
+        board(lab)
+        log, root = _guard_rm_and_find(lab)
+        ml_cleanup(lab, books, ml)
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        deletes = [c for c in calls if c["cmd"] == "rm" or c["delete"]]
+        assert {c["cmd"] for c in deletes} == {"rm", "find"}               # both steps did run
+        outside = sorted({t for c in deletes for t in c["targets"]
+                          if not os.path.realpath(t).startswith(root + os.sep)})
+>       assert outside == []
+E       AssertionError: assert ['/home/aksha...657657/', ...] == []
+E         
+E         Left contains 7 more items, first extra item: '/home/akshay/.ansible/tmp/ansible-tmp-1795596206.7858598-430551-51037815963234/'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:627: AssertionError
+_____________ test_verify_clean_reports_what_ml_tvm_left[runtime] ______________
+
+lab = <tests.test_playbooks.Lab object at 0x7ae51cbd1010>
+ml = <tests.test_ml_tvm.MlBoard object at 0x7ae51cbd3140>, left = 'runtime'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "holder", "runtime", "hugepages"])
+    def test_verify_clean_reports_what_ml_tvm_left(lab, ml, left):
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "holder":
+            ml.holder()
+        elif left == "runtime":
+            (ml.run_dir / "ml-smoke").mkdir()
+        else:
+            (ml.huge[1] / "mlmap_0").write_text("x")
+        residue = ml_verify_clean(lab, ml)
+>       assert residue == ["dpu_app:ml-tvm"]
+E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+E         
+E         Right contains one more item: 'dpu_app:ml-tvm'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:653: AssertionError
+_____ test_without_an_ml_address_only_the_holder_check_is_skipped[runtime] _____
+
+lab = <tests.test_playbooks.Lab object at 0x7ae51cbd3050>
+ml = <tests.test_ml_tvm.MlBoard object at 0x7ae51cbd3e30>, left = 'runtime'
+
+    @needs_ansible
+    @pytest.mark.parametrize("left", ["state", "runtime", "hugepages"])
+    def test_without_an_ml_address_only_the_holder_check_is_skipped(lab, ml, left):
+        """The skip drops the device-holder check only: what ml-tvm leaves in its state dir and its
+        DPDK files is still reported."""
+        ml.on("vfio-pci")
+        if left == "state":
+            ml.save_state()
+        elif left == "runtime":
+            (ml.run_dir / "ml").mkdir()
+        else:
+            (ml.huge[0] / "mlmap_0").write_text("x")
+        assert lab.run("verify_clean.yml", usecase="ml-tvm", **_without_ml_address(ml)) == 0, \
+            lab.stdout[-2000:]
+>       assert lab.output() == ["dpu_app:ml-tvm"]
+E       AssertionError: assert [] == ['dpu_app:ml-tvm']
+E         
+E         Right contains one more item: 'dpu_app:ml-tvm'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:687: AssertionError
+_______________ test_ml_tvm_residue_is_reported_and_then_cleared _______________
+
+lab = <tests.test_playbooks.Lab object at 0x7ae51cb68440>
+books = namespace(vars={'daolab_vpp_books': '/tmp/pytest-of-akshay/pytest-11/test_ml_tvm_residue_is_reporte0/books/vpp', 'daol...et=<function books.<locals>.<lambda> at 0x7ae51cbed440>, override=<function books.<locals>.<lambda> at 0x7ae51cbed080>)
+ml = <tests.test_ml_tvm.MlBoard object at 0x7ae51cb6aed0>
+
+    @needs_ansible
+    def test_ml_tvm_residue_is_reported_and_then_cleared(lab, books, ml):
+        ml.on("vfio-pci")
+        board(lab)
+        assert ml_deploy(lab, books, ml) == 0, lab.stdout[-3000:]
+>       assert ml_verify_clean(lab, ml) == ["dpu_app:ml-tvm"]              # the saved state
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: assert ['dpu_app:dao...u_app:ml-tvm'] == ['dpu_app:ml-tvm']
+E         
+E         At index 0 diff: 'dpu_app:daolab-app-exporter.service' != 'dpu_app:ml-tvm'
+E         Left contains one more item: 'dpu_app:ml-tvm'
+E         Use -v to get more diff
+
+tests/test_ml_tvm.py:725: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ml_tvm.py::test_no_secret_reaches_the_ml_tvm_files[apps/ml-tvm/deploy.yml]
+FAILED tests/test_ml_tvm.py::test_ml_cleanup_gives_the_board_back - assert 's...
+FAILED tests/test_ml_tvm.py::test_every_ml_cleanup_delete_target_is_under_the_test_dir
+FAILED tests/test_ml_tvm.py::test_verify_clean_reports_what_ml_tvm_left[runtime]
+FAILED tests/test_ml_tvm.py::test_without_an_ml_address_only_the_holder_check_is_skipped[runtime]
+FAILED tests/test_ml_tvm.py::test_ml_tvm_residue_is_reported_and_then_cleared
+6 failed, 46 passed in 95.32s (0:01:35)
+# exit: 1

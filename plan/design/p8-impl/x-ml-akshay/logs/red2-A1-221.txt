@@ -1,0 +1,65 @@
+# date:        2026-11-25T08:37:15Z
+# worktree:    /home/akshay/x-ml (branch x-ml)
+# HEAD:        8bfcf4bdf6e9709c3f231e58682725787fb7450d
+# write-tree:  1c122a2384c206f0ce32371b3c9afd2d285770b0   (index; staged changes only)
+# status:      18 entries (git status --short, venvs excluded)
+#    M COMPLETION_LOG.md
+#    M README.md
+#    M docs/dao-doc-verification.md
+#    M inventory/host_vars/dpu-01.yml
+#    M playbooks/deploy.yml
+#    M playbooks/files/daolab-app-exporter
+#    M playbooks/probe.yml
+#    M playbooks/roles/verify/tasks/run.yml
+#    M playbooks/verify_clean.yml
+#    M scripts/run/showcase.sh
+#    M service/runner.py
+#    M setups/tb-01.yml
+#    M tests/test_catalog.py
+#    M tests/test_playbooks.py
+#   ?? playbooks/apps/ml-tvm/
+#   ?? playbooks/files/daolab-ml-smoke
+#   ?? tests/test_ml_tvm.py
+#   ?? usecases/ml-tvm.yml
+# venv:        /home/akshay/x-ml/.venv
+# python:      3.12.13
+# ansible-core: 2.21.6
+# ansible-runner: 2.4.3
+# pytest:      9.2.0
+# sqlite:      3.53.1
+# service pkg: /home/akshay/x-ml/service/__init__.py
+# age:         v1.1.1
+# ansible-playbook: /home/akshay/x-ml/.venv/bin/ansible-playbook = /home/akshay/x-ml/.venv/bin/ansible-playbook
+# ansible-playbook --version: ansible-playbook [core 2.21.6]
+# command:     .venv/bin/python -m pytest tests/test_ansible_runner.py::test_real_verify_clean_and_reconcile_round_trip -q -rsf -p no:cacheprovider --basetemp=/tmp/claude-1000/-home-akshay-x-ml/b6e52c3a-05a2-4e94-a664-6ed8727091de/scratchpad/bt-221
+
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_real_verify_clean_and_reconcile_round_trip ________________
+
+lab = <tests.test_playbooks.Lab object at 0x7e36d04dbb30>
+tmp_path = PosixPath('/tmp/claude-1000/-home-akshay-x-ml/b6e52c3a-05a2-4e94-a664-6ed8727091de/scratchpad/bt-221/test_real_verify_clean_and_rec0')
+
+    def test_real_verify_clean_and_reconcile_round_trip(lab, tmp_path):
+        from tests.test_playbooks import MEMBERS, clean_state, dirty
+        lab.set(dirty(clean_state()))
+        rn = real_runner(lab, tmp_path)
+        handlers = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
+        ctx = {"id": 12, "job_id": 1, "setup": "tb-01", "usecase": "vpp", "members": MEMBERS,
+               "leases": ["10.30.0.101"]}
+        steps = Steps()
+        dirty_result = rn.verify_clean(ctx, steps)
+        assert dirty_result.ok is False
+>       assert sorted(dirty_result.residue) == sorted([
+            "vm:daolab-r12-sink", "dpu_session:lab",       # the VF goes with its VM (B-93)
+            "dpu_app:daolab-app-dao-vpp.service", "ip:10.30.0.101"])
+E       AssertionError: assert [] == ['dpu_app:dao...lab-r12-sink']
+E         
+E         Right contains 4 more items, first extra item: 'dpu_app:daolab-app-dao-vpp.service'
+E         Use -v to get more diff
+
+tests/test_ansible_runner.py:280: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_ansible_runner.py::test_real_verify_clean_and_reconcile_round_trip
+1 failed in 2.58s
+# exit: 1
