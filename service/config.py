@@ -56,6 +56,7 @@ class Settings:
     age_bin: str
     age_keygen_bin: str
     identity_file: str
+    ticket_dir: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -113,6 +114,7 @@ class Settings:
             age_bin=env("DAOLAB_AGE_BIN", "age"),
             age_keygen_bin=env("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"),
             identity_file=env("DAOLAB_IDENTITY_FILE", "~/.config/daolab/age-identity.txt"),
+            ticket_dir=env("DAOLAB_TICKET_DIR", "/run/daolab/tickets"),
         )
 
 
