@@ -1358,8 +1358,13 @@ def authz_keys(host: str = "", login: str = "",
 
 # ---- static dashboards (registered after all API routes) -------------------
 
+PAGE_CSP = ("default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
+            "object-src 'none'; base-uri 'none'")
+
+
 def _page(name: str) -> FileResponse:
-    return FileResponse(os.path.join(config.settings.dashboard_dir, name), media_type="text/html")
+    return FileResponse(os.path.join(config.settings.dashboard_dir, name), media_type="text/html",
+                        headers={"Content-Security-Policy-Report-Only": PAGE_CSP})
 
 
 @app.get("/")
