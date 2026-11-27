@@ -32,7 +32,7 @@ SYNTHETIC_IGNORE = {
 }
 # Classes whose records hold no uid or file mode: their fingerprints are the same on any
 # machine that builds the fake tree, so the committed synthetic file must match them exactly.
-PORTABLE = ("sched", "boot", "kmod", "mount", "proc")
+PORTABLE = ("sched", "boot", "mount", "proc")
 
 _DPU = None
 
