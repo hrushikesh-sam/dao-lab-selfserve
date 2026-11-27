@@ -49,3 +49,34 @@ jobs:
         env:
           DAOLAB_REQUIRE_AGE: "1"
         run: python -m pytest tests/ -q -rf
+
+  # B-109a, errata E-3: DPU-side scripts (playbooks/files/daolab-capture.py) are Python 3.10
+  # stdlib only, because the board runs 3.10.12. Their tests (tests/dpu) also run in `test`
+  # above; here they run on 3.10 with pytest alone. --confcutdir=tests/dpu keeps pytest from
+  # loading tests/conftest.py, which imports the controller (Python >= 3.12) and python-dotenv.
+  dpu-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+      # The same pinned age v1.1.1 install as the `test` job (X-AGE).
+      - name: Install age v1.1.1
+        run: |
+          d=$(mktemp -d "$RUNNER_TEMP/age.XXXXXX")
+          curl --fail --location --silent --show-error \
+            -o "$d/age-v1.1.1-linux-amd64.tar.gz" \
+            https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-amd64.tar.gz
+          sh deploy/age/install-age.sh "$d/age-v1.1.1-linux-amd64.tar.gz" "$HOME/.local"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Test
+        # requires_age tests fail (not skip) here if age is missing or not v1.1.1
+        env:
+          DAOLAB_REQUIRE_AGE: "1"
+        run: python -m pytest --confcutdir=tests/dpu tests/dpu -q -rf
