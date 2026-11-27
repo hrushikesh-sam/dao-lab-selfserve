@@ -1,0 +1,90 @@
+Add the snapshot capture and gated wipe playbooks (B-109b)
+
+What
+- playbooks/snapshot_capture.yml (new): revoke the owner's access first,
+  check every input's strict shape before any use (public_id 32
+  lowercase hex, S's age1 recipient, the cap, the fetch path), look up
+  lab's uid, clear leftovers of a dead run from the root-only 0700
+  capture dir, run daolab-capture.py (B-109a) as root with
+  `python3 -I`, read its one JSON line, fetch the sealed file when it
+  says `saved`, and delete it on the DPU whatever happened
+  (block/always). The report (no paths) goes to
+  daolab_output_file; a refused capture fails with "capture refused:
+  <reason>". A guarded include point for B-111's profile capture is
+  skipped by default.
+- playbooks/home_wipe.yml (new): refuses unless daolab_wipe_allowed is
+  exactly true (checked on localhost and again on the DPU, before
+  anything runs there), then daolab-wipe.py --mode wipe as root.
+- playbooks/files/daolab-wipe.py (new, Python 3.10 stdlib): two explicit
+  modes, no default. `wipe` removes every entry of the home through
+  O_NOFOLLOW directory fds (never follows a link, never leaves the
+  home's filesystem), copies /etc/skel back with O_EXCL|O_NOFOLLOW
+  (modes kept, setuid/setgid dropped, owned by lab and the home's
+  group), then proves home == skel. `check` is read-only and counts the
+  top-level names that differ, with the capture script's meaning of
+  "equal". Both run the capture script's guards first (arguments, path
+  sanity, skel readable, mount guard, home owner). One JSON line, fixed
+  reason codes, never a name or a path.
+- playbooks/verify_clean.yml: a `home:lab` residue item, only when
+  daolab_snapshot_enabled is true. Its play ends before its first task
+  when the flag is off, so the checks, job steps and residue are
+  exactly today's.
+- tests/fakelab.py: the fake getent answers a per-user uid from the
+  state (default 1001, unchanged).
+
+Why
+Design v1.1 section 6 orders the end-of-slot save as revoke -> capture
+-> apps cleanup -> gated wipe -> verify, and the controller commits
+`saved` between capture and wipe, so these are separate playbooks
+(B-109c wires them). Errata E-6: capture and wipe run as root; E-3:
+DPU scripts are 3.10 stdlib with a 3.10 test.
+
+Files
+- playbooks/snapshot_capture.yml, playbooks/home_wipe.yml,
+  playbooks/files/daolab-wipe.py (new)
+- playbooks/verify_clean.yml, tests/fakelab.py
+- tests/test_playbooks_snapshot.py, tests/dpu/test_wipe.py (new)
+
+Verified
+- Red (unchanged code): 70 failed, 2 passed. The wipe script and the
+  playbooks did not exist; the 2 passes are the flag-off verify tests,
+  which already hold today.
+- Green: the two new files, 72 passed (ansible-core 2.21.6); tests/dpu
+  on Python 3.10.12, 143 passed (with B-109a's capture tests).
+- This commit alone on BASE (split check): test_wipe.py,
+  test_playbooks_snapshot.py, test_playbooks.py and test_cleanup_flow.py
+  185 passed, 1 skipped (sshd not installed); tests/dpu 143 passed on
+  3.10.12.
+- Series (both commits = the tested tree c8ca04ff, BASE d97085a):
+  full suite 1993 passed, 4 skipped on Python 3.12.13 / ansible-core
+  2.21.6 (baseline 1818 passed, 4 skipped; +175 new tests, same 4
+  skips); the ansible files + the new tests on 2.20.11: 1121 passed,
+  1 skipped; tests/dpu on Python 3.10.12: 143 passed.
+
+Interface
+- snapshot_capture.yml extra vars: daolab_snapshot_recipient,
+  daolab_snapshot_public_id, daolab_snapshot_cap_bytes,
+  daolab_snapshot_fetch_to; home_wipe.yml: daolab_wipe_allowed;
+  verify_clean.yml: daolab_snapshot_enabled. Test-only prefixes:
+  daolab_dpu_root (home, skel, capture dir), daolab_age_root (age).
+- Job steps: capture, fetch_snapshot, wipe_home, check_home.
+- daolab-wipe.py: --mode check|wipe --home --skel --owner-uid
+  [--mountinfo]; {"status": "wiped"|"refused", "reason", "removed"} or
+  {"status": "clean"|"dirty"|"refused", "reason", "differ"}.
+
+Follow-ups
+- With become, `fetch` reads the file through `slurp` (base64 in memory
+  on both sides, roughly 2x the ciphertext at the 512 MiB cap): measure
+  in Phase 9 (E-8's synthetic tree).
+- revoke kills only lab-owned processes; a root process the user
+  started with sudo survives it. During capture that fails closed
+  (tar_failed); after the wipe it is tripwire (B-112) territory.
+- Resetting a home directory the user chmod'ed (e.g. 0777) is left to
+  the tripwire task.
+
+Patch
+b109bc.patch holds both commits (split in SPLIT.md); sha256
+979dff78026ad2c76d145aaf3ab3915e3fd42e39e825bf8f437186b3ec47d3e6
+Tree c8ca04ffca29a78acf69a4eb6cc07efe2e3dfe94 (TREE MATCH on a fresh
+worktree at BASE; commit 1 then commit 2 gives the same tree).
+Evidence: branch akshay-p8-gate, plan/design/p8-impl/b109bc-akshay/

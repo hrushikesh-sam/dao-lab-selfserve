@@ -1,0 +1,3822 @@
+diff --git a/.env.example b/.env.example
+index b3f593b..5cd8bd8 100644
+--- a/.env.example
++++ b/.env.example
+@@ -60,3 +60,7 @@ DAOLAB_AGE_BIN=age
+ DAOLAB_AGE_KEYGEN_BIN=age-keygen
+ DAOLAB_IDENTITY_FILE=~/.config/daolab/age-identity.txt
+ DAOLAB_TICKET_DIR=/run/daolab/tickets
++# B-109c: where the sealed snapshots live (dirs 0700, files 0600; production: a dedicated mount,
++# E-15) and the cap on one capture's raw tar stream in bytes (E-8, 512 MiB)
++DAOLAB_SNAPSHOT_ROOT=./var/snapshots
++DAOLAB_SNAPSHOT_CAP_BYTES=536870912
+diff --git a/playbooks/files/daolab-wipe.py b/playbooks/files/daolab-wipe.py
+new file mode 100755
+index 0000000..cbfab43
+--- /dev/null
++++ b/playbooks/files/daolab-wipe.py
+@@ -0,0 +1,431 @@
++#!/usr/bin/python3
++"""daolab-wipe.py - empty /home/lab back to /etc/skel on the DPU, or check it (B-109b).
++
++Runs as root on the DPU (errata E-6) with Python 3.10 standard library only (E-3), in one of
++two explicit modes (there is no default, so a typo can never wipe):
++
++    python3 -I daolab-wipe.py --mode wipe  --home /home/lab --skel /etc/skel --owner-uid <uid>
++    python3 -I daolab-wipe.py --mode check --home /home/lab --skel /etc/skel --owner-uid <uid>
++        [--mountinfo /proc/self/mountinfo]
++
++wipe   Removes every entry of the home without following symlinks (directories are opened
++       with O_NOFOLLOW and emptied through their file descriptors; nothing outside the home is
++       ever reached through a link), copies the skel tree back (permission bits kept, setuid/
++       setgid dropped; files created O_EXCL|O_NOFOLLOW so a planted link is never written
++       through), gives every copied entry to --owner-uid and the home directory's group, then
++       proves the home equals skel. The home directory itself stays (owner already checked).
++       The playbook (home_wipe.yml) runs this only when the engine allowed it from the DB.
++       Prints {"status": "wiped"|"refused", "reason": <code>, "removed": n}; n = top-level
++       entries removed. Exit 0 wiped, 1 refused.
++check  Read-only (verify_clean.yml's home:lab check). Counts the top-level names where home
++       and skel differ, with the same meaning of "equal" as daolab-capture.py's empty check
++       (same names at every depth, same types, regular files byte-identical, symlink targets
++       identical; FIFOs, sockets and devices never equal; anything unreadable differs).
++       Prints {"status": "clean"|"dirty"|"refused", "reason": <code>, "differ": n}.
++       Exit 0 clean/dirty, 1 refused.
++
++Both modes run the guards of daolab-capture.py first (rules copied, not imported): every option
++exactly once (bad_args); --home and --skel absolute, normalized, no control chars, not a system
++root, at least two levels deep, neither inside the other (path_unsafe); --skel a real directory
++(skel_failed, before anything is removed); no mount point at or under the home (mount_under_home;
++unreadable or malformed mountinfo refuses too); the home a real directory (not a symlink) owned
++by --owner-uid (home_missing, home_not_dir, home_owner).
++
++Exactly one JSON line on stdout, nothing on stderr, never a file name or a path. Run it with
++`python3 -I`, so nothing beside the script can shadow a module.
++"""
++import argparse
++import errno
++import json
++import os
++import re
++import stat
++import sys
++
++CHUNK = 1 << 16
++MOUNTINFO_MAX = 16 << 20
++REASONS = ("ok", "home_differs", "bad_args", "path_unsafe", "home_missing", "home_not_dir",
++           "home_owner", "mount_under_home", "skel_failed", "remove_failed", "not_clean")
++MODES = ("wipe", "check")
++DIGITS_RE = re.compile(r"[0-9]{1,20}")
++FORBIDDEN = frozenset(("/", "/root", "/etc", "/home", "/usr", "/var"))
++_ESCAPE_RE = re.compile(rb"\\([0-7]{3})")
++_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
++
++
++class Refused(Exception):
++    def __init__(self, reason):
++        super().__init__(reason)
++        self.reason = reason
++
++
++# ---- arguments ----------------------------------------------------------------------------
++
++class _Parser(argparse.ArgumentParser):
++    """argparse that never prints: every parse problem is bad_args."""
++
++    def error(self, message):
++        raise Refused("bad_args")
++
++    def exit(self, status=0, message=None):
++        raise Refused("bad_args")
++
++    def print_usage(self, file=None):
++        pass
++
++    def print_help(self, file=None):
++        pass
++
++
++class _Once(argparse.Action):
++    def __init__(self, *args, **kwargs):
++        super().__init__(*args, **kwargs)
++        self.seen = False
++
++    def __call__(self, parser, namespace, values, option_string=None):
++        if self.seen:
++            raise Refused("bad_args")
++        self.seen = True
++        setattr(namespace, self.dest, values)
++
++
++def _parse(argv):
++    p = _Parser(prog="daolab-wipe", add_help=False, allow_abbrev=False)
++    for name in ("--mode", "--home", "--skel", "--owner-uid"):
++        p.add_argument(name, required=True, action=_Once)
++    p.add_argument("--mountinfo", default="/proc/self/mountinfo", action=_Once)
++    a = p.parse_args(argv)
++    if a.mode not in MODES or not DIGITS_RE.fullmatch(a.owner_uid):
++        raise Refused("bad_args")
++    a.owner_uid = int(a.owner_uid)
++    if a.owner_uid > 0xFFFFFFFE or not _clean_abs(a.mountinfo):
++        raise Refused("bad_args")
++    return a
++
++
++def _mode_of(argv):
++    """The mode asked for, only to pick the output keys of a refusal (never trusted)."""
++    for i, arg in enumerate(argv):
++        if arg == "--mode" and i + 1 < len(argv):
++            return argv[i + 1]
++    return "wipe"
++
++
++# ---- paths (the rules of daolab-capture.py) -----------------------------------------------
++
++def _clean_abs(path):
++    if not path.startswith("/") or path.startswith("//"):
++        return False
++    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in path):
++        return False
++    if os.path.normpath(path) != path:
++        return False
++    return not any(part in (".", "..") for part in path.split("/"))
++
++
++def _sane(path):
++    if not _clean_abs(path) or path in FORBIDDEN:
++        return False
++    return len([part for part in path.split("/") if part]) >= 2
++
++
++def _within(path, top):
++    return path == top or path.startswith(top + "/")
++
++
++def _check_paths(a):
++    if not (_sane(a.home) and _sane(a.skel)):
++        raise Refused("path_unsafe")
++    if _within(a.home, a.skel) or _within(a.skel, a.home):
++        raise Refused("path_unsafe")
++    real_home, real_skel = os.path.realpath(a.home), os.path.realpath(a.skel)
++    if _within(real_home, real_skel) or _within(real_skel, real_home):
++        raise Refused("path_unsafe")
++
++
++def _check_skel(a):
++    try:
++        st = os.lstat(a.skel)
++    except OSError:
++        raise Refused("skel_failed")
++    if not stat.S_ISDIR(st.st_mode):
++        raise Refused("skel_failed")
++    try:                                    # the whole tree must be readable before any removal
++        for dirpath, dirnames, filenames in os.walk(a.skel, followlinks=False,
++                                                    onerror=_raise):
++            for name in filenames:
++                p = os.path.join(dirpath, name)
++                s = os.lstat(p)
++                if stat.S_ISREG(s.st_mode):
++                    os.close(_open_regular(p))
++                elif not stat.S_ISLNK(s.st_mode):
++                    raise Refused("skel_failed")      # skel holds files, dirs, links only
++    except (OSError, RecursionError):
++        raise Refused("skel_failed")
++
++
++def _raise(err):
++    raise err
++
++
++# ---- mounts -------------------------------------------------------------------------------
++
++def _unescape(field):
++    def one(m):
++        n = int(m.group(1), 8)
++        if n > 0xFF:
++            raise ValueError("bad escape")
++        return bytes((n,))
++    return _ESCAPE_RE.sub(one, field)
++
++
++def _mount_points(path):
++    with open(path, "rb") as fh:
++        data = fh.read(MOUNTINFO_MAX + 1)
++    if len(data) > MOUNTINFO_MAX or not data.strip():
++        raise ValueError("mountinfo size")
++    points = []
++    for line in data.split(b"\n"):
++        if not line:
++            continue
++        fields = line.split(b" ")
++        if len(fields) < 10 or b"-" not in fields[6:-2]:
++            raise ValueError("mountinfo line")
++        points.append(os.fsdecode(_unescape(fields[4])))
++    return points
++
++
++def _check_mounts(a):
++    try:
++        points = _mount_points(a.mountinfo)
++    except (OSError, ValueError):
++        raise Refused("mount_under_home")
++    tops = {a.home, os.path.realpath(a.home)}
++    for point in points:
++        if any(_within(point, top) for top in tops):
++            raise Refused("mount_under_home")
++
++
++# ---- home ---------------------------------------------------------------------------------
++
++def _check_home(a):
++    try:
++        st = os.lstat(a.home)
++    except (FileNotFoundError, NotADirectoryError):
++        raise Refused("home_missing")
++    except OSError:
++        raise Refused("home_not_dir")
++    if not stat.S_ISDIR(st.st_mode):
++        raise Refused("home_not_dir")
++    if st.st_uid != a.owner_uid:
++        raise Refused("home_owner")
++    return st
++
++
++# ---- equality (the meaning of daolab-capture.py's empty check) ----------------------------
++
++def _open_regular(path):
++    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
++    if not stat.S_ISREG(os.fstat(fd).st_mode):
++        os.close(fd)
++        raise OSError(errno.EINVAL, "not a regular file")
++    return fd
++
++
++def _same_bytes(a, b):
++    fa = fb = None
++    try:
++        fa, fb = _open_regular(a), _open_regular(b)
++        while True:
++            ca, cb = os.read(fa, CHUNK), os.read(fb, CHUNK)
++            if ca != cb:
++                return False
++            if not ca:
++                return True
++    except OSError:
++        return False
++    finally:
++        for fd in (fa, fb):
++            if fd is not None:
++                os.close(fd)
++
++
++def _same_entry(h, s):
++    """True only if the entry h equals the skel entry s (types first: a FIFO is never opened)."""
++    try:
++        sh, ss = os.lstat(h), os.lstat(s)
++        if stat.S_IFMT(sh.st_mode) != stat.S_IFMT(ss.st_mode):
++            return False
++        if stat.S_ISDIR(sh.st_mode):
++            return _same_tree(h, s)
++        if stat.S_ISLNK(sh.st_mode):
++            return os.readlink(h) == os.readlink(s)
++        if stat.S_ISREG(sh.st_mode):
++            return sh.st_size == ss.st_size and _same_bytes(h, s)
++        return False                        # FIFOs, sockets, devices: never equal
++    except (OSError, RecursionError):
++        return False
++
++
++def _same_tree(home, skel):
++    try:
++        names = sorted(os.listdir(home))
++        if names != sorted(os.listdir(skel)):
++            return False
++    except OSError:
++        return False
++    return all(_same_entry(os.path.join(home, n), os.path.join(skel, n)) for n in names)
++
++
++def _differ(home, skel):
++    """How many top-level names differ between home and skel (count only)."""
++    try:
++        h, s = set(os.listdir(home)), set(os.listdir(skel))
++    except OSError:
++        raise Refused("home_not_dir")
++    n = len(h ^ s)
++    for name in h & s:
++        if not _same_entry(os.path.join(home, name), os.path.join(skel, name)):
++            n += 1
++    return n
++
++
++# ---- wipe ---------------------------------------------------------------------------------
++
++def _empty_dir(dfd, dev):
++    """Remove everything inside the directory open as `dfd`, never following a link and never
++    leaving the home's filesystem."""
++    for name in os.listdir(dfd):
++        st = os.lstat(name, dir_fd=dfd)
++        if stat.S_ISDIR(st.st_mode):
++            if st.st_dev != dev:
++                raise Refused("remove_failed")
++            sub = os.open(name, _DIR_FLAGS, dir_fd=dfd)
++            try:
++                got = os.fstat(sub)
++                if (got.st_dev, got.st_ino) != (st.st_dev, st.st_ino):
++                    raise Refused("remove_failed")   # swapped under us
++                _empty_dir(sub, dev)
++            finally:
++                os.close(sub)
++            os.rmdir(name, dir_fd=dfd)
++        else:
++            os.unlink(name, dir_fd=dfd)
++
++
++def _remove_all(a, home_st):
++    fd = os.open(a.home, _DIR_FLAGS)
++    try:
++        got = os.fstat(fd)
++        if (got.st_dev, got.st_ino) != (home_st.st_dev, home_st.st_ino):
++            raise Refused("remove_failed")
++        names = os.listdir(fd)
++        _empty_dir(fd, got.st_dev)
++        return len(names)
++    finally:
++        os.close(fd)
++
++
++def _copy_into(src_dir, dst_fd, uid, gid):
++    for name in sorted(os.listdir(src_dir)):
++        src = os.path.join(src_dir, name)
++        st = os.lstat(src)
++        mode = stat.S_IMODE(st.st_mode) & 0o1777          # no setuid / setgid
++        if stat.S_ISDIR(st.st_mode):
++            os.mkdir(name, 0o700, dir_fd=dst_fd)
++            sub = os.open(name, _DIR_FLAGS, dir_fd=dst_fd)
++            try:
++                _copy_into(src, sub, uid, gid)
++                os.fchown(sub, uid, gid)
++                os.fchmod(sub, mode)
++            finally:
++                os.close(sub)
++        elif stat.S_ISLNK(st.st_mode):
++            os.symlink(os.readlink(src), name, dir_fd=dst_fd)
++            os.chown(name, uid, gid, dir_fd=dst_fd, follow_symlinks=False)
++        elif stat.S_ISREG(st.st_mode):
++            sfd = _open_regular(src)
++            try:
++                dfd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
++                              | os.O_CLOEXEC, 0o600, dir_fd=dst_fd)
++                try:
++                    while True:
++                        chunk = os.read(sfd, CHUNK)
++                        if not chunk:
++                            break
++                        os.write(dfd, chunk)
++                    os.fchown(dfd, uid, gid)
++                    os.fchmod(dfd, mode)
++                finally:
++                    os.close(dfd)
++            finally:
++                os.close(sfd)
++        else:
++            raise Refused("skel_failed")
++
++
++def _copy_skel(a, home_st):
++    fd = os.open(a.home, _DIR_FLAGS)
++    try:
++        got = os.fstat(fd)
++        if (got.st_dev, got.st_ino) != (home_st.st_dev, home_st.st_ino):
++            raise Refused("skel_failed")
++        _copy_into(a.skel, fd, a.owner_uid, home_st.st_gid)
++    finally:
++        os.close(fd)
++
++
++# ---- main ---------------------------------------------------------------------------------
++
++def _doc(mode, status, reason, n=0):
++    key = "differ" if mode == "check" else "removed"
++    return {"status": status, "reason": reason, key: n}
++
++
++def _run(argv, ctx):
++    ctx["stage"] = "bad_args"
++    a = _parse(argv)
++    ctx["mode"] = a.mode
++    ctx["stage"] = "path_unsafe"
++    _check_paths(a)
++    ctx["stage"] = "skel_failed"
++    _check_skel(a)
++    ctx["stage"] = "mount_under_home"
++    _check_mounts(a)
++    ctx["stage"] = "home_not_dir"
++    home_st = _check_home(a)
++    if a.mode == "check":
++        n = _differ(a.home, a.skel)
++        return _doc("check", "clean" if n == 0 else "dirty", "ok" if n == 0 else "home_differs", n)
++    ctx["stage"] = "remove_failed"
++    try:
++        removed = _remove_all(a, home_st)
++    except (OSError, RecursionError):
++        raise Refused("remove_failed")
++    ctx["stage"] = "skel_failed"
++    try:
++        _copy_skel(a, home_st)
++    except (OSError, RecursionError):
++        raise Refused("skel_failed")
++    ctx["stage"] = "not_clean"
++    if not _same_tree(a.home, a.skel):
++        raise Refused("not_clean")
++    return _doc("wipe", "wiped", "ok", removed)
++
++
++def main(argv=None):
++    argv = sys.argv[1:] if argv is None else argv
++    ctx = {"stage": "bad_args", "mode": None}
++    try:
++        doc = _run(argv, ctx)
++    except Refused as r:
++        doc = _doc(ctx["mode"] or _mode_of(argv), "refused", r.reason)
++    except Exception:
++        doc = _doc(ctx["mode"] or _mode_of(argv), "refused", ctx["stage"])
++    sys.stdout.write(json.dumps(doc) + "\n")
++    sys.stdout.flush()
++    return 0 if doc["status"] in ("wiped", "clean", "dirty") else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/playbooks/home_wipe.yml b/playbooks/home_wipe.yml
+new file mode 100644
+index 0000000..d7404ad
+--- /dev/null
++++ b/playbooks/home_wipe.yml
+@@ -0,0 +1,106 @@
++# playbooks/home_wipe.yml — B-109b: the GATED wipe of /home/lab (design v1.1 §6 step 7; E-6).
++#
++#   play 0   localhost  resolve the setup; refuse unless daolab_wipe_allowed is exactly true
++#   play 1   the DPU    the same gate again (before anything on the DPU), lab's uid, then
++#                       daolab-wipe.py --mode wipe as root with `python3 -I`: remove every entry of
++#                       the home without following links, copy /etc/skel back (modes kept, owned
++#                       by lab), prove home == skel; its JSON (status, reason, removed) goes to
++#                       daolab_output_file
++#
++# daolab_wipe_allowed is computed by the ENGINE from the database (B-109c): the reservation's
++# snapshot row is `saved` (committed before this runs), or the capture found the home equal to
++# skel. Anything else (missing, false, a string, a number) refuses with a fixed message and the
++# home is kept. The engine does not even start this playbook when the wipe is not allowed; the
++# gate here is the second layer, for every other caller.
++#
++# Extra vars: reservation_id, setup + what play 0 reads, daolab_wipe_allowed, daolab_output_file.
++# For tests only: daolab_dpu_root (a prefix for /home and /etc/skel).
++- name: resolve the setup and check the gate
++  hosts: localhost
++  gather_facts: false
++  tasks:
++    - name: the engine allowed the wipe
++      ansible.builtin.assert:
++        that:
++          - daolab_wipe_allowed is defined
++          - daolab_wipe_allowed is sameas true
++        fail_msg: "home wipe refused: not allowed by the engine"
++        quiet: true
++
++    - name: resolve
++      ansible.builtin.import_tasks: tasks/resolve.yml
++
++- name: wipe the home on the DPU
++  hosts: r_dpu
++  gather_facts: false
++  vars:
++    _dpu_root: "{{ daolab_dpu_root | default('') }}"
++    _login: "{{ daolab_access_login | default('lab') }}"
++    _home: "{{ _dpu_root }}/home/{{ _login }}"
++    _skel: "{{ _dpu_root }}/etc/skel"
++    _reasons: [ok, bad_args, path_unsafe, home_missing, home_not_dir, home_owner,
++               mount_under_home, skel_failed, remove_failed, not_clean]
++  tasks:
++    - name: the engine allowed the wipe (again, before anything on the DPU)
++      ansible.builtin.assert:
++        that:
++          - daolab_wipe_allowed is defined
++          - daolab_wipe_allowed is sameas true
++          - _login is match('^[a-z_][a-z0-9_-]{0,31}$')
++          - _dpu_root == '' or _dpu_root is match('^/[A-Za-z0-9._/-]+$')
++        fail_msg: "home wipe refused: not allowed by the engine"
++        quiet: true
++
++    - name: the lab login's uid on this DPU
++      ansible.builtin.command: getent passwd {{ _login }}
++      register: _acct
++      changed_when: false
++
++    - name: the owner uid
++      ansible.builtin.set_fact:
++        _owner_uid: "{{ (_acct.stdout | regex_findall('^[^:]*:[^:]*:([0-9]{1,10}):') + [''])[0] }}"
++
++    - name: the uid is a number
++      ansible.builtin.assert:
++        that: _owner_uid is match('^[0-9]{1,10}$')
++        fail_msg: "home wipe refused: no uid for the lab login"
++        quiet: true
++
++    - name: "step: wipe_home"
++      become: true
++      ansible.builtin.script:
++        cmd: >-
++          daolab-wipe.py --mode wipe --home {{ _home | quote }} --skel {{ _skel | quote }}
++          --owner-uid {{ _owner_uid }}
++        executable: /usr/bin/python3 -I
++      register: _wipe
++      changed_when: false
++      failed_when: _wipe.rc not in [0, 1]
++
++    - name: the report (one JSON line, no paths)
++      ansible.builtin.set_fact:
++        _wreport: "{{ _wipe.stdout_lines | map('trim') | select | list | last | from_json }}"
++
++    - name: the report has the contract's shape
++      ansible.builtin.assert:
++        that:
++          - _wreport is mapping
++          - (_wreport.keys() | list) == ['status', 'reason', 'removed']
++          - _wreport.status in ['wiped', 'refused']
++          - _wreport.reason in _reasons
++          - (_wreport.status == 'refused') == (_wipe.rc == 1)
++        fail_msg: "home wipe: bad report"
++        quiet: true
++
++    - name: the report for the runner
++      delegate_to: localhost
++      ansible.builtin.copy:
++        content: "{{ _wreport | to_json }}"
++        dest: "{{ daolab_output_file }}"
++        mode: "0600"
++      when: daolab_output_file is defined
++
++    - name: a refused wipe keeps what is left and stops here
++      ansible.builtin.fail:
++        msg: "home wipe refused: {{ _wreport.reason }}"
++      when: _wreport.status != 'wiped'
+diff --git a/playbooks/snapshot_capture.yml b/playbooks/snapshot_capture.yml
+new file mode 100644
+index 0000000..85f04e9
+--- /dev/null
++++ b/playbooks/snapshot_capture.yml
+@@ -0,0 +1,195 @@
++# playbooks/snapshot_capture.yml — B-109b: seal /home/lab on the DPU and bring it to the controller
++# (design v1.1 §6 "End of slot - save", steps 1-3; errata E-6, E-7, E-8; Q-E15).
++#
++#   play 0   localhost  resolve the setup
++#   play 1   the DPU    revoke the owner's access FIRST (idempotent: cleanup.yml repeats it), check
++#                       every input's strict shape before any use, look up lab's uid, make sure
++#                       the root-only capture dir exists (0700) and holds no leftover of a dead
++#                       run, run daolab-capture.py as root with `python3 -I`, read its one JSON
++#                       line, fetch the sealed file to the controller when it says `saved`, and
++#                       delete it on the DPU whatever happened (block / always)
++#
++# The engine (B-109c) commits `saved` BETWEEN this playbook and home_wipe.yml, so capture and wipe
++# are separate playbooks. Order of the end-of-slot save: revoke -> capture (this) -> apps cleanup
++# (cleanup.yml) -> gated wipe (home_wipe.yml) -> verify_clean.yml.
++#
++# S never exists here: only S's PUBLIC recipient comes in. The script prints no path or file
++# name; its JSON (status, reason, raw_bytes, age_bytes, age_sha256) goes to daolab_output_file
++# for the runner. A refused capture leaves the home untouched and fails this playbook with
++# "capture refused: <reason>" (a fixed code); the engine then keeps the home and quarantines.
++#
++# Extra vars: reservation_id, setup + what play 0 reads (tasks/resolve.yml),
++#   daolab_snapshot_recipient   age1... (S's public recipient)
++#   daolab_snapshot_public_id   32 lowercase hex (the snapshot row's public_id)
++#   daolab_snapshot_cap_bytes   the raw tar cap (E-8, 512 MiB by default)
++#   daolab_snapshot_fetch_to    the controller path, <root>/u<uid>/.incoming/<public_id>.age.part
++#   daolab_output_file          where the report goes (the runner)
++# For tests only: daolab_dpu_root (a prefix for /home, /etc/skel, /var/lib/daolab) and
++# daolab_age_root (a prefix for /usr/local/bin, as tasks/install_age.yml).
++#
++# Script delivery: ansible.builtin.script copies the script into the connecting account's private
++# remote tmp dir, runs it as root with `/usr/bin/python3 -I` (no script-dir or cwd on sys.path,
++# no PYTHON* variables) and removes it afterwards; nothing stays on the board.
++# Known cost (Follow-up, measure in Phase 9): with become, `fetch` reads the file through `slurp`,
++# i.e. base64 in memory on both sides.
++- name: resolve the setup
++  hosts: localhost
++  gather_facts: false
++  tasks:
++    - name: resolve
++      ansible.builtin.import_tasks: tasks/resolve.yml
++
++- name: capture the home on the DPU
++  hosts: r_dpu
++  gather_facts: false
++  vars:
++    _dpu_root: "{{ daolab_dpu_root | default('') }}"
++    _login: "{{ daolab_access_login | default('lab') }}"
++    _home: "{{ _dpu_root }}/home/{{ _login }}"
++    _skel: "{{ _dpu_root }}/etc/skel"
++    _capdir: "{{ _dpu_root }}/var/lib/daolab/capture"
++    _out: "{{ _capdir }}/{{ daolab_snapshot_public_id }}.age"
++    _age: "{{ daolab_age_root | default('') }}/usr/local/bin/age"
++    _reasons: [ok, empty_home, path_unsafe, home_missing, home_not_dir, home_owner,
++               mount_under_home, sysctl_unsafe, tar_failed, cap_exceeded, age_failed,
++               out_exists, bad_args]
++  tasks:
++    - name: access ends first
++      ansible.builtin.include_role:
++        name: dpu_access
++        tasks_from: revoke
++
++    - name: every input has its strict shape (before any use)
++      ansible.builtin.assert:
++        that:
++          - daolab_snapshot_public_id is defined
++          - daolab_snapshot_public_id is string
++          - daolab_snapshot_public_id is match('^[0-9a-f]{32}$')
++          - daolab_snapshot_recipient is defined
++          - daolab_snapshot_recipient is string
++          - daolab_snapshot_recipient is match('^age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$')
++          - daolab_snapshot_cap_bytes is defined
++          - (daolab_snapshot_cap_bytes | string) is match('^[0-9]{1,13}$')
++          - (daolab_snapshot_cap_bytes | int) > 0
++          - daolab_snapshot_fetch_to is defined
++          - daolab_snapshot_fetch_to is string
++          - daolab_snapshot_fetch_to is match('^/[A-Za-z0-9._/-]+$')
++          - "'/../' not in daolab_snapshot_fetch_to and '/./' not in daolab_snapshot_fetch_to"
++          - "'//' not in daolab_snapshot_fetch_to"
++          - daolab_snapshot_fetch_to.endswith('/' ~ daolab_snapshot_public_id ~ '.age.part')
++          - _login is match('^[a-z_][a-z0-9_-]{0,31}$')
++          - _dpu_root == '' or _dpu_root is match('^/[A-Za-z0-9._/-]+$')
++        fail_msg: "snapshot capture: bad input"
++        quiet: true
++
++    - name: the lab login's uid on this DPU
++      ansible.builtin.command: getent passwd {{ _login }}
++      register: _acct
++      changed_when: false
++
++    - name: the owner uid the script checks the home against
++      ansible.builtin.set_fact:
++        _owner_uid: "{{ (_acct.stdout | regex_findall('^[^:]*:[^:]*:([0-9]{1,10}):') + [''])[0] }}"
++
++    - name: the uid is a number
++      ansible.builtin.assert:
++        that: _owner_uid is match('^[0-9]{1,10}$')
++        fail_msg: "snapshot capture: no uid for the lab login"
++        quiet: true
++
++    - name: the capture dir exists, 0700 (the script refuses unless root owns it)
++      become: true
++      ansible.builtin.file:
++        path: "{{ _capdir }}"
++        state: directory
++        mode: "0700"
++
++    - name: what a dead earlier run left in it (ciphertext only)
++      become: true
++      ansible.builtin.find:
++        paths: "{{ _capdir }}"
++        patterns: "*.age"
++        file_type: file
++      register: _left
++
++    - name: remove the leftovers
++      become: true
++      ansible.builtin.file:
++        path: "{{ item.path }}"
++        state: absent
++      loop: "{{ _left.files }}"
++      loop_control:
++        label: leftover
++
++    - name: count the leftovers (count only)
++      ansible.builtin.debug:
++        msg: "capture dir leftovers removed: {{ _left.matched }}"
++
++    - name: capture
++      block:
++        - name: "step: capture"
++          become: true
++          ansible.builtin.script:
++            cmd: >-
++              daolab-capture.py --home {{ _home | quote }} --skel {{ _skel | quote }}
++              --recipient {{ daolab_snapshot_recipient }} --out {{ _out | quote }}
++              --cap-bytes {{ daolab_snapshot_cap_bytes | int }} --age {{ _age | quote }}
++              --owner-uid {{ _owner_uid }}
++            executable: /usr/bin/python3 -I
++          register: _cap
++          changed_when: false
++          failed_when: _cap.rc not in [0, 1]
++
++        - name: the report (one JSON line, no paths)
++          ansible.builtin.set_fact:
++            _report: "{{ _cap.stdout_lines | map('trim') | select | list | last | from_json }}"
++
++        - name: the report has the contract's shape
++          ansible.builtin.assert:
++            that:
++              - _report is mapping
++              - (_report.keys() | list) == ['status', 'reason', 'raw_bytes', 'age_bytes', 'age_sha256']
++              - _report.status in ['saved', 'empty', 'refused']
++              - _report.reason in _reasons
++              - (_report.status == 'refused') == (_cap.rc == 1)
++            fail_msg: "snapshot capture: bad report"
++            quiet: true
++
++        - name: the report is good
++          ansible.builtin.set_fact:
++            _report_ok: true
++
++        - name: "step: fetch_snapshot"
++          become: true
++          ansible.builtin.fetch:
++            src: "{{ _out }}"
++            dest: "{{ daolab_snapshot_fetch_to }}"
++            flat: true
++            fail_on_missing: true
++          when: _report.status == 'saved'
++
++      always:
++        - name: the sealed file leaves the DPU, whatever happened
++          become: true
++          ansible.builtin.file:
++            path: "{{ _out }}"
++            state: absent
++
++        - name: the report for the runner
++          delegate_to: localhost
++          ansible.builtin.copy:
++            content: "{{ _report | to_json }}"
++            dest: "{{ daolab_output_file }}"
++            mode: "0600"
++          when: (_report_ok | default(false)) and daolab_output_file is defined
++
++    - name: the device profile (B-111 adds tasks/profile_capture.yml; skipped until then)
++      ansible.builtin.include_tasks: tasks/profile_capture.yml
++      when:
++        - daolab_profile_enabled | default(false) | bool
++        - _report.status == 'saved'
++
++    - name: a refused capture keeps the home and stops here
++      ansible.builtin.fail:
++        msg: "capture refused: {{ _report.reason }}"
++      when: _report.status not in ['saved', 'empty']
+diff --git a/playbooks/verify_clean.yml b/playbooks/verify_clean.yml
+index b1d3a50..2eb9081 100644
+--- a/playbooks/verify_clean.yml
++++ b/playbooks/verify_clean.yml
+@@ -14,6 +14,12 @@
+ #                    holder check is skipped, and the log says so; an ml-tvm deploy refuses
+ #                    such a DPU, so no ml-tvm reservation can be there.
+ #   ip:<address>     an address leased to the reservation still answers ping
++#   home:lab         B-109b, ONLY when daolab_snapshot_enabled is true (the engine passes it for a
++#                    snapshot-enabled setup): /home/lab is not proven equal to /etc/skel
++#                    (daolab-wipe.py --mode check, read-only, root; the same meaning of "equal" as
++#                    daolab-capture.py's empty check). Missing, unreadable or refused counts as
++#                    residue too. With the flag off (the default) that play ends before its first
++#                    task, so the checks, the job steps and the residue are exactly today's.
+ #
+ # A host that cannot be reached fails the run (rc != 0), so the runner reports "could not
+ # verify" and the engine treats the setup as not clean: verification is fail-safe.
+@@ -118,6 +124,52 @@
+                 if (_huge.stdout | trim | int(0)) > (daolab_hugepages_baseline | default(2) | int) else [])
+              + (_ml_left.stdout_lines | select | map('regex_replace', '^', 'dpu_app:') | list) }}
+ 
++- name: check the home (B-109b; snapshot-enabled setups only)
++  hosts: r_dpu
++  gather_facts: false
++  vars:
++    _dpu_root: "{{ daolab_dpu_root | default('') }}"
++    _login: "{{ daolab_access_login | default('lab') }}"
++    _home: "{{ _dpu_root }}/home/{{ _login }}"
++    _skel: "{{ _dpu_root }}/etc/skel"
++  tasks:
++    - name: only on a snapshot-enabled setup (flag off = today's checks exactly)
++      ansible.builtin.meta: end_play
++      when: not (daolab_snapshot_enabled | default(false) | bool)
++
++    - name: the lab login's uid on this DPU
++      ansible.builtin.command: getent passwd {{ _login }}
++      register: _acct
++      changed_when: false
++      failed_when: false
++
++    - name: the owner uid ('' when the login is missing)
++      ansible.builtin.set_fact:
++        _owner_uid: "{{ (_acct.stdout | default('') | regex_findall('^[^:]*:[^:]*:([0-9]{1,10}):') + [''])[0] }}"
++
++    - name: "step: check_home"
++      become: true
++      ansible.builtin.script:
++        cmd: >-
++          daolab-wipe.py --mode check --home {{ _home | quote }} --skel {{ _skel | quote }}
++          --owner-uid {{ _owner_uid }}
++        executable: /usr/bin/python3 -I
++      register: _home_check
++      changed_when: false
++      failed_when: false
++      when:
++        - _owner_uid is match('^[0-9]{1,10}$')
++        - _login is match('^[a-z_][a-z0-9_-]{0,31}$')
++        - _dpu_root == '' or _dpu_root is match('^/[A-Za-z0-9._/-]+$')
++
++    - name: collect the home residue (only a home proven equal to skel is clean)
++      ansible.builtin.set_fact:
++        daolab_home_residue: >-
++          {{ [] if ((_home_check.rc | default(1)) == 0 and (_hdoc.status | default('')) == 'clean')
++             else ['home:' ~ _login] }}
++      vars:
++        _hdoc: "{{ (['{}'] + (_home_check.stdout_lines | default([]) | map('trim') | select | list))[-1] | from_json }}"
++
+ - name: check the leased addresses are silent
+   hosts: r_dom0[0]
+   gather_facts: false
+@@ -143,7 +195,8 @@
+       ansible.builtin.set_fact:
+         _residue: >-
+           {{ (_residue | default([])) + (hostvars[item].daolab_residue | default([]))
+-             + (hostvars[item].daolab_ip_residue | default([])) }}
++             + (hostvars[item].daolab_ip_residue | default([]))
++             + (hostvars[item].daolab_home_residue | default([])) }}
+       loop: "{{ (groups['r_dom0'] | default([])) + (groups['r_dpu'] | default([])) }}"
+ 
+     - name: write the residue list for the runner
+diff --git a/service/config.py b/service/config.py
+index 00957de..da60ecf 100644
+--- a/service/config.py
++++ b/service/config.py
+@@ -57,6 +57,8 @@ class Settings:
+     age_keygen_bin: str
+     identity_file: str
+     ticket_dir: str
++    snapshot_root: str
++    snapshot_cap_bytes: int
+ 
+     @classmethod
+     def from_env(cls) -> "Settings":
+@@ -115,9 +117,21 @@ class Settings:
+             age_keygen_bin=env("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"),
+             identity_file=env("DAOLAB_IDENTITY_FILE", "~/.config/daolab/age-identity.txt"),
+             ticket_dir=env("DAOLAB_TICKET_DIR", "/run/daolab/tickets"),
++            # B-109c: where the sealed snapshots live (u<uid>/<public_id>.{age,key.age,hdr.json},
++            # dirs 0700, files 0600) and the cap on the raw tar stream of one capture (E-8).
++            # A path and a number, not secrets.
++            snapshot_root=env("DAOLAB_SNAPSHOT_ROOT", "./var/snapshots"),
++            snapshot_cap_bytes=_cap_bytes(env("DAOLAB_SNAPSHOT_CAP_BYTES", "536870912")),
+         )
+ 
+ 
++def _cap_bytes(text: str) -> int:
++    value = int(text)
++    if not 1 <= value <= 2 ** 40:
++        raise ValueError(f"DAOLAB_SNAPSHOT_CAP_BYTES must be 1 .. 2**40, got {value}")
++    return value
++
++
+ # F-5-1b: load_dotenv() copied .env into os.environ, and ansible-runner writes the whole process
+ # environment to artifacts/<ident>/command at the start of every run (no switch for it). The
+ # secret values live in `settings` from here on; nothing reads them from the environment again
+diff --git a/service/engine.py b/service/engine.py
+index e8c5b50..190660f 100644
+--- a/service/engine.py
++++ b/service/engine.py
+@@ -79,10 +79,24 @@ What a finished job does to its reservation:
+                       if nothing else on it is dirty; residue -> the job fails and the setup
+                       stays (or goes back to) quarantined.
+   * health_probe   -> only the job is recorded
++
++Snapshot-enabled setups (B-109c; setups.snapshot_enabled = 1, design v1.1 §6 "End of slot -
++save"): a cleanup job first runs the save (service/snapshots.py: revoke + capture through
++snapshot_capture.yml, the sealed file and key.age and hdr.json on the controller, `saved`
++COMMITTED), then the cleanup, then the GATED wipe (home_wipe.yml; only when the DB row is `saved`
++or the capture found the home equal to skel; otherwise it is not even started), then verify_clean
++with the home check (`home:lab` while the home is kept) and the reconcile loop, then the
++retention prune (3 unheld saved per user and setup), then the usual finish. A reconcile job
++(force-clean) runs the same save first, so a failed capture is retried on the same row (D-7-4),
++and a saved one is wiped again. No owner key, save_snapshot = 0, or any capture failure: no wipe,
++the home is kept, `home:lab` is reported and the setup is quarantined. Every tick also fails the
++`capturing` rows no running job works on (after crash recovery). With snapshot_enabled = 0 none
++of this runs: the cleanup and reconcile jobs are exactly as above.
+ """
+ import argparse
+ import json
+ import logging
++import os
+ import re
+ import sqlite3
+ import signal
+@@ -94,6 +108,7 @@ from dataclasses import dataclass
+ from datetime import datetime, timedelta, timezone
+ 
+ from . import config, health, ipam, migrations, models, otel, runner as runner_mod, scheduler
++from . import snapshots
+ from .runner import RunResult
+ 
+ log = logging.getLogger("daolab.engine")
+@@ -241,10 +256,15 @@ def _call(fn, ctx, sink, what: str) -> RunResult:
+ 
+ 
+ def _context(db, job, res) -> dict:
+-    """What the runner gets instead of a DB row: the reservation context (models) plus the job."""
+-    return {**models.reservation_context(db, res["id"]),
+-            "job_id": job["id"], "job_kind": job["kind"], "attempt": job["attempt"],
+-            "job_created_at": job["created_at"]}
++    """What the runner gets instead of a DB row: the reservation context (models) plus the job.
++    B-109c: `snapshot_enabled: True` only for a snapshot-enabled setup (never a False key, so a
++    flag-off context is exactly today's)."""
++    ctx = {**models.reservation_context(db, res["id"]),
++           "job_id": job["id"], "job_kind": job["kind"], "attempt": job["attempt"],
++           "job_created_at": job["created_at"]}
++    if _snapshot_enabled(db, res):
++        ctx["snapshot_enabled"] = True
++    return ctx
+ 
+ 
+ def _audit(db, job, action: str, detail: dict) -> None:
+@@ -329,6 +349,8 @@ def _maybe_free_setup(db, setup_id: int) -> None:
+ 
+ 
+ def _run_cleanup(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
++    if ctx.get("snapshot_enabled"):                     # B-109c; flag off: the code below, as is
++        return _run_cleanup_snapshot(db, rn, job, res, ctx, sink, out)
+     cleaned = _call(rn.cleanup, ctx, sink, "cleanup")
+     verified = _call(rn.verify_clean, ctx, sink, "verify_clean")   # whatever the cleanup said
+     reconcile, attempts = getattr(rn, "reconcile", None), 0
+@@ -361,6 +383,8 @@ def _run_cleanup(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+ 
+ 
+ def _run_reconcile(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
++    if ctx.get("snapshot_enabled"):                     # B-109c; flag off: the code below, as is
++        return _run_reconcile_snapshot(db, rn, job, res, ctx, sink, out)
+     reconciled = _call(rn.reconcile, ctx, sink, "reconcile")
+     verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
+     result = _residue_result(verified, "reconcile")
+@@ -378,6 +402,118 @@ def _run_reconcile(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
+     return result
+ 
+ 
++# ---- B-109c: the end-of-slot save on snapshot-enabled setups ------------------------------
++
++def _snapshot_enabled(db, res) -> bool:
++    row = db.execute("SELECT snapshot_enabled FROM setups WHERE id = ?",
++                     (res["setup_id"],)).fetchone()
++    return row is not None and row["snapshot_enabled"] == 1
++
++
++def _snapshot_root() -> str:
++    return os.path.abspath(config.settings.snapshot_root)
++
++
++def _snapshot_save(db, rn, job, res, ctx, sink) -> snapshots.Outcome:
++    """Design §6 steps 2-5 (snapshots.save). Any Exception fails closed: no wipe follows."""
++    try:
++        return snapshots.save(db, rn, job, res, ctx, sink)
++    except Exception as e:                           # noqa: BLE001 — keep the home
++        log.error("snapshot save of reservation %s failed: %s", res["id"], type(e).__name__)
++        return snapshots.Outcome("failed", "internal_error")
++
++
++def _snapshot_wipe(db, rn, res, ctx, sink, saved: snapshots.Outcome) -> bool:
++    """Step 7, the wipe gate, re-read from the DB. When the wipe is not allowed the playbook is
++    not even started (home_wipe.yml's own gate is the second layer). True if the home was wiped."""
++    wipe = getattr(rn, "wipe", None)
++    try:
++        allowed = snapshots.wipe_allowed(db, res, _snapshot_root(), saved)
++    except Exception as e:                           # noqa: BLE001 — not proven: no wipe
++        log.error("wipe gate of reservation %s failed: %s", res["id"], type(e).__name__)
++        allowed = False
++    if not allowed or not callable(wipe):
++        return False
++    return _call(lambda c, s: wipe(c, s, allowed=True), ctx, sink, "wipe").ok
++
++
++def _snapshot_prune(db, res, saved: snapshots.Outcome) -> int:
++    """Step 9: retention, after a save (before the finish, so a crash replays it)."""
++    if saved.status != "saved":
++        return 0
++    root = _snapshot_root()
++    try:
++        return snapshots.prune_retention(db, res["user_id"], res["setup_id"],
++                                         lambda conn, row: snapshots.delete_snapshot(conn, row, root))
++    except Exception as e:                           # noqa: BLE001 — the next save prunes again
++        log.error("retention prune for reservation %s failed: %s", res["id"], type(e).__name__)
++        return 0
++
++
++def _fail_stale_captures(db) -> None:
++    """Every tick, after crash recovery: `capturing` rows no running job works on -> failed."""
++    try:
++        snapshots.fail_stale_captures(db, _snapshot_root())
++    except Exception as e:                           # noqa: BLE001 — never stop the tick
++        log.error("stale snapshot step failed: %s", type(e).__name__)
++
++
++def _run_cleanup_snapshot(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
++    saved = _snapshot_save(db, rn, job, res, ctx, sink)              # revoke + capture + saved
++    cleaned = _call(rn.cleanup, ctx, sink, "cleanup")               # apps cleanup + VMs
++    wiped = _snapshot_wipe(db, rn, res, ctx, sink, saved)           # gated wipe
++    verified = _call(rn.verify_clean, ctx, sink, "verify_clean")    # with the home check
++    reconcile, attempts = getattr(rn, "reconcile", None), 0
++    while not _is_clean(verified) and reconcile is not None \
++            and attempts < config.settings.reconcile_attempts:
++        attempts += 1
++        _call(reconcile, ctx, sink, "reconcile")
++        verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
++    _snapshot_prune(db, res, saved)
++    result = _residue_result(verified, "cleanup")
++    with _txn(db):
++        _finish(db, job["id"], result)
++        if result.ok:
++            ipam.release(db, res["id"])
++            if _move(db, res["id"], "released", from_state=res["state"]):
++                out.released += 1
++            _maybe_free_setup(db, res["setup_id"])
++        else:
++            _quarantine_setup(db, res)
++            if res["state"] == "cleaning" and _move(db, res["id"], "quarantined",
++                                                    from_state="cleaning"):
++                out.quarantined += 1
++        _audit(db, job, "cleanup", {"ok": result.ok, "cleanup_ok": cleaned.ok,
++                                    "reconcile_attempts": attempts,
++                                    "residue": list(verified.residue), "error": result.error,
++                                    "snapshot": saved.status, "snapshot_reason": saved.reason,
++                                    "wiped": wiped})
++    return result
++
++
++def _run_reconcile_snapshot(db, rn, job, res, ctx, sink, out: TickResult) -> RunResult:
++    saved = _snapshot_save(db, rn, job, res, ctx, sink)              # D-7-4 retry, or the saved row
++    reconciled = _call(rn.reconcile, ctx, sink, "reconcile")
++    wiped = _snapshot_wipe(db, rn, res, ctx, sink, saved)
++    verified = _call(rn.verify_clean, ctx, sink, "verify_clean")
++    _snapshot_prune(db, res, saved)
++    result = _residue_result(verified, "reconcile")
++    with _txn(db):
++        _finish(db, job["id"], result)
++        if result.ok:
++            ipam.clear(db, res["id"])
++            if _move(db, res["id"], "released", from_state=res["state"]):
++                out.reconciled += 1
++            _maybe_free_setup(db, res["setup_id"])
++        else:
++            _quarantine_setup(db, res)
++        _audit(db, job, "reconcile", {"ok": result.ok, "reconcile_ok": reconciled.ok,
++                                      "residue": list(verified.residue), "error": result.error,
++                                      "snapshot": saved.status, "snapshot_reason": saved.reason,
++                                      "wiped": wiped})
++    return result
++
++
+ class _Busy(Exception):
+     """The setup already has a running mutating job."""
+ 
+@@ -581,6 +717,7 @@ def tick(db: sqlite3.Connection, now: datetime, rn=None,
+         job_timeout_sec = config.settings.job_timeout_sec
+     out = TickResult()
+     out.recovered = _recover_stale_jobs(db, now, job_timeout_sec)
++    _fail_stale_captures(db)                         # B-109c: after recovery, before the jobs
+     out.activated = _promote_ready_to_active(db, now)
+     out.expired = _expire_active(db, now)
+     out.started = _start_due(db, now, cfg)
+diff --git a/service/models.py b/service/models.py
+index 81f4981..9f493d4 100644
+--- a/service/models.py
++++ b/service/models.py
+@@ -531,6 +531,7 @@ AUDIT_ACTIONS = (
+     "reconcile", "orphan_sweep",                       # engine: B-71/B-72, B-73
+     "key_enroll", "key_activate", "approval_request", "approval_decide",
+     "key_reset_execute", "key_reset_noop", "approval_cancel",
++    "snapshot_capture", "snapshot_delete",             # B-109c (snapshot_delete: B-108a reuses it)
+ )
+ 
+ 
+diff --git a/service/runner.py b/service/runner.py
+index 7bfb8fd..8c556f0 100644
+--- a/service/runner.py
++++ b/service/runner.py
+@@ -14,9 +14,11 @@ supports ``res["id"]``, e.g. a sqlite Row or dict) and a *step sink*: a callable
+ visible while the job is still running. `job_sink` builds a sink that writes the steps onto a
+ job row. Each function returns a `RunResult`.
+ """
++import hashlib
+ import json
+ import logging
+ import os
++import re
+ import tempfile
+ import threading
+ import time
+@@ -33,8 +35,9 @@ log = logging.getLogger("daolab.runner")
+ 
+ RUNNER_NAMES = ("ansible", "mock")
+ # `health` (B-68) drops the mock's per-reservation exporter so the health badge can be
+-# observed going healthy -> unknown/down.
+-MOCK_FAIL_TARGETS = ("deploy", "cleanup", "health")
++# observed going healthy -> unknown/down. `capture` (B-109c) makes the mock's snapshot capture
++# report `refused`, so the keep-the-home-and-quarantine path can be exercised.
++MOCK_FAIL_TARGETS = ("deploy", "cleanup", "health", "capture")
+ 
+ # Where the mock exporter drops Prometheus file_sd target files (B-68); Prometheus in
+ # deploy/otel/ reads the same directory (mounted at /etc/prometheus/targets).
+@@ -49,6 +52,12 @@ VERIFY_CLEAN_STEPS = ("check_vms", "check_vfs", "check_sessions", "check_ips")
+ RECONCILE_STEPS = ("destroy_vms", "rebind_vfs", "stop_app", "kill_sessions")   # B-72
+ PROBE_STEPS = ("ping_vms", "check_dpu_app")
+ FAIL_AT_DEPLOY_STEP = "create_vms"       # where DAOLAB_MOCK_FAIL=deploy breaks the deploy
++# B-109c: the end-of-slot save (snapshot_capture.yml, home_wipe.yml, verify_clean.yml's home check)
++CAPTURE_STEPS = ("capture", "fetch_snapshot")
++WIPE_STEPS = ("wipe_home",)
++HOME_CHECK_STEP = "check_home"
++SNAPSHOT_PUBLIC_ID_RE = re.compile(r"^[0-9a-f]{32}$")
++SNAPSHOT_RECIPIENT_RE = re.compile(r"^age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}$")
+ 
+ 
+ class RunnerError(Exception):
+@@ -72,10 +81,16 @@ class RunResult:
+ #   dpu_app:<unit>          a use-case app unit is still active on the DPU
+ #   ip:10.30.0.101          a leased address still answers ping
+ #   dpu_hugepages:6         512 MB hugepages still reserved above the board's baseline
+-RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "ip")
++# Phase 8 (§5.7; DDL v4.1 §4.4), only on snapshot-enabled setups:
++#   home:lab                /home/lab is not proven equal to /etc/skel (kept: no saved snapshot)
++#   tripwire:<class>:<n>    B-112: n findings of a tripwire class outside the home
++#   restore_incomplete:<public_id>   B-110: a restore that did not finish
++RESIDUE_KINDS = ("vm", "vf", "dpu_session", "dpu_app", "dpu_hugepages", "ip",
++                 "home", "tripwire", "restore_incomplete")
+ CHECK_FOR_KIND = {"vm": "check_vms", "vf": "check_vfs", "dpu_session": "check_sessions",
+                   "dpu_app": "check_sessions", "dpu_hugepages": "check_sessions",
+-                  "ip": "check_ips"}
++                  "ip": "check_ips", "home": HOME_CHECK_STEP, "tripwire": "check_tripwire",
++                  "restore_incomplete": HOME_CHECK_STEP}
+ 
+ 
+ def residue_item(kind: str, ident: str) -> str:
+@@ -117,6 +132,20 @@ class Runner(Protocol):
+     # P-0d: listing gives (XO id, name) pairs; destroying takes XO ids only, never a name.
+     def tagged_vms(self) -> list[models.TaggedVm]: ...
+     def destroy_vms(self, ids: list[str], step: StepSink) -> RunResult: ...
++    # B-109c, the end-of-slot save (optional: without them a snapshot-enabled setup fails closed,
++    # keeps its home and is quarantined). capture returns (result, the capture script's report).
++    def capture(self, res: Mapping, step: StepSink, *, recipient: str, public_id: str,
++                cap_bytes: int, fetch_to: str) -> tuple[RunResult, dict | None]: ...
++    def wipe(self, res: Mapping, step: StepSink, *, allowed: bool) -> RunResult: ...
++
++
++def snapshot_args_ok(recipient, public_id, cap_bytes, fetch_to) -> bool:
++    """The capture's inputs have the shapes snapshot_capture.yml asserts (B-109c)."""
++    return (isinstance(recipient, str) and SNAPSHOT_RECIPIENT_RE.fullmatch(recipient) is not None
++            and isinstance(public_id, str) and SNAPSHOT_PUBLIC_ID_RE.fullmatch(public_id) is not None
++            and isinstance(cap_bytes, int) and not isinstance(cap_bytes, bool) and cap_bytes > 0
++            and isinstance(fetch_to, str) and os.path.isabs(fetch_to)
++            and fetch_to.endswith(f"/{public_id}.age.part"))
+ 
+ 
+ _MOCK_VM_NS = uuid.UUID("5f0d7c1e-3a2b-4c6d-9e8f-0a1b2c3d4e5f")
+@@ -129,7 +158,7 @@ def mock_vm_id(name: str) -> str:
+ 
+ def parse_mock_fail(text: str) -> frozenset[str]:
+     """``DAOLAB_MOCK_FAIL`` is empty or a comma-separated subset of ``MOCK_FAIL_TARGETS``
+-    (``deploy`` / ``cleanup`` / ``health``)."""
++    (``deploy`` / ``cleanup`` / ``health`` / ``capture``)."""
+     names = [n.strip() for n in (text or "").split(",") if n.strip()]
+     unknown = [n for n in names if n not in MOCK_FAIL_TARGETS]
+     if unknown:
+@@ -295,7 +324,12 @@ class MockRunner:
+     With an `api` (an InternalApi; get_runner passes one when DAOLAB_INTERNAL_SECRET is set)
+     the deploy calls the real endpoints like deploy.yml does (B-44): `lease_ips` leases an
+     address for every VM role of the reservation and `post_vm_ips` reports them through
+-    `/internal/vm-ip`, so the reservation shows its leased IPs. Without one it only sleeps."""
++    `/internal/vm-ip`, so the reservation shows its leased IPs. Without one it only sleeps.
++
++    B-109c: `capture` writes a stand-in ciphertext to `fetch_to` and reports it like
++    daolab-capture.py (``fail={"capture"}`` reports `refused`; ``empty_home = True`` reports
++    `empty`); `wipe` runs only with ``allowed is True``. For a snapshot-enabled reservation
++    `verify_clean` also checks the home: `home:lab` until it was wiped (or found empty)."""
+ 
+     def __init__(self, step_sec: float = 0.0, fail: frozenset[str] = frozenset(),
+                  sleep: Callable[[float], None] = time.sleep,
+@@ -310,6 +344,9 @@ class MockRunner:
+         self._exporters: dict[int, MockExporter] = {}
+         self.api = api
+         self.vms: set[str] = set()       # the "testbed": VM names a deploy created (B-73)
++        self.empty_home = False          # B-109c: the capture finds the home equal to skel
++        self.captured: list[str] = []    # public ids of the captures run (public, not secret)
++        self.wiped: set[int] = set()     # reservations whose home was wiped
+ 
+     def _work(self, name: str, step: StepSink) -> None:
+         self._sleep(self.step_sec)
+@@ -426,8 +463,51 @@ class MockRunner:
+         self._stop_exporter(res)
+         return RunResult(ok=True)
+ 
++    def capture(self, res: Mapping, step: StepSink, *, recipient: str, public_id: str,
++                cap_bytes: int, fetch_to: str) -> tuple[RunResult, dict | None]:
++        """B-109c: snapshot_capture.yml without a DPU."""
++        if not snapshot_args_ok(recipient, public_id, cap_bytes, fetch_to):
++            return RunResult(ok=False, error="snapshot capture: bad input"), None
++        self._sleep(self.step_sec)
++        self.captured.append(public_id)
++        if "capture" in self.fail:
++            msg = "mock failure injected (DAOLAB_MOCK_FAIL=capture)"
++            step(CAPTURE_STEPS[0], "failed", msg)
++            return (RunResult(ok=False, error=f"capture refused: tar_failed ({msg})"),
++                    {"status": "refused", "reason": "tar_failed", "raw_bytes": 0,
++                     "age_bytes": 0, "age_sha256": ""})
++        if self.empty_home:
++            step(CAPTURE_STEPS[0])
++            step(CAPTURE_STEPS[1], "skipped")
++            return RunResult(ok=True), {"status": "empty", "reason": "empty_home",
++                                        "raw_bytes": 0, "age_bytes": 0, "age_sha256": ""}
++        data = b"daolab-mock-sealed:" + public_id.encode() + os.urandom(16)
++        fd = os.open(fetch_to, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
++        with os.fdopen(fd, "wb") as fh:
++            fh.write(data)
++        step(CAPTURE_STEPS[0])
++        step(CAPTURE_STEPS[1])
++        return RunResult(ok=True), {"status": "saved", "reason": "ok", "raw_bytes": 10240,
++                                    "age_bytes": len(data),
++                                    "age_sha256": hashlib.sha256(data).hexdigest()}
++
++    def wipe(self, res: Mapping, step: StepSink, *, allowed: bool) -> RunResult:
++        """B-109c: home_wipe.yml without a DPU (the same gate: exactly True)."""
++        self._sleep(self.step_sec)
++        if allowed is not True:
++            msg = "home wipe refused: not allowed by the engine"
++            step(WIPE_STEPS[0], "failed", msg)
++            return RunResult(ok=False, error=msg)
++        self.wiped.add(res["id"])
++        step(WIPE_STEPS[0])
++        return RunResult(ok=True)
++
+     def verify_clean(self, res: Mapping, step: StepSink) -> RunResult:
+         residue = self._residue(res)
++        if _field(res, "snapshot_enabled", False):                 # B-109c, enabled setups only
++            if not (self.empty_home or res["id"] in self.wiped):
++                residue = residue + (residue_item("home", "lab"),)
++            return self._verify_steps(residue, VERIFY_CLEAN_STEPS + (HOME_CHECK_STEP,), step)
+         for name in VERIFY_CLEAN_STEPS:
+             self._sleep(self.step_sec)
+             found = [r for r in residue if CHECK_FOR_KIND.get(parse_residue(r)[0]) == name]
+@@ -439,6 +519,18 @@ class MockRunner:
+             return RunResult(ok=False, error="residue found after cleanup", residue=residue)
+         return RunResult(ok=True)
+ 
++    def _verify_steps(self, residue: tuple[str, ...], steps, step: StepSink) -> RunResult:
++        for name in steps:
++            self._sleep(self.step_sec)
++            found = [r for r in residue if CHECK_FOR_KIND.get(parse_residue(r)[0]) == name]
++            if found:
++                step(name, "failed", "; ".join(found))
++            else:
++                step(name)
++        if residue:
++            return RunResult(ok=False, error="residue found after cleanup", residue=residue)
++        return RunResult(ok=True)
++
+ 
+ class AnsibleRunner:
+     """The real backend (B-84): every procedure is a playbook under DAOLAB_PLAYBOOKS_DIR, run
+@@ -447,6 +539,7 @@ class AnsibleRunner:
+       deploy        deploy.yml        (B-80)          cleanup     cleanup.yml   (B-82)
+       probe         probe.yml         (verify only)   reconcile   reconcile.yml (B-72)
+       verify_clean  verify_clean.yml  (B-70)          orphans     orphans.yml   (B-73)
++      capture       snapshot_capture.yml (B-109)      wipe        home_wipe.yml (B-109)
+ 
+     Extra vars are the playbook contract (plan/04): the reservation context's scalars plus the
+     structured `daolab_*` facts, the API URL + internal secret for the callbacks, and the
+@@ -464,7 +557,8 @@ class AnsibleRunner:
+ 
+     PLAYBOOKS = {"deploy": "deploy.yml", "cleanup": "cleanup.yml", "probe": "probe.yml",
+                  "verify_clean": "verify_clean.yml", "reconcile": "reconcile.yml",
+-                 "orphans": "orphans.yml"}
++                 "orphans": "orphans.yml", "snapshot_capture": "snapshot_capture.yml",
++                 "home_wipe": "home_wipe.yml"}
+     STEP_PREFIX = "step: "
+     _DONE = {"runner_on_ok": "ok", "runner_on_skipped": "skipped",
+              "runner_on_failed": "failed", "runner_on_unreachable": "failed"}
+@@ -641,8 +735,25 @@ class AnsibleRunner:
+     def reconcile(self, res, step):
+         return self._play("reconcile", "reconcile", res, step)[0]
+ 
++    def capture(self, res, step, *, recipient, public_id, cap_bytes, fetch_to):
++        """B-109c: snapshot_capture.yml with exactly the four snapshot extra vars (S's PUBLIC
++        recipient, the row's public_id, the raw cap, the controller fetch path). Returns
++        (result, the capture script's report or None)."""
++        if not snapshot_args_ok(recipient, public_id, cap_bytes, fetch_to):
++            return RunResult(ok=False, error="snapshot capture: bad input"), None
++        return self._play("snapshot_capture", "snapshot_capture", res, step, extra={
++            "daolab_snapshot_recipient": recipient, "daolab_snapshot_public_id": public_id,
++            "daolab_snapshot_cap_bytes": int(cap_bytes), "daolab_snapshot_fetch_to": fetch_to})
++
++    def wipe(self, res, step, *, allowed):
++        """B-109c: home_wipe.yml; daolab_wipe_allowed is True only for exactly True."""
++        return self._play("home_wipe", "home_wipe", res, step,
++                          extra={"daolab_wipe_allowed": allowed is True})[0]
++
+     def verify_clean(self, res, step):
+-        result, residue = self._play("verify_clean", "verify_clean", res, step)
++        # B-109c: the home check only for a snapshot-enabled setup; otherwise today's extra vars
++        extra = {"daolab_snapshot_enabled": True} if _field(res, "snapshot_enabled", False) else None
++        result, residue = self._play("verify_clean", "verify_clean", res, step, extra=extra)
+         residue = tuple(residue or ())
+         if residue:
+             return RunResult(ok=False, error=result.error or "residue found after cleanup",
+diff --git a/service/snapshots.py b/service/snapshots.py
+new file mode 100644
+index 0000000..2e4f537
+--- /dev/null
++++ b/service/snapshots.py
+@@ -0,0 +1,475 @@
++"""B-109c: the snapshot lifecycle on the controller (the end-of-slot save).
++
++Design v1.1 §6 "End of slot - save" steps 2-5 and 9; DDL v4.1 §3.5 (states, retention, D-7-4),
++§4.1 (S on the controller), §4.3 (who writes which state); interface §5.6 / §5.8.
++
++Files: <snapshot_root>/u<user_id>/<public_id>.age      age(gzip -1(tar)) sealed to S (from the DPU)
++                                  <public_id>.key.age  S sealed to the owner's recipient
++                                  <public_id>.hdr.json plaintext header (§5.8), no user data
++       <snapshot_root>/u<user_id>/.incoming/<public_id>.age.part  the fetch target, then renamed
++Every directory is 0700, every file 0600, every write is temp file + os.replace.
++
++S (a fresh age identity per snapshot) exists only in this process: `wrap_new_identity` makes it
++with `agecli.keygen`, seals it to the owner's active key with `agecli.encrypt_to` (stdin to age,
++never argv) and drops it. Python can't zero memory, so `del` only drops the reference; S is
++never written anywhere, never in a log, the DB, a job dir, extravars or the environment. Only
++S's PUBLIC recipient goes to the DPU (snapshot_capture.yml).
++
++States (DDL §3.5): capturing -> saved | failed; failed -> capturing on a retry (D-7-4: the same
++row, a new public_id, created_at = the new capture); `capturing` whose job no longer runs ->
++failed (`fail_stale_captures`, every tick). `saved` is committed before the apps cleanup and the
++wipe; the wipe is allowed only for a `saved` row (with its three files) or a home the capture
++found equal to skel (`wipe_allowed`). Every failure keeps the home: the caller raises home:lab
++and quarantines.
++
++Safe diagnostics only: audits and logs carry ids, public ids, states, counts and fixed reason
++codes (REASONS). Never a path, a file name or key material.
++"""
++import hashlib
++import json
++import logging
++import os
++import re
++import secrets
++import shutil
++import stat
++from dataclasses import dataclass
++
++from . import agecli, config, hostcheck, keys, models
++
++log = logging.getLogger("daolab.snapshots")
++
++FORMAT = "daolab-snapshot/1"
++COMPRESSION = "gzip"
++KEEP = 3                                   # saved, unheld, per (user, setup) (design:96; Q-16)
++HEADROOM_MARGIN = 64 << 20                 # free >= 2 x cap + this before a capture (E-15 headroom)
++PUBLIC_ID_RE = re.compile(r"^[0-9a-f]{32}$")
++SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
++REPORT_KEYS = ("status", "reason", "raw_bytes", "age_bytes", "age_sha256")
++STATUSES = ("saved", "empty", "refused")
++# daolab-capture.py's closed list (B-109a)
++SCRIPT_REASONS = ("ok", "empty_home", "path_unsafe", "home_missing", "home_not_dir", "home_owner",
++                  "mount_under_home", "sysctl_unsafe", "tar_failed", "cap_exceeded", "age_failed",
++                  "out_exists", "bad_args")
++# what the controller side adds
++CONTROLLER_REASONS = ("already_saved", "save_off", "no_key", "no_runner", "storage_low",
++                      "storage_unsafe", "swap_unsafe", "age_error", "runner_error", "bad_report",
++                      "size_mismatch", "sha_mismatch", "state_changed", "stale", "internal_error")
++REASONS = SCRIPT_REASONS + CONTROLLER_REASONS
++
++
++class SnapshotError(Exception):
++    """A capture problem. str() is exactly one fixed code from REASONS."""
++
++    def __init__(self, reason: str):
++        assert reason in REASONS, reason
++        super().__init__(reason)
++        self.reason = reason
++
++
++@dataclass(frozen=True)
++class Outcome:
++    """What `save` did: status saved | empty | refused | failed | skipped, a fixed reason."""
++    status: str
++    reason: str
++    snapshot_id: int | None = None
++    public_id: str | None = None
++    raw_bytes: int = 0
++
++
++# ---- paths and files ----------------------------------------------------------------------
++
++def _pid(public_id: str) -> str:
++    if not isinstance(public_id, str) or not PUBLIC_ID_RE.fullmatch(public_id):
++        raise ValueError("public_id must be 32 lowercase hex")
++    return public_id
++
++
++def user_dir(root: str, user_id: int) -> str:
++    return os.path.join(root, f"u{int(user_id)}")
++
++
++def paths(root: str, user_id: int, public_id: str) -> dict:
++    """The three files of one snapshot (§5.6): {"age", "key", "hdr"}."""
++    d, pid = user_dir(root, user_id), _pid(public_id)
++    return {"age": os.path.join(d, f"{pid}.age"), "key": os.path.join(d, f"{pid}.key.age"),
++            "hdr": os.path.join(d, f"{pid}.hdr.json")}
++
++
++def incoming_path(root: str, user_id: int, public_id: str) -> str:
++    """Where snapshot_capture.yml fetches the sealed file to, before the checks and the rename."""
++    return os.path.join(user_dir(root, user_id), ".incoming", f"{_pid(public_id)}.age.part")
++
++
++def ensure_dirs(root: str, user_id: int) -> None:
++    """root, u<uid> and u<uid>/.incoming exist as real directories owned by us, mode 0700."""
++    os.makedirs(root, mode=0o700, exist_ok=True)
++    for d in (root, user_dir(root, user_id), os.path.join(user_dir(root, user_id), ".incoming")):
++        try:
++            os.mkdir(d, 0o700)
++        except FileExistsError:
++            pass
++        st = os.lstat(d)
++        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid():
++            raise SnapshotError("storage_unsafe")
++        if stat.S_IMODE(st.st_mode) != 0o700:
++            os.chmod(d, 0o700)
++
++
++def headroom_ok(root: str, cap_bytes: int) -> bool:
++    return shutil.disk_usage(root).free >= 2 * int(cap_bytes) + HEADROOM_MARGIN
++
++
++def write_private(path: str, data: bytes) -> None:
++    """`data` into `path`, mode 0600, via a temp file in the same dir + os.replace."""
++    tmp = f"{path}.tmp-{secrets.token_hex(4)}"
++    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
++    try:
++        with os.fdopen(fd, "wb") as fh:
++            fh.write(data)
++            fh.flush()
++            os.fsync(fh.fileno())
++        os.replace(tmp, path)
++    except BaseException:
++        _unlink(tmp)
++        raise
++
++
++def _unlink(path: str) -> bool:
++    try:
++        os.unlink(path)
++        return True
++    except FileNotFoundError:
++        return False
++
++
++def delete_snapshot_files(root: str, user_id: int, public_id: str) -> int:
++    """Remove the three files of a snapshot; a missing one is fine. Returns how many went."""
++    return sum(_unlink(p) for p in paths(root, user_id, public_id).values())
++
++
++def delete_attempt_files(root: str, user_id: int, public_id: str) -> None:
++    """Everything one capture attempt may have left: the three files and the fetch target."""
++    delete_snapshot_files(root, user_id, public_id)
++    _unlink(incoming_path(root, user_id, public_id))
++
++
++# ---- S ------------------------------------------------------------------------------------
++
++def wrap_new_identity(owner_recipient: str) -> tuple[bytes, str]:
++    """A fresh S, sealed to the owner: returns (key.age bytes, S's public recipient). E-2: the
++    swap check runs first, so S never exists on a controller whose memory could be paged to an
++    unencrypted swap."""
++    hostcheck.require_safe_swap()
++    identity, s_recipient = agecli.keygen()
++    try:
++        key_age = agecli.encrypt_to(owner_recipient, identity)
++    finally:
++        del identity                       # drops the only reference; Python can't zero memory
++    return key_age, s_recipient
++
++
++# ---- the report of daolab-capture.py --------------------------------------------------------
++
++def _count(value) -> bool:
++    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 2 ** 63
++
++
++def check_report(doc) -> dict:
++    """The capture script's JSON exactly as its contract says, else bad_report."""
++    if not isinstance(doc, dict) or list(doc) != list(REPORT_KEYS):
++        raise SnapshotError("bad_report")
++    status, reason, sha = doc["status"], doc["reason"], doc["age_sha256"]
++    if status not in STATUSES or reason not in SCRIPT_REASONS or not isinstance(sha, str):
++        raise SnapshotError("bad_report")
++    if not (_count(doc["raw_bytes"]) and _count(doc["age_bytes"])):
++        raise SnapshotError("bad_report")
++    if status == "saved":
++        ok = reason == "ok" and doc["age_bytes"] > 0 and SHA256_RE.fullmatch(sha) is not None
++    elif status == "empty":
++        ok = reason == "empty_home"
++    else:
++        ok = reason not in ("ok", "empty_home")
++    if not ok:
++        raise SnapshotError("bad_report")
++    return doc
++
++
++def verify_fetched(path: str, doc: dict) -> None:
++    """The fetched file is a regular file of the reported size and sha256."""
++    try:
++        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
++    except OSError:
++        raise SnapshotError("size_mismatch") from None
++    try:
++        st = os.fstat(fd)
++        if not stat.S_ISREG(st.st_mode) or st.st_size != doc["age_bytes"]:
++            raise SnapshotError("size_mismatch")
++        h = hashlib.sha256()
++        while True:
++            chunk = os.read(fd, 1 << 20)
++            if not chunk:
++                break
++            h.update(chunk)
++    finally:
++        os.close(fd)
++    if h.hexdigest() != doc["age_sha256"]:
++        raise SnapshotError("sha_mismatch")
++
++
++def header(ctx, row, doc: dict, s_recipient: str) -> dict:
++    """hdr.json (§5.8): plaintext, no user data. `profile` stays null until B-111."""
++    return {"format": FORMAT, "compression": COMPRESSION, "public_id": row["public_id"],
++            "user_id": row["user_id"], "setup": ctx.get("setup"), "hw_class": ctx.get("hw_class"),
++            "usecase": ctx.get("usecase"), "created_at": row["created_at"],
++            "raw_bytes": doc["raw_bytes"], "age_sha256": doc["age_sha256"],
++            "s_recipient": s_recipient, "profile": None}
++
++
++# ---- rows ---------------------------------------------------------------------------------
++
++class _txn:
++    """BEGIN IMMEDIATE ... COMMIT, or nothing when the caller already holds a transaction."""
++
++    def __init__(self, conn):
++        self.conn, self.own = conn, not conn.in_transaction
++
++    def __enter__(self):
++        if self.own:
++            self.conn.execute("BEGIN IMMEDIATE")
++        return self.conn
++
++    def __exit__(self, exc_type, exc, tb):
++        if self.own:
++            self.conn.execute("ROLLBACK" if exc_type else "COMMIT")
++        return False
++
++
++def row_for_reservation(conn, reservation_id: int):
++    return conn.execute("SELECT * FROM snapshots WHERE reservation_id = ?",
++                        (reservation_id,)).fetchone()
++
++
++def begin_capture(conn, res_row, key_row, job_id: int | None = None):
++    """A `capturing` row for this reservation, in one transaction (§5.6). A failed (or a stale
++    capturing) row of the same reservation is reused (D-7-4) with a new public_id and
++    created_at; a saved one is never touched (already_saved). `job_id` links the cleanup job
++    (jobs.snapshot_id, DDL §3.8)."""
++    with _txn(conn):
++        old = row_for_reservation(conn, res_row["id"])
++        pid, now = secrets.token_hex(16), models.utcnow()
++        if old is None:
++            sid = models.insert(conn, "snapshots", {
++                "public_id": pid, "user_id": res_row["user_id"], "setup_id": res_row["setup_id"],
++                "reservation_id": res_row["id"], "key_id": key_row["id"], "state": "capturing"})
++        elif old["state"] in ("failed", "capturing"):
++            sid = old["id"]
++            cur = conn.execute(
++                """UPDATE snapshots SET state = 'capturing', public_id = ?, key_id = ?,
++                          created_at = ?, updated_at = ?
++                   WHERE id = ? AND state IN ('failed', 'capturing')""",
++                (pid, key_row["id"], now, now, sid))
++            if cur.rowcount != 1:
++                raise SnapshotError("state_changed")
++        else:
++            raise SnapshotError("already_saved")
++        if job_id is not None:
++            models.update(conn, "jobs", job_id, {"snapshot_id": sid})
++        return conn.execute("SELECT * FROM snapshots WHERE id = ?", (sid,)).fetchone()
++
++
++def _move(conn, snapshot_id: int, new_state: str) -> None:
++    with _txn(conn):
++        cur = conn.execute("UPDATE snapshots SET state = ?, updated_at = ? "
++                           "WHERE id = ? AND state = 'capturing'",
++                           (new_state, models.utcnow(), snapshot_id))
++        if cur.rowcount != 1:
++            raise SnapshotError("state_changed")
++
++
++def mark_saved(conn, snapshot_id: int) -> None:
++    """capturing -> saved (compare-and-set)."""
++    _move(conn, snapshot_id, "saved")
++
++
++def mark_failed(conn, snapshot_id: int) -> None:
++    """capturing -> failed (compare-and-set)."""
++    _move(conn, snapshot_id, "failed")
++
++
++def audit_capture(conn, job, res_id: int, status: str, reason: str, snapshot_id=None,
++                  public_id=None, raw_bytes: int = 0) -> None:
++    models.audit(conn, "engine", "snapshot_capture", "reservation", res_id,
++                 {"job": job["id"] if job is not None else None, "snapshot_id": snapshot_id,
++                  "public_id": public_id, "status": status, "reason": reason,
++                  "raw_bytes": raw_bytes},
++                 trace_id=job["trace_id"] if job is not None else None)
++
++
++def fail_stale_captures(conn, root: str) -> int:
++    """`capturing` rows no running job works on -> failed, their attempt files removed (DDL §3.5,
++    Q-15). A crashed engine's job is put back to `pending` by crash recovery first, so its row
++    is failed here and the replayed job reuses it (D-7-4). Returns the count."""
++    rows = conn.execute(
++        """SELECT * FROM snapshots s WHERE s.state = 'capturing' AND NOT EXISTS (
++               SELECT 1 FROM jobs j WHERE j.snapshot_id = s.id AND j.state = 'running')
++           ORDER BY s.id""").fetchall()
++    n = 0
++    for row in rows:
++        with _txn(conn):
++            cur = conn.execute(
++                """UPDATE snapshots SET state = 'failed', updated_at = ?
++                   WHERE id = ? AND state = 'capturing' AND NOT EXISTS (
++                       SELECT 1 FROM jobs j WHERE j.snapshot_id = snapshots.id
++                       AND j.state = 'running')""", (models.utcnow(), row["id"]))
++            if cur.rowcount != 1:
++                continue
++            delete_attempt_files(root, row["user_id"], row["public_id"])
++            audit_capture(conn, None, row["reservation_id"], "failed", "stale", row["id"],
++                          row["public_id"])
++            n += 1
++    if n:
++        log.warning("event=snapshot_stale count=%d", n)
++    return n
++
++
++# ---- retention and deletion ---------------------------------------------------------------
++
++def delete_snapshot(conn, snap_row, root: str) -> None:
++    """Delete one snapshot (§5.6): its three files (missing is fine), then the row, then an audit
++    event. Runs in the CALLER's transaction and never opens one (keys.execute_due_resets calls
++    its callback inside its own). B-108a's snapshot_holds.delete_snapshot may replace it."""
++    delete_snapshot_files(root, snap_row["user_id"], snap_row["public_id"])
++    conn.execute("DELETE FROM snapshots WHERE id = ?", (snap_row["id"],))
++    models.audit(conn, "engine", "snapshot_delete", "snapshot", snap_row["id"],
++                 {"snapshot_id": snap_row["id"], "public_id": snap_row["public_id"],
++                  "user_id": snap_row["user_id"], "setup_id": snap_row["setup_id"],
++                  "state": snap_row["state"]})
++
++
++def prune_retention(conn, user_id: int, setup_id: int, delete_snapshot) -> int:
++    """Keep the newest KEEP unheld saved snapshots of (user, setup); delete the rest, oldest
++    first (DDL v4.1 §3.5 query; Q-16: held rows are neither counted nor pruned). The callback is
++    called as delete_snapshot(conn, row), like keys.execute_due_resets does; the engine binds
++    snapshot_root. One transaction. Returns how many were deleted."""
++    with _txn(conn):
++        victims = conn.execute(
++            """SELECT * FROM snapshots
++               WHERE user_id = ? AND setup_id = ? AND state = 'saved' AND delete_after IS NULL
++               ORDER BY created_at DESC, id DESC
++               LIMIT -1 OFFSET ?""", (user_id, setup_id, KEEP)).fetchall()
++        for row in reversed(victims):      # oldest first
++            delete_snapshot(conn, row)
++    return len(victims)
++
++
++# ---- the save (engine cleanup / reconcile) -------------------------------------------------
++
++def save(conn, rn, job, res, ctx, sink, settings=None) -> Outcome:
++    """Design §6 save steps 2-5 for one reservation of a snapshot-enabled setup. Returns what
++    happened; never raises an Exception (each failure is a fixed reason, the row `failed`, the
++    attempt's files removed). A BaseException (a crash) propagates: crash recovery replays the
++    job and `fail_stale_captures` fails the row first."""
++    s = settings or config.settings
++    root = os.path.abspath(s.snapshot_root)
++    old = row_for_reservation(conn, res["id"])
++    if old is not None and old["state"] == "saved":            # a replay after the commit
++        return Outcome("saved", "already_saved", old["id"], old["public_id"])
++    if res["save_snapshot"] != 1:                              # legacy / in-flight: PRESERVE
++        return _skip(conn, job, res, "save_off")
++    key = keys.active_key(conn, res["user_id"])
++    if key is None:
++        return _skip(conn, job, res, "no_key")
++    capture = getattr(rn, "capture", None)
++    if not callable(capture):
++        with _txn(conn):
++            audit_capture(conn, job, res["id"], "failed", "no_runner")
++        return Outcome("failed", "no_runner")
++    if old is not None:                                        # D-7-4: the old attempt's files go
++        delete_attempt_files(root, res["user_id"], old["public_id"])
++    try:
++        row = begin_capture(conn, res, key, job_id=job["id"])
++    except SnapshotError as e:                                 # changed under us: fail closed
++        with _txn(conn):
++            audit_capture(conn, job, res["id"], "failed", e.reason)
++        return Outcome("failed", e.reason)
++    sid, pid = row["id"], row["public_id"]
++    p = paths(root, res["user_id"], pid)
++    part = incoming_path(root, res["user_id"], pid)
++    try:
++        ensure_dirs(root, res["user_id"])
++        if not headroom_ok(root, s.snapshot_cap_bytes):
++            raise SnapshotError("storage_low")
++        key_age, s_recipient = wrap_new_identity(key["recipient"])
++        write_private(p["key"], key_age)
++        try:
++            result, report = capture(ctx, sink, recipient=s_recipient, public_id=pid,
++                                     cap_bytes=int(s.snapshot_cap_bytes), fetch_to=part)
++        except Exception:                                      # noqa: BLE001 — fail closed
++            raise SnapshotError("runner_error") from None
++        doc = check_report(report)
++        if doc["status"] == "refused":
++            return _fail(conn, job, res, root, sid, pid, "refused", doc["reason"])
++        if doc["status"] == "empty":
++            if not result.ok:
++                raise SnapshotError("runner_error")
++            with _txn(conn):
++                delete_attempt_files(root, res["user_id"], pid)
++                conn.execute("DELETE FROM snapshots WHERE id = ? AND state = 'capturing'", (sid,))
++                audit_capture(conn, job, res["id"], "empty", "empty_home", sid, pid)
++            return Outcome("empty", "empty_home", None, pid)
++        if not result.ok:
++            raise SnapshotError("runner_error")
++        verify_fetched(part, doc)
++        os.chmod(part, 0o600)
++        os.replace(part, p["age"])
++        write_private(p["hdr"], json.dumps(header(ctx, row, doc, s_recipient),
++                                           sort_keys=False).encode())
++        with _txn(conn):
++            mark_saved(conn, sid)
++            audit_capture(conn, job, res["id"], "saved", "ok", sid, pid, doc["raw_bytes"])
++        return Outcome("saved", "ok", sid, pid, doc["raw_bytes"])
++    except SnapshotError as e:
++        return _fail(conn, job, res, root, sid, pid, "failed", e.reason)
++    except agecli.AgeError:
++        return _fail(conn, job, res, root, sid, pid, "failed", "age_error")
++    except hostcheck.HostCheckError:
++        return _fail(conn, job, res, root, sid, pid, "failed", "swap_unsafe")
++    except Exception as e:                                     # noqa: BLE001 — fail closed
++        log.error("snapshot capture of reservation %s failed: %s", res["id"], type(e).__name__)
++        return _fail(conn, job, res, root, sid, pid, "failed", "internal_error")
++
++
++def _skip(conn, job, res, reason: str) -> Outcome:
++    with _txn(conn):
++        audit_capture(conn, job, res["id"], "skipped", reason)
++    return Outcome("skipped", reason)
++
++
++def _fail(conn, job, res, root, sid, pid, status, reason) -> Outcome:
++    delete_attempt_files(root, res["user_id"], pid)
++    with _txn(conn):
++        conn.execute("UPDATE snapshots SET state = 'failed', updated_at = ? "
++                     "WHERE id = ? AND state = 'capturing'", (models.utcnow(), sid))
++        audit_capture(conn, job, res["id"], status, reason, sid, pid)
++    return Outcome(status, reason, sid, pid)
++
++
++def wipe_allowed(conn, res, root: str, outcome: Outcome) -> bool:
++    """The wipe gate (design §6 step 7), re-read from the DB: this reservation's row is `saved`,
++    belongs to its owner and setup, and its three files exist; or this run found the home
++    equal to skel."""
++    if outcome.status == "empty":
++        return True
++    row = row_for_reservation(conn, res["id"])
++    if row is None or row["state"] != "saved":
++        return False
++    if (row["user_id"], row["setup_id"]) != (res["user_id"], res["setup_id"]):
++        return False
++    for path in paths(os.path.abspath(root), row["user_id"], row["public_id"]).values():
++        try:
++            if not stat.S_ISREG(os.lstat(path).st_mode):
++                return False
++        except OSError:
++            return False
++    return True
+diff --git a/tests/dpu/test_wipe.py b/tests/dpu/test_wipe.py
+new file mode 100644
+index 0000000..8f90c88
+--- /dev/null
++++ b/tests/dpu/test_wipe.py
+@@ -0,0 +1,431 @@
++"""B-109b: playbooks/files/daolab-wipe.py, the DPU-side wipe (and read-only check) of /home/lab.
++
++The script runs as root on the DPU (Python 3.10, errata E-3/E-6) in one of two explicit modes:
++
++  --mode wipe   remove every entry of the home without following symlinks, copy /etc/skel back
++                (modes kept, owned by the lab uid and the home's group), then prove home == skel
++  --mode check  read-only: count the top-level names where home and skel differ (verify_clean's
++                `home:lab` check, the same "empty" meaning as daolab-capture.py)
++
++Both run the capture script's guards first (arguments, path sanity, mount guard, home owner)
++and print exactly one JSON line with a fixed reason code; never a file name or a path.
++
++These tests run the script as a subprocess with the running interpreter (3.12/3.13 in the main
++suite, 3.10 in the `dpu-scripts` CI job / `--confcutdir=tests/dpu`). Standard library + pytest
++only: nothing here may import `service`.
++"""
++import ast
++import hashlib
++import importlib.util
++import io
++import json
++import os
++import stat
++import subprocess
++import sys
++from contextlib import redirect_stdout
++
++import pytest
++
++REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++SCRIPT = os.path.join(REPO, "playbooks", "files", "daolab-wipe.py")
++
++PLANT = "PLANTED-b109b-wq3"           # in every planted name; must never reach stdout/stderr
++WIPE_KEYS = ["status", "reason", "removed"]
++CHECK_KEYS = ["status", "reason", "differ"]
++REASONS = {"ok", "home_differs", "bad_args", "path_unsafe", "home_missing", "home_not_dir",
++           "home_owner", "mount_under_home", "skel_failed", "remove_failed", "not_clean"}
++S_CANARY = "AGE-SECRET-KEY-1" + "Q" * 58
++
++
++def _esc(path):
++    return (path.replace("\\", "\\134").replace(" ", "\\040")
++                .replace("\t", "\\011").replace("\n", "\\012"))
++
++
++def _mount_line(mid, mount_point, fstype="ext4", source="/dev/sda2"):
++    return f"{mid} 1 8:2 / {_esc(mount_point)} rw,relatime shared:1 - {fstype} {source} rw\n"
++
++
++BASE_MOUNTS = (_mount_line(22, "/") + _mount_line(23, "/proc", "proc", "proc")
++               + _mount_line(24, "/dev", "devtmpfs", "udev"))
++
++
++class Result:
++    def __init__(self, rc, stdout, stderr, doc):
++        self.rc, self.stdout, self.stderr, self.doc = rc, stdout, stderr, doc
++
++
++class Board:
++    """A temp board: <root>/home/lab, <root>/etc/skel, an outside dir, a fake mountinfo."""
++
++    def __init__(self, root):
++        self.root = root
++        self.home = root / "home" / "lab"
++        self.skel = root / "etc" / "skel"
++        self.outside = root / "outside"
++        self.mountinfo = root / "mountinfo"
++        self.home.mkdir(parents=True)
++        self.skel.mkdir(parents=True)
++        self.outside.mkdir()
++        (self.outside / "keep.txt").write_text("outside data\n")
++        (self.skel / ".bashrc").write_text("# skel bashrc\n")
++        (self.skel / ".profile").write_text("# skel profile\n")
++        os.chmod(self.skel / ".profile", 0o600)
++        (self.skel / ".config").mkdir()
++        os.chmod(self.skel / ".config", 0o700)
++        (self.skel / ".config" / "app.conf").write_text("x=1\n")
++        os.symlink(".bashrc", self.skel / ".bashrc-link")
++        self.mountinfo.write_text(BASE_MOUNTS)
++
++    def copy_skel(self):
++        """home := an exact copy of skel (what a fresh account looks like)."""
++        for name in os.listdir(self.skel):
++            _copy(self.skel / name, self.home / name)
++
++    def plant(self):
++        """User data of every kind, including links that point out of the home."""
++        (self.home / f"notes-{PLANT}.txt").write_text("my work\n")
++        (self.home / f".hidden-{PLANT}").write_text("hidden\n")
++        d = self.home / f"proj-{PLANT}" / "deep" / "deeper"
++        d.mkdir(parents=True)
++        (d / f"f-{PLANT}.c").write_text("int main(){}\n")
++        os.symlink(str(self.outside), self.home / f"link-dir-{PLANT}")
++        os.symlink(str(self.outside / "keep.txt"), self.home / f"link-file-{PLANT}")
++        os.mkfifo(self.home / f"fifo-{PLANT}")
++        os.link(self.outside / "keep.txt", self.home / f"hard-{PLANT}")
++        (self.home / ".bashrc").write_text("# changed by the user\n")
++
++    def argv(self, mode="wipe", **over):
++        vals = {"mode": mode, "home": str(self.home), "skel": str(self.skel),
++                "owner-uid": str(os.geteuid()), "mountinfo": str(self.mountinfo)}
++        vals.update({k.replace("_", "-"): v for k, v in over.items()})
++        out = []
++        for k, v in vals.items():
++            if v is not None:
++                out += [f"--{k}", v]
++        return out
++
++    def run(self, mode="wipe", argv=None, **over):
++        assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
++        argv = self.argv(mode, **over) if argv is None else argv
++        p = subprocess.run([sys.executable, SCRIPT] + argv, capture_output=True, timeout=120,
++                           stdin=subprocess.DEVNULL)
++        doc = check_safe(p.stdout, p.stderr, self, mode if mode in ("wipe", "check") else "wipe")
++        return Result(p.returncode, p.stdout, p.stderr, doc)
++
++    def add_mount(self, mount_point):
++        with open(self.mountinfo, "a") as fh:
++            fh.write(_mount_line(90, str(mount_point)))
++
++
++def _copy(src, dst):
++    st = os.lstat(src)
++    if stat.S_ISLNK(st.st_mode):
++        os.symlink(os.readlink(src), dst)
++    elif stat.S_ISDIR(st.st_mode):
++        os.mkdir(dst)
++        for name in os.listdir(src):
++            _copy(os.path.join(src, name), os.path.join(dst, name))
++        os.chmod(dst, stat.S_IMODE(st.st_mode))
++    else:
++        with open(src, "rb") as a, open(dst, "wb") as b:
++            b.write(a.read())
++        os.chmod(dst, stat.S_IMODE(st.st_mode))
++
++
++def check_safe(stdout, stderr, board, mode):
++    """The output contract: one JSON line, fixed keys and codes, nothing on stderr, and no
++    planted name, temp path or S-shaped string anywhere."""
++    for stream in (stdout, stderr):
++        assert PLANT.encode() not in stream
++        assert str(board.root).encode() not in stream
++        assert S_CANARY.encode() not in stream
++    assert stderr == b""
++    assert stdout.endswith(b"\n") and stdout.count(b"\n") == 1, stdout
++    doc = json.loads(stdout)
++    if doc["status"] in ("wiped", "clean", "dirty") or "removed" in doc or "differ" in doc:
++        assert list(doc) == (WIPE_KEYS if "removed" in doc else CHECK_KEYS), doc
++    assert doc["reason"] in REASONS, doc
++    assert isinstance(doc.get("removed", doc.get("differ")), int)
++    return doc
++
++
++def tree(path):
++    """Every entry under `path`: (relative path, type, mode, owner, content or link target,
++    mtime). Never follows a symlink."""
++    out = []
++    for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
++        for name in sorted(dirnames + filenames):
++            p = os.path.join(dirpath, name)
++            st = os.lstat(p)
++            if stat.S_ISREG(st.st_mode):
++                with open(p, "rb") as fh:
++                    body = hashlib.sha256(fh.read()).hexdigest()
++            elif stat.S_ISLNK(st.st_mode):
++                body = os.readlink(p)
++            else:
++                body = None
++            out.append((os.path.relpath(p, path), stat.S_IFMT(st.st_mode),
++                        stat.S_IMODE(st.st_mode), st.st_uid, body, st.st_mtime_ns))
++    return sorted(out)
++
++
++def same_shape(a, b):
++    """tree() without the mtimes (a fresh copy has new ones)."""
++    return [t[:5] for t in a] == [t[:5] for t in b]
++
++
++@pytest.fixture
++def board(tmp_path):
++    return Board(tmp_path)
++
++
++def _source():
++    assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
++    with open(SCRIPT, encoding="utf-8") as fh:
++        return fh.read()
++
++
++def _load():
++    spec = importlib.util.spec_from_file_location("daolab_wipe", SCRIPT)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++# ---- E-3: Python 3.10, standard library only ---------------------------------------------------
++
++def test_script_parses_as_python_3_10():
++    ast.parse(_source(), filename=SCRIPT, feature_version=(3, 10))
++
++
++def test_script_imports_only_the_standard_library():
++    stdlib = set(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else None
++    for node in ast.walk(ast.parse(_source())):
++        if isinstance(node, ast.Import):
++            names = [a.name for a in node.names]
++        elif isinstance(node, ast.ImportFrom):
++            assert node.level == 0, "relative import"
++            names = [node.module]
++        else:
++            continue
++        for name in names:
++            assert stdlib is None or name.split(".")[0] in stdlib, name
++
++
++def test_script_has_no_3_11_stdlib_names():
++    src = _source()
++    for name in ("tomllib", "typing.Self", "ExceptionGroup", "except*", "datetime.UTC"):
++        assert name not in src, name
++
++
++def test_script_is_executable_and_runs_on_python3():
++    assert os.access(SCRIPT, os.X_OK)
++    assert _source().splitlines()[0] == "#!/usr/bin/python3"
++
++
++def test_reason_codes_are_the_closed_list():
++    assert set(_load().REASONS) == REASONS
++
++
++# ---- wipe -------------------------------------------------------------------------------------
++
++def test_wipe_removes_everything_and_restores_skel(board):
++    board.copy_skel()
++    board.plant()
++    top = len(os.listdir(board.home))
++    outside_before = tree(board.outside)
++    r = board.run("wipe")
++    assert (r.rc, r.doc) == (0, {"status": "wiped", "reason": "ok", "removed": top})
++    assert same_shape(tree(board.home), tree(board.skel))
++    assert tree(board.outside) == outside_before       # links were removed, never followed
++
++
++def test_wipe_keeps_skel_modes_and_gives_everything_to_the_owner(board):
++    board.plant()
++    gid = os.lstat(board.home).st_gid
++    assert board.run("wipe").doc["status"] == "wiped"
++    assert stat.S_IMODE(os.lstat(board.home / ".profile").st_mode) == 0o600
++    assert stat.S_IMODE(os.lstat(board.home / ".config").st_mode) == 0o700
++    assert os.readlink(board.home / ".bashrc-link") == ".bashrc"
++    for dirpath, dirnames, filenames in os.walk(board.home):
++        for name in dirnames + filenames:
++            st = os.lstat(os.path.join(dirpath, name))
++            assert (st.st_uid, st.st_gid) == (os.geteuid(), gid), name
++
++
++def test_wipe_keeps_the_home_directory_itself(board):
++    board.plant()
++    before = os.lstat(board.home)
++    assert board.run("wipe").doc["status"] == "wiped"
++    after = os.lstat(board.home)
++    assert (after.st_ino, after.st_uid, stat.S_IMODE(after.st_mode)) == \
++        (before.st_ino, before.st_uid, stat.S_IMODE(before.st_mode))
++
++
++def test_wipe_never_writes_through_a_planted_symlink(board):
++    # .bashrc in the home is a link to a file outside: the skel copy must not overwrite it.
++    os.symlink(str(board.outside / "keep.txt"), board.home / ".bashrc")
++    assert board.run("wipe").doc["status"] == "wiped"
++    assert (board.outside / "keep.txt").read_text() == "outside data\n"
++    assert not os.path.islink(board.home / ".bashrc")
++    assert (board.home / ".bashrc").read_text() == "# skel bashrc\n"
++
++
++def test_wipe_twice_is_harmless(board):
++    board.plant()
++    assert board.run("wipe").doc["status"] == "wiped"
++    r = board.run("wipe")
++    assert (r.rc, r.doc["status"], r.doc["removed"]) == (0, "wiped", len(os.listdir(board.skel)))
++    assert same_shape(tree(board.home), tree(board.skel))
++
++
++def test_wipe_of_an_empty_home_only_copies_skel(board):
++    r = board.run("wipe")
++    assert r.doc == {"status": "wiped", "reason": "ok", "removed": 0}
++    assert same_shape(tree(board.home), tree(board.skel))
++
++
++def test_wipe_refuses_when_the_result_is_not_skel(board):
++    # the self-check: if the copy left the home different from skel, say so (fail closed)
++    board.plant()
++    mod = _load()
++    mod._copy_skel = lambda *a, **k: None
++    buf = io.StringIO()
++    with redirect_stdout(buf):
++        rc = mod.main(board.argv("wipe"))
++    doc = json.loads(buf.getvalue())
++    assert (rc, doc["status"], doc["reason"]) == (1, "refused", "not_clean")
++
++
++def test_wipe_refuses_before_touching_the_home_when_skel_is_missing(board):
++    board.plant()
++    before = tree(board.home)
++    r = board.run("wipe", skel=str(board.root / "etc" / "no-skel"))
++    assert (r.rc, r.doc["status"], r.doc["reason"]) == (1, "refused", "skel_failed")
++    assert tree(board.home) == before
++
++
++# ---- guards (both modes) -----------------------------------------------------------------------
++
++@pytest.mark.parametrize("mode", ["wipe", "check"])
++def test_a_home_of_another_owner_is_refused_and_left_alone(board, mode):
++    board.plant()
++    before = tree(board.home)
++    r = board.run(mode, owner_uid=str(os.geteuid() + 1))
++    assert (r.rc, r.doc["status"], r.doc["reason"]) == (1, "refused", "home_owner")
++    assert tree(board.home) == before
++
++
++@pytest.mark.parametrize("mode", ["wipe", "check"])
++def test_a_missing_home_is_refused(board, mode):
++    r = board.run(mode, home=str(board.root / "home" / "nobody"))
++    assert (r.rc, r.doc["reason"]) == (1, "home_missing")
++
++
++@pytest.mark.parametrize("mode", ["wipe", "check"])
++def test_a_home_that_is_a_file_or_a_symlink_is_refused(board, mode):
++    (board.root / "home" / "afile").write_text("x")
++    os.symlink(str(board.outside), board.root / "home" / "alink")
++    for name in ("afile", "alink"):
++        r = board.run(mode, home=str(board.root / "home" / name))
++        assert (r.rc, r.doc["reason"]) == (1, "home_not_dir"), name
++    assert tree(board.outside)[0][0] == "keep.txt"
++
++
++@pytest.mark.parametrize("mode", ["wipe", "check"])
++def test_a_mount_at_or_under_the_home_is_refused(board, mode):
++    board.plant()
++    before = tree(board.home)
++    for point in (board.home, board.home / "sub"):
++        board.mountinfo.write_text(BASE_MOUNTS)
++        board.add_mount(point)
++        r = board.run(mode)
++        assert (r.rc, r.doc["reason"]) == (1, "mount_under_home"), point
++    assert tree(board.home) == before
++
++
++@pytest.mark.parametrize("mode", ["wipe", "check"])
++def test_unreadable_or_malformed_mountinfo_is_refused(board, mode):
++    r = board.run(mode, mountinfo=str(board.root / "no-mountinfo"))
++    assert r.doc["reason"] == "mount_under_home"
++    board.mountinfo.write_text("garbage\n")
++    assert board.run(mode).doc["reason"] == "mount_under_home"
++
++
++@pytest.mark.parametrize("mode", ["wipe", "check"])
++def test_unsafe_paths_are_refused(board, mode):
++    for over in ({"home": "home/lab"}, {"home": "/"}, {"home": "/home"}, {"home": "/etc"},
++                 {"home": "/x"}, {"home": str(board.home) + "/"},
++                 {"home": str(board.home) + "/../lab"}, {"home": str(board.skel)},
++                 {"home": str(board.skel / ".config")}, {"skel": str(board.home / "s")},
++                 {"skel": "/"}):
++        r = board.run(mode, **over)
++        assert (r.rc, r.doc["reason"]) == (1, "path_unsafe"), over
++
++
++def test_bad_arguments_are_refused(board):
++    base = board.argv("wipe")
++    cases = [
++        [a for a in base if a not in ("--mode", "wipe")],                    # no mode
++        board.argv("bogus"),
++        base + ["--home", str(board.home)],                                  # repeated
++        board.argv("wipe", owner_uid="12a"),
++        board.argv("wipe", owner_uid="-1"),
++        board.argv("wipe", mountinfo="relative/mountinfo"),
++        base + ["--extra", "x"],
++        [],
++    ]
++    for argv in cases:
++        r = board.run("wipe", argv=argv)
++        assert (r.rc, r.doc["status"], r.doc["reason"]) == (1, "refused", "bad_args"), argv
++
++
++# ---- check (read-only) -------------------------------------------------------------------------
++
++def test_check_says_clean_for_a_home_equal_to_skel(board):
++    board.copy_skel()
++    r = board.run("check")
++    assert (r.rc, r.doc) == (0, {"status": "clean", "reason": "ok", "differ": 0})
++
++
++@pytest.mark.parametrize("change,n", [
++    ("extra", 1), ("missing", 1), ("modified", 1), ("extra+modified", 2),
++    ("type", 1), ("deep", 1), ("link", 1)])
++def test_check_counts_the_top_level_names_that_differ(board, change, n):
++    board.copy_skel()
++    if "extra" in change:
++        (board.home / f"new-{PLANT}").write_text("x")
++    if change == "missing":
++        os.unlink(board.home / ".profile")
++    if "modified" in change:
++        (board.home / ".bashrc").write_text("# other\n")
++    if change == "type":
++        os.unlink(board.home / ".bashrc")
++        os.mkfifo(board.home / ".bashrc")
++    if change == "deep":
++        (board.home / ".config" / f"more-{PLANT}").write_text("x")
++    if change == "link":
++        os.unlink(board.home / ".bashrc-link")
++        os.symlink(str(board.outside), board.home / ".bashrc-link")
++    r = board.run("check")
++    assert (r.rc, r.doc) == (0, {"status": "dirty", "reason": "home_differs", "differ": n})
++
++
++def test_check_changes_nothing(board):
++    board.copy_skel()
++    board.plant()
++    home, outside, skel = tree(board.home), tree(board.outside), tree(board.skel)
++    r = board.run("check")
++    assert r.doc["status"] == "dirty"
++    assert (tree(board.home), tree(board.outside), tree(board.skel)) == (home, outside, skel)
++
++
++def test_check_never_opens_a_fifo(board):
++    # a FIFO named like a skel file must not hang the check (types are compared first)
++    board.copy_skel()
++    os.unlink(board.home / ".profile")
++    os.mkfifo(board.home / ".profile")
++    r = board.run("check")                          # subprocess timeout = 120 s
++    assert r.doc["status"] == "dirty"
+diff --git a/tests/fakelab.py b/tests/fakelab.py
+index 5338b88..59ef95a 100644
+--- a/tests/fakelab.py
++++ b/tests/fakelab.py
+@@ -341,7 +341,8 @@ def _users(state):
+ def getent(args):
+     state = load()
+     if args[:1] == ["passwd"] and args[1] in _users(state):
+-        print(f"{args[1]}:x:1001:1001::/home/{args[1]}:/bin/bash")
++        uid = int(_users(state)[args[1]].get("uid", 1001))      # B-109b: a test may set it
++        print(f"{args[1]}:x:{uid}:{uid}::/home/{args[1]}:/bin/bash")
+         return
+     sys.exit(2)
+ 
+diff --git a/tests/test_engine_snapshot.py b/tests/test_engine_snapshot.py
+new file mode 100644
+index 0000000..594658c
+--- /dev/null
++++ b/tests/test_engine_snapshot.py
+@@ -0,0 +1,594 @@
++"""B-109c: the end-of-slot save wired into the engine's cleanup (and reconcile) jobs.
++
++Design v1.1 §6 save steps 1-9 + the failure list; DDL v4.1 §3.5/§4.3; interface §5.6-§5.8.
++With setups.snapshot_enabled = 1 a cleanup job runs:
++
++    revoke + capture (snapshot_capture.yml) -> `saved` committed -> cleanup.yml -> gated wipe
++    (home_wipe.yml, only when the DB row is `saved` or the home was empty) -> verify_clean with
++    the home check (+ the reconcile loop) -> retention prune -> the usual finish
++
++and a reconcile job (force-clean) runs the same save first, so a failed capture is retried on the
++same row (D-7-4). Every failure keeps the home: no wipe, `home:lab` residue, quarantine.
++With snapshot_enabled = 0 nothing of this runs (flag-off parity).
++
++The mock runner stands in for the playbooks; agecli is faked with an S-shaped canary (see
++test_snapshots.py), except in the two requires_age tests at the end (canary through the real
++age, and the real playbooks end to end through the Lab harness).
++"""
++import dataclasses
++import gzip
++import io
++import json
++import os
++import shutil
++import stat
++import subprocess
++import tarfile
++import types
++from datetime import datetime, timedelta, timezone
++
++import pytest
++
++from service import agecli, api, config, engine, hostcheck, keys, models, runner, snapshots
++from service.runner import CLEANUP_STEPS, VERIFY_CLEAN_STEPS, AnsibleRunner, MockRunner, RunResult
++from service.scheduler import SchedConfig
++from tests.conftest import NOW
++from tests.test_snapshots import (FAKE_S, S_RECIPIENT, World, fake_age, files_under,  # noqa: F401
++                                  mk_key, saved_row, snap_settings, world)
++
++CANARY = FAKE_S.strip()
++
++
++class Crash(BaseException):
++    """A crash: not an Exception, so engine._call can't turn it into a failed result."""
++
++
++class Spy(MockRunner):
++    """The mock runner, recording the order of the procedures and the snapshot row's state
++    when the apps cleanup and the wipe start. `crash_at` raises Crash at one point."""
++
++    def __init__(self, db, rid, **kw):
++        super().__init__(**kw)
++        self.db, self.rid = db, rid
++        self.order, self.crash_at, self.ctxs = [], None, []
++        self.at_cleanup = self.at_wipe = None
++
++    def _state(self):
++        row = self.db.execute("SELECT state FROM snapshots WHERE reservation_id = ?",
++                              (self.rid,)).fetchone()
++        return row["state"] if row else None
++
++    def capture(self, res, step, **kw):
++        self.order.append("capture")
++        if self.crash_at == "key":
++            raise Crash
++        out = super().capture(res, step, **kw)
++        if self.crash_at == "fetch":
++            raise Crash
++        return out
++
++    def cleanup(self, res, step):
++        self.order.append("cleanup")
++        self.at_cleanup = self._state()
++        if self.crash_at == "saved":
++            raise Crash
++        return super().cleanup(res, step)
++
++    def reconcile(self, res, step):
++        self.order.append("reconcile")
++        return super().reconcile(res, step)
++
++    def wipe(self, res, step, *, allowed):
++        self.order.append("wipe")
++        self.at_wipe = self._state()
++        if self.crash_at == "wipe":
++            raise Crash
++        return super().wipe(res, step, allowed=allowed)
++
++    def verify_clean(self, res, step):
++        self.order.append("verify")
++        self.ctxs.append(dict(res))
++        return super().verify_clean(res, step)
++
++
++def tick(db, rn, now=NOW, **kw):
++    return engine.tick(db, now, rn, SchedConfig(), **kw)
++
++
++def later():
++    """A clock past the job timeout of anything recorded now (updated_at is wall time)."""
++    return datetime.now(timezone.utc) + timedelta(hours=2)
++
++
++def audits(db, action):
++    return [json.loads(a["detail"]) for a in reversed(models.list_audit_events(db, 500))
++            if a["action"] == action]
++
++
++def res_state(w):
++    return w.res()["state"]
++
++
++def availability(w):
++    return w.db.execute("SELECT availability FROM setups WHERE id = ?", (w.sid,)).fetchone()[0]
++
++
++def db_dump(db):
++    return "\n".join(db.iterdump())
++
++
++def three_files(w, pid):
++    return sorted([f"u{w.uid}/{pid}.age", f"u{w.uid}/{pid}.hdr.json", f"u{w.uid}/{pid}.key.age"])
++
++
++@pytest.fixture
++def spy(world):
++    return Spy(world.db, world.rid)
++
++
++# ---- the happy path ---------------------------------------------------------------------------
++
++def test_enabled_key_and_save_capture_commit_saved_then_clean_then_wipe(world, spy, fake_age):
++    jid = models.create_job(world.db, world.rid, "cleanup")
++    out = tick(world.db, spy)
++    assert res_state(world) == "released" and out.released == 1
++    assert spy.order == ["capture", "cleanup", "wipe", "verify"]
++    assert spy.at_cleanup == "saved" and spy.at_wipe == "saved"   # saved BEFORE anything else
++    [row] = world.rows()
++    assert row["state"] == "saved" and row["key_id"] == world.key_id
++    assert models.job_by_id(world.db, jid)["snapshot_id"] == row["id"]
++    pid = row["public_id"]
++    assert files_under(world.root) == three_files(world, pid)
++    for f in files_under(world.root):
++        assert stat.S_IMODE(os.lstat(os.path.join(world.root, f)).st_mode) == 0o600
++    for d in (world.root, world.udir(), os.path.join(world.udir(), ".incoming")):
++        assert stat.S_IMODE(os.lstat(d).st_mode) == 0o700
++    p = snapshots.paths(world.root, world.uid, pid)
++    with open(p["hdr"]) as fh:
++        hdr = json.load(fh)
++    assert (hdr["format"], hdr["compression"], hdr["public_id"], hdr["s_recipient"]) == \
++        ("daolab-snapshot/1", "gzip", pid, S_RECIPIENT)
++    import hashlib
++    with open(p["age"], "rb") as fh:
++        assert hdr["age_sha256"] == hashlib.sha256(fh.read()).hexdigest()
++    with open(p["key"], "rb") as fh:
++        assert fh.read().startswith(b"age-wrapped:")          # S wrapped to the owner's key
++    assert fake_age[:3] == ["swap", "keygen", ("encrypt_to", world.key()["recipient"])]
++    steps = [s["name"] for s in models.job_steps(models.job_by_id(world.db, jid))]
++    assert steps == ["capture", "fetch_snapshot", *CLEANUP_STEPS, "wipe_home",
++                     *VERIFY_CLEAN_STEPS, "check_home"]
++    [cap] = audits(world.db, "snapshot_capture")
++    assert cap == {"job": jid, "snapshot_id": row["id"], "public_id": pid, "status": "saved",
++                   "reason": "ok", "raw_bytes": cap["raw_bytes"]} and cap["raw_bytes"] > 0
++    [cl] = audits(world.db, "cleanup")
++    assert (cl["snapshot"], cl["wiped"]) == ("saved", True)
++    assert world.root not in db_dump(world.db)                  # no paths in the DB
++    assert CANARY.decode() not in db_dump(world.db)
++
++
++def test_the_capture_gets_only_s_recipient_public_id_cap_and_the_fetch_path(world, fake_age):
++    seen = {}
++
++    class Rec(Spy):
++        def capture(self, res, step, **kw):
++            seen.update(kw)
++            return super().capture(res, step, **kw)
++
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, Rec(world.db, world.rid))
++    pid = world.rows()[0]["public_id"]
++    assert seen == {"recipient": S_RECIPIENT, "public_id": pid, "cap_bytes": 1 << 20,
++                    "fetch_to": snapshots.incoming_path(os.path.abspath(world.root), world.uid, pid)}
++
++
++# ---- no capture: keep the home, quarantine -----------------------------------------------------
++
++@pytest.mark.parametrize("save,key,why", [(0, True, "save_off"), (1, False, "no_key")])
++def test_without_save_or_an_active_key_nothing_is_captured_or_wiped(db, snap_settings, fake_age,
++                                                                    save, key, why):
++    w = World(db, snap_settings.snapshot_root, save=save, key=key)
++    s = Spy(db, w.rid)
++    models.create_job(db, w.rid, "cleanup")
++    out = tick(db, s)
++    assert "capture" not in s.order and "wipe" not in s.order
++    assert res_state(w) == "quarantined" and out.quarantined == 1
++    assert availability(w) == "quarantined"
++    job = models.jobs_for_reservation(db, w.rid)[-1]
++    assert job["state"] == "failed" and "home:lab" in job["error"]
++    assert w.rows() == [] and "keygen" not in fake_age
++    [cap] = audits(db, "snapshot_capture")
++    assert (cap["status"], cap["reason"], cap["snapshot_id"]) == ("skipped", why, None)
++
++
++# ---- a failed capture: keep the home, quarantine ------------------------------------------------
++
++class Report(Spy):
++    """The capture runs (and writes its file) but reports `self.doc` instead."""
++    doc = None
++
++    def capture(self, res, step, **kw):
++        result, report = super().capture(res, step, **kw)
++        return result, self.doc(report) if callable(self.doc) else self.doc
++
++
++@pytest.mark.parametrize("make,why", [
++    (lambda r: {**r, "age_sha256": "0" * 64}, "sha_mismatch"),
++    (lambda r: {**r, "age_bytes": r["age_bytes"] + 1}, "size_mismatch"),
++    (lambda r: None, "bad_report"),
++    (lambda r: {**r, "status": "done"}, "bad_report"),
++    (lambda r: {**r, "extra": "x"}, "bad_report"),
++])
++def test_a_bad_capture_result_fails_the_row_and_keeps_the_home(world, fake_age, make, why):
++    s = Report(world.db, world.rid)
++    s.doc = make
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, s)
++    assert "wipe" not in s.order and res_state(world) == "quarantined"
++    [row] = world.rows()
++    assert row["state"] == "failed"
++    assert files_under(world.root) == []                     # the attempt's files went
++    assert audits(world.db, "snapshot_capture")[-1]["reason"] == why
++
++
++def test_a_refused_capture_fails_the_row_and_keeps_the_home(world, fake_age):
++    s = Spy(world.db, world.rid, fail={"capture"})
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, s)
++    assert "wipe" not in s.order and res_state(world) == "quarantined"
++    assert world.rows()[0]["state"] == "failed" and files_under(world.root) == []
++    cap = audits(world.db, "snapshot_capture")[-1]
++    assert (cap["status"], cap["reason"]) == ("refused", "tar_failed")
++
++
++def test_a_runner_without_capture_fails_closed(world, fake_age):
++    class Old(MockRunner):
++        capture = None
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, Old())
++    assert res_state(world) == "quarantined" and world.rows() == []
++    assert audits(world.db, "snapshot_capture")[-1]["reason"] == "no_runner"
++
++
++@pytest.mark.parametrize("break_it", ["storage", "swap", "age"])
++def test_controller_side_failures_fail_closed_before_any_capture(world, fake_age, monkeypatch,
++                                                                break_it):
++    if break_it == "storage":
++        monkeypatch.setattr(snapshots.shutil, "disk_usage",
++                            lambda _p: types.SimpleNamespace(free=1))
++        want = "storage_low"
++    elif break_it == "swap":
++        def unsafe(*a, **k):
++            raise hostcheck.HostCheckError(hostcheck.UNSAFE)
++        monkeypatch.setattr(hostcheck, "require_safe_swap", unsafe)
++        want = "swap_unsafe"
++    else:
++        def broken():
++            raise agecli.AgeError(agecli.KEYGEN_FAILED)
++        monkeypatch.setattr(agecli, "keygen", broken)
++        want = "age_error"
++    s = Spy(world.db, world.rid)
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, s)
++    assert "capture" not in s.order and "wipe" not in s.order
++    assert world.rows()[0]["state"] == "failed" and files_under(world.root) == []
++    assert res_state(world) == "quarantined"
++    assert audits(world.db, "snapshot_capture")[-1]["reason"] == want
++    if break_it != "age":
++        assert "keygen" not in fake_age                       # S was never made
++
++
++# ---- an empty home ----------------------------------------------------------------------------
++
++def test_an_empty_home_deletes_the_row_and_allows_the_wipe(world, spy, fake_age):
++    spy.empty_home = True
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, spy)
++    assert world.rows() == [] and files_under(world.root) == []
++    assert spy.order == ["capture", "cleanup", "wipe", "verify"]
++    assert res_state(world) == "released"
++    cap = audits(world.db, "snapshot_capture")[-1]
++    assert (cap["status"], cap["reason"]) == ("empty", "empty_home")
++
++
++# ---- crash points: the home stays unless the row is saved --------------------------------------
++
++@pytest.mark.parametrize("point,saved_before", [
++    ("begin", False), ("key", False), ("fetch", False), ("replace", False),
++    ("saved", True), ("wipe", True)])
++def test_a_crash_at_any_point_never_wipes_an_unsaved_home(world, spy, fake_age, monkeypatch,
++                                                         point, saved_before):
++    armed = {"on": True}
++
++    def trap(real):
++        def f(*a, **k):
++            if armed["on"]:
++                raise Crash
++            return real(*a, **k)
++        return f
++
++    if point == "begin":
++        monkeypatch.setattr(snapshots, "wrap_new_identity", trap(snapshots.wrap_new_identity))
++    elif point == "replace":
++        monkeypatch.setattr(snapshots, "mark_saved", trap(snapshots.mark_saved))
++    else:
++        spy.crash_at = point
++    models.create_job(world.db, world.rid, "cleanup")
++    with pytest.raises(Crash):
++        tick(world.db, spy)
++    assert spy.wiped == set()                                  # the home is intact
++    [row] = world.rows()
++    assert row["state"] == ("saved" if saved_before else "capturing")
++    first = row["public_id"]
++
++    armed["on"], spy.crash_at = False, None                    # the engine comes back
++    tick(world.db, spy, now=later(), job_timeout_sec=60)       # requeue + stale + replay
++    assert res_state(world) == "released" and spy.wiped == {world.rid}
++    [row2] = world.rows()
++    assert row2["id"] == row["id"] and row2["state"] == "saved"
++    if saved_before:
++        assert row2["public_id"] == first and spy.order.count("capture") == 1
++    else:
++        assert row2["public_id"] != first                     # D-7-4: same row, new public_id
++    assert files_under(world.root) == three_files(world, row2["public_id"])
++    assert CANARY.decode() not in db_dump(world.db)
++
++
++def test_a_stale_capturing_row_becomes_failed_on_the_next_tick(world, fake_age):
++    jid = models.create_job(world.db, world.rid, "cleanup")
++    snapshots.begin_capture(world.db, world.res(), world.key(), job_id=jid)
++    models.update(world.db, "jobs", jid, {"state": "failed", "finished_at": models.utcnow()})
++    tick(world.db, MockRunner())
++    assert world.rows()[0]["state"] == "failed"
++
++
++# ---- retention --------------------------------------------------------------------------------
++
++def test_the_fourth_save_prunes_the_oldest_unheld_one(world, spy, fake_age):
++    old = [saved_row(world, f"2026-0{m}-01T00:00:00Z") for m in (1, 2, 3)]
++    held = saved_row(world, "2025-01-01T00:00:00Z", held=True)
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, spy)
++    left = {r["id"] for r in world.rows()}
++    new = [r for r in world.rows() if r["reservation_id"] == world.rid][0]
++    assert left == {old[1][0], old[2][0], held[0], new["id"]}
++    assert not any(old[0][1] in f for f in files_under(world.root))
++    [d] = audits(world.db, "snapshot_delete")
++    assert d["snapshot_id"] == old[0][0] and d["public_id"] == old[0][1]
++
++
++# ---- force-clean: the reconcile job ------------------------------------------------------------
++
++def _force_clean(w):
++    admin = models.user_by_id(w.db, w.admin)
++    setup = w.db.execute("SELECT name FROM setups WHERE id = ?", (w.sid,)).fetchone()["name"]
++    return api.force_clean(setup, None, admin=admin, conn=w.db)
++
++
++@pytest.mark.parametrize("save,key", [(0, True), (1, False)])
++def test_force_clean_of_a_kept_home_still_reports_it_and_does_not_release(db, snap_settings,
++                                                                          fake_age, save, key):
++    w = World(db, snap_settings.snapshot_root, save=save, key=key)
++    models.create_job(db, w.rid, "cleanup")
++    tick(db, Spy(db, w.rid))
++    assert res_state(w) == "quarantined" and availability(w) == "quarantined"
++    assert _force_clean(w)["jobs"]                              # a reconcile job is queued
++    s = Spy(db, w.rid)
++    tick(db, s)
++    rec = models.jobs_for_reservation(db, w.rid, kind="reconcile")[-1]
++    assert rec["state"] == "failed" and "home:lab" in rec["error"]
++    assert res_state(w) == "quarantined" and availability(w) == "quarantined"   # NOT released
++    assert "wipe" not in s.order and "capture" not in s.order
++    assert s.ctxs[-1].get("snapshot_enabled") is True          # the home was checked
++
++
++def test_force_clean_retries_a_failed_capture_on_the_same_row(world, fake_age):
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, Spy(world.db, world.rid, fail={"capture"}))
++    [failed] = world.rows()
++    assert failed["state"] == "failed" and res_state(world) == "quarantined"
++    _force_clean(world)
++    s = Spy(world.db, world.rid)
++    tick(world.db, s)
++    [row] = world.rows()
++    assert (row["id"], row["state"]) == (failed["id"], "saved")
++    assert row["public_id"] != failed["public_id"]
++    assert s.order == ["capture", "reconcile", "wipe", "verify"]
++    assert res_state(world) == "released" and availability(world) == "available"
++
++
++def test_force_clean_after_a_saved_capture_wipes_again_without_recapturing(world, fake_age):
++    class NoWipe(Spy):                      # the first wipe fails: home:lab, quarantine
++        def wipe(self, res, step, *, allowed):
++            self.order.append("wipe")
++            return RunResult(ok=False, error="wipe_home: boom")
++    models.create_job(world.db, world.rid, "cleanup")
++    tick(world.db, NoWipe(world.db, world.rid))
++    assert res_state(world) == "quarantined" and world.rows()[0]["state"] == "saved"
++    _force_clean(world)
++    s = Spy(world.db, world.rid)
++    tick(world.db, s)
++    assert s.order == ["reconcile", "wipe", "verify"] and res_state(world) == "released"
++
++
++# ---- flag-off parity ---------------------------------------------------------------------------
++
++class Forbidden(MockRunner):
++    def capture(self, *a, **k):
++        raise AssertionError("capture called with snapshots off")
++
++    def wipe(self, *a, **k):
++        raise AssertionError("wipe called with snapshots off")
++
++    def verify_clean(self, res, step):
++        assert "snapshot_enabled" not in res
++        return super().verify_clean(res, step)
++
++
++def test_flag_off_never_calls_capture_or_wipe(db, snap_settings, fake_age):
++    w = World(db, snap_settings.snapshot_root, enabled=0, save=1, key=True)
++    jid = models.create_job(db, w.rid, "cleanup")
++    out = tick(db, Forbidden())
++    assert res_state(w) == "released" and out.released == 1
++    steps = [s["name"] for s in models.job_steps(models.job_by_id(db, jid))]
++    assert steps == list(CLEANUP_STEPS) + list(VERIFY_CLEAN_STEPS)
++    assert w.rows() == [] and audits(db, "snapshot_capture") == [] and fake_age == []
++    [cl] = audits(db, "cleanup")
++    assert set(cl) == {"job", "attempt", "ok", "cleanup_ok", "reconcile_attempts", "residue", "error"}
++    assert not os.path.exists(snap_settings.snapshot_root)
++
++
++def test_flag_off_reconcile_is_todays(db, snap_settings, fake_age):
++    w = World(db, snap_settings.snapshot_root, enabled=0, state="quarantined")
++    models.create_job(db, w.rid, "reconcile")
++    tick(db, Forbidden())
++    assert res_state(w) == "released" and w.rows() == [] and fake_age == []
++
++
++# ---- rule 8: the canary through the real age ---------------------------------------------------
++
++def _age_tool(var, default):
++    return shutil.which(os.environ.get(var) or default)
++
++
++def _identity(path):
++    keygen = _age_tool("DAOLAB_AGE_KEYGEN_BIN", "age-keygen")
++    subprocess.run([keygen, "-o", str(path)], check=True, capture_output=True)
++    return subprocess.run([keygen, "-y", str(path)], check=True, capture_output=True,
++                          text=True).stdout.strip()
++
++
++@pytest.mark.requires_age
++def test_the_fake_s_reaches_only_ages_stdin(db, snap_settings, tmp_path, monkeypatch, caplog):
++    caplog.set_level("DEBUG")
++    owner_rcpt = _identity(tmp_path / "owner.txt")
++    s_rcpt = _identity(tmp_path / "s-stand-in.txt")
++    w = World(db, snap_settings.snapshot_root, key=False)
++    w.key_id = mk_key(db, w.uid, w.admin, rcpt=owner_rcpt)
++    monkeypatch.setattr(hostcheck, "require_safe_swap", lambda *a, **k: None)
++    monkeypatch.setattr(agecli, "keygen", lambda: (FAKE_S, s_rcpt))
++    procs = []
++    real_run = subprocess.run
++
++    def recording_run(argv, **kw):
++        procs.append({"argv": list(argv), "env": kw.get("env"), "input": kw.get("input")})
++        return real_run(argv, **kw)
++
++    monkeypatch.setattr(agecli.subprocess, "run", recording_run)
++    jobs_dir = tmp_path / "jobs"
++    s = dataclasses.replace(config.settings, artifacts_dir=str(jobs_dir), internal_secret="",
++                            deploy_vms=False)
++    monkeypatch.setattr(config, "settings", s)
++    sent = []
++
++    def fake_run(**kw):
++        sent.append(kw)
++        ev = kw["extravars"]
++        out = None
++        if kw["playbook"] == "snapshot_capture.yml":
++            data = b"sealed-payload-for-the-test"
++            with open(ev["daolab_snapshot_fetch_to"], "wb") as fh:
++                fh.write(data)
++            import hashlib
++            out = {"status": "saved", "reason": "ok", "raw_bytes": 99, "age_bytes": len(data),
++                   "age_sha256": hashlib.sha256(data).hexdigest()}
++        elif kw["playbook"] == "home_wipe.yml":
++            out = {"status": "wiped", "reason": "ok", "removed": 1}
++        elif kw["playbook"] == "verify_clean.yml":
++            out = []
++        if out is not None:
++            with open(ev["daolab_output_file"], "w") as fh:
++                json.dump(out, fh)
++        return types.SimpleNamespace(status="successful", rc=0)
++
++    models.create_job(db, w.rid, "cleanup")
++    tick(db, AnsibleRunner(s, run=fake_run))
++    assert res_state(w) == "released" and w.rows()[0]["state"] == "saved"
++    hits = []
++    for dirpath, _d, names in os.walk(jobs_dir):
++        for n in names:
++            with open(os.path.join(dirpath, n), "rb") as fh:
++                if CANARY in fh.read():
++                    hits.append("job dir")
++    for root, _d, names in os.walk(w.root):
++        for n in names:
++            with open(os.path.join(root, n), "rb") as fh:
++                if CANARY in fh.read():
++                    hits.append("snapshot_root plaintext")
++    if CANARY.decode() in json.dumps([{"extravars": k["extravars"], "envvars": k["envvars"]}
++                                      for k in sent], default=str):
++        hits.append("extravars/envvars")
++    if CANARY.decode() in caplog.text:
++        hits.append("log")
++    if CANARY.decode() in db_dump(db):
++        hits.append("db")
++    if any(CANARY.decode() in v for v in os.environ.values()):
++        hits.append("environ")
++    for p in procs:
++        if any(CANARY.decode() in str(a) for a in p["argv"]) or CANARY.decode() in str(p["env"]):
++            hits.append("argv/env")
++    assert hits == []
++    fed = [p["argv"][1:] for p in procs if p["input"] and CANARY in p["input"]]
++    assert fed == [["-r", owner_rcpt]]                         # only into `age -r <owner>`
++    # and key.age is S wrapped to the owner: the owner's identity opens it
++    with open(tmp_path / "owner.txt", "rb") as fh:
++        owner = fh.read()
++    pid = w.rows()[0]["public_id"]
++    opened = agecli.decrypt_file(owner, snapshots.paths(w.root, w.uid, pid)["key"])
++    assert opened == FAKE_S, "key.age does not hold the generated S"
++
++
++# ---- end to end through the real playbooks -----------------------------------------------------
++
++@pytest.mark.requires_age
++def test_end_to_end_with_the_real_playbooks_and_age(db, snap_settings, tmp_path, monkeypatch):
++    from tests.test_playbooks import ANSIBLE, REPO, Lab
++    from tests.test_playbooks_snapshot import Snap, names
++    if not ANSIBLE:
++        pytest.skip("ansible-playbook not installed")
++    (tmp_path / "lab").mkdir()
++    lab = Lab(tmp_path / "lab")
++    snap = Snap(lab)
++    snap.plant()
++    snap.link_age()
++    expected = names(snap.home)
++    owner_rcpt = _identity(tmp_path / "owner.txt")
++    w = World(db, snap_settings.snapshot_root, key=False)
++    w.key_id = mk_key(db, w.uid, w.admin, rcpt=owner_rcpt)
++    monkeypatch.setattr(hostcheck, "require_safe_swap", lambda *a, **k: None)
++    s = dataclasses.replace(config.settings, artifacts_dir=str(tmp_path / "jobs"), internal_secret="",
++                            playbooks_dir=os.path.join(REPO, "playbooks"))
++    monkeypatch.setattr(config, "settings", s)
++
++    def through_the_lab(**kw):
++        ev = {k: v for k, v in kw["extravars"].items()
++              if k not in ("daolab_members", "daolab_vms", "daolab_leases")}
++        rc = lab.run(kw["playbook"], **{**ev, **snap.common()})
++        return types.SimpleNamespace(status="successful" if rc == 0 else "failed", rc=rc)
++
++    class Hybrid(AnsibleRunner):
++        """The real capture, wipe and verify playbooks; apps cleanup is covered elsewhere."""
++        reconcile = None
++
++        def cleanup(self, res, step):
++            return RunResult(ok=True)
++
++    models.create_job(db, w.rid, "cleanup")
++    tick(db, Hybrid(s, run=through_the_lab))
++    assert res_state(w) == "released", lab.stdout[-3000:]
++    [row] = w.rows()
++    p = snapshots.paths(w.root, w.uid, row["public_id"])
++    assert row["state"] == "saved" and all(os.path.isfile(x) for x in p.values())
++    with open(tmp_path / "owner.txt", "rb") as fh:
++        owner = fh.read()
++    s_identity = agecli.decrypt_file(owner, p["key"])                       # owner -> S
++    ok = agecli.IDENTITY_RE.fullmatch(s_identity.decode().strip()) is not None
++    assert ok, "key.age did not hold an age identity"
++    plain = agecli.decrypt_file(s_identity, p["age"])                        # S -> payload
++    del s_identity
++    with tarfile.open(fileobj=io.BytesIO(gzip.decompress(plain))) as tf:    # gunzip -> tar
++        listed = {os.path.normpath(m.name) for m in tf.getmembers()} - {"."}
++    assert listed == expected
++    assert names(snap.home) == names(snap.skel)                              # wiped after saved
++    with open(p["hdr"]) as fh:
++        hdr = json.load(fh)
++    assert (hdr["setup"], hdr["usecase"], hdr["compression"]) == ("tb", "uc", "gzip")
+diff --git a/tests/test_playbooks_snapshot.py b/tests/test_playbooks_snapshot.py
+new file mode 100644
+index 0000000..3b024bc
+--- /dev/null
++++ b/tests/test_playbooks_snapshot.py
+@@ -0,0 +1,346 @@
++"""B-109b: the end-of-slot save playbooks, run by real ansible-playbook on the fake lab.
++
++  snapshot_capture.yml  revoke first -> strict input checks -> daolab-capture.py as root
++                        (python3 -I) -> fetch the sealed file -> delete it on the DPU, always ->
++                        the script's JSON (no paths) to daolab_output_file
++  home_wipe.yml         only when the engine passes daolab_wipe_allowed: true (from the DB) ->
++                        daolab-wipe.py --mode wipe
++  verify_clean.yml      a `home:lab` residue item, only when daolab_snapshot_enabled is true
++                        (daolab-wipe.py --mode check, read-only); off = today's checks exactly
++
++Same harness as tests/test_playbooks.py (local connection, fakes on PATH, path prefixes, become
++off). The DPU paths live under daolab_dpu_root (home, skel, capture dir) and daolab_age_root
++(/usr/local/bin/age); the controller side is a temp dir. The age identity used to decrypt is
++generated in tmp_path and only its path is ever passed on.
++"""
++import gzip
++import hashlib
++import io
++import json
++import os
++import shutil
++import stat
++import subprocess
++import tarfile
++
++import pytest
++import yaml
++
++from tests.test_playbooks import ANSIBLE, REPO, Lab, clean_state
++
++pytestmark = pytest.mark.skipif(not ANSIBLE, reason="ansible-playbook not installed "
++                                                    "(pip install -e .[ansible])")
++
++PUBLIC_ID = "0123456789abcdef0123456789abcdef"
++FAKE_RECIPIENT = "age1" + "q" * 58          # the right shape; for runs that never reach age
++PLANT = "PLANTED-b109b-pb7"
++MISSING = object()
++
++
++def _age_tool(var, default):
++    return shutil.which(os.environ.get(var) or default)
++
++
++class Snap:
++    """The fake DPU for one test: <root>/home/lab, <root>/etc/skel, the capture dir, an age
++    under <agert>/usr/local/bin, and the controller's .incoming dir."""
++
++    def __init__(self, lab, uid=None):
++        self.lab = lab
++        self.root = lab.dir / "root"
++        self.home = self.root / "home" / "lab"
++        self.skel = self.root / "etc" / "skel"
++        self.capdir = self.root / "var" / "lib" / "daolab" / "capture"
++        self.agert = lab.dir / "agert"
++        self.outside = lab.dir / "outside"
++        self.incoming = lab.dir / "ctrl" / "u1" / ".incoming"
++        self.fetch_to = self.incoming / f"{PUBLIC_ID}.age.part"
++        self.skel.mkdir(parents=True)
++        (self.skel / ".bashrc").write_text("# skel bashrc\n")
++        (self.skel / ".profile").write_text("# skel profile\n")
++        self.home.mkdir(parents=True)
++        for name in os.listdir(self.skel):
++            shutil.copy2(self.skel / name, self.home / name)
++        self.outside.mkdir()
++        (self.outside / "keep.txt").write_text("outside data\n")
++        self.incoming.mkdir(parents=True)
++        os.chmod(self.incoming, 0o700)
++        state = clean_state()
++        state["users"] = {"lab": {"password": None, "locked": False, "expires": None,
++                                  "uid": os.getuid() if uid is None else uid}}
++        lab.set(state)
++
++    def plant(self):
++        (self.home / f"notes-{PLANT}.txt").write_text("my work\n")
++        d = self.home / f"proj-{PLANT}" / "src"
++        d.mkdir(parents=True)
++        (d / "main.c").write_text("int main(){}\n")
++        os.symlink(str(self.outside), self.home / f"link-{PLANT}")
++        (self.home / ".bashrc").write_text("# changed\n")
++
++    def link_age(self):
++        bindir = self.agert / "usr" / "local" / "bin"
++        bindir.mkdir(parents=True)
++        os.symlink(_age_tool("DAOLAB_AGE_BIN", "age"), bindir / "age")
++
++    def common(self):
++        return {"daolab_dpu_root": str(self.root), "daolab_age_root": str(self.agert),
++                "dpu_access_root": str(self.root), "ansible_become": False}
++
++    def _run(self, playbook, base, over):
++        ev = {**self.common(), **base, **over}
++        return self.lab.run(playbook, **{k: v for k, v in ev.items() if v is not MISSING})
++
++    def capture(self, **over):
++        return self._run("snapshot_capture.yml", {
++            "daolab_snapshot_recipient": FAKE_RECIPIENT, "daolab_snapshot_public_id": PUBLIC_ID,
++            "daolab_snapshot_cap_bytes": 536870912,
++            "daolab_snapshot_fetch_to": str(self.fetch_to)}, over)
++
++    def wipe(self, **over):
++        return self._run("home_wipe.yml", {"daolab_wipe_allowed": True}, over)
++
++    def verify(self, **over):
++        return self._run("verify_clean.yml", {}, over)
++
++
++def names(path):
++    out = set()
++    for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
++        for name in dirnames + filenames:
++            out.add(os.path.relpath(os.path.join(dirpath, name), path))
++    return out
++
++
++def snapshot_tree(path):
++    out = []
++    for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
++        for name in sorted(dirnames + filenames):
++            p = os.path.join(dirpath, name)
++            st = os.lstat(p)
++            body = None
++            if stat.S_ISREG(st.st_mode):
++                with open(p, "rb") as fh:
++                    body = fh.read()
++            elif stat.S_ISLNK(st.st_mode):
++                body = os.readlink(p)
++            out.append((os.path.relpath(p, path), st.st_mode, st.st_mtime_ns, body))
++    return sorted(out)
++
++
++@pytest.fixture
++def lab(tmp_path):
++    return Lab(tmp_path)
++
++
++@pytest.fixture
++def snap(lab):
++    return Snap(lab)
++
++
++def _plays(name):
++    with open(os.path.join(REPO, "playbooks", name), encoding="utf-8") as fh:
++        return yaml.safe_load(fh)
++
++
++def _tasks(obj):
++    """Every task dict in a play list, blocks included."""
++    if isinstance(obj, list):
++        for item in obj:
++            yield from _tasks(item)
++    elif isinstance(obj, dict):
++        if any(k.startswith("ansible.builtin.") for k in obj):
++            yield obj
++        for key in ("tasks", "block", "rescue", "always"):
++            if key in obj:
++                yield from _tasks(obj[key])
++
++
++# ---- capture ----------------------------------------------------------------------------------
++
++@pytest.mark.requires_age
++def test_capture_seals_the_home_fetches_it_and_leaves_nothing_on_the_dpu(lab, snap, tmp_path):
++    snap.plant()
++    snap.link_age()
++    ident = tmp_path / "owner-of-s.txt"                  # stands in for S's private half
++    subprocess.run([_age_tool("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"), "-o", str(ident)],
++                   check=True, capture_output=True)
++    recipient = subprocess.run([_age_tool("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"), "-y", str(ident)],
++                               check=True, capture_output=True, text=True).stdout.strip()
++    assert snap.capture(daolab_snapshot_recipient=recipient) == 0, lab.stdout[-3000:]
++    report = lab.output()
++    assert list(report) == ["status", "reason", "raw_bytes", "age_bytes", "age_sha256"]
++    assert (report["status"], report["reason"]) == ("saved", "ok")
++    data = snap.fetch_to.read_bytes()
++    assert len(data) == report["age_bytes"] and hashlib.sha256(data).hexdigest() == report["age_sha256"]
++    assert os.listdir(snap.capdir) == []                 # the ciphertext left the DPU
++    plain = subprocess.run([_age_tool("DAOLAB_AGE_BIN", "age"), "-d", "-i", str(ident),
++                            str(snap.fetch_to)], check=True, capture_output=True).stdout
++    with tarfile.open(fileobj=io.BytesIO(gzip.decompress(plain))) as tf:
++        listed = {os.path.normpath(m.name) for m in tf.getmembers()} - {"."}
++    assert listed == names(snap.home)
++    assert report["raw_bytes"] > 0
++    assert "step: capture" in lab.stdout and "step: fetch_snapshot" in lab.stdout
++    assert PLANT not in json.dumps(report)
++
++
++def test_capture_revokes_access_first(lab, snap):
++    assert snap.capture() == 0, lab.stdout[-3000:]       # a home equal to skel: status empty
++    user = lab.state()["users"]["lab"]
++    assert user["locked"] is True and user["expires"] == "0"
++    assert lab.stdout.index("step: terminate-user") < lab.stdout.index("step: capture")
++
++
++def test_a_home_equal_to_skel_is_empty_and_nothing_is_fetched(lab, snap):
++    assert snap.capture() == 0, lab.stdout[-3000:]
++    assert lab.output() == {"status": "empty", "reason": "empty_home", "raw_bytes": 0,
++                            "age_bytes": 0, "age_sha256": ""}
++    assert not snap.fetch_to.exists() and os.listdir(snap.capdir) == []
++
++
++def test_a_refused_capture_propagates_and_keeps_the_home(lab):
++    snap = Snap(lab, uid=os.getuid() + 1)                # the DPU says lab is someone else
++    snap.plant()
++    before = snapshot_tree(snap.home)
++    assert snap.capture() != 0
++    assert lab.output()["status"] == "refused" and lab.output()["reason"] == "home_owner"
++    assert "capture refused: home_owner" in lab.stdout
++    assert not snap.fetch_to.exists() and os.listdir(snap.capdir) == []
++    assert snapshot_tree(snap.home) == before
++
++
++def test_a_missing_home_is_refused(lab, snap):
++    shutil.rmtree(snap.home)
++    assert snap.capture() != 0
++    assert lab.output()["reason"] == "home_missing"
++    assert not snap.fetch_to.exists()
++
++
++@pytest.mark.parametrize("over", [
++    {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
++    {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
++    {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
++    {"daolab_snapshot_public_id": MISSING},
++    {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
++    {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
++    {"daolab_snapshot_recipient": MISSING},
++    {"daolab_snapshot_cap_bytes": -1},
++    {"daolab_snapshot_cap_bytes": "1e9"},
++    {"daolab_snapshot_fetch_to": "relative/x.age.part"},
++    {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
++    {"daolab_snapshot_fetch_to": MISSING},
++], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
++                                        else str(next(iter(o.values())))[:12]))
++def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
++    assert snap.capture(**over) != 0
++    assert not snap.capdir.exists()                      # stopped before any DPU write
++    assert not lab.out_path.exists() and not snap.fetch_to.exists()
++    assert "snapshot capture: bad input" in lab.stdout
++
++
++def test_leftovers_of_a_dead_run_are_removed_before_the_capture(lab, snap):
++    snap.capdir.mkdir(parents=True)
++    os.chmod(snap.capdir, 0o700)
++    (snap.capdir / ("f" * 32 + ".age")).write_bytes(b"old ciphertext")
++    assert snap.capture() == 0, lab.stdout[-3000:]
++    assert os.listdir(snap.capdir) == []
++    assert "capture dir leftovers removed: 1" in lab.stdout
++
++
++def test_the_profile_hook_is_guarded_and_off_by_default():
++    hooks = [t for t in _tasks(_plays("snapshot_capture.yml"))
++             if t.get("ansible.builtin.include_tasks") == "tasks/profile_capture.yml"]
++    assert len(hooks) == 1
++    assert "daolab_profile_enabled | default(false) | bool" in str(hooks[0]["when"])
++
++
++@pytest.mark.parametrize("playbook,script", [("snapshot_capture.yml", "daolab-capture.py"),
++                                             ("home_wipe.yml", "daolab-wipe.py"),
++                                             ("verify_clean.yml", "daolab-wipe.py")])
++def test_the_dpu_scripts_run_as_root_with_python3_isolated(playbook, script):
++    runs = [t for t in _tasks(_plays(playbook)) if "ansible.builtin.script" in t]
++    assert runs, playbook
++    for t in runs:
++        assert t["ansible.builtin.script"]["cmd"].split()[0] == script
++        assert t["ansible.builtin.script"]["executable"] == "/usr/bin/python3 -I"
++        assert t["become"] is True
++
++
++# ---- wipe -------------------------------------------------------------------------------------
++
++@pytest.mark.parametrize("allowed", [MISSING, False, "true", "yes", 1, None],
++                         ids=["missing", "false", "str-true", "yes", "one", "null"])
++def test_the_wipe_refuses_unless_the_engine_allowed_it(lab, snap, allowed):
++    snap.plant()
++    before = snapshot_tree(snap.home)
++    assert snap.wipe(daolab_wipe_allowed=allowed) != 0
++    assert "home wipe refused: not allowed by the engine" in lab.stdout
++    assert snapshot_tree(snap.home) == before
++    assert not lab.calls("getent")                      # stopped before touching the DPU
++
++
++def test_the_wipe_restores_skel_and_never_follows_a_link_out(lab, snap):
++    snap.plant()
++    outside = snapshot_tree(snap.outside)
++    top = len(os.listdir(snap.home))
++    assert snap.wipe() == 0, lab.stdout[-3000:]
++    assert lab.output() == {"status": "wiped", "reason": "ok", "removed": top}
++    assert names(snap.home) == names(snap.skel)
++    for name in os.listdir(snap.skel):
++        assert (snap.home / name).read_bytes() == (snap.skel / name).read_bytes()
++    assert snapshot_tree(snap.outside) == outside
++    assert "step: wipe_home" in lab.stdout
++
++
++def test_a_wipe_the_script_refuses_fails_and_keeps_the_home(lab):
++    snap = Snap(lab, uid=os.getuid() + 1)
++    snap.plant()
++    before = snapshot_tree(snap.home)
++    assert snap.wipe() != 0
++    assert lab.output()["reason"] == "home_owner"
++    assert "home wipe refused: home_owner" in lab.stdout
++    assert snapshot_tree(snap.home) == before
++
++
++# ---- verify_clean: home:lab only when enabled --------------------------------------------------
++
++def test_verify_ignores_the_home_when_snapshots_are_off(lab, snap):
++    snap.plant()
++    assert snap.verify() == 0, lab.stdout[-3000:]
++    assert lab.output() == []
++    assert "step: check_home" not in lab.stdout and not lab.calls("getent")
++    assert snap.verify(daolab_snapshot_enabled=False) == 0 and lab.output() == []
++
++
++def test_verify_reports_a_dirty_home_when_snapshots_are_on(lab, snap):
++    snap.plant()
++    before = snapshot_tree(snap.home)
++    assert snap.verify(daolab_snapshot_enabled=True) == 0, lab.stdout[-3000:]
++    assert lab.output() == ["home:lab"]
++    assert "step: check_home" in lab.stdout
++    assert snapshot_tree(snap.home) == before            # read-only
++
++
++def test_verify_passes_a_home_equal_to_skel(lab, snap):
++    assert snap.verify(daolab_snapshot_enabled=True) == 0, lab.stdout[-3000:]
++    assert lab.output() == []
++
++
++@pytest.mark.parametrize("broken", ["missing", "owner"])
++def test_verify_counts_a_home_it_cannot_prove_clean_as_residue(lab, broken):
++    snap = Snap(lab, uid=os.getuid() + (1 if broken == "owner" else 0))
++    if broken == "missing":
++        shutil.rmtree(snap.home)
++    assert snap.verify(daolab_snapshot_enabled=True) == 0, lab.stdout[-3000:]
++    assert lab.output() == ["home:lab"]
++
++
++def test_verify_adds_home_to_the_other_residue(lab, snap):
++    from tests.test_playbooks import dirty
++    state = dirty(lab.state())
++    lab.set(state)
++    snap.plant()
++    assert snap.verify(daolab_snapshot_enabled=True, daolab_leases=["10.30.0.101"]) == 0
++    assert sorted(lab.output()) == sorted(["vm:daolab-r12-sink", "dpu_session:lab",
++                                           "dpu_app:daolab-app-dao-vpp.service",
++                                           "ip:10.30.0.101", "home:lab"])
+diff --git a/tests/test_runner_snapshot.py b/tests/test_runner_snapshot.py
+new file mode 100644
+index 0000000..084d9f8
+--- /dev/null
++++ b/tests/test_runner_snapshot.py
+@@ -0,0 +1,209 @@
++"""B-109c: the runner side of the end-of-slot save (service/runner.py).
++
++  * RESIDUE_KINDS gains home, tripwire, restore_incomplete (§5.7), each with a CHECK_FOR_KIND step
++  * MockRunner.capture / wipe, and DAOLAB_MOCK_FAIL=capture; verify_clean reports home:lab
++    only for a snapshot-enabled reservation whose home was not wiped
++  * AnsibleRunner.capture / wipe run snapshot_capture.yml / home_wipe.yml with exactly the
++    snapshot extra vars; verify_clean passes daolab_snapshot_enabled only when the setup has it
++  * flag off: the extra vars, the steps and the residue are exactly today's
++"""
++import hashlib
++import json
++import os
++import types
++
++import pytest
++
++from service import runner
++from service.runner import (CLEANUP_STEPS, VERIFY_CLEAN_STEPS, AnsibleRunner, MockRunner,
++                            RunResult)
++from tests.test_ansible_runner import Steps, settings  # noqa: F401  (fixture)
++
++PID = "0123456789abcdef0123456789abcdef"
++RCPT = "age1" + "q" * 58
++RES = {"id": 4, "job_id": 9, "job_created_at": "2026-09-01T09:00:00Z", "vms": [], "leases": []}
++S_CANARY = "AGE-SECRET-KEY-1" + "Q" * 58
++
++
++class Sink:
++    def __init__(self):
++        self.calls = []
++
++    def __call__(self, name, state="ok", detail=None):
++        self.calls.append((name, state, detail))
++
++    @property
++    def names(self):
++        return [c[0] for c in self.calls]
++
++
++# ---- residue kinds (§5.7) ---------------------------------------------------------------------
++
++def test_the_snapshot_residue_kinds_exist_and_parse():
++    for kind in ("home", "tripwire", "restore_incomplete"):
++        assert kind in runner.RESIDUE_KINDS and kind in runner.CHECK_FOR_KIND
++    assert runner.residue_item("home", "lab") == "home:lab"
++    assert runner.parse_residue("home:lab") == ("home", "lab")
++    assert runner.parse_residue("tripwire:sudo:2") == ("tripwire", "sudo:2")
++    assert runner.parse_residue("restore_incomplete:" + PID) == ("restore_incomplete", PID)
++    assert runner.CHECK_FOR_KIND["home"] == "check_home"
++
++
++def test_mock_fail_accepts_capture():
++    assert runner.parse_mock_fail("capture") == frozenset({"capture"})
++    assert runner.parse_mock_fail("cleanup,capture") == frozenset({"cleanup", "capture"})
++    with pytest.raises(runner.RunnerError):
++        runner.parse_mock_fail("wipe")
++
++
++# ---- MockRunner -------------------------------------------------------------------------------
++
++def test_mock_capture_writes_a_ciphertext_that_matches_its_report(tmp_path):
++    m, sink = MockRunner(), Sink()
++    dest = tmp_path / f"{PID}.age.part"
++    result, report = m.capture(RES, sink, recipient=RCPT, public_id=PID, cap_bytes=1 << 20,
++                               fetch_to=str(dest))
++    data = dest.read_bytes()
++    assert result.ok and report["status"] == "saved" and report["reason"] == "ok"
++    assert report["age_bytes"] == len(data)
++    assert report["age_sha256"] == hashlib.sha256(data).hexdigest()
++    assert sink.names == ["capture", "fetch_snapshot"] and m.captured == [PID]
++
++
++def test_mock_capture_fail_switch_refuses_and_fetches_nothing(tmp_path):
++    m, sink = MockRunner(fail={"capture"}), Sink()
++    dest = tmp_path / f"{PID}.age.part"
++    result, report = m.capture(RES, sink, recipient=RCPT, public_id=PID, cap_bytes=1,
++                               fetch_to=str(dest))
++    assert not result.ok and report["status"] == "refused" and report["reason"] == "tar_failed"
++    assert not dest.exists() and sink.calls[0][:2] == ("capture", "failed")
++
++
++def test_mock_capture_of_an_empty_home(tmp_path):
++    m, sink = MockRunner(), Sink()
++    m.empty_home = True
++    dest = tmp_path / f"{PID}.age.part"
++    result, report = m.capture(RES, sink, recipient=RCPT, public_id=PID, cap_bytes=1,
++                               fetch_to=str(dest))
++    assert result.ok and report == {"status": "empty", "reason": "empty_home", "raw_bytes": 0,
++                                    "age_bytes": 0, "age_sha256": ""}
++    assert not dest.exists()
++
++
++@pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"recipient": "age1x"},
++                                  {"public_id": PID.upper()}, {"fetch_to": "relative.part"}])
++def test_mock_capture_refuses_bad_inputs_like_the_playbook(tmp_path, over):
++    kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
++          "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
++    result, report = MockRunner().capture(RES, Sink(), **kw)
++    assert not result.ok and report is None
++
++
++def test_mock_wipe_only_when_allowed():
++    m = MockRunner()
++    for allowed in (False, None, "true", 1):
++        assert not m.wipe(RES, Sink(), allowed=allowed).ok
++    assert m.wiped == set()
++    sink = Sink()
++    assert m.wipe(RES, sink, allowed=True).ok and m.wiped == {RES["id"]}
++    assert sink.names == ["wipe_home"]
++
++
++def test_mock_verify_reports_the_home_only_for_an_enabled_setup():
++    m = MockRunner()
++    off, on = Sink(), Sink()
++    assert m.verify_clean(RES, off).ok and off.names == list(VERIFY_CLEAN_STEPS)
++    r = m.verify_clean({**RES, "snapshot_enabled": True}, on)
++    assert r.residue == ("home:lab",) and on.names == list(VERIFY_CLEAN_STEPS) + ["check_home"]
++    assert on.calls[-1][:2] == ("check_home", "failed")
++    m.wipe(RES, Sink(), allowed=True)
++    assert m.verify_clean({**RES, "snapshot_enabled": True}, Sink()).ok
++
++
++def test_mock_flag_off_steps_are_todays():
++    m, sink = MockRunner(), Sink()
++    m.cleanup(RES, sink)
++    m.verify_clean(RES, sink)
++    assert sink.names == list(CLEANUP_STEPS) + list(VERIFY_CLEAN_STEPS)
++
++
++# ---- AnsibleRunner ----------------------------------------------------------------------------
++
++class FakeRun:
++    def __init__(self, output=None, status="successful", rc=0, write=None):
++        self.output, self.status, self.rc, self.write = output, status, rc, write
++        self.calls = []
++
++    def __call__(self, **kw):
++        self.calls.append(kw)
++        if self.write:
++            self.write(kw)
++        if self.output is not None:
++            with open(kw["extravars"]["daolab_output_file"], "w") as fh:
++                json.dump(self.output, fh)
++        return types.SimpleNamespace(status=self.status, rc=self.rc)
++
++
++def test_capture_runs_snapshot_capture_yml_with_only_the_snapshot_extras(settings, tmp_path):
++    report = {"status": "saved", "reason": "ok", "raw_bytes": 1, "age_bytes": 1, "age_sha256": "a" * 64}
++    fake = FakeRun(output=report)
++    dest = str(tmp_path / f"{PID}.age.part")
++    result, out = AnsibleRunner(settings, run=fake).capture(
++        RES, Steps(), recipient=RCPT, public_id=PID, cap_bytes=4096, fetch_to=dest)
++    assert result.ok and out == report
++    kw = fake.calls[0]
++    assert kw["playbook"] == "snapshot_capture.yml" and kw["ident"] == "snapshot_capture"
++    ev = kw["extravars"]
++    assert {k: ev[k] for k in ev if k.startswith("daolab_snapshot_")} == {
++        "daolab_snapshot_recipient": RCPT, "daolab_snapshot_public_id": PID,
++        "daolab_snapshot_cap_bytes": 4096, "daolab_snapshot_fetch_to": dest}
++    assert "daolab_wipe_allowed" not in ev and "daolab_snapshot_enabled" not in ev
++
++
++@pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"public_id": "x" * 32},
++                                  {"fetch_to": "relative.part"}, {"cap_bytes": 0}])
++def test_capture_never_runs_with_bad_inputs(settings, tmp_path, over):
++    fake = FakeRun()
++    kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
++          "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
++    result, out = AnsibleRunner(settings, run=fake).capture(RES, Steps(), **kw)
++    assert not result.ok and out is None and fake.calls == []
++
++
++def test_a_refused_capture_comes_back_with_its_report(settings, tmp_path):
++    report = {"status": "refused", "reason": "home_owner", "raw_bytes": 0, "age_bytes": 0,
++              "age_sha256": ""}
++    fake = FakeRun(output=report, status="failed", rc=2)
++    result, out = AnsibleRunner(settings, run=fake).capture(
++        RES, Steps(), recipient=RCPT, public_id=PID, cap_bytes=1,
++        fetch_to=str(tmp_path / f"{PID}.age.part"))
++    assert not result.ok and out == report
++
++
++@pytest.mark.parametrize("allowed,sent", [(True, True), (False, False), ("true", False), (1, False)])
++def test_wipe_passes_the_gate_as_a_strict_bool(settings, allowed, sent):
++    fake = FakeRun(output={"status": "wiped", "reason": "ok", "removed": 0})
++    AnsibleRunner(settings, run=fake).wipe(RES, Steps(), allowed=allowed)
++    kw = fake.calls[0]
++    assert kw["playbook"] == "home_wipe.yml" and kw["extravars"]["daolab_wipe_allowed"] is sent
++
++
++def test_verify_clean_passes_the_flag_only_for_an_enabled_setup(settings):
++    off, on = FakeRun(output=[]), FakeRun(output=["home:lab"])
++    assert AnsibleRunner(settings, run=off).verify_clean(RES, Steps()).ok
++    assert "daolab_snapshot_enabled" not in off.calls[0]["extravars"]
++    r = AnsibleRunner(settings, run=on).verify_clean({**RES, "snapshot_enabled": True}, Steps())
++    assert on.calls[0]["extravars"]["daolab_snapshot_enabled"] is True
++    assert r.residue == ("home:lab",)
++
++
++def test_the_extravars_of_a_flag_off_reservation_are_unchanged(settings):
++    rn = AnsibleRunner(settings, run=FakeRun())
++    assert rn.extravars(RES) == rn.extravars({**RES, "snapshot_enabled": True})
++    assert not any(k.startswith(("daolab_snapshot", "daolab_wipe")) for k in rn.extravars(RES))
++
++
++def test_the_new_playbooks_exist(settings):
++    for key in ("snapshot_capture", "home_wipe"):
++        path = os.path.join(settings.playbooks_dir, AnsibleRunner.PLAYBOOKS[key])
++        assert os.path.isfile(path), path
+diff --git a/tests/test_snapshots.py b/tests/test_snapshots.py
+new file mode 100644
+index 0000000..4844cbd
+--- /dev/null
++++ b/tests/test_snapshots.py
+@@ -0,0 +1,396 @@
++"""B-109c: service/snapshots.py, the controller side of the end-of-slot save (unit tests).
++
++DDL v4.1 §3.5 (states, retention, D-7-4 row reuse), §4.1 (S on the controller), §4.3 (writers);
++interface §5.6 / §5.8. The shared helpers here (a world with an owner, an admin-activated key, a
++snapshot-enabled setup and a reservation; a fake age whose S is the S-shaped canary) are used by
++test_engine_snapshot.py too.
++
++Fake S: "AGE-SECRET-KEY-1" + 58 * "Q", built at run time. The fake `encrypt_to` returns a digest
++of its input, never the input, so a hit of the canary anywhere means S leaked.
++"""
++import dataclasses
++import hashlib
++import json
++import os
++import stat
++from datetime import timedelta
++
++import pytest
++
++from service import agecli, config, hostcheck, keys, models, snapshots
++from tests.conftest import NOW, T, mk_res, mk_setup, mk_usecase, mk_user
++
++FAKE_S = ("AGE-SECRET-KEY-1" + "Q" * 58 + "\n").encode()
++CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
++
++
++def recipient(n: int) -> str:
++    """A recipient of the right shape (not a real key: never handed to the real age)."""
++    return "age1" + "".join(CHARSET[(n * 7 + i * 3) % 32] for i in range(58))
++
++
++S_RECIPIENT = recipient(99)
++
++
++def mk_key(db, user_id, admin_id, rcpt=None, state="active"):
++    rcpt = rcpt or recipient(user_id)
++    row = {"user_id": user_id, "recipient": rcpt, "fingerprint": keys.fingerprint(rcpt),
++           "state": state}
++    if state != "pending":
++        row.update(activated_by=admin_id, activated_at=models.utcnow())
++    return models.insert(db, "keys", row)
++
++
++class World:
++    def __init__(self, db, root, enabled=1, save=1, key=True, owner="alice", setup="tb",
++                 state="cleaning"):
++        self.db, self.root = db, str(root)
++        existing = db.execute("SELECT id FROM setups WHERE name = ?", (setup,)).fetchone()
++        self.sid = existing["id"] if existing else mk_setup(db, setup, ["wire"], dpu_hw_class="c")
++        uc = db.execute("SELECT id FROM usecases WHERE name = 'uc'").fetchone()
++        self.uc = uc["id"] if uc else mk_usecase(db, "uc", ["wire"], hw_class="c")
++        u = db.execute("SELECT id FROM users WHERE username = ?", (owner,)).fetchone()
++        self.uid = u["id"] if u else mk_user(db, owner)[0]
++        a = db.execute("SELECT id FROM users WHERE username = 'root-admin'").fetchone()
++        self.admin = a["id"] if a else mk_user(db, "root-admin", "admin")[0]
++        db.execute("UPDATE setups SET snapshot_enabled = ? WHERE id = ?", (enabled, self.sid))
++        self.key_id = None
++        if key:
++            k = keys.active_key(db, self.uid)
++            self.key_id = k["id"] if k else mk_key(db, self.uid, self.admin)
++        self.rid = mk_res(db, self.sid, self.uc, T(7), T(9), state=state, user_id=self.uid)
++        db.execute("UPDATE reservations SET save_snapshot = ? WHERE id = ?", (save, self.rid))
++
++    def res(self):
++        return models.reservation_by_id(self.db, self.rid)
++
++    def key(self):
++        return keys.active_key(self.db, self.uid)
++
++    def udir(self):
++        return os.path.join(self.root, f"u{self.uid}")
++
++    def rows(self):
++        return self.db.execute("SELECT * FROM snapshots ORDER BY id").fetchall()
++
++
++@pytest.fixture
++def snap_settings(tmp_path, monkeypatch):
++    s = dataclasses.replace(config.settings, snapshot_root=str(tmp_path / "snaps"),
++                            snapshot_cap_bytes=1 << 20)
++    monkeypatch.setattr(config, "settings", s)
++    return s
++
++
++@pytest.fixture
++def fake_age(monkeypatch):
++    """agecli without the binary: keygen hands out the S-shaped canary; the swap check passes
++    (this laptop's swap is unsafe, E-2). Records the calls (never their data)."""
++    calls = []
++
++    def keygen():
++        calls.append("keygen")
++        return FAKE_S, S_RECIPIENT
++
++    def encrypt_to(rcpt, data):
++        calls.append(("encrypt_to", rcpt))
++        return b"age-wrapped:" + hashlib.sha256(data).hexdigest().encode()
++
++    monkeypatch.setattr(agecli, "keygen", keygen)
++    monkeypatch.setattr(agecli, "encrypt_to", encrypt_to)
++    monkeypatch.setattr(hostcheck, "require_safe_swap", lambda *a, **k: calls.append("swap"))
++    return calls
++
++
++@pytest.fixture
++def world(db, snap_settings):
++    return World(db, snap_settings.snapshot_root)
++
++
++def files_under(path):
++    out = []
++    for dirpath, _dirs, names in os.walk(path):
++        out += [os.path.relpath(os.path.join(dirpath, n), path) for n in names]
++    return sorted(out)
++
++
++def saved_row(w, created_at, held=False, user_id=None, setup_id=None, state="saved"):
++    """A snapshot row with its three files (as an earlier save left it)."""
++    uid = user_id or w.uid
++    pid = hashlib.md5(f"{created_at}{uid}{state}{held}".encode()).hexdigest()
++    key_id = keys.active_key(w.db, uid)["id"]
++    row = {"public_id": pid, "user_id": uid, "setup_id": setup_id or w.sid, "key_id": key_id,
++           "state": state}
++    if held:
++        row.update(delete_after="2099-01-01T00:00:00Z", delete_requested_by=uid)
++    sid = models.insert(w.db, "snapshots", row)
++    w.db.execute("UPDATE snapshots SET created_at = ? WHERE id = ?", (created_at, sid))
++    snapshots.ensure_dirs(w.root, uid)
++    for p in snapshots.paths(w.root, uid, pid).values():
++        with open(p, "wb") as fh:
++            fh.write(b"x")
++    return sid, pid
++
++
++# ---- paths and files --------------------------------------------------------------------------
++
++def test_paths_follow_the_design(tmp_path):
++    pid = "a" * 32
++    p = snapshots.paths(str(tmp_path), 7, pid)
++    assert p == {"age": str(tmp_path / "u7" / f"{pid}.age"),
++                 "key": str(tmp_path / "u7" / f"{pid}.key.age"),
++                 "hdr": str(tmp_path / "u7" / f"{pid}.hdr.json")}
++    assert snapshots.incoming_path(str(tmp_path), 7, pid) == str(tmp_path / "u7" / ".incoming"
++                                                                 / f"{pid}.age.part")
++
++
++@pytest.mark.parametrize("bad", ["A" * 32, "a" * 31, "../" + "a" * 29, "a" * 31 + "/"])
++def test_paths_refuse_a_public_id_of_another_shape(tmp_path, bad):
++    with pytest.raises(ValueError):
++        snapshots.paths(str(tmp_path), 7, bad)
++
++
++def test_ensure_dirs_makes_owner_only_dirs(tmp_path):
++    root = tmp_path / "snaps"
++    snapshots.ensure_dirs(str(root), 3)
++    for d in (root, root / "u3", root / "u3" / ".incoming"):
++        st = os.lstat(d)
++        assert stat.S_ISDIR(st.st_mode) and stat.S_IMODE(st.st_mode) == 0o700
++    os.chmod(root / "u3", 0o755)
++    snapshots.ensure_dirs(str(root), 3)
++    assert stat.S_IMODE(os.lstat(root / "u3").st_mode) == 0o700
++
++
++def test_ensure_dirs_refuses_a_symlinked_user_dir(tmp_path):
++    root = tmp_path / "snaps"
++    root.mkdir()
++    (tmp_path / "elsewhere").mkdir()
++    os.symlink(tmp_path / "elsewhere", root / "u3")
++    with pytest.raises(snapshots.SnapshotError) as e:
++        snapshots.ensure_dirs(str(root), 3)
++    assert str(e.value) == "storage_unsafe"
++
++
++def test_write_private_is_0600_and_atomic(tmp_path):
++    p = tmp_path / "f.key.age"
++    snapshots.write_private(str(p), b"one")
++    snapshots.write_private(str(p), b"two")
++    assert p.read_bytes() == b"two" and stat.S_IMODE(os.lstat(p).st_mode) == 0o600
++    assert os.listdir(tmp_path) == ["f.key.age"]                 # no temp left behind
++
++
++def test_delete_snapshot_files_tolerates_missing_files(tmp_path):
++    pid = "b" * 32
++    snapshots.ensure_dirs(str(tmp_path), 1)
++    p = snapshots.paths(str(tmp_path), 1, pid)
++    open(p["key"], "wb").close()
++    assert snapshots.delete_snapshot_files(str(tmp_path), 1, pid) == 1
++    assert snapshots.delete_snapshot_files(str(tmp_path), 1, pid) == 0
++
++
++def test_headroom_needs_twice_the_cap_plus_the_margin(tmp_path, monkeypatch):
++    cap = 1 << 20
++    need = 2 * cap + snapshots.HEADROOM_MARGIN
++    usage = type("U", (), {})
++    for free, ok in ((need, True), (need - 1, False)):
++        usage.free = free
++        monkeypatch.setattr(snapshots.shutil, "disk_usage", lambda _p, u=usage: u)
++        assert snapshots.headroom_ok(str(tmp_path), cap) is ok
++
++
++# ---- the report -------------------------------------------------------------------------------
++
++GOOD = {"status": "saved", "reason": "ok", "raw_bytes": 10, "age_bytes": 5, "age_sha256": "a" * 64}
++
++
++@pytest.mark.parametrize("doc", [
++    GOOD,
++    {"status": "empty", "reason": "empty_home", "raw_bytes": 0, "age_bytes": 0, "age_sha256": ""},
++    {"status": "refused", "reason": "home_owner", "raw_bytes": 0, "age_bytes": 0, "age_sha256": ""}])
++def test_check_report_accepts_the_contract(doc):
++    assert snapshots.check_report(doc) == doc
++
++
++@pytest.mark.parametrize("doc", [
++    None, [], "saved",
++    {**GOOD, "extra": 1},
++    {k: v for k, v in GOOD.items() if k != "reason"},
++    {**GOOD, "status": "done"},
++    {**GOOD, "reason": "whatever"},
++    {**GOOD, "reason": "empty_home"},
++    {**GOOD, "raw_bytes": -1}, {**GOOD, "age_bytes": True}, {**GOOD, "age_bytes": 0},
++    {**GOOD, "age_sha256": "A" * 64}, {**GOOD, "age_sha256": ""},
++    {"status": "empty", "reason": "ok", "raw_bytes": 0, "age_bytes": 0, "age_sha256": ""},
++    {"status": "refused", "reason": "ok", "raw_bytes": 0, "age_bytes": 0, "age_sha256": ""},
++])
++def test_check_report_refuses_anything_else(doc):
++    with pytest.raises(snapshots.SnapshotError) as e:
++        snapshots.check_report(doc)
++    assert str(e.value) == "bad_report"
++
++
++def test_verify_fetched_checks_size_and_sha(tmp_path):
++    p = tmp_path / "x.part"
++    p.write_bytes(b"cipher")
++    doc = {**GOOD, "age_bytes": 6, "age_sha256": hashlib.sha256(b"cipher").hexdigest()}
++    snapshots.verify_fetched(str(p), doc)
++    for over, why in (({"age_bytes": 7}, "size_mismatch"), ({"age_sha256": "0" * 64}, "sha_mismatch")):
++        with pytest.raises(snapshots.SnapshotError) as e:
++            snapshots.verify_fetched(str(p), {**doc, **over})
++        assert str(e.value) == why
++    with pytest.raises(snapshots.SnapshotError) as e:
++        snapshots.verify_fetched(str(tmp_path / "missing"), doc)
++    assert str(e.value) == "size_mismatch"
++
++
++# ---- S: generated, wrapped, dropped -----------------------------------------------------------
++
++def test_wrap_new_identity_checks_swap_first_and_returns_only_the_wrapped_key(fake_age):
++    key_age, s_recipient = snapshots.wrap_new_identity(recipient(1))
++    assert fake_age == ["swap", "keygen", ("encrypt_to", recipient(1))]
++    assert s_recipient == S_RECIPIENT
++    assert FAKE_S not in key_age and key_age.startswith(b"age-wrapped:")
++
++
++def test_unsafe_swap_stops_before_s_exists(fake_age, monkeypatch):
++    def unsafe(*a, **k):
++        raise hostcheck.HostCheckError(hostcheck.UNSAFE)
++    monkeypatch.setattr(hostcheck, "require_safe_swap", unsafe)
++    with pytest.raises(hostcheck.HostCheckError):
++        snapshots.wrap_new_identity(recipient(1))
++    assert "keygen" not in fake_age
++
++
++# ---- rows: begin, reuse, saved, failed, stale -------------------------------------------------
++
++def test_begin_capture_creates_a_capturing_row_and_links_the_job(world):
++    jid = models.create_job(world.db, world.rid, "cleanup")
++    row = snapshots.begin_capture(world.db, world.res(), world.key(), job_id=jid)
++    assert row["state"] == "capturing" and row["reservation_id"] == world.rid
++    assert row["key_id"] == world.key_id and row["user_id"] == world.uid
++    assert len(row["public_id"]) == 32 and all(c in "0123456789abcdef" for c in row["public_id"])
++    assert models.job_by_id(world.db, jid)["snapshot_id"] == row["id"]
++
++
++def test_begin_capture_reuses_the_failed_row_with_a_new_public_id(world):
++    first = snapshots.begin_capture(world.db, world.res(), world.key())
++    snapshots.mark_failed(world.db, first["id"])
++    world.db.execute("UPDATE snapshots SET created_at = '2026-01-01T00:00:00Z' WHERE id = ?",
++                     (first["id"],))
++    again = snapshots.begin_capture(world.db, world.res(), world.key())
++    assert again["id"] == first["id"] and again["state"] == "capturing"
++    assert again["public_id"] != first["public_id"]
++    assert again["created_at"] > "2026-01-01T00:00:00Z"          # retention sees the new capture
++    assert len(world.rows()) == 1
++
++
++def test_begin_capture_never_reuses_a_saved_row(world):
++    row = snapshots.begin_capture(world.db, world.res(), world.key())
++    snapshots.mark_saved(world.db, row["id"])
++    with pytest.raises(snapshots.SnapshotError) as e:
++        snapshots.begin_capture(world.db, world.res(), world.key())
++    assert str(e.value) == "already_saved"
++
++
++def test_mark_saved_and_failed_are_compare_and_set(world):
++    row = snapshots.begin_capture(world.db, world.res(), world.key())
++    snapshots.mark_saved(world.db, row["id"])
++    for fn in (snapshots.mark_saved, snapshots.mark_failed):
++        with pytest.raises(snapshots.SnapshotError) as e:
++            fn(world.db, row["id"])
++        assert str(e.value) == "state_changed"
++
++
++def test_a_capturing_row_whose_job_is_not_running_becomes_failed(world):
++    jid = models.create_job(world.db, world.rid, "cleanup")          # pending: its engine died
++    row = snapshots.begin_capture(world.db, world.res(), world.key(), job_id=jid)
++    snapshots.ensure_dirs(world.root, world.uid)
++    open(snapshots.paths(world.root, world.uid, row["public_id"])["key"], "wb").close()
++    assert snapshots.fail_stale_captures(world.db, world.root) == 1
++    assert world.rows()[0]["state"] == "failed"
++    assert files_under(world.udir()) == []                           # the attempt's files went
++    audit = [json.loads(a["detail"]) for a in models.list_audit_events(world.db)
++             if a["action"] == "snapshot_capture"]
++    assert audit[0]["status"] == "failed" and audit[0]["reason"] == "stale"
++
++
++def test_a_capturing_row_whose_job_runs_is_left_alone(world):
++    jid = models.create_job(world.db, world.rid, "cleanup")
++    models.transition_job(world.db, jid, "running")
++    snapshots.begin_capture(world.db, world.res(), world.key(), job_id=jid)
++    assert snapshots.fail_stale_captures(world.db, world.root) == 0
++    assert world.rows()[0]["state"] == "capturing"
++
++
++def test_stale_with_no_rows_is_a_no_op(db, snap_settings):
++    assert snapshots.fail_stale_captures(db, snap_settings.snapshot_root) == 0
++
++
++# ---- retention and delete ---------------------------------------------------------------------
++
++def test_retention_keeps_the_newest_three_unheld_saved_rows(world):
++    other = World(world.db, world.root, owner="bob")
++    ids = [saved_row(world, f"2026-0{m}-01T00:00:00Z")[0] for m in (1, 2, 3, 4)]
++    held_id, _ = saved_row(world, "2025-12-01T00:00:00Z", held=True)
++    failed_id, _ = saved_row(world, "2025-11-01T00:00:00Z", state="failed")
++    bob_ids = [saved_row(other, f"2026-0{m}-01T00:00:00Z")[0] for m in (1, 2, 3, 4)]
++    seen = []
++
++    def delete(conn, row):                     # the 2-argument callback, like keys.py's
++        seen.append(row["id"])
++        snapshots.delete_snapshot(conn, row, world.root)
++
++    assert snapshots.prune_retention(world.db, world.uid, world.sid, delete) == 1
++    assert seen == [ids[0]]
++    left = {r["id"] for r in world.rows()}
++    assert left == set(ids[1:]) | {held_id, failed_id} | set(bob_ids)
++    assert snapshots.prune_retention(world.db, world.uid, world.sid, delete) == 0
++
++
++def test_delete_snapshot_removes_files_then_row_then_audits_inside_the_callers_txn(world):
++    sid, pid = saved_row(world, "2026-01-01T00:00:00Z")
++    row = world.db.execute("SELECT * FROM snapshots WHERE id = ?", (sid,)).fetchone()
++    world.db.execute("BEGIN IMMEDIATE")                # keys.execute_due_resets holds one too
++    snapshots.delete_snapshot(world.db, row, world.root)
++    world.db.execute("COMMIT")
++    assert world.rows() == [] and files_under(world.udir()) == []
++    ev = [a for a in models.list_audit_events(world.db) if a["action"] == "snapshot_delete"]
++    detail = json.loads(ev[0]["detail"])
++    assert detail == {"snapshot_id": sid, "public_id": pid, "user_id": world.uid,
++                      "setup_id": world.sid, "state": "saved"}
++    assert world.root not in ev[0]["detail"]
++
++
++def test_the_new_audit_actions_are_registered():
++    assert {"snapshot_capture", "snapshot_delete"} <= set(models.AUDIT_ACTIONS)
++
++
++# ---- the header (§5.8) ------------------------------------------------------------------------
++
++def test_header_has_exactly_the_design_fields(world):
++    row = snapshots.begin_capture(world.db, world.res(), world.key())
++    ctx = {"setup": "tb", "usecase": "uc", "hw_class": "c"}
++    doc = {**GOOD, "raw_bytes": 123, "age_sha256": "c" * 64}
++    hdr = snapshots.header(ctx, row, doc, S_RECIPIENT)
++    assert list(hdr) == ["format", "compression", "public_id", "user_id", "setup", "hw_class",
++                         "usecase", "created_at", "raw_bytes", "age_sha256", "s_recipient",
++                         "profile"]
++    assert (hdr["format"], hdr["compression"], hdr["profile"]) == ("daolab-snapshot/1", "gzip", None)
++    assert (hdr["public_id"], hdr["user_id"], hdr["raw_bytes"]) == (row["public_id"], world.uid, 123)
++    assert hdr["s_recipient"] == S_RECIPIENT
++
++
++# ---- settings ---------------------------------------------------------------------------------
++
++def test_snapshot_settings_defaults(monkeypatch):
++    monkeypatch.delenv("DAOLAB_SNAPSHOT_ROOT", raising=False)
++    monkeypatch.delenv("DAOLAB_SNAPSHOT_CAP_BYTES", raising=False)
++    s = config.Settings.from_env()
++    assert (s.snapshot_root, s.snapshot_cap_bytes) == ("./var/snapshots", 536870912)
++
++
++@pytest.mark.parametrize("bad", ["0", "-5", str(2 ** 40 + 1), "lots"])
++def test_a_bad_cap_fails_loading_the_settings(monkeypatch, bad):
++    monkeypatch.setenv("DAOLAB_SNAPSHOT_CAP_BYTES", bad)
++    with pytest.raises(ValueError):
++        config.Settings.from_env()

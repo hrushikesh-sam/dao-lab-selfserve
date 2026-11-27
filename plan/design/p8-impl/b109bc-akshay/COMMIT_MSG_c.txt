@@ -1,0 +1,114 @@
+Save the home before the gated wipe at the end of a slot (B-109c)
+
+What
+- service/snapshots.py (new): the controller side of the end-of-slot
+  save. On a snapshot-enabled setup, with save_snapshot = 1 and the
+  owner's active key: a `capturing` row (D-7-4: a failed row of the
+  reservation is reused with a new public_id), a free-space check
+  (2 x cap + 64 MiB), the E-2 swap check, then a fresh S from
+  agecli.keygen sealed to the owner's recipient (key.age, 0600, temp
+  file + os.replace) and dropped. snapshot_capture.yml gets only S's
+  public recipient, the public_id, the cap and the fetch path. The
+  fetched file's size and sha256 must match the report; then .age,
+  hdr.json (section 5.8) and `saved` is committed. Every failure keeps
+  the home: the row goes `failed`, the attempt's files are removed,
+  and a fixed reason code is audited. Also: the wipe gate (re-read from
+  the DB: `saved` with its three files, or an empty home), the stale
+  `capturing` step, retention (DDL section 3.5: 3 unheld saved rows
+  per user and setup) and a local delete_snapshot.
+- service/engine.py: a cleanup job on an enabled setup runs save ->
+  cleanup.yml -> gated wipe -> verify_clean with the home check (+ the
+  reconcile loop) -> prune -> the usual finish. A reconcile job
+  (force-clean) runs the same save first, so a failed capture is
+  retried and a saved one is wiped again; a kept home stays home:lab
+  and quarantined. The wipe playbook is not even started unless the
+  gate allows it. Every tick fails `capturing` rows no running job
+  works on (after crash recovery). snapshot_enabled = 0: a two-line
+  early branch leaves the existing cleanup and reconcile code as is.
+- service/runner.py: RESIDUE_KINDS gains home, tripwire,
+  restore_incomplete; capture and wipe on both runners;
+  DAOLAB_MOCK_FAIL=capture; verify_clean passes daolab_snapshot_enabled
+  only for an enabled setup.
+- service/config.py, .env.example: snapshot_root (./var/snapshots)
+  and snapshot_cap_bytes (536870912, 1 .. 2**40).
+- service/models.py: audit actions snapshot_capture, snapshot_delete.
+
+Why
+Design v1.1 section 6 save steps 1-9 and its failure list; DDL v4.1
+sections 3.5, 3.7, 3.9, 4.1, 4.3; interface sections 5.1, 5.6-5.8.
+S exists only in the engine process (Python can't zero memory;
+`del` only drops the reference) and reaches age only on stdin.
+
+Files
+- service/snapshots.py (new)
+- service/engine.py, service/runner.py, service/config.py,
+  service/models.py, .env.example
+- tests/test_snapshots.py, tests/test_runner_snapshot.py,
+  tests/test_engine_snapshot.py (new)
+
+Verified
+- Red: test_snapshots.py and test_engine_snapshot.py failed to
+  collect (no service.snapshots); test_runner_snapshot.py 23 failed (no
+  capture/wipe, residue kinds or fail switch), 2 passed (the flag-off
+  parity tests).
+- Green: the three new files, 103 passed on ansible-core 2.21.6 and on
+  2.20.11. They cover the canary (an S-shaped fake reaches only the
+  stdin of `age -r <owner>`: none in job dirs, logs, the DB dump,
+  extravars, argv or the environment), every crash point (no wipe
+  unless the row is saved; recovery reuses the row), D-7-4 through
+  force-clean, a kept home staying quarantined after force-clean,
+  retention with held rows, and one end-to-end run through the real
+  playbooks and age (key.age -> S -> payload -> gunzip -> tar listing).
+- Flag-off parity: the existing suite is unchanged and green, plus
+  tests that capture and wipe are never called (cleanup and reconcile)
+  when snapshot_enabled = 0, with today's job steps and audit fields.
+- Series (both commits = the tested tree c8ca04ff, BASE d97085a):
+  full suite 1993 passed, 4 skipped on Python 3.12.13 / ansible-core
+  2.21.6 (baseline 1818 passed, 4 skipped; +175 new tests, same 4
+  skips); the ansible files + the new tests on 2.20.11: 1121 passed,
+  1 skipped; tests/dpu on Python 3.10.12: 143 passed.
+
+Interface
+- snapshots.paths(root, user_id, public_id) -> {"age", "key", "hdr"};
+  incoming_path(); begin_capture(conn, res_row, key_row, job_id=None);
+  mark_saved / mark_failed (compare-and-set); fail_stale_captures(conn,
+  root); prune_retention(conn, user_id, setup_id, delete_snapshot);
+  delete_snapshot_files(root, user_id, public_id);
+  delete_snapshot(conn, snap_row, root).
+- Contract mismatch, for Rama: section 5.6 writes the delete callback
+  as delete_snapshot(conn, snap_row, root), but keys.execute_due_resets
+  (B-105) calls it as delete_snapshot(conn, snap) with 2 arguments,
+  inside its own transaction. prune_retention calls its callback the
+  same 2-argument way and the engine binds snapshot_root;
+  delete_snapshot never opens a transaction. B-108a's
+  snapshot_holds.delete_snapshot can replace the local one if it keeps
+  the 2-argument callback shape and the caller's transaction.
+- snapshot_delete is added here; B-108a reuses it, not adds it again.
+- Runner: capture(res, step, *, recipient, public_id, cap_bytes,
+  fetch_to) -> (RunResult, report | None); wipe(res, step, *, allowed).
+
+For Rama
+- MUST (api.py): force-clean with {"skip_verify": true} releases dirty
+  reservations without running anything, which bypasses home:lab: the
+  next user can get the previous user's home. Please refuse
+  skip_verify when the residue contains `home:`.
+- Enabling snapshot_enabled on a setup whose home holds legacy data
+  (tb-01, E-13): the first user sees it and captures it into their own
+  snapshot. The enable action (B-108a) should require a home verified
+  equal to skel, or a completed home_discard.
+- B-108a's due_deletions removes failed rows at once; D-7-4 reuse then
+  only works until the next sweep (begin_capture handles both).
+
+Follow-ups
+- E-15 (unsigned): the snapshot_root mount check, a startup sweep of
+  stale .incoming/*.part files, quotas and the capacity log line.
+- E-15's "not the source of a running restore" prune rule, once B-110
+  lands.
+- `fetch` under become is a slurp (see B-109b): measure in Phase 9.
+
+Patch
+b109bc.patch holds both commits (split in SPLIT.md); sha256
+979dff78026ad2c76d145aaf3ab3915e3fd42e39e825bf8f437186b3ec47d3e6
+Tree c8ca04ffca29a78acf69a4eb6cc07efe2e3dfe94 (TREE MATCH on a fresh
+worktree at BASE; commit 1 then commit 2 gives the same tree).
+Evidence: branch akshay-p8-gate, plan/design/p8-impl/b109bc-akshay/

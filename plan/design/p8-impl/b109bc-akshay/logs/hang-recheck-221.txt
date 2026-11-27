@@ -1,0 +1,11 @@
+.....                                                                    [100%]
+============================= slowest 5 durations ==============================
+25.19s call     tests/test_playbooks.py::test_httpcheck_urls_reach_the_vm_agent_with_data_plane_addresses
+22.80s call     tests/test_playbooks.py::test_parsed_verify_names_the_number_that_is_wrong
+19.97s call     tests/test_playbooks.py::test_verify_says_when_the_output_does_not_match
+19.67s call     tests/test_playbooks.py::test_verify_fails_on_a_nonzero_exit_even_with_the_right_text
+19.65s call     tests/test_playbooks.py::test_parsed_verify_passes_on_the_right_numbers
+5 passed, 93 deselected in 108.87s (0:01:48)
+rc=0
+
+[exited with code 0]

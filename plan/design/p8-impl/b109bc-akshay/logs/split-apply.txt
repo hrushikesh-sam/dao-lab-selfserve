@@ -1,0 +1,19 @@
+# date: 2026-11-27T21:28:00Z
+HEAD is now at d97085a Merge pull request #19 from hrushikesh-sam/b109a
+commit 1 (B-109b) applied
+ playbooks/files/daolab-wipe.py   | 431 +++++++++++++++++++++++++++++++++++++++
+ playbooks/home_wipe.yml          | 106 ++++++++++
+ playbooks/snapshot_capture.yml   | 195 ++++++++++++++++++
+ playbooks/verify_clean.yml       |  55 ++++-
+ tests/dpu/test_wipe.py           | 431 +++++++++++++++++++++++++++++++++++++++
+ tests/fakelab.py                 |   3 +-
+ tests/test_playbooks_snapshot.py | 346 +++++++++++++++++++++++++++++++
+ 7 files changed, 1565 insertions(+), 2 deletions(-)
+tree after commit 1: 2068a0173ea06a0094084692069d7a6317056708
+# date: 2026-11-27T22:03:45Z
+commit 2 (B-109c) applied on top
+ 16 files changed, 3518 insertions(+), 14 deletions(-)
+tree after commit 2: c8ca04ffca29a78acf69a4eb6cc07efe2e3dfe94
+tested tree:         c8ca04ffca29a78acf69a4eb6cc07efe2e3dfe94
+TREE MATCH (commit 1 + commit 2 = the tested tree)
+split worktree removed

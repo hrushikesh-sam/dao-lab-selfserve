@@ -1,0 +1,1901 @@
+# date:        2026-11-27T21:03:48Z
+# workdir:     /home/akshay/b109bc
+# HEAD:        d97085a65f7108d5448296f10dd73a9b9f483c2f
+# venv:        /home/akshay/b109bc/.venv
+# python:      Python 3.12.13
+# ansible:     ansible-core 2.21.6
+# ansible-playbook: /home/akshay/b109bc/.venv/bin/ansible-playbook
+# service:     /home/akshay/b109bc/service
+# command:     /home/akshay/b109bc/.venv/bin/python -m pytest tests/dpu/test_wipe.py tests/test_playbooks_snapshot.py -q -rsf -p no:cacheprovider
+
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF.F.FFF [100%]
+=================================== FAILURES ===================================
+______________________ test_script_parses_as_python_3_10 _______________________
+
+    def test_script_parses_as_python_3_10():
+>       ast.parse(_source(), filename=SCRIPT, feature_version=(3, 10))
+                  ^^^^^^^^^
+
+tests/dpu/test_wipe.py:200: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _source():
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:185: AssertionError
+________________ test_script_imports_only_the_standard_library _________________
+
+    def test_script_imports_only_the_standard_library():
+        stdlib = set(sys.stdlib_module_names) if hasattr(sys, "stdlib_module_names") else None
+>       for node in ast.walk(ast.parse(_source())):
+                                       ^^^^^^^^^
+
+tests/dpu/test_wipe.py:205: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _source():
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:185: AssertionError
+_____________________ test_script_has_no_3_11_stdlib_names _____________________
+
+    def test_script_has_no_3_11_stdlib_names():
+>       src = _source()
+              ^^^^^^^^^
+
+tests/dpu/test_wipe.py:218: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _source():
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:185: AssertionError
+________________ test_script_is_executable_and_runs_on_python3 _________________
+
+    def test_script_is_executable_and_runs_on_python3():
+>       assert os.access(SCRIPT, os.X_OK)
+E       AssertionError: assert False
+E        +  where False = <built-in function access>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py', 1)
+E        +    where <built-in function access> = os.access
+E        +    and   1 = os.X_OK
+
+tests/dpu/test_wipe.py:224: AssertionError
+____________________ test_reason_codes_are_the_closed_list _____________________
+
+    def test_reason_codes_are_the_closed_list():
+>       assert set(_load().REASONS) == REASONS
+                   ^^^^^^^
+
+tests/dpu/test_wipe.py:229: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/dpu/test_wipe.py:193: in _load
+    spec.loader.exec_module(mod)
+<frozen importlib._bootstrap_external>:995: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1132: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x73b1568d1cd0>
+path = '/home/akshay/b109bc/playbooks/files/daolab-wipe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b109bc/playbooks/files/daolab-wipe.py'
+
+<frozen importlib._bootstrap_external>:1190: FileNotFoundError
+________________ test_wipe_removes_everything_and_restores_skel ________________
+
+board = <test_wipe.Board object at 0x73b156843cb0>
+
+    def test_wipe_removes_everything_and_restores_skel(board):
+        board.copy_skel()
+        board.plant()
+        top = len(os.listdir(board.home))
+        outside_before = tree(board.outside)
+>       r = board.run("wipe")
+            ^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:239: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b156843cb0>, mode = 'wipe', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_________ test_wipe_keeps_skel_modes_and_gives_everything_to_the_owner _________
+
+board = <test_wipe.Board object at 0x73b1568d2960>
+
+    def test_wipe_keeps_skel_modes_and_gives_everything_to_the_owner(board):
+        board.plant()
+        gid = os.lstat(board.home).st_gid
+>       assert board.run("wipe").doc["status"] == "wiped"
+               ^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:248: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568d2960>, mode = 'wipe', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+__________________ test_wipe_keeps_the_home_directory_itself ___________________
+
+board = <test_wipe.Board object at 0x73b1568d3aa0>
+
+    def test_wipe_keeps_the_home_directory_itself(board):
+        board.plant()
+        before = os.lstat(board.home)
+>       assert board.run("wipe").doc["status"] == "wiped"
+               ^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:261: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568d3aa0>, mode = 'wipe', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_______________ test_wipe_never_writes_through_a_planted_symlink _______________
+
+board = <test_wipe.Board object at 0x73b15689daf0>
+
+    def test_wipe_never_writes_through_a_planted_symlink(board):
+        # .bashrc in the home is a link to a file outside: the skel copy must not overwrite it.
+        os.symlink(str(board.outside / "keep.txt"), board.home / ".bashrc")
+>       assert board.run("wipe").doc["status"] == "wiped"
+               ^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:270: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b15689daf0>, mode = 'wipe', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_________________________ test_wipe_twice_is_harmless __________________________
+
+board = <test_wipe.Board object at 0x73b15689e150>
+
+    def test_wipe_twice_is_harmless(board):
+        board.plant()
+>       assert board.run("wipe").doc["status"] == "wiped"
+               ^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:278: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b15689e150>, mode = 'wipe', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_________________ test_wipe_of_an_empty_home_only_copies_skel __________________
+
+board = <test_wipe.Board object at 0x73b15689eae0>
+
+    def test_wipe_of_an_empty_home_only_copies_skel(board):
+>       r = board.run("wipe")
+            ^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:285: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b15689eae0>, mode = 'wipe', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+________________ test_wipe_refuses_when_the_result_is_not_skel _________________
+
+board = <test_wipe.Board object at 0x73b15689f650>
+
+    def test_wipe_refuses_when_the_result_is_not_skel(board):
+        # the self-check: if the copy left the home different from skel, say so (fail closed)
+        board.plant()
+>       mod = _load()
+              ^^^^^^^
+
+tests/dpu/test_wipe.py:293: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/dpu/test_wipe.py:193: in _load
+    spec.loader.exec_module(mod)
+<frozen importlib._bootstrap_external>:995: in exec_module
+    ???
+<frozen importlib._bootstrap_external>:1132: in get_code
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_frozen_importlib_external.SourceFileLoader object at 0x73b15689f770>
+path = '/home/akshay/b109bc/playbooks/files/daolab-wipe.py'
+
+>   ???
+E   FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b109bc/playbooks/files/daolab-wipe.py'
+
+<frozen importlib._bootstrap_external>:1190: FileNotFoundError
+_______ test_wipe_refuses_before_touching_the_home_when_skel_is_missing ________
+
+board = <test_wipe.Board object at 0x73b15689e6c0>
+
+    def test_wipe_refuses_before_touching_the_home_when_skel_is_missing(board):
+        board.plant()
+        before = tree(board.home)
+>       r = board.run("wipe", skel=str(board.root / "etc" / "no-skel"))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:305: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b15689e6c0>, mode = 'wipe', argv = None
+over = {'skel': '/tmp/pytest-of-akshay/pytest-76/test_wipe_refuses_before_touch0/etc/no-skel'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_________ test_a_home_of_another_owner_is_refused_and_left_alone[wipe] _________
+
+board = <test_wipe.Board object at 0x73b15689fe30>, mode = 'wipe'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_a_home_of_another_owner_is_refused_and_left_alone(board, mode):
+        board.plant()
+        before = tree(board.home)
+>       r = board.run(mode, owner_uid=str(os.geteuid() + 1))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:316: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b15689fe30>, mode = 'wipe', argv = None
+over = {'owner_uid': '1001'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+________ test_a_home_of_another_owner_is_refused_and_left_alone[check] _________
+
+board = <test_wipe.Board object at 0x73b1568f20f0>, mode = 'check'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_a_home_of_another_owner_is_refused_and_left_alone(board, mode):
+        board.plant()
+        before = tree(board.home)
+>       r = board.run(mode, owner_uid=str(os.geteuid() + 1))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:316: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f20f0>, mode = 'check', argv = None
+over = {'owner_uid': '1001'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_____________________ test_a_missing_home_is_refused[wipe] _____________________
+
+board = <test_wipe.Board object at 0x73b1568f2ba0>, mode = 'wipe'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_a_missing_home_is_refused(board, mode):
+>       r = board.run(mode, home=str(board.root / "home" / "nobody"))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:323: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f2ba0>, mode = 'wipe', argv = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-76/test_a_missing_home_is_refused0/home/nobody'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+____________________ test_a_missing_home_is_refused[check] _____________________
+
+board = <test_wipe.Board object at 0x73b1568f3620>, mode = 'check'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_a_missing_home_is_refused(board, mode):
+>       r = board.run(mode, home=str(board.root / "home" / "nobody"))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:323: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f3620>, mode = 'check', argv = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-76/test_a_missing_home_is_refused1/home/nobody'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+___________ test_a_home_that_is_a_file_or_a_symlink_is_refused[wipe] ___________
+
+board = <test_wipe.Board object at 0x73b15689edb0>, mode = 'wipe'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_a_home_that_is_a_file_or_a_symlink_is_refused(board, mode):
+        (board.root / "home" / "afile").write_text("x")
+        os.symlink(str(board.outside), board.root / "home" / "alink")
+        for name in ("afile", "alink"):
+>           r = board.run(mode, home=str(board.root / "home" / name))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:332: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b15689edb0>, mode = 'wipe', argv = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-76/test_a_home_that_is_a_file_or_0/home/afile'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+__________ test_a_home_that_is_a_file_or_a_symlink_is_refused[check] ___________
+
+board = <test_wipe.Board object at 0x73b15689e390>, mode = 'check'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_a_home_that_is_a_file_or_a_symlink_is_refused(board, mode):
+        (board.root / "home" / "afile").write_text("x")
+        os.symlink(str(board.outside), board.root / "home" / "alink")
+        for name in ("afile", "alink"):
+>           r = board.run(mode, home=str(board.root / "home" / name))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:332: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b15689e390>, mode = 'check', argv = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-76/test_a_home_that_is_a_file_or_1/home/afile'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+______________ test_a_mount_at_or_under_the_home_is_refused[wipe] ______________
+
+board = <test_wipe.Board object at 0x73b15689c8c0>, mode = 'wipe'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_a_mount_at_or_under_the_home_is_refused(board, mode):
+        board.plant()
+        before = tree(board.home)
+        for point in (board.home, board.home / "sub"):
+            board.mountinfo.write_text(BASE_MOUNTS)
+            board.add_mount(point)
+>           r = board.run(mode)
+                ^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:344: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b15689c8c0>, mode = 'wipe', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_____________ test_a_mount_at_or_under_the_home_is_refused[check] ______________
+
+board = <test_wipe.Board object at 0x73b156bdf860>, mode = 'check'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_a_mount_at_or_under_the_home_is_refused(board, mode):
+        board.plant()
+        before = tree(board.home)
+        for point in (board.home, board.home / "sub"):
+            board.mountinfo.write_text(BASE_MOUNTS)
+            board.add_mount(point)
+>           r = board.run(mode)
+                ^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:344: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b156bdf860>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+___________ test_unreadable_or_malformed_mountinfo_is_refused[wipe] ____________
+
+board = <test_wipe.Board object at 0x73b1568d3050>, mode = 'wipe'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_unreadable_or_malformed_mountinfo_is_refused(board, mode):
+>       r = board.run(mode, mountinfo=str(board.root / "no-mountinfo"))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:351: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568d3050>, mode = 'wipe', argv = None
+over = {'mountinfo': '/tmp/pytest-of-akshay/pytest-76/test_unreadable_or_malformed_m0/no-mountinfo'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+___________ test_unreadable_or_malformed_mountinfo_is_refused[check] ___________
+
+board = <test_wipe.Board object at 0x73b1568f1b20>, mode = 'check'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_unreadable_or_malformed_mountinfo_is_refused(board, mode):
+>       r = board.run(mode, mountinfo=str(board.root / "no-mountinfo"))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:351: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f1b20>, mode = 'check', argv = None
+over = {'mountinfo': '/tmp/pytest-of-akshay/pytest-76/test_unreadable_or_malformed_m1/no-mountinfo'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_____________________ test_unsafe_paths_are_refused[wipe] ______________________
+
+board = <test_wipe.Board object at 0x73b1568f1eb0>, mode = 'wipe'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_unsafe_paths_are_refused(board, mode):
+        for over in ({"home": "home/lab"}, {"home": "/"}, {"home": "/home"}, {"home": "/etc"},
+                     {"home": "/x"}, {"home": str(board.home) + "/"},
+                     {"home": str(board.home) + "/../lab"}, {"home": str(board.skel)},
+                     {"home": str(board.skel / ".config")}, {"skel": str(board.home / "s")},
+                     {"skel": "/"}):
+>           r = board.run(mode, **over)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:364: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f1eb0>, mode = 'wipe', argv = None
+over = {'home': 'home/lab'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_____________________ test_unsafe_paths_are_refused[check] _____________________
+
+board = <test_wipe.Board object at 0x73b1568f3ad0>, mode = 'check'
+
+    @pytest.mark.parametrize("mode", ["wipe", "check"])
+    def test_unsafe_paths_are_refused(board, mode):
+        for over in ({"home": "home/lab"}, {"home": "/"}, {"home": "/home"}, {"home": "/etc"},
+                     {"home": "/x"}, {"home": str(board.home) + "/"},
+                     {"home": str(board.home) + "/../lab"}, {"home": str(board.skel)},
+                     {"home": str(board.skel / ".config")}, {"skel": str(board.home / "s")},
+                     {"skel": "/"}):
+>           r = board.run(mode, **over)
+                ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:364: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f3ad0>, mode = 'check', argv = None
+over = {'home': 'home/lab'}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+________________________ test_bad_arguments_are_refused ________________________
+
+board = <test_wipe.Board object at 0x73b1568f11c0>
+
+    def test_bad_arguments_are_refused(board):
+        base = board.argv("wipe")
+        cases = [
+            [a for a in base if a not in ("--mode", "wipe")],                    # no mode
+            board.argv("bogus"),
+            base + ["--home", str(board.home)],                                  # repeated
+            board.argv("wipe", owner_uid="12a"),
+            board.argv("wipe", owner_uid="-1"),
+            board.argv("wipe", mountinfo="relative/mountinfo"),
+            base + ["--extra", "x"],
+            [],
+        ]
+        for argv in cases:
+>           r = board.run("wipe", argv=argv)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:381: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f11c0>, mode = 'wipe'
+argv = ['--home', '/tmp/pytest-of-akshay/pytest-76/test_bad_arguments_are_refused0/home/lab', '--skel', '/tmp/pytest-of-akshay/pytest-76/test_bad_arguments_are_refused0/etc/skel', '--owner-uid', '1000', ...]
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+________________ test_check_says_clean_for_a_home_equal_to_skel ________________
+
+board = <test_wipe.Board object at 0x73b1568b0c80>
+
+    def test_check_says_clean_for_a_home_equal_to_skel(board):
+        board.copy_skel()
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:389: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568b0c80>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+__________ test_check_counts_the_top_level_names_that_differ[extra-1] __________
+
+board = <test_wipe.Board object at 0x73b1568b1c10>, change = 'extra', n = 1
+
+    @pytest.mark.parametrize("change,n", [
+        ("extra", 1), ("missing", 1), ("modified", 1), ("extra+modified", 2),
+        ("type", 1), ("deep", 1), ("link", 1)])
+    def test_check_counts_the_top_level_names_that_differ(board, change, n):
+        board.copy_skel()
+        if "extra" in change:
+            (board.home / f"new-{PLANT}").write_text("x")
+        if change == "missing":
+            os.unlink(board.home / ".profile")
+        if "modified" in change:
+            (board.home / ".bashrc").write_text("# other\n")
+        if change == "type":
+            os.unlink(board.home / ".bashrc")
+            os.mkfifo(board.home / ".bashrc")
+        if change == "deep":
+            (board.home / ".config" / f"more-{PLANT}").write_text("x")
+        if change == "link":
+            os.unlink(board.home / ".bashrc-link")
+            os.symlink(str(board.outside), board.home / ".bashrc-link")
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568b1c10>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_________ test_check_counts_the_top_level_names_that_differ[missing-1] _________
+
+board = <test_wipe.Board object at 0x73b1568b2360>, change = 'missing', n = 1
+
+    @pytest.mark.parametrize("change,n", [
+        ("extra", 1), ("missing", 1), ("modified", 1), ("extra+modified", 2),
+        ("type", 1), ("deep", 1), ("link", 1)])
+    def test_check_counts_the_top_level_names_that_differ(board, change, n):
+        board.copy_skel()
+        if "extra" in change:
+            (board.home / f"new-{PLANT}").write_text("x")
+        if change == "missing":
+            os.unlink(board.home / ".profile")
+        if "modified" in change:
+            (board.home / ".bashrc").write_text("# other\n")
+        if change == "type":
+            os.unlink(board.home / ".bashrc")
+            os.mkfifo(board.home / ".bashrc")
+        if change == "deep":
+            (board.home / ".config" / f"more-{PLANT}").write_text("x")
+        if change == "link":
+            os.unlink(board.home / ".bashrc-link")
+            os.symlink(str(board.outside), board.home / ".bashrc-link")
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568b2360>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+________ test_check_counts_the_top_level_names_that_differ[modified-1] _________
+
+board = <test_wipe.Board object at 0x73b1568f0b90>, change = 'modified', n = 1
+
+    @pytest.mark.parametrize("change,n", [
+        ("extra", 1), ("missing", 1), ("modified", 1), ("extra+modified", 2),
+        ("type", 1), ("deep", 1), ("link", 1)])
+    def test_check_counts_the_top_level_names_that_differ(board, change, n):
+        board.copy_skel()
+        if "extra" in change:
+            (board.home / f"new-{PLANT}").write_text("x")
+        if change == "missing":
+            os.unlink(board.home / ".profile")
+        if "modified" in change:
+            (board.home / ".bashrc").write_text("# other\n")
+        if change == "type":
+            os.unlink(board.home / ".bashrc")
+            os.mkfifo(board.home / ".bashrc")
+        if change == "deep":
+            (board.home / ".config" / f"more-{PLANT}").write_text("x")
+        if change == "link":
+            os.unlink(board.home / ".bashrc-link")
+            os.symlink(str(board.outside), board.home / ".bashrc-link")
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f0b90>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_____ test_check_counts_the_top_level_names_that_differ[extra+modified-2] ______
+
+board = <test_wipe.Board object at 0x73b156bb8650>, change = 'extra+modified'
+n = 2
+
+    @pytest.mark.parametrize("change,n", [
+        ("extra", 1), ("missing", 1), ("modified", 1), ("extra+modified", 2),
+        ("type", 1), ("deep", 1), ("link", 1)])
+    def test_check_counts_the_top_level_names_that_differ(board, change, n):
+        board.copy_skel()
+        if "extra" in change:
+            (board.home / f"new-{PLANT}").write_text("x")
+        if change == "missing":
+            os.unlink(board.home / ".profile")
+        if "modified" in change:
+            (board.home / ".bashrc").write_text("# other\n")
+        if change == "type":
+            os.unlink(board.home / ".bashrc")
+            os.mkfifo(board.home / ".bashrc")
+        if change == "deep":
+            (board.home / ".config" / f"more-{PLANT}").write_text("x")
+        if change == "link":
+            os.unlink(board.home / ".bashrc-link")
+            os.symlink(str(board.outside), board.home / ".bashrc-link")
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b156bb8650>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+__________ test_check_counts_the_top_level_names_that_differ[type-1] ___________
+
+board = <test_wipe.Board object at 0x73b156b97a70>, change = 'type', n = 1
+
+    @pytest.mark.parametrize("change,n", [
+        ("extra", 1), ("missing", 1), ("modified", 1), ("extra+modified", 2),
+        ("type", 1), ("deep", 1), ("link", 1)])
+    def test_check_counts_the_top_level_names_that_differ(board, change, n):
+        board.copy_skel()
+        if "extra" in change:
+            (board.home / f"new-{PLANT}").write_text("x")
+        if change == "missing":
+            os.unlink(board.home / ".profile")
+        if "modified" in change:
+            (board.home / ".bashrc").write_text("# other\n")
+        if change == "type":
+            os.unlink(board.home / ".bashrc")
+            os.mkfifo(board.home / ".bashrc")
+        if change == "deep":
+            (board.home / ".config" / f"more-{PLANT}").write_text("x")
+        if change == "link":
+            os.unlink(board.home / ".bashrc-link")
+            os.symlink(str(board.outside), board.home / ".bashrc-link")
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b156b97a70>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+__________ test_check_counts_the_top_level_names_that_differ[deep-1] ___________
+
+board = <test_wipe.Board object at 0x73b156b973e0>, change = 'deep', n = 1
+
+    @pytest.mark.parametrize("change,n", [
+        ("extra", 1), ("missing", 1), ("modified", 1), ("extra+modified", 2),
+        ("type", 1), ("deep", 1), ("link", 1)])
+    def test_check_counts_the_top_level_names_that_differ(board, change, n):
+        board.copy_skel()
+        if "extra" in change:
+            (board.home / f"new-{PLANT}").write_text("x")
+        if change == "missing":
+            os.unlink(board.home / ".profile")
+        if "modified" in change:
+            (board.home / ".bashrc").write_text("# other\n")
+        if change == "type":
+            os.unlink(board.home / ".bashrc")
+            os.mkfifo(board.home / ".bashrc")
+        if change == "deep":
+            (board.home / ".config" / f"more-{PLANT}").write_text("x")
+        if change == "link":
+            os.unlink(board.home / ".bashrc-link")
+            os.symlink(str(board.outside), board.home / ".bashrc-link")
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b156b973e0>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+__________ test_check_counts_the_top_level_names_that_differ[link-1] ___________
+
+board = <test_wipe.Board object at 0x73b1568f2330>, change = 'link', n = 1
+
+    @pytest.mark.parametrize("change,n", [
+        ("extra", 1), ("missing", 1), ("modified", 1), ("extra+modified", 2),
+        ("type", 1), ("deep", 1), ("link", 1)])
+    def test_check_counts_the_top_level_names_that_differ(board, change, n):
+        board.copy_skel()
+        if "extra" in change:
+            (board.home / f"new-{PLANT}").write_text("x")
+        if change == "missing":
+            os.unlink(board.home / ".profile")
+        if "modified" in change:
+            (board.home / ".bashrc").write_text("# other\n")
+        if change == "type":
+            os.unlink(board.home / ".bashrc")
+            os.mkfifo(board.home / ".bashrc")
+        if change == "deep":
+            (board.home / ".config" / f"more-{PLANT}").write_text("x")
+        if change == "link":
+            os.unlink(board.home / ".bashrc-link")
+            os.symlink(str(board.outside), board.home / ".bashrc-link")
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:412: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f2330>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+__________________________ test_check_changes_nothing __________________________
+
+board = <test_wipe.Board object at 0x73b1568f0290>
+
+    def test_check_changes_nothing(board):
+        board.copy_skel()
+        board.plant()
+        home, outside, skel = tree(board.home), tree(board.outside), tree(board.skel)
+>       r = board.run("check")
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b1568f0290>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+________________________ test_check_never_opens_a_fifo _________________________
+
+board = <test_wipe.Board object at 0x73b156843ce0>
+
+    def test_check_never_opens_a_fifo(board):
+        # a FIFO named like a skel file must not hang the check (types are compared first)
+        board.copy_skel()
+        os.unlink(board.home / ".profile")
+        os.mkfifo(board.home / ".profile")
+>       r = board.run("check")                          # subprocess timeout = 120 s
+            ^^^^^^^^^^^^^^^^^^
+
+tests/dpu/test_wipe.py:430: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_wipe.Board object at 0x73b156843ce0>, mode = 'check', argv = None
+over = {}
+
+    def run(self, mode="wipe", argv=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-wipe.py is not written yet"
+E       AssertionError: playbooks/files/daolab-wipe.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x73b157910540>('/home/akshay/b109bc/playbooks/files/daolab-wipe.py')
+E        +    where <function isfile at 0x73b157910540> = <module 'posixpath' (frozen)>.isfile
+E        +      where <module 'posixpath' (frozen)> = os.path
+
+tests/dpu/test_wipe.py:110: AssertionError
+_____ test_capture_seals_the_home_fetches_it_and_leaves_nothing_on_the_dpu _____
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568d14c0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568d2300>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-76/test_capture_seals_the_home_fe0')
+
+    @pytest.mark.requires_age
+    def test_capture_seals_the_home_fetches_it_and_leaves_nothing_on_the_dpu(lab, snap, tmp_path):
+        snap.plant()
+        snap.link_age()
+        ident = tmp_path / "owner-of-s.txt"                  # stands in for S's private half
+        subprocess.run([_age_tool("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"), "-o", str(ident)],
+                       check=True, capture_output=True)
+        recipient = subprocess.run([_age_tool("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"), "-y", str(ident)],
+                                   check=True, capture_output=True, text=True).stdout.strip()
+>       assert snap.capture(daolab_snapshot_recipient=recipient) == 0, lab.stdout[-3000:]
+E       AssertionError: [ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found
+E         
+E       assert 1 == 0
+E        +  where 1 = capture(daolab_snapshot_recipient='age1sku4crcfr6dnfxep6egtf8f7q9xt73mfnueu9nndau42uslknyaq757wvh')
+E        +    where capture = <tests.test_playbooks_snapshot.Snap object at 0x73b1568d2300>.capture
+
+tests/test_playbooks_snapshot.py:170: AssertionError
+______________________ test_capture_revokes_access_first _______________________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15689c0b0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15689f080>
+
+    def test_capture_revokes_access_first(lab, snap):
+>       assert snap.capture() == 0, lab.stdout[-3000:]       # a home equal to skel: status empty
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: [ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found
+E         
+E       assert 1 == 0
+E        +  where 1 = capture()
+E        +    where capture = <tests.test_playbooks_snapshot.Snap object at 0x73b15689f080>.capture
+
+tests/test_playbooks_snapshot.py:188: AssertionError
+__________ test_a_home_equal_to_skel_is_empty_and_nothing_is_fetched ___________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15689fef0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15689c5f0>
+
+    def test_a_home_equal_to_skel_is_empty_and_nothing_is_fetched(lab, snap):
+>       assert snap.capture() == 0, lab.stdout[-3000:]
+E       AssertionError: [ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found
+E         
+E       assert 1 == 0
+E        +  where 1 = capture()
+E        +    where capture = <tests.test_playbooks_snapshot.Snap object at 0x73b15689c5f0>.capture
+
+tests/test_playbooks_snapshot.py:195: AssertionError
+_____________ test_a_refused_capture_propagates_and_keeps_the_home _____________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15689f770>
+
+    def test_a_refused_capture_propagates_and_keeps_the_home(lab):
+        snap = Snap(lab, uid=os.getuid() + 1)                # the DPU says lab is someone else
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.capture() != 0
+>       assert lab.output()["status"] == "refused" and lab.output()["reason"] == "home_owner"
+               ^^^^^^^^^^^^
+
+tests/test_playbooks_snapshot.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_playbooks.py:144: in output
+    return json.loads(self.out_path.read_text())
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/tmp/pytest-of-akshay/pytest-76/test_a_refused_capture_propaga0/out.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-akshay/pytest-76/test_a_refused_capture_propaga0/out.json'
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/pathlib.py:1013: FileNotFoundError
+________________________ test_a_missing_home_is_refused ________________________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15689d7c0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15689ef30>
+
+    def test_a_missing_home_is_refused(lab, snap):
+        shutil.rmtree(snap.home)
+        assert snap.capture() != 0
+>       assert lab.output()["reason"] == "home_missing"
+               ^^^^^^^^^^^^
+
+tests/test_playbooks_snapshot.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_playbooks.py:144: in output
+    return json.loads(self.out_path.read_text())
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/tmp/pytest-of-akshay/pytest-76/test_a_missing_home_is_refused2/out.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-akshay/pytest-76/test_a_missing_home_is_refused2/out.json'
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/pathlib.py:1013: FileNotFoundError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_public_id=0123456789AB] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568d3ef0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568d3ad0>
+over = {'daolab_snapshot_public_id': '0123456789ABCDEF0123456789ABCDEF'}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568d3ef0>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_public_id=0123456789ab] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568f2600>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568f2660>
+over = {'daolab_snapshot_public_id': '0123456789abcdef0123456789abcde'}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568f2600>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_public_id=../3456789ab] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568f1dc0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568f21e0>
+over = {'daolab_snapshot_public_id': '../3456789abcdef0123456789abcdef'}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568f1dc0>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_public_id=missing] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b156b97650>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b156b973b0>
+over = {'daolab_snapshot_public_id': <object object at 0x73b158391bd0>}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b156b97650>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_recipient=age1bbbbbbbb] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b156bb8650>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b156bb82c0>
+over = {'daolab_snapshot_recipient': 'age1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b156bb8650>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_recipient=AGE-SECRET-K] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568b0530>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568b0770>
+over = {'daolab_snapshot_recipient': 'AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ'}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568b0530>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_recipient=missing] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568b3200>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568b2a20>
+over = {'daolab_snapshot_recipient': <object object at 0x73b158391bd0>}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568b3200>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+___ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_cap_bytes=-1] ___
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568b04a0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568b0bc0>
+over = {'daolab_snapshot_cap_bytes': -1}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568b04a0>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+__ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_cap_bytes=1e9] ___
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568b0ce0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568b1700>
+over = {'daolab_snapshot_cap_bytes': '1e9'}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568b0ce0>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_fetch_to=relative/x.a] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b156b97890>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b156b974a0>
+over = {'daolab_snapshot_fetch_to': 'relative/x.age.part'}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b156b97890>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_fetch_to=/tmp/other.a] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568f38f0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568f1070>
+over = {'daolab_snapshot_fetch_to': '/tmp/other.age.part'}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568f38f0>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_ test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_fetch_to=missing] _
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568f2450>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568f1850>
+over = {'daolab_snapshot_fetch_to': <object object at 0x73b158391bd0>}
+
+    @pytest.mark.parametrize("over", [
+        {"daolab_snapshot_public_id": PUBLIC_ID.upper()},
+        {"daolab_snapshot_public_id": PUBLIC_ID[:31]},
+        {"daolab_snapshot_public_id": "../" + PUBLIC_ID[3:]},
+        {"daolab_snapshot_public_id": MISSING},
+        {"daolab_snapshot_recipient": "age1" + "b" * 58},           # 'b' is not bech32
+        {"daolab_snapshot_recipient": "AGE-SECRET-KEY-1" + "Q" * 58},
+        {"daolab_snapshot_recipient": MISSING},
+        {"daolab_snapshot_cap_bytes": -1},
+        {"daolab_snapshot_cap_bytes": "1e9"},
+        {"daolab_snapshot_fetch_to": "relative/x.age.part"},
+        {"daolab_snapshot_fetch_to": "/tmp/other.age.part"},
+        {"daolab_snapshot_fetch_to": MISSING},
+    ], ids=lambda o: next(iter(o)) + "=" + ("missing" if next(iter(o.values())) is MISSING
+                                            else str(next(iter(o.values())))[:12]))
+    def test_bad_inputs_never_reach_the_dpu_script(lab, snap, over):
+        assert snap.capture(**over) != 0
+        assert not snap.capdir.exists()                      # stopped before any DPU write
+        assert not lab.out_path.exists() and not snap.fetch_to.exists()
+>       assert "snapshot capture: bad input" in lab.stdout
+E       AssertionError: assert 'snapshot capture: bad input' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568f2450>.stdout
+
+tests/test_playbooks_snapshot.py:238: AssertionError
+_________ test_leftovers_of_a_dead_run_are_removed_before_the_capture __________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15689ffe0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15689f5c0>
+
+    def test_leftovers_of_a_dead_run_are_removed_before_the_capture(lab, snap):
+        snap.capdir.mkdir(parents=True)
+        os.chmod(snap.capdir, 0o700)
+        (snap.capdir / ("f" * 32 + ".age")).write_bytes(b"old ciphertext")
+>       assert snap.capture() == 0, lab.stdout[-3000:]
+E       AssertionError: [ERROR]: the playbook: /home/akshay/b109bc/playbooks/snapshot_capture.yml could not be found
+E         
+E       assert 1 == 0
+E        +  where 1 = capture()
+E        +    where capture = <tests.test_playbooks_snapshot.Snap object at 0x73b15689f5c0>.capture
+
+tests/test_playbooks_snapshot.py:245: AssertionError
+_____________ test_the_profile_hook_is_guarded_and_off_by_default ______________
+
+    def test_the_profile_hook_is_guarded_and_off_by_default():
+>       hooks = [t for t in _tasks(_plays("snapshot_capture.yml"))
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 if t.get("ansible.builtin.include_tasks") == "tasks/profile_capture.yml"]
+
+tests/test_playbooks_snapshot.py:251: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'snapshot_capture.yml'
+
+    def _plays(name):
+>       with open(os.path.join(REPO, "playbooks", name), encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b109bc/playbooks/snapshot_capture.yml'
+
+tests/test_playbooks_snapshot.py:142: FileNotFoundError
+_ test_the_dpu_scripts_run_as_root_with_python3_isolated[snapshot_capture.yml-daolab-capture.py] _
+
+playbook = 'snapshot_capture.yml', script = 'daolab-capture.py'
+
+    @pytest.mark.parametrize("playbook,script", [("snapshot_capture.yml", "daolab-capture.py"),
+                                                 ("home_wipe.yml", "daolab-wipe.py"),
+                                                 ("verify_clean.yml", "daolab-wipe.py")])
+    def test_the_dpu_scripts_run_as_root_with_python3_isolated(playbook, script):
+>       runs = [t for t in _tasks(_plays(playbook)) if "ansible.builtin.script" in t]
+                                  ^^^^^^^^^^^^^^^^
+
+tests/test_playbooks_snapshot.py:261: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'snapshot_capture.yml'
+
+    def _plays(name):
+>       with open(os.path.join(REPO, "playbooks", name), encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b109bc/playbooks/snapshot_capture.yml'
+
+tests/test_playbooks_snapshot.py:142: FileNotFoundError
+_ test_the_dpu_scripts_run_as_root_with_python3_isolated[home_wipe.yml-daolab-wipe.py] _
+
+playbook = 'home_wipe.yml', script = 'daolab-wipe.py'
+
+    @pytest.mark.parametrize("playbook,script", [("snapshot_capture.yml", "daolab-capture.py"),
+                                                 ("home_wipe.yml", "daolab-wipe.py"),
+                                                 ("verify_clean.yml", "daolab-wipe.py")])
+    def test_the_dpu_scripts_run_as_root_with_python3_isolated(playbook, script):
+>       runs = [t for t in _tasks(_plays(playbook)) if "ansible.builtin.script" in t]
+                                  ^^^^^^^^^^^^^^^^
+
+tests/test_playbooks_snapshot.py:261: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+name = 'home_wipe.yml'
+
+    def _plays(name):
+>       with open(os.path.join(REPO, "playbooks", name), encoding="utf-8") as fh:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/akshay/b109bc/playbooks/home_wipe.yml'
+
+tests/test_playbooks_snapshot.py:142: FileNotFoundError
+_ test_the_dpu_scripts_run_as_root_with_python3_isolated[verify_clean.yml-daolab-wipe.py] _
+
+playbook = 'verify_clean.yml', script = 'daolab-wipe.py'
+
+    @pytest.mark.parametrize("playbook,script", [("snapshot_capture.yml", "daolab-capture.py"),
+                                                 ("home_wipe.yml", "daolab-wipe.py"),
+                                                 ("verify_clean.yml", "daolab-wipe.py")])
+    def test_the_dpu_scripts_run_as_root_with_python3_isolated(playbook, script):
+        runs = [t for t in _tasks(_plays(playbook)) if "ansible.builtin.script" in t]
+>       assert runs, playbook
+E       AssertionError: verify_clean.yml
+E       assert []
+
+tests/test_playbooks_snapshot.py:262: AssertionError
+_________ test_the_wipe_refuses_unless_the_engine_allowed_it[missing] __________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15688a120>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15688a630>
+allowed = <object object at 0x73b158391bd0>
+
+    @pytest.mark.parametrize("allowed", [MISSING, False, "true", "yes", 1, None],
+                             ids=["missing", "false", "str-true", "yes", "one", "null"])
+    def test_the_wipe_refuses_unless_the_engine_allowed_it(lab, snap, allowed):
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.wipe(daolab_wipe_allowed=allowed) != 0
+>       assert "home wipe refused: not allowed by the engine" in lab.stdout
+E       AssertionError: assert 'home wipe refused: not allowed by the engine' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b15688a120>.stdout
+
+tests/test_playbooks_snapshot.py:277: AssertionError
+__________ test_the_wipe_refuses_unless_the_engine_allowed_it[false] ___________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15688ac90>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15688ab10>
+allowed = False
+
+    @pytest.mark.parametrize("allowed", [MISSING, False, "true", "yes", 1, None],
+                             ids=["missing", "false", "str-true", "yes", "one", "null"])
+    def test_the_wipe_refuses_unless_the_engine_allowed_it(lab, snap, allowed):
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.wipe(daolab_wipe_allowed=allowed) != 0
+>       assert "home wipe refused: not allowed by the engine" in lab.stdout
+E       AssertionError: assert 'home wipe refused: not allowed by the engine' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b15688ac90>.stdout
+
+tests/test_playbooks_snapshot.py:277: AssertionError
+_________ test_the_wipe_refuses_unless_the_engine_allowed_it[str-true] _________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15688bb60>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15688ba40>
+allowed = 'true'
+
+    @pytest.mark.parametrize("allowed", [MISSING, False, "true", "yes", 1, None],
+                             ids=["missing", "false", "str-true", "yes", "one", "null"])
+    def test_the_wipe_refuses_unless_the_engine_allowed_it(lab, snap, allowed):
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.wipe(daolab_wipe_allowed=allowed) != 0
+>       assert "home wipe refused: not allowed by the engine" in lab.stdout
+E       AssertionError: assert 'home wipe refused: not allowed by the engine' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b15688bb60>.stdout
+
+tests/test_playbooks_snapshot.py:277: AssertionError
+___________ test_the_wipe_refuses_unless_the_engine_allowed_it[yes] ____________
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568b0b00>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568b09e0>
+allowed = 'yes'
+
+    @pytest.mark.parametrize("allowed", [MISSING, False, "true", "yes", 1, None],
+                             ids=["missing", "false", "str-true", "yes", "one", "null"])
+    def test_the_wipe_refuses_unless_the_engine_allowed_it(lab, snap, allowed):
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.wipe(daolab_wipe_allowed=allowed) != 0
+>       assert "home wipe refused: not allowed by the engine" in lab.stdout
+E       AssertionError: assert 'home wipe refused: not allowed by the engine' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568b0b00>.stdout
+
+tests/test_playbooks_snapshot.py:277: AssertionError
+___________ test_the_wipe_refuses_unless_the_engine_allowed_it[one] ____________
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568b2c60>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568b2d50>
+allowed = 1
+
+    @pytest.mark.parametrize("allowed", [MISSING, False, "true", "yes", 1, None],
+                             ids=["missing", "false", "str-true", "yes", "one", "null"])
+    def test_the_wipe_refuses_unless_the_engine_allowed_it(lab, snap, allowed):
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.wipe(daolab_wipe_allowed=allowed) != 0
+>       assert "home wipe refused: not allowed by the engine" in lab.stdout
+E       AssertionError: assert 'home wipe refused: not allowed by the engine' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568b2c60>.stdout
+
+tests/test_playbooks_snapshot.py:277: AssertionError
+___________ test_the_wipe_refuses_unless_the_engine_allowed_it[null] ___________
+
+lab = <tests.test_playbooks.Lab object at 0x73b1568d3c20>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b1568d2c90>
+allowed = None
+
+    @pytest.mark.parametrize("allowed", [MISSING, False, "true", "yes", 1, None],
+                             ids=["missing", "false", "str-true", "yes", "one", "null"])
+    def test_the_wipe_refuses_unless_the_engine_allowed_it(lab, snap, allowed):
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.wipe(daolab_wipe_allowed=allowed) != 0
+>       assert "home wipe refused: not allowed by the engine" in lab.stdout
+E       AssertionError: assert 'home wipe refused: not allowed by the engine' in '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n'
+E        +  where '[ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found\n' = <tests.test_playbooks.Lab object at 0x73b1568d3c20>.stdout
+
+tests/test_playbooks_snapshot.py:277: AssertionError
+___________ test_the_wipe_restores_skel_and_never_follows_a_link_out ___________
+
+lab = <tests.test_playbooks.Lab object at 0x73b156b97d70>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b156b96d80>
+
+    def test_the_wipe_restores_skel_and_never_follows_a_link_out(lab, snap):
+        snap.plant()
+        outside = snapshot_tree(snap.outside)
+        top = len(os.listdir(snap.home))
+>       assert snap.wipe() == 0, lab.stdout[-3000:]
+E       AssertionError: [ERROR]: the playbook: /home/akshay/b109bc/playbooks/home_wipe.yml could not be found
+E         
+E       assert 1 == 0
+E        +  where 1 = wipe()
+E        +    where wipe = <tests.test_playbooks_snapshot.Snap object at 0x73b156b96d80>.wipe
+
+tests/test_playbooks_snapshot.py:286: AssertionError
+___________ test_a_wipe_the_script_refuses_fails_and_keeps_the_home ____________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15688b050>
+
+    def test_a_wipe_the_script_refuses_fails_and_keeps_the_home(lab):
+        snap = Snap(lab, uid=os.getuid() + 1)
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.wipe() != 0
+>       assert lab.output()["reason"] == "home_owner"
+               ^^^^^^^^^^^^
+
+tests/test_playbooks_snapshot.py:300: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_playbooks.py:144: in output
+    return json.loads(self.out_path.read_text())
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/pathlib.py:1027: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/tmp/pytest-of-akshay/pytest-76/test_a_wipe_the_script_refuses0/out.json')
+mode = 'r', buffering = -1, encoding = 'locale', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/tmp/pytest-of-akshay/pytest-76/test_a_wipe_the_script_refuses0/out.json'
+
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/pathlib.py:1013: FileNotFoundError
+____________ test_verify_reports_a_dirty_home_when_snapshots_are_on ____________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15688a420>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15688b740>
+
+    def test_verify_reports_a_dirty_home_when_snapshots_are_on(lab, snap):
+        snap.plant()
+        before = snapshot_tree(snap.home)
+        assert snap.verify(daolab_snapshot_enabled=True) == 0, lab.stdout[-3000:]
+>       assert lab.output() == ["home:lab"]
+E       AssertionError: assert [] == ['home:lab']
+E         
+E         Right contains one more item: 'home:lab'
+E         Use -v to get more diff
+
+tests/test_playbooks_snapshot.py:319: AssertionError
+_____ test_verify_counts_a_home_it_cannot_prove_clean_as_residue[missing] ______
+
+lab = <tests.test_playbooks.Lab object at 0x73b15688b860>, broken = 'missing'
+
+    @pytest.mark.parametrize("broken", ["missing", "owner"])
+    def test_verify_counts_a_home_it_cannot_prove_clean_as_residue(lab, broken):
+        snap = Snap(lab, uid=os.getuid() + (1 if broken == "owner" else 0))
+        if broken == "missing":
+            shutil.rmtree(snap.home)
+        assert snap.verify(daolab_snapshot_enabled=True) == 0, lab.stdout[-3000:]
+>       assert lab.output() == ["home:lab"]
+E       AssertionError: assert [] == ['home:lab']
+E         
+E         Right contains one more item: 'home:lab'
+E         Use -v to get more diff
+
+tests/test_playbooks_snapshot.py:335: AssertionError
+______ test_verify_counts_a_home_it_cannot_prove_clean_as_residue[owner] _______
+
+lab = <tests.test_playbooks.Lab object at 0x73b156888e90>, broken = 'owner'
+
+    @pytest.mark.parametrize("broken", ["missing", "owner"])
+    def test_verify_counts_a_home_it_cannot_prove_clean_as_residue(lab, broken):
+        snap = Snap(lab, uid=os.getuid() + (1 if broken == "owner" else 0))
+        if broken == "missing":
+            shutil.rmtree(snap.home)
+        assert snap.verify(daolab_snapshot_enabled=True) == 0, lab.stdout[-3000:]
+>       assert lab.output() == ["home:lab"]
+E       AssertionError: assert [] == ['home:lab']
+E         
+E         Right contains one more item: 'home:lab'
+E         Use -v to get more diff
+
+tests/test_playbooks_snapshot.py:335: AssertionError
+__________________ test_verify_adds_home_to_the_other_residue __________________
+
+lab = <tests.test_playbooks.Lab object at 0x73b15688bdd0>
+snap = <tests.test_playbooks_snapshot.Snap object at 0x73b15688bd70>
+
+    def test_verify_adds_home_to_the_other_residue(lab, snap):
+        from tests.test_playbooks import dirty
+        state = dirty(lab.state())
+        lab.set(state)
+        snap.plant()
+        assert snap.verify(daolab_snapshot_enabled=True, daolab_leases=["10.30.0.101"]) == 0
+>       assert sorted(lab.output()) == sorted(["vm:daolab-r12-sink", "dpu_session:lab",
+                                               "dpu_app:daolab-app-dao-vpp.service",
+                                               "ip:10.30.0.101", "home:lab"])
+E       AssertionError: assert ['dpu_app:dao...lab-r12-sink'] == ['dpu_app:dao...lab-r12-sink']
+E         
+E         At index 2 diff: 'ip:10.30.0.101' != 'home:lab'
+E         Right contains one more item: 'vm:daolab-r12-sink'
+E         Use -v to get more diff
+
+tests/test_playbooks_snapshot.py:344: AssertionError
+=========================== short test summary info ============================
+FAILED tests/dpu/test_wipe.py::test_script_parses_as_python_3_10 - AssertionE...
+FAILED tests/dpu/test_wipe.py::test_script_imports_only_the_standard_library
+FAILED tests/dpu/test_wipe.py::test_script_has_no_3_11_stdlib_names - Asserti...
+FAILED tests/dpu/test_wipe.py::test_script_is_executable_and_runs_on_python3
+FAILED tests/dpu/test_wipe.py::test_reason_codes_are_the_closed_list - FileNo...
+FAILED tests/dpu/test_wipe.py::test_wipe_removes_everything_and_restores_skel
+FAILED tests/dpu/test_wipe.py::test_wipe_keeps_skel_modes_and_gives_everything_to_the_owner
+FAILED tests/dpu/test_wipe.py::test_wipe_keeps_the_home_directory_itself - As...
+FAILED tests/dpu/test_wipe.py::test_wipe_never_writes_through_a_planted_symlink
+FAILED tests/dpu/test_wipe.py::test_wipe_twice_is_harmless - AssertionError: ...
+FAILED tests/dpu/test_wipe.py::test_wipe_of_an_empty_home_only_copies_skel - ...
+FAILED tests/dpu/test_wipe.py::test_wipe_refuses_when_the_result_is_not_skel
+FAILED tests/dpu/test_wipe.py::test_wipe_refuses_before_touching_the_home_when_skel_is_missing
+FAILED tests/dpu/test_wipe.py::test_a_home_of_another_owner_is_refused_and_left_alone[wipe]
+FAILED tests/dpu/test_wipe.py::test_a_home_of_another_owner_is_refused_and_left_alone[check]
+FAILED tests/dpu/test_wipe.py::test_a_missing_home_is_refused[wipe] - Asserti...
+FAILED tests/dpu/test_wipe.py::test_a_missing_home_is_refused[check] - Assert...
+FAILED tests/dpu/test_wipe.py::test_a_home_that_is_a_file_or_a_symlink_is_refused[wipe]
+FAILED tests/dpu/test_wipe.py::test_a_home_that_is_a_file_or_a_symlink_is_refused[check]
+FAILED tests/dpu/test_wipe.py::test_a_mount_at_or_under_the_home_is_refused[wipe]
+FAILED tests/dpu/test_wipe.py::test_a_mount_at_or_under_the_home_is_refused[check]
+FAILED tests/dpu/test_wipe.py::test_unreadable_or_malformed_mountinfo_is_refused[wipe]
+FAILED tests/dpu/test_wipe.py::test_unreadable_or_malformed_mountinfo_is_refused[check]
+FAILED tests/dpu/test_wipe.py::test_unsafe_paths_are_refused[wipe] - Assertio...
+FAILED tests/dpu/test_wipe.py::test_unsafe_paths_are_refused[check] - Asserti...
+FAILED tests/dpu/test_wipe.py::test_bad_arguments_are_refused - AssertionErro...
+FAILED tests/dpu/test_wipe.py::test_check_says_clean_for_a_home_equal_to_skel
+FAILED tests/dpu/test_wipe.py::test_check_counts_the_top_level_names_that_differ[extra-1]
+FAILED tests/dpu/test_wipe.py::test_check_counts_the_top_level_names_that_differ[missing-1]
+FAILED tests/dpu/test_wipe.py::test_check_counts_the_top_level_names_that_differ[modified-1]
+FAILED tests/dpu/test_wipe.py::test_check_counts_the_top_level_names_that_differ[extra+modified-2]
+FAILED tests/dpu/test_wipe.py::test_check_counts_the_top_level_names_that_differ[type-1]
+FAILED tests/dpu/test_wipe.py::test_check_counts_the_top_level_names_that_differ[deep-1]
+FAILED tests/dpu/test_wipe.py::test_check_counts_the_top_level_names_that_differ[link-1]
+FAILED tests/dpu/test_wipe.py::test_check_changes_nothing - AssertionError: p...
+FAILED tests/dpu/test_wipe.py::test_check_never_opens_a_fifo - AssertionError...
+FAILED tests/test_playbooks_snapshot.py::test_capture_seals_the_home_fetches_it_and_leaves_nothing_on_the_dpu
+FAILED tests/test_playbooks_snapshot.py::test_capture_revokes_access_first - ...
+FAILED tests/test_playbooks_snapshot.py::test_a_home_equal_to_skel_is_empty_and_nothing_is_fetched
+FAILED tests/test_playbooks_snapshot.py::test_a_refused_capture_propagates_and_keeps_the_home
+FAILED tests/test_playbooks_snapshot.py::test_a_missing_home_is_refused - Fil...
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_public_id=0123456789AB]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_public_id=0123456789ab]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_public_id=../3456789ab]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_public_id=missing]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_recipient=age1bbbbbbbb]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_recipient=AGE-SECRET-K]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_recipient=missing]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_cap_bytes=-1]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_cap_bytes=1e9]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_fetch_to=relative/x.a]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_fetch_to=/tmp/other.a]
+FAILED tests/test_playbooks_snapshot.py::test_bad_inputs_never_reach_the_dpu_script[daolab_snapshot_fetch_to=missing]
+FAILED tests/test_playbooks_snapshot.py::test_leftovers_of_a_dead_run_are_removed_before_the_capture
+FAILED tests/test_playbooks_snapshot.py::test_the_profile_hook_is_guarded_and_off_by_default
+FAILED tests/test_playbooks_snapshot.py::test_the_dpu_scripts_run_as_root_with_python3_isolated[snapshot_capture.yml-daolab-capture.py]
+FAILED tests/test_playbooks_snapshot.py::test_the_dpu_scripts_run_as_root_with_python3_isolated[home_wipe.yml-daolab-wipe.py]
+FAILED tests/test_playbooks_snapshot.py::test_the_dpu_scripts_run_as_root_with_python3_isolated[verify_clean.yml-daolab-wipe.py]
+FAILED tests/test_playbooks_snapshot.py::test_the_wipe_refuses_unless_the_engine_allowed_it[missing]
+FAILED tests/test_playbooks_snapshot.py::test_the_wipe_refuses_unless_the_engine_allowed_it[false]
+FAILED tests/test_playbooks_snapshot.py::test_the_wipe_refuses_unless_the_engine_allowed_it[str-true]
+FAILED tests/test_playbooks_snapshot.py::test_the_wipe_refuses_unless_the_engine_allowed_it[yes]
+FAILED tests/test_playbooks_snapshot.py::test_the_wipe_refuses_unless_the_engine_allowed_it[one]
+FAILED tests/test_playbooks_snapshot.py::test_the_wipe_refuses_unless_the_engine_allowed_it[null]
+FAILED tests/test_playbooks_snapshot.py::test_the_wipe_restores_skel_and_never_follows_a_link_out
+FAILED tests/test_playbooks_snapshot.py::test_a_wipe_the_script_refuses_fails_and_keeps_the_home
+FAILED tests/test_playbooks_snapshot.py::test_verify_reports_a_dirty_home_when_snapshots_are_on
+FAILED tests/test_playbooks_snapshot.py::test_verify_counts_a_home_it_cannot_prove_clean_as_residue[missing]
+FAILED tests/test_playbooks_snapshot.py::test_verify_counts_a_home_it_cannot_prove_clean_as_residue[owner]
+FAILED tests/test_playbooks_snapshot.py::test_verify_adds_home_to_the_other_residue
+70 failed, 2 passed in 38.08s
+# exit: 1

@@ -1,0 +1,16 @@
+# date:        2026-11-27T21:49:42Z
+# workdir:     /tmp/b109bc-split
+# HEAD:        d97085a65f7108d5448296f10dd73a9b9f483c2f
+# venv:        /home/akshay/.venvs/b109a-310
+# python:      Python 3.10.12
+# ansible:     none
+# ansible-playbook: /home/akshay/.venvs/b109a-310/bin/ansible-playbook
+# service:     /tmp/b109bc-split/service
+# command:     /home/akshay/.venvs/b109a-310/bin/python -m pytest --confcutdir=tests/dpu tests/dpu -q -rsf -p no:cacheprovider
+
+........................................................................ [ 50%]
+..................................
+[B-109a timing] 64 MiB random tree: 2.16 s, 31.2 MB/s raw, python 3.10.12
+.....................................  [100%]
+143 passed in 9.37s
+# exit: 0

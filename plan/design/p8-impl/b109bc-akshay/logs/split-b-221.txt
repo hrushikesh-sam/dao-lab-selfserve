@@ -1,0 +1,17 @@
+# date:        2026-11-27T21:49:42Z
+# workdir:     /tmp/b109bc-split
+# HEAD:        d97085a65f7108d5448296f10dd73a9b9f483c2f
+# venv:        /home/akshay/b109bc/.venv
+# python:      Python 3.12.13
+# ansible:     ansible-core 2.21.6
+# ansible-playbook: /home/akshay/b109bc/.venv/bin/ansible-playbook
+# service:     /tmp/b109bc-split/service
+# command:     /home/akshay/b109bc/.venv/bin/python -m pytest tests/dpu/test_wipe.py tests/test_playbooks_snapshot.py tests/test_playbooks.py tests/test_cleanup_flow.py -q -rsf -p no:cacheprovider
+
+........................................................................ [ 38%]
+.......................................................................s [ 77%]
+..........................................                               [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_playbooks.py:1154: sshd not installed
+185 passed, 1 skipped in 829.20s (0:13:49)
+# exit: 0

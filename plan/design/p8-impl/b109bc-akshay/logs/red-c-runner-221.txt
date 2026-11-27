@@ -1,0 +1,369 @@
+# date:        2026-11-27T21:16:57Z
+# workdir:     /home/akshay/b109bc
+# HEAD:        d97085a65f7108d5448296f10dd73a9b9f483c2f
+# venv:        /home/akshay/b109bc/.venv
+# python:      Python 3.12.13
+# ansible:     ansible-core 2.21.6
+# ansible-playbook: /home/akshay/b109bc/.venv/bin/ansible-playbook
+# service:     /home/akshay/b109bc/service
+# command:     /home/akshay/b109bc/.venv/bin/python -m pytest tests/test_runner_snapshot.py -q -rsf -p no:cacheprovider
+
+FFFFFFFFFFF.FFFFFFFFFFF.F                                                [100%]
+=================================== FAILURES ===================================
+_______________ test_the_snapshot_residue_kinds_exist_and_parse ________________
+
+    def test_the_snapshot_residue_kinds_exist_and_parse():
+        for kind in ("home", "tripwire", "restore_incomplete"):
+>           assert kind in runner.RESIDUE_KINDS and kind in runner.CHECK_FOR_KIND
+E           AssertionError: assert ('home' in ('vm', 'vf', 'dpu_session', 'dpu_app', 'dpu_hugepages', 'ip'))
+E            +  where ('vm', 'vf', 'dpu_session', 'dpu_app', 'dpu_hugepages', 'ip') = runner.RESIDUE_KINDS
+
+tests/test_runner_snapshot.py:44: AssertionError
+________________________ test_mock_fail_accepts_capture ________________________
+
+    def test_mock_fail_accepts_capture():
+>       assert runner.parse_mock_fail("capture") == frozenset({"capture"})
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_runner_snapshot.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+text = 'capture'
+
+    def parse_mock_fail(text: str) -> frozenset[str]:
+        """``DAOLAB_MOCK_FAIL`` is empty or a comma-separated subset of ``MOCK_FAIL_TARGETS``
+        (``deploy`` / ``cleanup`` / ``health``)."""
+        names = [n.strip() for n in (text or "").split(",") if n.strip()]
+        unknown = [n for n in names if n not in MOCK_FAIL_TARGETS]
+        if unknown:
+>           raise RunnerError(f"unknown DAOLAB_MOCK_FAIL value(s) {unknown}; "
+                              f"expected a comma-separated subset of {MOCK_FAIL_TARGETS}")
+E           service.runner.RunnerError: unknown DAOLAB_MOCK_FAIL value(s) ['capture']; expected a comma-separated subset of ('deploy', 'cleanup', 'health')
+
+service/runner.py:136: RunnerError
+________ test_mock_capture_writes_a_ciphertext_that_matches_its_report _________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_mock_capture_writes_a_cip0')
+
+    def test_mock_capture_writes_a_ciphertext_that_matches_its_report(tmp_path):
+        m, sink = MockRunner(), Sink()
+        dest = tmp_path / f"{PID}.age.part"
+>       result, report = m.capture(RES, sink, recipient=RCPT, public_id=PID, cap_bytes=1 << 20,
+                         ^^^^^^^^^
+                                   fetch_to=str(dest))
+E       AttributeError: 'MockRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:64: AttributeError
+__________ test_mock_capture_fail_switch_refuses_and_fetches_nothing ___________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_mock_capture_fail_switch_0')
+
+    def test_mock_capture_fail_switch_refuses_and_fetches_nothing(tmp_path):
+        m, sink = MockRunner(fail={"capture"}), Sink()
+        dest = tmp_path / f"{PID}.age.part"
+>       result, report = m.capture(RES, sink, recipient=RCPT, public_id=PID, cap_bytes=1,
+                         ^^^^^^^^^
+                                   fetch_to=str(dest))
+E       AttributeError: 'MockRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:76: AttributeError
+______________________ test_mock_capture_of_an_empty_home ______________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_mock_capture_of_an_empty_0')
+
+    def test_mock_capture_of_an_empty_home(tmp_path):
+        m, sink = MockRunner(), Sink()
+        m.empty_home = True
+        dest = tmp_path / f"{PID}.age.part"
+>       result, report = m.capture(RES, sink, recipient=RCPT, public_id=PID, cap_bytes=1,
+                         ^^^^^^^^^
+                                   fetch_to=str(dest))
+E       AttributeError: 'MockRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:86: AttributeError
+________ test_mock_capture_refuses_bad_inputs_like_the_playbook[over0] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_mock_capture_refuses_bad_0')
+over = {'recipient': 'AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ'}
+
+    @pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"recipient": "age1x"},
+                                      {"public_id": PID.upper()}, {"fetch_to": "relative.part"}])
+    def test_mock_capture_refuses_bad_inputs_like_the_playbook(tmp_path, over):
+        kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
+              "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
+>       result, report = MockRunner().capture(RES, Sink(), **kw)
+                         ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MockRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:98: AttributeError
+________ test_mock_capture_refuses_bad_inputs_like_the_playbook[over1] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_mock_capture_refuses_bad_1')
+over = {'recipient': 'age1x'}
+
+    @pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"recipient": "age1x"},
+                                      {"public_id": PID.upper()}, {"fetch_to": "relative.part"}])
+    def test_mock_capture_refuses_bad_inputs_like_the_playbook(tmp_path, over):
+        kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
+              "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
+>       result, report = MockRunner().capture(RES, Sink(), **kw)
+                         ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MockRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:98: AttributeError
+________ test_mock_capture_refuses_bad_inputs_like_the_playbook[over2] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_mock_capture_refuses_bad_2')
+over = {'public_id': '0123456789ABCDEF0123456789ABCDEF'}
+
+    @pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"recipient": "age1x"},
+                                      {"public_id": PID.upper()}, {"fetch_to": "relative.part"}])
+    def test_mock_capture_refuses_bad_inputs_like_the_playbook(tmp_path, over):
+        kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
+              "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
+>       result, report = MockRunner().capture(RES, Sink(), **kw)
+                         ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MockRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:98: AttributeError
+________ test_mock_capture_refuses_bad_inputs_like_the_playbook[over3] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_mock_capture_refuses_bad_3')
+over = {'fetch_to': 'relative.part'}
+
+    @pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"recipient": "age1x"},
+                                      {"public_id": PID.upper()}, {"fetch_to": "relative.part"}])
+    def test_mock_capture_refuses_bad_inputs_like_the_playbook(tmp_path, over):
+        kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
+              "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
+>       result, report = MockRunner().capture(RES, Sink(), **kw)
+                         ^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'MockRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:98: AttributeError
+_______________________ test_mock_wipe_only_when_allowed _______________________
+
+    def test_mock_wipe_only_when_allowed():
+        m = MockRunner()
+        for allowed in (False, None, "true", 1):
+>           assert not m.wipe(RES, Sink(), allowed=allowed).ok
+                       ^^^^^^
+E           AttributeError: 'MockRunner' object has no attribute 'wipe'
+
+tests/test_runner_snapshot.py:105: AttributeError
+_________ test_mock_verify_reports_the_home_only_for_an_enabled_setup __________
+
+    def test_mock_verify_reports_the_home_only_for_an_enabled_setup():
+        m = MockRunner()
+        off, on = Sink(), Sink()
+        assert m.verify_clean(RES, off).ok and off.names == list(VERIFY_CLEAN_STEPS)
+        r = m.verify_clean({**RES, "snapshot_enabled": True}, on)
+>       assert r.residue == ("home:lab",) and on.names == list(VERIFY_CLEAN_STEPS) + ["check_home"]
+E       AssertionError: assert (() == ('home:lab',)
+E         
+E         Right contains one more item: 'home:lab'
+E         Use -v to get more diff)
+
+tests/test_runner_snapshot.py:117: AssertionError
+_____ test_capture_runs_snapshot_capture_yml_with_only_the_snapshot_extras _____
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_capture_runs_snapshot_cap0')
+
+    def test_capture_runs_snapshot_capture_yml_with_only_the_snapshot_extras(settings, tmp_path):
+        report = {"status": "saved", "reason": "ok", "raw_bytes": 1, "age_bytes": 1, "age_sha256": "a" * 64}
+        fake = FakeRun(output=report)
+        dest = str(tmp_path / f"{PID}.age.part")
+>       result, out = AnsibleRunner(settings, run=fake).capture(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            RES, Steps(), recipient=RCPT, public_id=PID, cap_bytes=4096, fetch_to=dest)
+E       AttributeError: 'AnsibleRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:151: AttributeError
+________________ test_capture_never_runs_with_bad_inputs[over0] ________________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_capture_never_runs_with_b0')
+over = {'recipient': 'AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ'}
+
+    @pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"public_id": "x" * 32},
+                                      {"fetch_to": "relative.part"}, {"cap_bytes": 0}])
+    def test_capture_never_runs_with_bad_inputs(settings, tmp_path, over):
+        fake = FakeRun()
+        kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
+              "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
+>       result, out = AnsibleRunner(settings, run=fake).capture(RES, Steps(), **kw)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AnsibleRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:169: AttributeError
+________________ test_capture_never_runs_with_bad_inputs[over1] ________________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_capture_never_runs_with_b1')
+over = {'public_id': 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
+
+    @pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"public_id": "x" * 32},
+                                      {"fetch_to": "relative.part"}, {"cap_bytes": 0}])
+    def test_capture_never_runs_with_bad_inputs(settings, tmp_path, over):
+        fake = FakeRun()
+        kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
+              "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
+>       result, out = AnsibleRunner(settings, run=fake).capture(RES, Steps(), **kw)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AnsibleRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:169: AttributeError
+________________ test_capture_never_runs_with_bad_inputs[over2] ________________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_capture_never_runs_with_b2')
+over = {'fetch_to': 'relative.part'}
+
+    @pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"public_id": "x" * 32},
+                                      {"fetch_to": "relative.part"}, {"cap_bytes": 0}])
+    def test_capture_never_runs_with_bad_inputs(settings, tmp_path, over):
+        fake = FakeRun()
+        kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
+              "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
+>       result, out = AnsibleRunner(settings, run=fake).capture(RES, Steps(), **kw)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AnsibleRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:169: AttributeError
+________________ test_capture_never_runs_with_bad_inputs[over3] ________________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_capture_never_runs_with_b3')
+over = {'cap_bytes': 0}
+
+    @pytest.mark.parametrize("over", [{"recipient": S_CANARY}, {"public_id": "x" * 32},
+                                      {"fetch_to": "relative.part"}, {"cap_bytes": 0}])
+    def test_capture_never_runs_with_bad_inputs(settings, tmp_path, over):
+        fake = FakeRun()
+        kw = {"recipient": RCPT, "public_id": PID, "cap_bytes": 1,
+              "fetch_to": str(tmp_path / f"{PID}.age.part"), **over}
+>       result, out = AnsibleRunner(settings, run=fake).capture(RES, Steps(), **kw)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AnsibleRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:169: AttributeError
+______________ test_a_refused_capture_comes_back_with_its_report _______________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-81/test_a_refused_capture_comes_b0')
+
+    def test_a_refused_capture_comes_back_with_its_report(settings, tmp_path):
+        report = {"status": "refused", "reason": "home_owner", "raw_bytes": 0, "age_bytes": 0,
+                  "age_sha256": ""}
+        fake = FakeRun(output=report, status="failed", rc=2)
+>       result, out = AnsibleRunner(settings, run=fake).capture(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            RES, Steps(), recipient=RCPT, public_id=PID, cap_bytes=1,
+            fetch_to=str(tmp_path / f"{PID}.age.part"))
+E       AttributeError: 'AnsibleRunner' object has no attribute 'capture'
+
+tests/test_runner_snapshot.py:177: AttributeError
+____________ test_wipe_passes_the_gate_as_a_strict_bool[True-True] _____________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+allowed = True, sent = True
+
+    @pytest.mark.parametrize("allowed,sent", [(True, True), (False, False), ("true", False), (1, False)])
+    def test_wipe_passes_the_gate_as_a_strict_bool(settings, allowed, sent):
+        fake = FakeRun(output={"status": "wiped", "reason": "ok", "removed": 0})
+>       AnsibleRunner(settings, run=fake).wipe(RES, Steps(), allowed=allowed)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AnsibleRunner' object has no attribute 'wipe'
+
+tests/test_runner_snapshot.py:186: AttributeError
+___________ test_wipe_passes_the_gate_as_a_strict_bool[False-False] ____________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+allowed = False, sent = False
+
+    @pytest.mark.parametrize("allowed,sent", [(True, True), (False, False), ("true", False), (1, False)])
+    def test_wipe_passes_the_gate_as_a_strict_bool(settings, allowed, sent):
+        fake = FakeRun(output={"status": "wiped", "reason": "ok", "removed": 0})
+>       AnsibleRunner(settings, run=fake).wipe(RES, Steps(), allowed=allowed)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AnsibleRunner' object has no attribute 'wipe'
+
+tests/test_runner_snapshot.py:186: AttributeError
+____________ test_wipe_passes_the_gate_as_a_strict_bool[true-False] ____________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+allowed = 'true', sent = False
+
+    @pytest.mark.parametrize("allowed,sent", [(True, True), (False, False), ("true", False), (1, False)])
+    def test_wipe_passes_the_gate_as_a_strict_bool(settings, allowed, sent):
+        fake = FakeRun(output={"status": "wiped", "reason": "ok", "removed": 0})
+>       AnsibleRunner(settings, run=fake).wipe(RES, Steps(), allowed=allowed)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AnsibleRunner' object has no attribute 'wipe'
+
+tests/test_runner_snapshot.py:186: AttributeError
+_____________ test_wipe_passes_the_gate_as_a_strict_bool[1-False] ______________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+allowed = 1, sent = False
+
+    @pytest.mark.parametrize("allowed,sent", [(True, True), (False, False), ("true", False), (1, False)])
+    def test_wipe_passes_the_gate_as_a_strict_bool(settings, allowed, sent):
+        fake = FakeRun(output={"status": "wiped", "reason": "ok", "removed": 0})
+>       AnsibleRunner(settings, run=fake).wipe(RES, Steps(), allowed=allowed)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'AnsibleRunner' object has no attribute 'wipe'
+
+tests/test_runner_snapshot.py:186: AttributeError
+_________ test_verify_clean_passes_the_flag_only_for_an_enabled_setup __________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+
+    def test_verify_clean_passes_the_flag_only_for_an_enabled_setup(settings):
+        off, on = FakeRun(output=[]), FakeRun(output=["home:lab"])
+        assert AnsibleRunner(settings, run=off).verify_clean(RES, Steps()).ok
+        assert "daolab_snapshot_enabled" not in off.calls[0]["extravars"]
+        r = AnsibleRunner(settings, run=on).verify_clean({**RES, "snapshot_enabled": True}, Steps())
+>       assert on.calls[0]["extravars"]["daolab_snapshot_enabled"] is True
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'daolab_snapshot_enabled'
+
+tests/test_runner_snapshot.py:196: KeyError
+_________________________ test_the_new_playbooks_exist _________________________
+
+settings = Settings(db_path='./daolab.db', api_host='0.0.0.0', api_port=8080, api_url='http://10.30.0.2:8080/', token='', interna...age', age_keygen_bin='age-keygen', identity_file='~/.config/daolab/age-identity.txt', ticket_dir='/run/daolab/tickets')
+
+    def test_the_new_playbooks_exist(settings):
+        for key in ("snapshot_capture", "home_wipe"):
+>           path = os.path.join(settings.playbooks_dir, AnsibleRunner.PLAYBOOKS[key])
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           KeyError: 'snapshot_capture'
+
+tests/test_runner_snapshot.py:208: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_runner_snapshot.py::test_the_snapshot_residue_kinds_exist_and_parse
+FAILED tests/test_runner_snapshot.py::test_mock_fail_accepts_capture - servic...
+FAILED tests/test_runner_snapshot.py::test_mock_capture_writes_a_ciphertext_that_matches_its_report
+FAILED tests/test_runner_snapshot.py::test_mock_capture_fail_switch_refuses_and_fetches_nothing
+FAILED tests/test_runner_snapshot.py::test_mock_capture_of_an_empty_home - At...
+FAILED tests/test_runner_snapshot.py::test_mock_capture_refuses_bad_inputs_like_the_playbook[over0]
+FAILED tests/test_runner_snapshot.py::test_mock_capture_refuses_bad_inputs_like_the_playbook[over1]
+FAILED tests/test_runner_snapshot.py::test_mock_capture_refuses_bad_inputs_like_the_playbook[over2]
+FAILED tests/test_runner_snapshot.py::test_mock_capture_refuses_bad_inputs_like_the_playbook[over3]
+FAILED tests/test_runner_snapshot.py::test_mock_wipe_only_when_allowed - Attr...
+FAILED tests/test_runner_snapshot.py::test_mock_verify_reports_the_home_only_for_an_enabled_setup
+FAILED tests/test_runner_snapshot.py::test_capture_runs_snapshot_capture_yml_with_only_the_snapshot_extras
+FAILED tests/test_runner_snapshot.py::test_capture_never_runs_with_bad_inputs[over0]
+FAILED tests/test_runner_snapshot.py::test_capture_never_runs_with_bad_inputs[over1]
+FAILED tests/test_runner_snapshot.py::test_capture_never_runs_with_bad_inputs[over2]
+FAILED tests/test_runner_snapshot.py::test_capture_never_runs_with_bad_inputs[over3]
+FAILED tests/test_runner_snapshot.py::test_a_refused_capture_comes_back_with_its_report
+FAILED tests/test_runner_snapshot.py::test_wipe_passes_the_gate_as_a_strict_bool[True-True]
+FAILED tests/test_runner_snapshot.py::test_wipe_passes_the_gate_as_a_strict_bool[False-False]
+FAILED tests/test_runner_snapshot.py::test_wipe_passes_the_gate_as_a_strict_bool[true-False]
+FAILED tests/test_runner_snapshot.py::test_wipe_passes_the_gate_as_a_strict_bool[1-False]
+FAILED tests/test_runner_snapshot.py::test_verify_clean_passes_the_flag_only_for_an_enabled_setup
+FAILED tests/test_runner_snapshot.py::test_the_new_playbooks_exist - KeyError...
+23 failed, 2 passed in 0.39s
+# exit: 1

@@ -1,0 +1,13 @@
+# date:        2026-11-27T21:07:26Z
+# workdir:     /home/akshay/b109bc
+# HEAD:        d97085a65f7108d5448296f10dd73a9b9f483c2f
+# venv:        /home/akshay/b109bc/.venv
+# python:      Python 3.12.13
+# ansible:     ansible-core 2.21.6
+# ansible-playbook: /home/akshay/b109bc/.venv/bin/ansible-playbook
+# service:     /home/akshay/b109bc/service
+# command:     /home/akshay/b109bc/.venv/bin/python -m pytest tests/dpu/test_wipe.py tests/test_playbooks_snapshot.py -q -rsf -p no:cacheprovider
+
+........................................................................ [100%]
+72 passed in 94.42s (0:01:34)
+# exit: 0

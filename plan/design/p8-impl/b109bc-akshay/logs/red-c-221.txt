@@ -1,0 +1,35 @@
+# date:        2026-11-27T21:16:47Z
+# workdir:     /home/akshay/b109bc
+# HEAD:        d97085a65f7108d5448296f10dd73a9b9f483c2f
+# venv:        /home/akshay/b109bc/.venv
+# python:      Python 3.12.13
+# ansible:     ansible-core 2.21.6
+# ansible-playbook: /home/akshay/b109bc/.venv/bin/ansible-playbook
+# service:     /home/akshay/b109bc/service
+# command:     /home/akshay/b109bc/.venv/bin/python -m pytest tests/test_snapshots.py tests/test_runner_snapshot.py tests/test_engine_snapshot.py -q -rsf -p no:cacheprovider
+
+
+==================================== ERRORS ====================================
+___________________ ERROR collecting tests/test_snapshots.py ___________________
+ImportError while importing test module '/home/akshay/b109bc/tests/test_snapshots.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_snapshots.py:20: in <module>
+    from service import agecli, config, hostcheck, keys, models, snapshots
+E   ImportError: cannot import name 'snapshots' from 'service' (/home/akshay/b109bc/service/__init__.py)
+________________ ERROR collecting tests/test_engine_snapshot.py ________________
+ImportError while importing test module '/home/akshay/b109bc/tests/test_engine_snapshot.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_engine_snapshot.py:32: in <module>
+    from service import agecli, api, config, engine, hostcheck, keys, models, runner, snapshots
+E   ImportError: cannot import name 'snapshots' from 'service' (/home/akshay/b109bc/service/__init__.py)
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+2 errors in 0.86s
+# exit: 2
