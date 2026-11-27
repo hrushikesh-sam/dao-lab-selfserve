@@ -1,0 +1,131 @@
+Add the tripwire checker, baseline loader and output parser (B-112a)
+
+What
+- playbooks/files/daolab-tripwire.py: the DPU-side checker (Python 3.10
+  stdlib only). Mode check compares the board outside /home/lab with a
+  baseline in 11 classes (identity, sudo, ssh, sched, boot, bin, kmod,
+  mount, proc, tmp, daolab) and prints only tripwire:<class>:<count>
+  lines, or tripwire:ok. Mode collect prints fingerprints (hex only) to
+  build baselines from. Bad input prints tripwire:error:<code>, exit 2.
+- service/tripwire.py: load_baseline (closed daolab-tripwire/1 format,
+  sha256 of the file bytes), parse_output (checker stdout -> residue
+  items), build_baseline (synthetic baselines from collect mode).
+- deploy/tripwire/README.md and a synthetic baseline for tests,
+  deploy/tripwire/synthetic-test.json (hw_class "test").
+
+Why
+Design v1.1 §3 makes residue detection outside /home/lab part of the
+isolation claim. This is the standalone half of B-112: the format, the
+checker and the controller-side checks, with synthetic baselines only
+(Rama, 23 Nov). The authoritative baseline lives on the controller
+(Q-BASELINE): a copy on the DPU is not trusted, because the user was
+root. Detection only. Nothing calls this code yet; B-112b wires it in.
+
+Files (6 new, nothing existing changed)
+  playbooks/files/daolab-tripwire.py   (mode 100755)
+  service/tripwire.py
+  deploy/tripwire/README.md
+  deploy/tripwire/synthetic-test.json
+  tests/dpu/test_tripwire.py           (stdlib + pytest, no conftest)
+  tests/test_tripwire.py
+
+Collector additions beyond the brief's table (output format unchanged)
+- identity: etc/skel (whole tree), etc/profile, etc/profile.d,
+  etc/bash.bashrc, etc/environment; also the mode and owner of
+  passwd, group, shadow and gshadow.
+- ssh: .ssh/authorized_keys2 next to authorized_keys (Ubuntu's sshd
+  reads both), lab's home excluded as for authorized_keys.
+- bin: etc/ld.so.preload, etc/ld.so.conf, etc/ld.so.conf.d.
+- kmod: etc/modprobe.d, etc/modules, etc/modules-load.d.
+Each has a planted-addition test.
+
+Decisions taken without asking (safest option each time)
+- Walked trees also record directories and the walk root (a new dir
+  with a file is 2 records); tmp records files, links and special
+  files, never directories. An ignored directory skips its subtree.
+- One plant is one record: *.timer is sched only, not boot; the setuid
+  walk skips usr/local/{bin,sbin}, whose content records carry mode.
+- proc: the real uid from status, never the pid; an unreadable exe is
+  skipped (kernel threads); the checker skips its own pid.
+- Strict JSON on both sides: UTF-8, no duplicate keys, no NaN, ints up
+  to 18 digits, nesting errors refused; input up to 16 MiB; hw_class
+  kebab-case (catalog KEBAB, fullmatch) up to 128 characters.
+- Files are opened with O_NOFOLLOW and O_NONBLOCK and checked with
+  fstat, so a FIFO swapped in after lstat cannot hang the checker.
+- Options are parsed by hand (no argparse usage text, which would
+  print the script's name); --opt=value and --help are bad_input.
+- TripwireError carries only its code: no raw text, no path, no
+  chained exception.
+- The synthetic baseline ignores the playbook noise sources only;
+  usr/local/bin/daolab-ml-smoke is not ignored (bin is the partial
+  tamper guard).
+
+Interface (for B-112b)
+- Checker: python3 -I -B daolab-tripwire.py --mode check|collect
+  [--root DIR] [--proc DIR] [--input-fd N]. One JSON document on
+  stdin, or on descriptor N when the script itself comes on stdin
+  (tested with a length-prefixed bootstrap via python3 -c).
+  check: tripwire:<class>:<count> lines in fixed class order, or
+  tripwire:ok, exit 0. count = additions + removals, so a changed
+  entry counts 2. Errors: tripwire:error:bad_input|bad_baseline|
+  internal, exit 2. stderr is always empty.
+- service.tripwire: CLASSES, FORMAT, TripwireError(code),
+  load_baseline(path, hw_class) -> (doc, sha256 of the file bytes),
+  parse_output(text) -> ["tripwire:<class>:<count>", ...] ([] when
+  clean), build_baseline(collect_json, hw_class, version, ignore).
+- Items fit parse_residue (split on the first ':') once "tripwire" is
+  in RESIDUE_KINDS: kind "tripwire", ident "<class>:<count>".
+- B-112b should: treat a TripwireError as "could not verify" (not
+  clean); stream the exact bytes load_baseline hashed; never put a
+  baseline file under tmp, var/tmp or dev/shm (the checker would count
+  it); keep collect output out of job artifacts; run collect and check
+  over the same transport (its own processes and sessions show up in
+  proc and mount); budget 1 + reconcile_attempts runs per cleanup.
+
+For Rama (production baselines)
+- Production baselines and their noise rules stay OPEN.
+- Not covered by any class: the nginx-tls config (/opt/async_nginx.conf)
+  and /var/www/html (both change with every tls-proxy deploy, so they
+  need a rule, not a hash); etc/sudo.conf, etc/pam.d,
+  etc/update-motd.d, etc/udev/rules.d, etc/apt, usr/lib/systemd/system,
+  etc/systemd/user, etc/default/daolab-ml.
+- Candidate noise rules not used in the synthetic baseline:
+  var/spool/cron/atjobs/.SEQ, the vfio modules, run/user/*, snap/*.
+- Known limits (README): a password change on an account already in
+  state "set" is not seen; stacked mounts with the same fstype and
+  extra processes with an exe+uid already seen collapse; fingerprints
+  of guessable records can be confirmed by whoever holds a baseline.
+
+Follow-ups
+- The SmartNIC cleanup should remove /tmp/dao-smart-nic-ansible.log
+  and /tmp/pci-after.txt.
+- The daolab-app-exporter unit and usr/local/bin/daolab-ml-smoke need
+  a defined resting state (today the unit keeps the last app's
+  arguments and ml-smoke stays after ml-tvm cleanup).
+- /etc/daolab/otelcol.yaml keeps the last reservation's user name
+  after cleanup (privacy; for Rama).
+
+Verified
+- Red first: 170/170 checker tests failed (checker missing) on Python
+  3.12.13 and 3.10.12; 180/180 controller tests errored
+  (service.tripwire missing).
+- Green: tests/dpu/test_tripwire.py 170 passed on 3.12.13 (ansible-core
+  2.21.6) and 170 passed on 3.10.12 (--confcutdir=tests/dpu);
+  tests/test_tripwire.py 180 passed on 3.12.13. No skips.
+- Safe output: unique names, a uid, paths and module names planted in
+  every class; 45 checker runs (check, collect, every error case);
+  stdout and stderr grepped: 0 hits, stderr always empty.
+- Timing (informational): about 5000 files, collect 0.11 s, check
+  0.11 s on both Pythons.
+- synthetic-test.json regenerates byte-identical on the machine that
+  built it.
+- The full suite was not run in this task (shared CPU; no module that
+  existing code imports was changed); CI runs it on the PR.
+- Patch applied with git apply --index to a fresh worktree at 65e47fc:
+  tree f89725e535995c9f0a1c2b5f5030ca5da8e3db70, the same as the
+  tested tree (TREE MATCH); git diff --cached --check clean.
+
+Evidence: branch akshay-p8-gate, plan/design/p8-impl/b112a-akshay/.
+
+Patch: B112A-tripwire.patch, 6 files, +2747,
+sha256 12ad2983ab8cb97212b8cc2cb5821b30d235183283a6f887a6c0bc0b0acdbf7b

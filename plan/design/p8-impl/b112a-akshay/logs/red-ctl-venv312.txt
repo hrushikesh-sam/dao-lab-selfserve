@@ -1,0 +1,554 @@
+date:         2026-11-27T18:28:57Z
+HEAD:         65e47fc (branch b112a)
+venv:         /home/akshay/b112a/.venv
+python:       3.12.13
+ansible-core: 2.21.6
+command:      python -m pytest tests/test_tripwire.py -q -p no:cacheprovider --tb=line
+----
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 40%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE [ 80%]
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE                                     [100%]
+==================================== ERRORS ====================================
+_________ ERROR at setup of test_classes_and_format_match_the_checker __________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_returns_the_doc_and_the_sha256_of_the_file_bytes _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[not-an-object] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[no-format] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[wrong-format] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[collect-format] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[unknown-top-key] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[missing-version] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[missing-hw-class] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[missing-classes] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[version-0] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[version-negative] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[version-str] __
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[version-bool] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[version-float] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hw-class-shape] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hw-class-double-dash] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hw-class-long] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hw-class-not-str] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hw-class-other] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[classes-not-object] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[unknown-class] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[missing-class] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[class-not-object] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[unknown-class-key] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[missing-fingerprints] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[missing-ignore] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[fingerprints-not-list] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hex-short] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hex-long] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hex-upper] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hex-not-hex] __
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hex-trailing-newline] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hex-not-str] __
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[hex-duplicate] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[ignore-not-list] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-absolute] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-empty] __
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-newline] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-cr] ____
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-nul] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-long] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-not-str] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-duplicate] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_each_bad_baseline[glob-too-many] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+____ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[empty] _____
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[not-json] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[garbage] ____
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[not-utf8] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[utf8-bom] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+____ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[utf16] _____
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[duplicate-key] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[nan] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[infinity] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[deep-nesting] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[huge-int] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_load_baseline_refuses_unparseable_bytes[over-16-mib] __
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_load_baseline_refuses_a_missing_or_unreadable_path ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_load_baseline_refuses_a_bad_hw_class_argument _____
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_load_baseline_hw_class_shape_is_the_catalogs ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[not-an-object] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[no-format] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[wrong-format] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[collect-format] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[unknown-top-key] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[missing-version] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[missing-hw-class] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[missing-classes] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[version-0] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[version-negative] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[version-str] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[version-bool] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[version-float] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hw-class-shape] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hw-class-double-dash] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hw-class-long] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hw-class-not-str] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[classes-not-object] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[unknown-class] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[missing-class] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[class-not-object] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[unknown-class-key] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[missing-fingerprints] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[missing-ignore] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[fingerprints-not-list] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hex-short] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hex-long] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hex-upper] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hex-not-hex] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hex-trailing-newline] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hex-not-str] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[hex-duplicate] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[ignore-not-list] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-absolute] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-empty] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-newline] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-cr] __
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-nul] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-long] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-not-str] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-duplicate] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_refuses_what_the_loader_refuses[glob-too-many] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_______ ERROR at setup of test_the_checker_refuses_the_same_bytes[empty] _______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_the_checker_refuses_the_same_bytes[not-json] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+______ ERROR at setup of test_the_checker_refuses_the_same_bytes[garbage] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_the_checker_refuses_the_same_bytes[not-utf8] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_the_checker_refuses_the_same_bytes[utf8-bom] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_______ ERROR at setup of test_the_checker_refuses_the_same_bytes[utf16] _______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_the_checker_refuses_the_same_bytes[duplicate-key] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+________ ERROR at setup of test_the_checker_refuses_the_same_bytes[nan] ________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_the_checker_refuses_the_same_bytes[infinity] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_the_checker_refuses_the_same_bytes[deep-nesting] ____
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_the_checker_refuses_the_same_bytes[huge-int] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+____ ERROR at setup of test_the_checker_refuses_the_same_bytes[over-16-mib] ____
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_the_checker_accepts_the_exact_bytes_the_loader_accepted _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+______ ERROR at setup of test_parse_output_accepts[tripwire:ok\n-items0] _______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_______ ERROR at setup of test_parse_output_accepts[tripwire:ok-items1] ________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+____ ERROR at setup of test_parse_output_accepts[tripwire:sudo:2\n-items2] _____
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_accepts[tripwire:identity:1\ntripwire:daolab:999999999\n-items3] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_______ ERROR at setup of test_parse_output_accepts_every_class_in_order _______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+________ ERROR at setup of test_parse_output_refuses_anything_else[''] _________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_______ ERROR at setup of test_parse_output_refuses_anything_else['\\n'] _______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:ok\\n\\n'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:ok\\r\\n'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:OK'] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_parse_output_refuses_anything_else['TRIPWIRE:ok'] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:0'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:-1'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:01'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:+1'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:1000000000'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:\u0661'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:1.0'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo: 1'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:zq7plantcls:1'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:1\\ntripwire:sudo:1'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:tmp:1\\ntripwire:sudo:1'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:ok\\ntripwire:sudo:1'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:1\\ntripwire:ok'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo'] __
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:1:x'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___ ERROR at setup of test_parse_output_refuses_anything_else['trip:sudo:1'] ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else[' tripwire:sudo:1'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:1 '] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:error:bad_input\\ntripwire:sudo] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:1\\ntripwire:error:interna] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:error:zq7plant'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:error:'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:error:bad_input:x'] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['tripwire:sudo:1\\n/etc/sudoers.d/zq7plan] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_refuses_anything_else['Traceback (most recent call last):\\n  F] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_parse_output_refuses_non_text[tripwire:ok\n] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__________ ERROR at setup of test_parse_output_refuses_non_text[None] __________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_________ ERROR at setup of test_parse_output_refuses_non_text[value2] _________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_raises_the_checkers_error_code[bad_input] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_raises_the_checkers_error_code[bad_baseline] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_raises_the_checkers_error_code[internal] _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_parse_output_items_are_residue_items_of_kind_tripwire _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__________ ERROR at setup of test_parse_output_of_a_real_checker_run ___________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+____________ ERROR at setup of test_build_baseline_round_trip_is_ok ____________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+______ ERROR at setup of test_build_baseline_accepts_bytes_and_no_ignore _______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___________ ERROR at setup of test_build_baseline_refuses[not-json] ____________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__________ ERROR at setup of test_build_baseline_refuses[not-object] ___________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_________ ERROR at setup of test_build_baseline_refuses[extra-top-key] _________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__________ ERROR at setup of test_build_baseline_refuses[no-classes] ___________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_________ ERROR at setup of test_build_baseline_refuses[missing-class] _________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_________ ERROR at setup of test_build_baseline_refuses[unknown-class] _________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+________ ERROR at setup of test_build_baseline_refuses[extra-class-key] ________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+____________ ERROR at setup of test_build_baseline_refuses[bad-hex] ____________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+____________ ERROR at setup of test_build_baseline_refuses[dup-hex] ____________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+____________ ERROR at setup of test_build_baseline_refuses[bad-hw] _____________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+___________ ERROR at setup of test_build_baseline_refuses[version-0] ___________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_________ ERROR at setup of test_build_baseline_refuses[version-bool] __________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+________ ERROR at setup of test_build_baseline_refuses[ignore-not-dict] ________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_____ ERROR at setup of test_build_baseline_refuses[ignore-unknown-class] ______
+E   ModuleNotFoundError: No module named 'service.tripwire'
+________ ERROR at setup of test_build_baseline_refuses[ignore-bad-glob] ________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+________ ERROR at setup of test_build_baseline_refuses[ignore-dup-glob] ________
+E   ModuleNotFoundError: No module named 'service.tripwire'
+__ ERROR at setup of test_synthetic_baseline_loads_and_matches_the_fake_tree ___
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_synthetic_baseline_on_a_fresh_fake_tree_differs_only_in_uid_or_mode_classes _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+_ ERROR at setup of test_synthetic_noise_globs_suppress_the_playbook_noise_sources _
+E   ModuleNotFoundError: No module named 'service.tripwire'
+=========================== short test summary info ============================
+ERROR tests/test_tripwire.py::test_classes_and_format_match_the_checker - Mod...
+ERROR tests/test_tripwire.py::test_load_baseline_returns_the_doc_and_the_sha256_of_the_file_bytes
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[not-an-object]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[no-format]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[wrong-format]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[collect-format]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[unknown-top-key]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[missing-version]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[missing-hw-class]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[missing-classes]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[version-0]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[version-negative]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[version-str]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[version-bool]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[version-float]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hw-class-shape]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hw-class-double-dash]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hw-class-long]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hw-class-not-str]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hw-class-other]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[classes-not-object]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[unknown-class]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[missing-class]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[class-not-object]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[unknown-class-key]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[missing-fingerprints]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[missing-ignore]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[fingerprints-not-list]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hex-short]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hex-long]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hex-upper]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hex-not-hex]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hex-trailing-newline]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hex-not-str]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[hex-duplicate]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[ignore-not-list]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-absolute]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-empty]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-newline]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-cr]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-nul]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-long]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-not-str]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-duplicate]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_each_bad_baseline[glob-too-many]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[empty]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[not-json]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[garbage]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[not-utf8]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[utf8-bom]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[utf16]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[duplicate-key]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[nan]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[infinity]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[deep-nesting]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[huge-int]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_unparseable_bytes[over-16-mib]
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_a_missing_or_unreadable_path
+ERROR tests/test_tripwire.py::test_load_baseline_refuses_a_bad_hw_class_argument
+ERROR tests/test_tripwire.py::test_load_baseline_hw_class_shape_is_the_catalogs
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[not-an-object]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[no-format]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[wrong-format]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[collect-format]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[unknown-top-key]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[missing-version]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[missing-hw-class]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[missing-classes]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[version-0]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[version-negative]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[version-str]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[version-bool]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[version-float]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hw-class-shape]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hw-class-double-dash]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hw-class-long]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hw-class-not-str]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[classes-not-object]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[unknown-class]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[missing-class]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[class-not-object]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[unknown-class-key]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[missing-fingerprints]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[missing-ignore]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[fingerprints-not-list]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hex-short]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hex-long]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hex-upper]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hex-not-hex]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hex-trailing-newline]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hex-not-str]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[hex-duplicate]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[ignore-not-list]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-absolute]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-empty]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-newline]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-cr]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-nul]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-long]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-not-str]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-duplicate]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_what_the_loader_refuses[glob-too-many]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[empty]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[not-json]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[garbage]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[not-utf8]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[utf8-bom]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[utf16]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[duplicate-key]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[nan] - ...
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[infinity]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[deep-nesting]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[huge-int]
+ERROR tests/test_tripwire.py::test_the_checker_refuses_the_same_bytes[over-16-mib]
+ERROR tests/test_tripwire.py::test_the_checker_accepts_the_exact_bytes_the_loader_accepted
+ERROR tests/test_tripwire.py::test_parse_output_accepts[tripwire:ok\n-items0]
+ERROR tests/test_tripwire.py::test_parse_output_accepts[tripwire:ok-items1]
+ERROR tests/test_tripwire.py::test_parse_output_accepts[tripwire:sudo:2\n-items2]
+ERROR tests/test_tripwire.py::test_parse_output_accepts[tripwire:identity:1\ntripwire:daolab:999999999\n-items3]
+ERROR tests/test_tripwire.py::test_parse_output_accepts_every_class_in_order
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else[''] - M...
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['\\n']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:ok\\n\\n']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:ok\\r\\n']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:OK']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['TRIPWIRE:ok']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:0']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:-1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:01']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:+1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:1000000000']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:\u0661']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:1.0']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo: 1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:zq7plantcls:1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:1\\ntripwire:sudo:1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:tmp:1\\ntripwire:sudo:1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:ok\\ntripwire:sudo:1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:1\\ntripwire:ok']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:1:x']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['trip:sudo:1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else[' tripwire:sudo:1']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:1 ']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:error:bad_input\\ntripwire:sudo]
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:1\\ntripwire:error:interna]
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:error:zq7plant']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:error:']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:error:bad_input:x']
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['tripwire:sudo:1\\n/etc/sudoers.d/zq7plan]
+ERROR tests/test_tripwire.py::test_parse_output_refuses_anything_else['Traceback (most recent call last):\\n  F]
+ERROR tests/test_tripwire.py::test_parse_output_refuses_non_text[tripwire:ok\n]
+ERROR tests/test_tripwire.py::test_parse_output_refuses_non_text[None] - Modu...
+ERROR tests/test_tripwire.py::test_parse_output_refuses_non_text[value2] - Mo...
+ERROR tests/test_tripwire.py::test_parse_output_raises_the_checkers_error_code[bad_input]
+ERROR tests/test_tripwire.py::test_parse_output_raises_the_checkers_error_code[bad_baseline]
+ERROR tests/test_tripwire.py::test_parse_output_raises_the_checkers_error_code[internal]
+ERROR tests/test_tripwire.py::test_parse_output_items_are_residue_items_of_kind_tripwire
+ERROR tests/test_tripwire.py::test_parse_output_of_a_real_checker_run - Modul...
+ERROR tests/test_tripwire.py::test_build_baseline_round_trip_is_ok - ModuleNo...
+ERROR tests/test_tripwire.py::test_build_baseline_accepts_bytes_and_no_ignore
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[not-json] - ModuleN...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[not-object] - Modul...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[extra-top-key] - Mo...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[no-classes] - Modul...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[missing-class] - Mo...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[unknown-class] - Mo...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[extra-class-key] - ...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[bad-hex] - ModuleNo...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[dup-hex] - ModuleNo...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[bad-hw] - ModuleNot...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[version-0] - Module...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[version-bool] - Mod...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[ignore-not-dict] - ...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[ignore-unknown-class]
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[ignore-bad-glob] - ...
+ERROR tests/test_tripwire.py::test_build_baseline_refuses[ignore-dup-glob] - ...
+ERROR tests/test_tripwire.py::test_synthetic_baseline_loads_and_matches_the_fake_tree
+ERROR tests/test_tripwire.py::test_synthetic_baseline_on_a_fresh_fake_tree_differs_only_in_uid_or_mode_classes
+ERROR tests/test_tripwire.py::test_synthetic_noise_globs_suppress_the_playbook_noise_sources
+180 errors in 0.34s
+---- exit: 1

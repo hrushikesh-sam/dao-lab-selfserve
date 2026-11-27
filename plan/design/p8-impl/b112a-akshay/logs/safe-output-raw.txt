@@ -1,0 +1,190 @@
+### check exit=0
+--stdout--
+tripwire:identity:6
+tripwire:sudo:1
+tripwire:ssh:3
+tripwire:sched:5
+tripwire:boot:3
+tripwire:bin:6
+tripwire:kmod:4
+tripwire:mount:1
+tripwire:proc:1
+tripwire:tmp:3
+tripwire:daolab:2
+--stderr--
+### collect exit=0
+--stdout--
+{"classes":{"identity":{"fingerprints":["231a9c60b625bbba42a2f5ba43bd13da27fd43410af91eb593d6eb1ce04fe03b","259d2224b8b58ae6be166de2262ae64a5ff1d37a5395978e69f18c01bd30da3b","29d7187f27e7b7aee7f7f280a16722371841ab2d6410f40fd4b9a35079c0318f","2ef8b6dee24dac12e7818e28acef98603ba4358b97da5e4a25d86e8d067af938","2fe685076ccfc80ea342bdb596bca34739108313c5c65f6fff7826b1265476d2","34d8be07c891a1262b99fc882b8a28520467824ae115ec6a164f1624d5f6bb6e","3cc2a17da5c9d64475352d9aaddcd768607213eb0ffeb364c2b2664b9fb50e25","431223a3f643158816c5914b3231f44f86d75ce0e8deae835c0d91e088f89cf6","5435003626d645e4b6f6321382ae387e9624ee68ad7dbeae269c91e5a04770a2","5a83cb2ad85d7f635728adee01c4b60d2773c69b5d5112d719c6df04fddfdb09","6307bc77b66a306bf699e94a09120fb85ba0cead17a73cedc971537cfaecca25","67064d205e7e801e5030f2e6cba52b9af88c4006a148bc601e7eab0ba361ce65","6a5d92ca9267031d99f114a7c2e9dfc392392856a246161528588f0748601d76","76c741e1cfb4660ada29cb1473eb9eeb8b33a5613e11c01027261e47a2bd6848","7d2b783bfd79286411504131179449243315113f335c17294554562e0a1a6363","9a5f594c383e26008bf775aa17502169f560143a5fc1afd46cfa77804cb99cbc","9ed2b190aa7d4d371c5ddb5f304f3ee70995ca57c2f37a265365cb92071cc099","a0353b8748def59a1a0b96ad8fbfad857da1f6560d4e973bbf31b91baef4d9f3","afeb1137ae7bd16feefc39332bf948c9c5384d33aa6d6c573ed6eba787ecd64c","b534c2d43bd7754f7841a06db9e4a0ef645906634292e496d11e1835bac73e45","b8b822bfe5acdc6181b78e4a41a298dbcdcaf5a2ba56818254e674bb9022075b","cc942b4c1fbb06f153229fa907af17c3495b57358e600e8f6ff5c50ecf6ee9f2","d23803f8ccc426a43308c91997fe0472348261f5df189b152d4381d3fe954c02","d725607e8565ff9121c3c157b68c0e9e768a1ddd65d925e169cbafe64dce9059","d7a7c512f6c7f21a12109a0129906abc5cc4d52b207f9b63459f7769a7133fa6","db28e84971cf1ce51873182e6bf89284a1178de2d3ca21bd5a03e21f02e6cb54","dc35930618819286b0824644d4595a20d0d9baed7a76f5728cc493247c61946c","e88ddbab439aba7dfff94c84dad0f14425bcd5370614919371c17cbd875bd1c1","f15b13c63af7e21fe31a04846b8061f6feac6dc5bf08bd8ca9bdac55c646a68e","f78bd392924159c81988d74038bb38a54a153c73cc085efa6bb39be8ff5b9bec","fa8cc974a6a241acf2898bd4936dee860b2de2be184102c423b11fb2381a5c8d"]},"sudo":{"fingerprints":["06dc7f18eddc5453dd5f3259c360f5e8592c35c46a4641470adfba38cbcfcfef","339996f2abb6f85d9553c67f591b00e55a6a3b8d926edef31d17091b123086eb","55422077be6b4f55e55f4dc28a9824ba67e72ad6068544382494564d4d081f59","9c468936627fe938e67828ba96f80238dfd9bd9109cf744dc3c93012b43b7058","d0dc6b81aeabd12b6c4dd56d32bef7c9d000e3e1962b515b6fe64a09ab5f827d"]},"ssh":{"fingerprints":["06112a10ff9467ee2f54fcc02e0f1df2ccd0b4285c2a64a8c2c5abac79766d5f","1af33b9c3c286fc99a360af3b88b3a8ccb084a6bdf744149d5b1df54f114d689","2e088d41401b9a8d3be05c2d1bbadcf6d5b5d83bd4fbb901ac1590a4fed6ec8b","2ff0abfd1e3b1364b0839570e0ad26759f00f092e923109d3fe0ddf50597c08a","44192afe6bbbe4848550ecee20c22ed4da4f855f20b613467c85019d55a7cde4","483a53caec9e3e6ed258b1661dd5301d0463fceb0bf8756bf710bf510039fc35","6884b2cf8fe60e52b013d3a62608378d5ab5298a3e5c3f5188e99815a519a1ac","a12d4eee6b04e62a14d27e8269d54d8b14854e92e0575613fa5a8df756585625","cbaec3ad9152af899bcb7f8227efba0b94bdfdf8c6f25d72e3024d2035a8367e","d51c2bb982fa7452956ad5a6f61742c5a5f0afee40d844792b10876baefd6925","f85486d2964fcbbb559dcd51889f1a92cfa9063eca1fcbe6a350bbfa56eaa56a"]},"sched":{"fingerprints":["00dc4b5b48c4761a739f7c96fd7546e51afc6fab2daed79385037b71b4fc1e45","0577e0c21eae25e1432421e2f51006e34ef85b41aeb8743e4c05d9852a698824","16ae64a9bc2c68bd18869c9ee48bc63ec2badd8019fb22d9f04728be8df6f621","1822f5e1b0224209d14e6e83d526ee5a831a0ec9544c94985ea157132a049505","2458c200be3bfc7356b238dd296aced6794768c8cb86a9425bafc15960dbdd5b","2bb88b4343771b586f7ddc30c19d7b787493749de0e09d586a35313e3ee6f425","4bdd27fe3169636b10a00911b11e32e2bb47c7cecdf257595001757aaec062cd","740c5c5f89984b5a8c11b60cf41345b8471a6d95cd84345bf0c5679eab0ee04f","7cd9bd5b40140cf9ac19ff8555e87ea1cc818fb635099ec1ede97b77d10a6642","7f5a8b3daf56d5b3b7dbf8951378814ec63b836e88683631cbe907b97309397c","88fdff11a4374d596c451b801339c64b010cfb29b571e70aed9ed5c624b83015","8a18bff7271987740c64fed398b21691a26fb4acc38d7de1e026629191b2e43a","90291cacec63f17c8d7709f047e8b6077fa2c8f4433a13044f614d811370d741","99fb9b29557b9baa51f043a984048c876e1091ba64ead1967ac17dadd4b956e1","aafb662e4eebf98db710f7d38694ade64b32aafccd0d8596bf7424aefb6a1738","bb12496838aeed617401462a23bd0e4073eec72492a40b2082b0363c7328fae2","c4aa16404a5146023ae8bbd20676c6f6d5bf0ff58a9876bbfe183c868befd971","d2a267d393a790e35deffc4db5b7f3348021f8dc41290431be958824c26c20d8","d7437a66e28de6e4ed2d9acc2d5069eaaf879bb90911660a102d8798f27e5314","f4477c107f8cadea4fd375b354255f9431a93e0a7334058c239e8fe7e70029d8"]},"boot":{"fingerprints":["3a1364759fa36d3bc1010dd90213b6747b70956ad790f804f4cc1df6f7bed474","41e0af6b5b8f0c947938ac31943114185548b1fc641862006fec590141db6bbd","56425c12b66804aac6342c896b5c3a60bd52422769b2dac52b90bb3dc9a6dd9c","6508b05b880ffe70c9f2716dc409b5ccc1db94498a52e08fb3cff7c36ed72b26","67b5d6e7131c348a7a982fec22722633ef0a81ce458af7b53984a23a2001a938","824f013582a4d2c7abe6c6152791e3c3a2626157c5e116a880db8b3dc101f132","851e0bf79dd092d0157fa4e14cf6ccf64a247992fbe172bc5477b4ec5625aecf","9003d98c00d48bde04c83d3e66269383c3a72684c3cdf5acfbbd83a89f289460","c871788edd39669190f7d16896def290e2fb307c3b876745bacb059650262e3f","cf48b6b478319b6bef45bff40f66f385a4e814e25ba393805f25c6b213a4f0ec","ea5ff8d064a3163f892b39bd0ef17bb8a7ef7f078525835786f0dfc790f5e4f7"]},"bin":{"fingerprints":["0a068c9a3f7a508cc0de28c82952894509a5187e98537baaf04758a9ba01340f","1dbd659dfc1d84655f739d55107cb8835a56b1ccbfa343322040a344ef0d39ef","2367b57b39074bebb0cd28280f54161d5f1d14c229bf38fc414cdbd5b55abd87","2cb8118a4bf332e85acdad001dc09fa303e2c2b19d80c226d1d07fc57c0ac59d","3aac46d25447f49f00e22de3e05ec13789fb3f46d68a8ee33ec4cb0ef755108d","4ad6d4a59c451c2930064e2952a7d51eeef7ef0aea1b9e1771eabc74aad82268","91fbb23ac17d9e5ca50a9ee4f420a61bdf7d43df48cbd88020c0fb1067c47fc0","9359187b00c97b4a8947fbfa4d7751405f1b53cf3a6d69b8e2eac2864a461b82","bfbba2539ed1bddf2dbedb9ddc0f4d2cf4110ff8b9920e9748ae345eaffec111","bff6699f7fb7932b6fc46280573f1ce012270b0cb40087f9adf0c494dfceae2c","c7167184ddf46ae05e84d45ab0490ffd12bdfc09d88101bcbc70c7b1004ec3a7","c76503fb45464089e4e3b047d8913140631bb52943f449ec183e40d79f2a4842","ca06146527e1572e072c0fbd5ef4b61da8d4af3db118cea5d564af58ce45d049","d5adf9c06e1eebefa0788a8f6723670687c275458e583915dc3b988f47c34a68","d70c18a295a05232a5042f626966a0f91b45ee3f30def101bef3e80862a56722","e35862662952d592a7f3b5924ee107fd986fb0f5213bfe8ba10164004d657b04","f8a7ad0b1d007f874afb425fe1343afd0d80e91bc7a5ae331df330bcdc15c374","fdde3b643b43aead5ed244f3f371bd17dfd63e514ba165f3a5f3c5b50f646788"]},"kmod":{"fingerprints":["01432aeb8d3828c416327bc7fe3e63d32121b9c1029f242c8ed477a08160a101","2dfca4aa77de230976be572c5222cdab3c602505a9d7fbcfa637281fce707600","465a64e95b5ff90712e17fec25774eff50d9d8fb00968ae3828b5509c1e33b03","5e607515ddb17b9fc9a3abef6506c4522fbdb0a7c74d125572cf8d985f33c26a","6079186af3b2c7f1f79bd172d82923bea15e8200f1a2fd1b23664abab1dddf37","7455fe9df448a1bc94f2e0469acdbcb38612941b116cd88962f1d1b385edbd05","92ba49cc7a1a49959bf509f827f1517df2f3e52554174f3b2458c12a40d49a35","d555a89f1cfd158aea5c8f8ff78a1001ecd517acf2433e3fcd47e5884dc2d94c","ee765b983141b8e204f87cc6b71db920238cc8f1cea2451af48d48dc5f846507","f69fad2d5f691a86852119b45a577d15de899509e95893b1e58d1783309fb10a"]},"mount":{"fingerprints":["0d8547f965cfa1dbd8095e8fb6b252353c53d7e973fdad01bacb52f95ee6b056","25e13c8a51894e72712a6b7f60e56bdcad658f7e47eb544a77639d4e0e39e279","48b3e5d44b049dbf0789f6198a8c320af40b8ecba45857aaf1cd4b28680a938f","7e523c022aa6bb115ed82b5f83722aabbc7adb6d7580323f600e687d5e435578","b811e68c69f2d86f8ee52de920c772e61ee1f430a3c96dfc47b0489f03ffe4c1","c03c5609a7800cff05cc5ad60c938af064afdf4ffae514b5d85938249f8c8da4","d75d49af046d2a3bf92d3557319724d94c8c3fa5afb8a322aff292ffe09e38ce"]},"proc":{"fingerprints":["09c7eac7f45d7f90a82161c1b2b019c385a55f80d8b3d84ebc3eff6f9b2749d8","5dc6fe4e9334723742652833b7d33f94301abf0aa904aee73560b85a35faec16","6194ee4c3c1d4aff80387b9c662a684a65d96cdd177e1135d735e1fd7c154d84","61ec80e792ee0b98ebbf938afbf24a98ba6faecd5ce4d8ddde594453fa949d09","e37893ece15a35cb34e94e1a152dd7e882e5ec1ace9bc49bca3cd473c842d801","edff3f88fad45ac67d281a75ed52adb1ad694788fdf41566c64f9c3189e530ca"]},"tmp":{"fingerprints":["175dc7aa5d0dd89435bd3be610a7716a1b67230ace9d7badf85d5eb4febe1454","2a4d3b34406e21becb26d012d9bef09a78e8966d71d4422622a82fa2dda7a0ae","815358a4687072611a1bafcbfeca3afc8aafdd2aec2bb3e38d1d09a132654a23","d739c0ba561027cebca1f02f836e4ab5b8ae6da6781859e5b94fe472885b326c","fd2ac2a8f16f852b8c00bd1fc84cbe65d88b6e2eae1e6c8acb602a827026d968"]},"daolab":{"fingerprints":["089dc3902cd2579687e486b4f2878e3416363c24f010951cc52582770bd08b5d","3a0c6495d3a8ab9bd0444f5d16529747dffd80f18abf7e3b448d8d8246f0a84e","545bfa8489d255e956f831a0140d253713e22ec33f667709431d373d258bd57b","817807d047a5c7f2cff76883249c3e1f0a3f0601289d75b4d253995ba64d24bb","8f23ba985f054742321bc2982df6fedd0c90dca52c0ebdb1e6b3d1c978c165c8","90a046938a4c6e98a79821807a49766297360cfd944e4b7eb38e0247307dd30e","c398686957e9cc075fb7acbaeba3ad6beaed84aa56ff23f4611f545c0f12145a","ef04d75f72afd67522e7951d16a52b95e9eac2e53b3c18a9c1d4ae52a78e94d5"]}}}
+--stderr--
+### bad-baseline-not-an-object exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-baseline-no-format exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-baseline-wrong-format exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-baseline-collect-format exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-baseline-unknown-top-key exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-missing-version exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-version-0 exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-version-str exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-version-bool exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-version-float exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-hw-class-shape exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-hw-class-long exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-classes-not-object exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-unknown-class exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-missing-class exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-class-not-object exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-unknown-class-key exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-missing-ignore exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-fingerprints-not-list exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-hex-short exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-hex-upper exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-hex-not-hex exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-hex-not-str exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-hex-duplicate exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-glob-absolute exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-glob-empty exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-glob-newline exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-glob-nul exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-glob-long exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-glob-not-str exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-glob-duplicate exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-baseline-glob-too-many exit=2
+--stdout--
+tripwire:error:bad_baseline
+--stderr--
+### bad-bytes-empty exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-not-json exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-json-garbage exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-not-utf8 exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-utf8-bom exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-utf16 exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-duplicate-key exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-nan exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-deep-nesting exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-bytes-huge-int exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--
+### bad-root exit=2
+--stdout--
+tripwire:error:bad_input
+--stderr--

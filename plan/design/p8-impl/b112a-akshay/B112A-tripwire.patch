@@ -1,0 +1,2783 @@
+diff --git a/deploy/tripwire/README.md b/deploy/tripwire/README.md
+new file mode 100644
+index 0000000..eb977a9
+--- /dev/null
++++ b/deploy/tripwire/README.md
+@@ -0,0 +1,170 @@
++# Tripwire: checking the board after every cleanup (B-112a)
++
++After a booking is cleaned up, the tripwire looks at the rest of the board, outside `/home/lab`, for
++anything the user may have left behind that could affect the next user: an extra sudo rule, an SSH key,
++a cron job, a kernel module, a running process. It compares what it finds with a **baseline** (a list
++of fingerprints of a known-good board) and reports only **"class X: N differences"**. It never reports
++what or where.
++
++- The checker: `playbooks/files/daolab-tripwire.py` (runs on the DPU; Python 3.10 standard library only).
++- The controller side: `service/tripwire.py`: `load_baseline`, `parse_output`, `build_baseline`.
++- A synthetic baseline for tests: `deploy/tripwire/synthetic-test.json` (hw_class `test`).
++
++Wiring it into the runner/engine (the `tripwire` residue kind, quarantine, the two-admin accept and
++re-baseline flow) is B-112b. Nothing calls the tripwire yet.
++
++## Detection only
++
++The tripwire is **detection, not proof of cleanliness** (design v1.1 §2, §3). During the slot the user
++was root, so they could have:
++- replaced `python3` or a library the checker uses;
++- made the board lie to it, e.g. with an LD_PRELOAD hook, a kernel module, or a bind mount over a
++  checked path;
++- changed things the checker does not look at.
++
++The `bin` class (setuid files, `/usr/local/{bin,sbin}`, `ld.so.preload`/`ld.so.conf`) and the `kmod`
++class only *partly* cover tampering with the checker itself. Firmware, the BMC and anything below the OS
++are out of scope.
++
++The authoritative baseline lives **on the controller**, never on the DPU (Q-BASELINE). A copy on the DPU
++could have been edited by the user. B-112b streams the exact baseline bytes to the checker and records
++the file's sha256 (from `load_baseline`) in the audit trail.
++
++## Running the checker
++
++```
++daolab-tripwire.py --mode check|collect [--root DIR] [--proc DIR] [--input-fd N]
++```
++
++It reads **one JSON document**, from stdin or, with `--input-fd N`, from that file descriptor. The second
++form is for when the script itself arrives on stdin (`python3 -I -B -c <bootstrap>`); B-112b chooses the
++transport. `--root` (default `/`) and `--proc` (default `/proc`) exist so tests can run it on a fake board.
++B-112b should run it as `python3 -I -B`: isolated mode ignores `PYTHON*` variables and the user site, and
++`-B` writes no bytecode.
++
++| Mode | Input | Output (exit 0) |
++|---|---|---|
++| `check` | the baseline | one line `tripwire:<class>:<count>` per class with a count > 0, in the fixed class order; or exactly `tripwire:ok` |
++| `collect` | `{"format": "daolab-tripwire-collect/1", "ignore": {"<class>": ["<glob>", ...]}}` | one line `{"classes": {"<class>": {"fingerprints": ["<sorted hex>", ...]}}}` |
++
++**Count semantics:** `count = |current − baseline| + |baseline − current|`. Additions and removals both
++count, so **a changed entry counts 2** (the old fingerprint is gone, a new one appeared).
++
++**Errors** print exactly one line and exit 2, with nothing on stderr:
++- `tripwire:error:bad_input`: bad options, unreadable or oversized input (16 MiB), not strict JSON
++  (UTF-8, no duplicate keys, no NaN, no huge numbers), the wrong `format` for the mode, or a bad collect
++  document.
++- `tripwire:error:bad_baseline`: the format is right but the contents are wrong. That covers an
++  unknown or missing key, a class name not in the 11, `version` not an integer ≥ 1, `hw_class` not
++  kebab-case, a fingerprint that is not 64 lowercase hex, duplicates, and a bad glob.
++- `tripwire:error:internal`: anything unexpected (no traceback anywhere).
++
++**Safe output:** the checker never prints a path, a file or user name, a uid, a module or unit name, or
++a command line. Only the lines above, or collect mode's hex fingerprints.
++
++`service/tripwire.py` `parse_output` turns check output into residue items `tripwire:<class>:<count>`
++(`[]` for `tripwire:ok`). It raises `TripwireError(code)` for an error line, and for anything that is
++not exactly the contract: an unknown class, a count ≤ 0, extra lines, CR, any other text. The exception
++carries only the code, never the raw text.
++
++## What each class checks
++
++Every walk is under `--root`, uses `lstat` and **never follows a symlink**: a link is recorded as its
++target string. Special files are recorded by type only. An entry that can't be read is recorded as
++"unreadable" plus its path, so it cannot hide. A fingerprint is the sha256 of a normalized record
++(`json.dumps([class, kind, fields...])`, ASCII-escaped), so it never contains a newline.
++
++| Class | What is fingerprinted |
++|---|---|
++| `identity` | `etc/passwd`, `etc/group`: each whole line. `etc/shadow`, `etc/gshadow`: each name + password **state** only (`locked` if the field starts with `!` or `*`, `empty`, else `set`). The password field is never hashed: it is secret, and lab's rotates every booking. Plus the mode and owner of these four files, and (beyond the brief) `etc/skel` (whole tree), `etc/profile`, `etc/profile.d`, `etc/bash.bashrc`, `etc/environment`: what every new home and every login shell gets. |
++| `sudo` | `etc/sudoers` and everything in `etc/sudoers.d`: path + mode + uid + sha256 of the content. |
++| `ssh` | Everything under `etc/ssh` (path + mode + uid + content hash), and `.ssh/authorized_keys` and `.ssh/authorized_keys2` in every home listed in `etc/passwd`, **except lab's home**. That home is covered by snapshot capture and wipe, and its keys change every booking. A change to lab's passwd line (e.g. its home) is caught by `identity`. |
++| `sched` | `etc/crontab`, `etc/cron.d`, `etc/cron.{hourly,daily,weekly,monthly}`, `var/spool/cron/crontabs`, `var/spool/cron/atjobs` (path + content hash), and every `*.timer` under `etc/systemd/system`. |
++| `boot` | Files only, never `systemctl`: everything under `etc/systemd/system` except `*.timer` (those are `sched`). That means links (`*.wants/`, `*.requires/`, aliases, masks) by target, and unit files and `.d/` overrides by content hash. Plus `etc/rc.local`. |
++| `bin` | setuid/setgid regular files under `usr/bin`, `usr/sbin`, `usr/local`, `bin`, `sbin`, `opt` (path + mode + uid; a merged-usr `bin -> usr/bin` link is recorded, not walked). Content hashes of everything in `usr/local/bin` and `usr/local/sbin` (not all of `/usr/bin`: too slow). Beyond the brief: `etc/ld.so.preload`, `etc/ld.so.conf`, `etc/ld.so.conf.d`. |
++| `kmod` | Loaded module names (`<proc>/modules`, first field). Beyond the brief: `etc/modprobe.d`, `etc/modules`, `etc/modules-load.d` (content). |
++| `mount` | Mount point (octal escapes decoded) + fstype from `<proc>/self/mountinfo`. Mount options are not recorded. |
++| `proc` | For each process: the executable path (`readlink exe`) + real uid (`Uid:` in `status`). Never the pid, and duplicates collapse. A process with no readable exe (kernel threads, one that just exited) is skipped, and so is the checker itself. |
++| `tmp` | Under `tmp`, `var/tmp`, `dev/shm`: regular files (path + uid + size, **not** content), links and special files. Directories alone are not recorded. |
++| `daolab` | Everything under `etc/daolab` (path + mode + uid + content hash). |
++
++## Noise rules (`ignore` globs)
++
++Each class has an `ignore` list of `fnmatch` globs (case-sensitive; `*` also matches `/`). They are
++matched against each record's **subject**:
++- the path relative to `--root` for file records (an ignored directory skips its subtree);
++- `<file>:<name>` for identity lines (e.g. `etc/passwd:lab`);
++- the module name for loaded modules;
++- the mount point and the exe path, each without its leading `/`.
++
++The globs live only in the controller-side baseline. They are never printed.
++
++**The collect run that builds a baseline must use the same ignore globs as the baseline**:
++`build_baseline` cannot check this. Otherwise the baseline holds fingerprints that the checker now
++skips, and they count as removed on every check.
++
++The synthetic baseline ignores the playbook noise sources found in B-112a's review. They are synthetic
++rules, not production decisions:
++
++| Class | Glob | Why |
++|---|---|---|
++| `boot` | `etc/systemd/system/daolab-app-exporter.service` | every deploy rewrites the unit with app-specific arguments; cleanup only disables it |
++| `tmp` | `tmp/dao-smart-nic-ansible.log`, `tmp/pci-after.txt` | left behind by the SmartNIC launch/cleanup roles |
++| `daolab` | `etc/daolab/otelcol.yaml` | every deploy rewrites it with the reservation's id and user; cleanup leaves it |
++| `tmp` | `tmp/daolab-test-noise-*` | the tests' own noise rule |
++
++`usr/local/bin/daolab-ml-smoke` (installed by ml-tvm, not removed by its cleanup) is **not** ignored:
++`bin` is the partial tamper guard. It is stable after the first ml-tvm deploy.
++
++## Baselines: synthetic and production
++
++- **Synthetic** baselines (`deploy/tripwire/synthetic-<hw_class>.json`) are built from the tests' fake
++  board and exist for tests only. They contain no real board's contents.
++- **Production** baselines (`/etc/daolab/tripwire/` on the controller, Q-BASELINE) are **OPEN: Rama
++  provides them.** B-112a does not invent their contents (Rama, 23 Nov). Taking one needs a decision on
++  when (after the first booking, so `lab`, its sudoers drop-in and the installed tools exist), on which
++  noise rules apply, and on the transport. Collect and check must run the same way, because the
++  transport's own processes and sessions appear in `proc` and `mount`.
++
++### How a synthetic baseline is built
++
++1. Run the checker in collect mode on the board (here: the fake board of `tests/dpu/test_tripwire.py`)
++   with the ignore globs the baseline will carry:
++   `echo '{"format": "daolab-tripwire-collect/1", "ignore": {...}}' | python3 -I -B daolab-tripwire.py --mode collect --root ROOT --proc PROC`
++2. Build the baseline on the controller and write it as `json.dumps(doc, indent=2)` plus a newline:
++   `service.tripwire.build_baseline(<collect line>, "<hw_class>", <version>, <same ignore>)`.
++3. Check it: `load_baseline(path, "<hw_class>")` must accept it, and a check run on the same board must
++   print `tripwire:ok`.
++
++`synthetic-test.json` was made this way by `synthetic_baseline()` in `tests/test_tripwire.py` (fake board
++from `make_tree()`, globs `SYNTHETIC_IGNORE`, version 1). Its file fingerprints include the uid and mode
++of the machine that built it, so the tests check that it loads, that its ignore lists match, and that
++each class has the same number of fingerprints as a fresh fake board. The classes with no uid or mode
++in their records (`sched`, `boot`, `kmod`, `mount`, `proc`) must match exactly.
++
++## Known limits (documented, not fixed)
++
++- A password change on an account whose state is already `set` (the operator's, root's) does not count;
++  only the state class is compared.
++- A second mount stacked on an existing mount point with the same fstype collapses into the set, and so
++  does a second process with an exe and uid already in the baseline.
++- Fingerprints of guessable records (e.g. a passwd line) can be confirmed by someone holding the baseline
++  or the collect output. Keep collect output out of job logs.
++- A root user can make the checker slow (millions of files in `/tmp`). B-112b's timeout then means "could
++  not verify", which is not clean.
++
++## Not covered (for Rama: production baselines)
++
++These can affect the next user but are in no class:
++- the nginx-tls config (`/opt/async_nginx.conf`) and its document root (`/var/www/html`). They change
++  with every tls-proxy deploy, so they need a production rule, not a file hash;
++- `etc/sudo.conf`, `etc/pam.d`, `etc/update-motd.d`, `etc/udev/rules.d`, `etc/apt` (sources and hooks;
++  VPP installs via apt), `usr/lib/systemd/system` and its `*.wants`, `etc/systemd/user`;
++- `etc/default/daolab-ml`, `/var/lib/daolab/`.
++
++## Tests
++
++- `tests/dpu/test_tripwire.py`: the checker on a fake board under `tmp_path` (stdlib + pytest, no
++  conftest). Run it on the DPU's Python too: `python3.10 -m pytest tests/dpu/test_tripwire.py --confcutdir=tests/dpu`.
++- `tests/test_tripwire.py`: `service/tripwire.py`, plus a cross-check that the checker refuses every
++  baseline the loader refuses.
+diff --git a/deploy/tripwire/synthetic-test.json b/deploy/tripwire/synthetic-test.json
+new file mode 100644
+index 0000000..320f501
+--- /dev/null
++++ b/deploy/tripwire/synthetic-test.json
+@@ -0,0 +1,164 @@
++{
++  "format": "daolab-tripwire/1",
++  "version": 1,
++  "hw_class": "test",
++  "classes": {
++    "identity": {
++      "fingerprints": [
++        "259d2224b8b58ae6be166de2262ae64a5ff1d37a5395978e69f18c01bd30da3b",
++        "29d7187f27e7b7aee7f7f280a16722371841ab2d6410f40fd4b9a35079c0318f",
++        "2ef8b6dee24dac12e7818e28acef98603ba4358b97da5e4a25d86e8d067af938",
++        "2fe685076ccfc80ea342bdb596bca34739108313c5c65f6fff7826b1265476d2",
++        "34d8be07c891a1262b99fc882b8a28520467824ae115ec6a164f1624d5f6bb6e",
++        "3cc2a17da5c9d64475352d9aaddcd768607213eb0ffeb364c2b2664b9fb50e25",
++        "431223a3f643158816c5914b3231f44f86d75ce0e8deae835c0d91e088f89cf6",
++        "5435003626d645e4b6f6321382ae387e9624ee68ad7dbeae269c91e5a04770a2",
++        "5a83cb2ad85d7f635728adee01c4b60d2773c69b5d5112d719c6df04fddfdb09",
++        "67064d205e7e801e5030f2e6cba52b9af88c4006a148bc601e7eab0ba361ce65",
++        "6a5d92ca9267031d99f114a7c2e9dfc392392856a246161528588f0748601d76",
++        "76c741e1cfb4660ada29cb1473eb9eeb8b33a5613e11c01027261e47a2bd6848",
++        "7d2b783bfd79286411504131179449243315113f335c17294554562e0a1a6363",
++        "9a5f594c383e26008bf775aa17502169f560143a5fc1afd46cfa77804cb99cbc",
++        "9ed2b190aa7d4d371c5ddb5f304f3ee70995ca57c2f37a265365cb92071cc099",
++        "a0353b8748def59a1a0b96ad8fbfad857da1f6560d4e973bbf31b91baef4d9f3",
++        "afeb1137ae7bd16feefc39332bf948c9c5384d33aa6d6c573ed6eba787ecd64c",
++        "b8b822bfe5acdc6181b78e4a41a298dbcdcaf5a2ba56818254e674bb9022075b",
++        "d725607e8565ff9121c3c157b68c0e9e768a1ddd65d925e169cbafe64dce9059",
++        "d7a7c512f6c7f21a12109a0129906abc5cc4d52b207f9b63459f7769a7133fa6",
++        "dc35930618819286b0824644d4595a20d0d9baed7a76f5728cc493247c61946c",
++        "e88ddbab439aba7dfff94c84dad0f14425bcd5370614919371c17cbd875bd1c1",
++        "f15b13c63af7e21fe31a04846b8061f6feac6dc5bf08bd8ca9bdac55c646a68e",
++        "f78bd392924159c81988d74038bb38a54a153c73cc085efa6bb39be8ff5b9bec",
++        "fa8cc974a6a241acf2898bd4936dee860b2de2be184102c423b11fb2381a5c8d"
++      ],
++      "ignore": []
++    },
++    "sudo": {
++      "fingerprints": [
++        "06dc7f18eddc5453dd5f3259c360f5e8592c35c46a4641470adfba38cbcfcfef",
++        "339996f2abb6f85d9553c67f591b00e55a6a3b8d926edef31d17091b123086eb",
++        "9c468936627fe938e67828ba96f80238dfd9bd9109cf744dc3c93012b43b7058",
++        "d0dc6b81aeabd12b6c4dd56d32bef7c9d000e3e1962b515b6fe64a09ab5f827d"
++      ],
++      "ignore": []
++    },
++    "ssh": {
++      "fingerprints": [
++        "06112a10ff9467ee2f54fcc02e0f1df2ccd0b4285c2a64a8c2c5abac79766d5f",
++        "1af33b9c3c286fc99a360af3b88b3a8ccb084a6bdf744149d5b1df54f114d689",
++        "2e088d41401b9a8d3be05c2d1bbadcf6d5b5d83bd4fbb901ac1590a4fed6ec8b",
++        "44192afe6bbbe4848550ecee20c22ed4da4f855f20b613467c85019d55a7cde4",
++        "483a53caec9e3e6ed258b1661dd5301d0463fceb0bf8756bf710bf510039fc35",
++        "6884b2cf8fe60e52b013d3a62608378d5ab5298a3e5c3f5188e99815a519a1ac",
++        "a12d4eee6b04e62a14d27e8269d54d8b14854e92e0575613fa5a8df756585625",
++        "d51c2bb982fa7452956ad5a6f61742c5a5f0afee40d844792b10876baefd6925"
++      ],
++      "ignore": []
++    },
++    "sched": {
++      "fingerprints": [
++        "00dc4b5b48c4761a739f7c96fd7546e51afc6fab2daed79385037b71b4fc1e45",
++        "0577e0c21eae25e1432421e2f51006e34ef85b41aeb8743e4c05d9852a698824",
++        "16ae64a9bc2c68bd18869c9ee48bc63ec2badd8019fb22d9f04728be8df6f621",
++        "1822f5e1b0224209d14e6e83d526ee5a831a0ec9544c94985ea157132a049505",
++        "2458c200be3bfc7356b238dd296aced6794768c8cb86a9425bafc15960dbdd5b",
++        "2bb88b4343771b586f7ddc30c19d7b787493749de0e09d586a35313e3ee6f425",
++        "4bdd27fe3169636b10a00911b11e32e2bb47c7cecdf257595001757aaec062cd",
++        "740c5c5f89984b5a8c11b60cf41345b8471a6d95cd84345bf0c5679eab0ee04f",
++        "7cd9bd5b40140cf9ac19ff8555e87ea1cc818fb635099ec1ede97b77d10a6642",
++        "8a18bff7271987740c64fed398b21691a26fb4acc38d7de1e026629191b2e43a",
++        "90291cacec63f17c8d7709f047e8b6077fa2c8f4433a13044f614d811370d741",
++        "aafb662e4eebf98db710f7d38694ade64b32aafccd0d8596bf7424aefb6a1738",
++        "bb12496838aeed617401462a23bd0e4073eec72492a40b2082b0363c7328fae2",
++        "d2a267d393a790e35deffc4db5b7f3348021f8dc41290431be958824c26c20d8",
++        "f4477c107f8cadea4fd375b354255f9431a93e0a7334058c239e8fe7e70029d8"
++      ],
++      "ignore": []
++    },
++    "boot": {
++      "fingerprints": [
++        "3a1364759fa36d3bc1010dd90213b6747b70956ad790f804f4cc1df6f7bed474",
++        "67b5d6e7131c348a7a982fec22722633ef0a81ce458af7b53984a23a2001a938",
++        "824f013582a4d2c7abe6c6152791e3c3a2626157c5e116a880db8b3dc101f132",
++        "9003d98c00d48bde04c83d3e66269383c3a72684c3cdf5acfbbd83a89f289460",
++        "c871788edd39669190f7d16896def290e2fb307c3b876745bacb059650262e3f",
++        "cf48b6b478319b6bef45bff40f66f385a4e814e25ba393805f25c6b213a4f0ec",
++        "ea5ff8d064a3163f892b39bd0ef17bb8a7ef7f078525835786f0dfc790f5e4f7"
++      ],
++      "ignore": [
++        "etc/systemd/system/daolab-app-exporter.service"
++      ]
++    },
++    "bin": {
++      "fingerprints": [
++        "0a068c9a3f7a508cc0de28c82952894509a5187e98537baaf04758a9ba01340f",
++        "1dbd659dfc1d84655f739d55107cb8835a56b1ccbfa343322040a344ef0d39ef",
++        "2367b57b39074bebb0cd28280f54161d5f1d14c229bf38fc414cdbd5b55abd87",
++        "2cb8118a4bf332e85acdad001dc09fa303e2c2b19d80c226d1d07fc57c0ac59d",
++        "3aac46d25447f49f00e22de3e05ec13789fb3f46d68a8ee33ec4cb0ef755108d",
++        "bfbba2539ed1bddf2dbedb9ddc0f4d2cf4110ff8b9920e9748ae345eaffec111",
++        "c7167184ddf46ae05e84d45ab0490ffd12bdfc09d88101bcbc70c7b1004ec3a7",
++        "c76503fb45464089e4e3b047d8913140631bb52943f449ec183e40d79f2a4842",
++        "d5adf9c06e1eebefa0788a8f6723670687c275458e583915dc3b988f47c34a68",
++        "d70c18a295a05232a5042f626966a0f91b45ee3f30def101bef3e80862a56722",
++        "e35862662952d592a7f3b5924ee107fd986fb0f5213bfe8ba10164004d657b04",
++        "fdde3b643b43aead5ed244f3f371bd17dfd63e514ba165f3a5f3c5b50f646788"
++      ],
++      "ignore": []
++    },
++    "kmod": {
++      "fingerprints": [
++        "01432aeb8d3828c416327bc7fe3e63d32121b9c1029f242c8ed477a08160a101",
++        "2dfca4aa77de230976be572c5222cdab3c602505a9d7fbcfa637281fce707600",
++        "92ba49cc7a1a49959bf509f827f1517df2f3e52554174f3b2458c12a40d49a35",
++        "d555a89f1cfd158aea5c8f8ff78a1001ecd517acf2433e3fcd47e5884dc2d94c",
++        "ee765b983141b8e204f87cc6b71db920238cc8f1cea2451af48d48dc5f846507",
++        "f69fad2d5f691a86852119b45a577d15de899509e95893b1e58d1783309fb10a"
++      ],
++      "ignore": []
++    },
++    "mount": {
++      "fingerprints": [
++        "0d8547f965cfa1dbd8095e8fb6b252353c53d7e973fdad01bacb52f95ee6b056",
++        "25e13c8a51894e72712a6b7f60e56bdcad658f7e47eb544a77639d4e0e39e279",
++        "48b3e5d44b049dbf0789f6198a8c320af40b8ecba45857aaf1cd4b28680a938f",
++        "7e523c022aa6bb115ed82b5f83722aabbc7adb6d7580323f600e687d5e435578",
++        "b811e68c69f2d86f8ee52de920c772e61ee1f430a3c96dfc47b0489f03ffe4c1",
++        "c03c5609a7800cff05cc5ad60c938af064afdf4ffae514b5d85938249f8c8da4"
++      ],
++      "ignore": []
++    },
++    "proc": {
++      "fingerprints": [
++        "09c7eac7f45d7f90a82161c1b2b019c385a55f80d8b3d84ebc3eff6f9b2749d8",
++        "5dc6fe4e9334723742652833b7d33f94301abf0aa904aee73560b85a35faec16",
++        "6194ee4c3c1d4aff80387b9c662a684a65d96cdd177e1135d735e1fd7c154d84",
++        "61ec80e792ee0b98ebbf938afbf24a98ba6faecd5ce4d8ddde594453fa949d09",
++        "edff3f88fad45ac67d281a75ed52adb1ad694788fdf41566c64f9c3189e530ca"
++      ],
++      "ignore": []
++    },
++    "tmp": {
++      "fingerprints": [
++        "175dc7aa5d0dd89435bd3be610a7716a1b67230ace9d7badf85d5eb4febe1454"
++      ],
++      "ignore": [
++        "tmp/dao-smart-nic-ansible.log",
++        "tmp/pci-after.txt",
++        "tmp/daolab-test-noise-*"
++      ]
++    },
++    "daolab": {
++      "fingerprints": [
++        "089dc3902cd2579687e486b4f2878e3416363c24f010951cc52582770bd08b5d",
++        "3a0c6495d3a8ab9bd0444f5d16529747dffd80f18abf7e3b448d8d8246f0a84e",
++        "8f23ba985f054742321bc2982df6fedd0c90dca52c0ebdb1e6b3d1c978c165c8",
++        "90a046938a4c6e98a79821807a49766297360cfd944e4b7eb38e0247307dd30e",
++        "c398686957e9cc075fb7acbaeba3ad6beaed84aa56ff23f4611f545c0f12145a"
++      ],
++      "ignore": [
++        "etc/daolab/otelcol.yaml"
++      ]
++    }
++  }
++}
+diff --git a/playbooks/files/daolab-tripwire.py b/playbooks/files/daolab-tripwire.py
+new file mode 100755
+index 0000000..b2fa313
+--- /dev/null
++++ b/playbooks/files/daolab-tripwire.py
+@@ -0,0 +1,616 @@
++#!/usr/bin/env python3
++"""daolab-tripwire: after a cleanup, compare the board outside /home/lab with a baseline
++(B-112a; design v1.1 §3; task list Q-BASELINE). Python 3.10 stdlib only: it runs on the DPU.
++
++    daolab-tripwire.py --mode check|collect [--root DIR] [--proc DIR] [--input-fd N]
++
++It reads ONE JSON document, from stdin or, with --input-fd, from that descriptor (for when the
++script itself arrives on stdin):
++  check    the baseline {"format": "daolab-tripwire/1", "version", "hw_class", "classes"}.
++           For each class, count = |current - baseline| + |baseline - current| (additions and
++           removals; a changed entry counts 2). Prints one line tripwire:<class>:<count> per
++           class with a count, in fixed class order, or exactly "tripwire:ok". Exit 0.
++  collect  {"format": "daolab-tripwire-collect/1", "ignore": {<class>: [<glob>, ...]}}.
++           Prints one line {"classes": {<class>: {"fingerprints": [<sorted hex>]}}}. Exit 0.
++Bad input: "tripwire:error:bad_input" or "tripwire:error:bad_baseline", exit 2. Anything
++unexpected: "tripwire:error:internal", exit 2. Nothing else is ever printed, on stdout or
++stderr: never a path, a file or user name, a uid, a module or unit name, or a command line.
++
++The authoritative baseline lives on the controller (the user was root: a copy on the DPU is not
++trusted). This is DETECTION ONLY: a root user can tamper with python3 or with this script's
++inputs; see deploy/tripwire/README.md. --root and --proc exist for tests (a fake board).
++
++A fingerprint is the sha256 of a normalized record: json.dumps([class, kind, field, ...]) with
++ASCII escapes, so it never holds a newline and field boundaries can't be ambiguous. Walks never
++follow a symlink (lstat); special files are recorded by type only; an entry that can't be read
++is recorded as "unreadable" + its path, so it can't hide. "ignore" globs (fnmatch, case
++sensitive; `*` also matches `/`) are matched against each record's subject: the path relative
++to --root for file records, `<file>:<name>` for identity lines, the module name for loaded
++modules, the mount point and the exe path without their leading `/`.
++"""
++import fnmatch
++import hashlib
++import json
++import os
++import posixpath
++import re
++import stat
++import sys
++import warnings
++
++FORMAT = "daolab-tripwire/1"
++COLLECT_FORMAT = "daolab-tripwire-collect/1"
++CLASSES = ("identity", "sudo", "ssh", "sched", "boot", "bin", "kmod", "mount", "proc", "tmp",
++           "daolab")
++LAB_LOGIN = "lab"            # its home is covered by snapshot capture/wipe, its keys change per booking
++MAX_INPUT = 16 * 1024 * 1024
++MAX_GLOBS = 256
++MAX_GLOB_LEN = 256
++MAX_HW_CLASS = 128
++MAX_INT_DIGITS = 18
++HEX_RE = re.compile(r"[0-9a-f]{64}")
++HW_CLASS_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")          # service/catalog.py KEBAB
++PID_RE = re.compile(r"[0-9]+")
++FD_RE = re.compile(r"[0-9]{1,6}")
++OCTAL_RE = re.compile(r"\\([0-7]{3})")
++OPTIONS = ("--mode", "--root", "--proc", "--input-fd")
++CHUNK = 1024 * 1024
++
++
++class Refused(Exception):
++    """Bad input: the code is printed as tripwire:error:<code>; nothing else is."""
++
++    def __init__(self, code):
++        super().__init__(code)
++        self.code = code
++
++
++# ---- records --------------------------------------------------------------------------------
++def fingerprint(cls, record):
++    text = json.dumps([cls] + list(record), ensure_ascii=True, separators=(",", ":"))
++    return hashlib.sha256(text.encode("ascii")).hexdigest()
++
++
++class Ctx:
++    """Where to look (--root, --proc) and the ignore globs of the class being collected."""
++
++    def __init__(self, root, proc, ignore=()):
++        self.root = root
++        self.proc = proc
++        self.ignore = tuple(ignore)
++
++    def ignored(self, subject):
++        return any(fnmatch.fnmatchcase(subject, g) for g in self.ignore)
++
++    def path(self, rel):
++        return os.path.join(self.root, rel)
++
++
++def _open_regular(path):
++    """An fd for a regular file, never through a final symlink and never blocking on a FIFO
++    that replaced the file after its lstat; None when that isn't possible."""
++    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | \
++        getattr(os, "O_CLOEXEC", 0)
++    try:
++        fd = os.open(path, flags)
++    except OSError:
++        return None
++    try:
++        if not stat.S_ISREG(os.fstat(fd).st_mode):
++            os.close(fd)
++            return None
++    except OSError:
++        os.close(fd)
++        return None
++    return fd
++
++
++def file_sha256(path):
++    fd = _open_regular(path)
++    if fd is None:
++        return None
++    h = hashlib.sha256()
++    try:
++        while True:
++            chunk = os.read(fd, CHUNK)
++            if not chunk:
++                return h.hexdigest()
++            h.update(chunk)
++    except OSError:
++        return None
++    finally:
++        os.close(fd)
++
++
++def read_bytes(path):
++    """(found, data): (False, None) missing; (True, None) there but unreadable."""
++    try:
++        os.lstat(path)
++    except (FileNotFoundError, NotADirectoryError):
++        return False, None
++    except OSError:
++        return True, None
++    fd = _open_regular(path)
++    if fd is None:
++        return True, None
++    parts = []
++    try:
++        while True:
++            chunk = os.read(fd, CHUNK)
++            if not chunk:
++                return True, b"".join(parts)
++            parts.append(chunk)
++    except OSError:
++        return True, None
++    finally:
++        os.close(fd)
++
++
++def text_lines(data):
++    text = data.decode("utf-8", "surrogateescape")
++    lines = text.split("\n")
++    if lines and lines[-1] == "":
++        lines.pop()
++    return lines
++
++
++def _type_char(mode):
++    for test, char in ((stat.S_ISFIFO, "p"), (stat.S_ISSOCK, "s"), (stat.S_ISCHR, "c"),
++                       (stat.S_ISBLK, "b")):
++        if test(mode):
++            return char
++    return "?"
++
++
++def _mode(st):
++    return "%04o" % stat.S_IMODE(st.st_mode)
++
++
++def walk(ctx, top, recursive=True, skip=()):
++    """Yield (rel, st) for `top` (relative to --root) and, when it is a real directory, for
++    everything under it. st is None for an entry that could not be read (a directory that can't
++    be listed is yielded once with its lstat, then once with None). Never follows a symlink;
++    a (dev, ino) set guards against bind-mount cycles; ignored or `skip` paths are left out
++    with their subtree. A missing top yields nothing."""
++    if top in skip or ctx.ignored(top):
++        return
++    try:
++        st = os.lstat(ctx.path(top))
++    except (FileNotFoundError, NotADirectoryError):
++        return
++    except OSError:
++        yield top, None
++        return
++    yield top, st
++    if not recursive or not stat.S_ISDIR(st.st_mode):
++        return
++    seen = {(st.st_dev, st.st_ino)}
++    stack = [top]
++    while stack:
++        rel_dir = stack.pop()
++        try:
++            with os.scandir(ctx.path(rel_dir)) as it:
++                entries = list(it)
++        except OSError:
++            yield rel_dir, None
++            continue
++        for entry in entries:
++            rel = posixpath.join(rel_dir, entry.name)
++            if rel in skip or ctx.ignored(rel):
++                continue
++            try:
++                est = entry.stat(follow_symlinks=False)
++            except OSError:
++                yield rel, None
++                continue
++            yield rel, est
++            if stat.S_ISDIR(est.st_mode):
++                key = (est.st_dev, est.st_ino)
++                if key not in seen:
++                    seen.add(key)
++                    stack.append(rel)
++
++
++def entry_record(ctx, rel, st, full):
++    """The record of one walked entry. full: files and dirs carry mode and owner uid too."""
++    if st is None:
++        return ("unreadable", rel)
++    m = st.st_mode
++    if stat.S_ISLNK(m):
++        try:
++            return ("link", rel, os.readlink(ctx.path(rel)))
++        except OSError:
++            return ("unreadable", rel)
++    if stat.S_ISREG(m):
++        digest = file_sha256(ctx.path(rel))
++        if digest is None:
++            return ("unreadable", rel)
++        return ("file", rel, _mode(st), st.st_uid, digest) if full else ("file", rel, digest)
++    if stat.S_ISDIR(m):
++        return ("dir", rel, _mode(st), st.st_uid) if full else ("dir", rel)
++    return ("special", rel, _type_char(m))
++
++
++def tree(ctx, top, full=True, recursive=True, select=None):
++    return {entry_record(ctx, rel, st, full) for rel, st in walk(ctx, top, recursive)
++            if select is None or select(rel)}
++
++
++def trees(ctx, tops, full=True):
++    out = set()
++    for top in tops:
++        out |= tree(ctx, top, full)
++    return out
++
++
++# ---- the classes ------------------------------------------------------------------------------
++def password_state(field):
++    """shadow/gshadow password field -> its state class. The field itself is never recorded:
++    it is secret and lab's rotates every booking."""
++    if field.startswith(("!", "*")):
++        return "locked"
++    return "empty" if field == "" else "set"
++
++
++def collect_identity(ctx):
++    recs = set()
++    for rel, kind in (("etc/passwd", "line"), ("etc/group", "line"), ("etc/shadow", "state"),
++                      ("etc/gshadow", "state")):
++        if ctx.ignored(rel):
++            continue
++        found, data = read_bytes(ctx.path(rel))
++        if not found:
++            continue
++        for _, st in walk(ctx, rel, recursive=False):                 # its mode and owner
++            recs.add(("meta", rel, _mode(st), st.st_uid) if st is not None else
++                     ("unreadable", rel))
++        if data is None:
++            recs.add(("unreadable", rel))
++            continue
++        for line in text_lines(data):
++            fields = line.split(":")
++            if ctx.ignored(f"{rel}:{fields[0]}"):
++                continue
++            if kind == "line":
++                recs.add(("line", rel, line))
++            else:
++                recs.add(("state", rel, fields[0],
++                          password_state(fields[1] if len(fields) > 1 else "")))
++    # what every new home and every login shell gets
++    recs |= trees(ctx, ("etc/skel", "etc/profile", "etc/profile.d", "etc/bash.bashrc",
++                        "etc/environment"))
++    return recs
++
++
++def collect_sudo(ctx):
++    return trees(ctx, ("etc/sudoers", "etc/sudoers.d"))
++
++
++def homes(ctx):
++    """Every home in etc/passwd as a path relative to --root, except lab's."""
++    _, data = read_bytes(ctx.path("etc/passwd"))
++    if data is None:
++        return set()
++    out, lab = set(), set()
++    for line in text_lines(data):
++        fields = line.split(":")
++        if len(fields) < 7 or not fields[5].startswith("/"):
++            continue
++        rel = posixpath.normpath(fields[5]).lstrip("/")      # an absolute normpath has no ".."
++        (lab if fields[0] == LAB_LOGIN else out).add(rel)
++    return out - lab
++
++
++def collect_ssh(ctx):
++    recs = tree(ctx, "etc/ssh")
++    for home in homes(ctx):
++        for name in ("authorized_keys", "authorized_keys2"):
++            recs |= tree(ctx, posixpath.join(home, ".ssh", name), recursive=False)
++    return recs
++
++
++SCHED_TOPS = ("etc/crontab", "etc/cron.d", "etc/cron.hourly", "etc/cron.daily",
++              "etc/cron.weekly", "etc/cron.monthly", "var/spool/cron/crontabs",
++              "var/spool/cron/atjobs")
++UNITS = "etc/systemd/system"
++
++
++def _is_timer(rel):
++    return rel.endswith(".timer")
++
++
++def collect_sched(ctx):
++    recs = trees(ctx, SCHED_TOPS, full=False)
++    return recs | tree(ctx, UNITS, full=False, select=_is_timer)
++
++
++def collect_boot(ctx):
++    """Files only, never systemctl: unit files and overrides, *.wants/*.requires links, aliases
++    and masks under etc/systemd/system (timers belong to sched), and etc/rc.local."""
++    recs = tree(ctx, UNITS, full=False, select=lambda rel: not _is_timer(rel))
++    return recs | tree(ctx, "etc/rc.local", full=False)
++
++
++SETUID_TOPS = ("usr/bin", "usr/sbin", "usr/local", "bin", "sbin", "opt")
++LOCAL_BIN = ("usr/local/bin", "usr/local/sbin")
++
++
++def collect_bin(ctx):
++    recs = set()
++    for top in SETUID_TOPS:
++        for rel, st in walk(ctx, top, skip=LOCAL_BIN):
++            if st is None:
++                recs.add(("unreadable", rel))
++            elif rel == top and stat.S_ISLNK(st.st_mode):           # bin -> usr/bin
++                recs.add(entry_record(ctx, rel, st, True))
++            elif stat.S_ISREG(st.st_mode) and st.st_mode & (stat.S_ISUID | stat.S_ISGID):
++                recs.add(("setid", rel, _mode(st), st.st_uid))
++    # local binaries by content (not all of usr/bin: too slow), and the dynamic loader's config
++    return recs | trees(ctx, LOCAL_BIN + ("etc/ld.so.preload", "etc/ld.so.conf",
++                                          "etc/ld.so.conf.d"))
++
++
++def _proc_file(ctx, rel):
++    return read_bytes(os.path.join(ctx.proc, rel))
++
++
++def collect_kmod(ctx):
++    recs = set()
++    found, data = _proc_file(ctx, "modules")
++    if found and data is None:
++        recs.add(("unreadable", "proc:modules"))
++    for line in text_lines(data or b""):
++        name = line.split(" ", 1)[0]
++        if name and not ctx.ignored(name):
++            recs.add(("module", name))
++    return recs | trees(ctx, ("etc/modprobe.d", "etc/modules", "etc/modules-load.d"))
++
++
++def decode_mount_field(field):
++    """mountinfo escapes space, tab, newline and backslash as \\NNN octal."""
++    return OCTAL_RE.sub(lambda m: chr(int(m.group(1), 8)), field)
++
++
++def collect_mount(ctx):
++    recs = set()
++    found, data = _proc_file(ctx, "self/mountinfo")
++    if found and data is None:
++        recs.add(("unreadable", "proc:self/mountinfo"))
++    for line in text_lines(data or b""):
++        left, sep, right = line.partition(" - ")
++        fields, fstype = left.split(" "), right.split(" ")[0]
++        if not sep or len(fields) < 5 or not fstype:
++            recs.add(("malformed", line))
++            continue
++        point = decode_mount_field(fields[4])
++        if not ctx.ignored(point.lstrip("/")):
++            recs.add(("mnt", point, fstype))
++    return recs
++
++
++def _status_uid(path):
++    _, data = read_bytes(path)
++    for line in text_lines(data or b""):
++        if line.startswith("Uid:"):
++            parts = line.split()
++            if len(parts) > 1 and PID_RE.fullmatch(parts[1]):
++                return int(parts[1])
++    return None
++
++
++def collect_proc(ctx):
++    """Executable path + real uid of every process, never the pid. A process whose exe or
++    status can't be read (kernel threads, a process that just exited) is skipped."""
++    try:
++        names = os.listdir(ctx.proc)
++    except OSError:
++        return {("unreadable", "proc:")}
++    own = str(os.getpid())
++    recs = set()
++    for name in names:
++        if not PID_RE.fullmatch(name) or name == own:
++            continue
++        try:
++            exe = os.readlink(os.path.join(ctx.proc, name, "exe"))
++        except OSError:
++            continue
++        uid = _status_uid(os.path.join(ctx.proc, name, "status"))
++        if uid is None or ctx.ignored(exe.lstrip("/")):
++            continue
++        recs.add(("p", exe, uid))
++    return recs
++
++
++def collect_tmp(ctx):
++    """Regular files (path, owner uid, size; never the content), links and special files under
++    tmp, var/tmp and dev/shm. Directories alone are not recorded."""
++    recs = set()
++    for top in ("tmp", "var/tmp", "dev/shm"):
++        for rel, st in walk(ctx, top):
++            if st is None:
++                recs.add(("unreadable", rel))
++            elif stat.S_ISREG(st.st_mode):
++                recs.add(("file", rel, st.st_uid, st.st_size))
++            elif not stat.S_ISDIR(st.st_mode):
++                recs.add(entry_record(ctx, rel, st, False))
++    return recs
++
++
++def collect_daolab(ctx):
++    return tree(ctx, "etc/daolab")
++
++
++COLLECTORS = {"identity": collect_identity, "sudo": collect_sudo, "ssh": collect_ssh,
++              "sched": collect_sched, "boot": collect_boot, "bin": collect_bin,
++              "kmod": collect_kmod, "mount": collect_mount, "proc": collect_proc,
++              "tmp": collect_tmp, "daolab": collect_daolab}
++
++
++def collect_all(root, proc, ignore):
++    """{class: set of fingerprints}, each class collected with its own ignore globs."""
++    return {cls: {fingerprint(cls, r) for r in COLLECTORS[cls](Ctx(root, proc, ignore[cls]))}
++            for cls in CLASSES}
++
++
++# ---- input -------------------------------------------------------------------------------------
++def parse_args(argv):
++    opts = {}
++    i = 0
++    while i < len(argv):
++        name = argv[i]
++        if name not in OPTIONS or name in opts or i + 1 >= len(argv):
++            raise Refused("bad_input")
++        opts[name] = argv[i + 1]
++        i += 2
++    mode = opts.get("--mode")
++    root, proc = opts.get("--root", "/"), opts.get("--proc", "/proc")
++    fd = opts.get("--input-fd")
++    if mode not in ("check", "collect") or (fd is not None and not FD_RE.fullmatch(fd)):
++        raise Refused("bad_input")
++    for d in (root, proc):
++        if not d or not os.path.isdir(d):
++            raise Refused("bad_input")
++    return mode, root, proc, (None if fd is None else int(fd))
++
++
++def read_input(fd):
++    if fd is None:
++        stream = getattr(sys.stdin, "buffer", None)
++        if stream is None:
++            raise Refused("bad_input")
++        try:
++            data = stream.read(MAX_INPUT + 1)
++        except (OSError, ValueError):
++            raise Refused("bad_input") from None
++    else:
++        parts, size = [], 0
++        try:
++            while size <= MAX_INPUT:
++                chunk = os.read(fd, CHUNK)
++                if not chunk:
++                    break
++                parts.append(chunk)
++                size += len(chunk)
++        except OSError:
++            raise Refused("bad_input") from None
++        data = b"".join(parts)
++    if data is None or len(data) > MAX_INPUT:
++        raise Refused("bad_input")
++    return data
++
++
++def _no_duplicates(pairs):
++    keys = [k for k, _ in pairs]
++    if len(set(keys)) != len(keys):
++        raise ValueError("duplicate key")
++    return dict(pairs)
++
++
++def _no_constant(name):
++    raise ValueError("not JSON")
++
++
++def _small_int(text):
++    if len(text.lstrip("-")) > MAX_INT_DIGITS:
++        raise ValueError("too many digits")
++    return int(text)
++
++
++def load_json(data):
++    """Strict JSON: UTF-8, no duplicate keys, no NaN/Infinity, no huge ints, no deep nesting."""
++    try:
++        return json.loads(data.decode("utf-8"), object_pairs_hook=_no_duplicates,
++                          parse_constant=_no_constant, parse_int=_small_int)
++    except (ValueError, RecursionError):
++        raise Refused("bad_input") from None
++
++
++def valid_globs(value):
++    return (isinstance(value, list) and len(value) <= MAX_GLOBS
++            and len(set(g for g in value if isinstance(g, str))) == len(value)
++            and all(isinstance(g, str) and 0 < len(g) <= MAX_GLOB_LEN and not g.startswith("/")
++                    and not any(c in g for c in "\x00\n\r") for g in value))
++
++
++def validate_baseline(doc):
++    """-> ({class: set of fingerprints}, {class: globs}); Refused otherwise."""
++    if not isinstance(doc, dict) or doc.get("format") != FORMAT:
++        raise Refused("bad_input")
++    bad = Refused("bad_baseline")
++    version, hw_class, classes = doc.get("version"), doc.get("hw_class"), doc.get("classes")
++    if set(doc) != {"format", "version", "hw_class", "classes"}:
++        raise bad
++    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
++        raise bad
++    if not isinstance(hw_class, str) or len(hw_class) > MAX_HW_CLASS or \
++            not HW_CLASS_RE.fullmatch(hw_class):
++        raise bad
++    if not isinstance(classes, dict) or set(classes) != set(CLASSES):
++        raise bad
++    fps, ignore = {}, {}
++    for cls in CLASSES:
++        entry = classes[cls]
++        if not isinstance(entry, dict) or set(entry) != {"fingerprints", "ignore"}:
++            raise bad
++        values = entry["fingerprints"]
++        if not isinstance(values, list) or \
++                not all(isinstance(f, str) and HEX_RE.fullmatch(f) for f in values) or \
++                len(set(values)) != len(values) or not valid_globs(entry["ignore"]):
++            raise bad
++        fps[cls], ignore[cls] = set(values), entry["ignore"]
++    return fps, ignore
++
++
++def validate_collect(doc):
++    if not isinstance(doc, dict) or doc.get("format") != COLLECT_FORMAT or \
++            set(doc) != {"format", "ignore"}:
++        raise Refused("bad_input")
++    ignore = doc["ignore"]
++    if not isinstance(ignore, dict) or not set(ignore) <= set(CLASSES) or \
++            not all(valid_globs(v) for v in ignore.values()):
++        raise Refused("bad_input")
++    return {cls: ignore.get(cls, []) for cls in CLASSES}
++
++
++# ---- main ----------------------------------------------------------------------------------------
++def run(argv):
++    mode, root, proc, fd = parse_args(argv)
++    doc = load_json(read_input(fd))
++    if mode == "collect":
++        found = collect_all(root, proc, validate_collect(doc))
++        out = {"classes": {cls: {"fingerprints": sorted(found[cls])} for cls in CLASSES}}
++        return [json.dumps(out, ensure_ascii=True, separators=(",", ":"))]
++    baseline, ignore = validate_baseline(doc)
++    current = collect_all(root, proc, ignore)
++    lines = [f"tripwire:{cls}:{len(current[cls] ^ baseline[cls])}" for cls in CLASSES
++             if current[cls] != baseline[cls]]
++    return lines or ["tripwire:ok"]
++
++
++def main(argv=None):
++    if argv is None:
++        argv = sys.argv[1:]
++    try:
++        lines, code = run(argv), 0
++    except Refused as e:
++        lines, code = [f"tripwire:error:{e.code}"], 2
++    except BaseException as e:                      # noqa: B036 - nothing may reach stderr
++        if isinstance(e, SystemExit):
++            raise
++        lines, code = ["tripwire:error:internal"], 2
++    try:
++        sys.stdout.write("".join(line + "\n" for line in lines))
++        sys.stdout.flush()
++    except BaseException:
++        try:                                        # no "Exception ignored" at exit either
++            devnull = os.open(os.devnull, os.O_WRONLY)
++            os.dup2(devnull, sys.stdout.fileno())
++        except BaseException:
++            pass
++        return 2
++    return code
++
++
++if __name__ == "__main__":
++    warnings.simplefilter("ignore")
++    sys.exit(main())
+diff --git a/service/tripwire.py b/service/tripwire.py
+new file mode 100644
+index 0000000..1b1dc41
+--- /dev/null
++++ b/service/tripwire.py
+@@ -0,0 +1,230 @@
++"""B-112a: the controller side of the tripwire (design v1.1 §3; task list Q-BASELINE).
++
++The authoritative baseline lives on the controller: the DPU's copy is not trusted, because the
++user was root during the slot. This module loads and verifies a baseline, parses the checker's
++output (playbooks/files/daolab-tripwire.py) and builds synthetic baselines from its collect mode.
++Nothing calls it yet; B-112b wires it into the runner/engine.
++
++  load_baseline(path, hw_class) -> (doc, sha256)  the closed daolab-tripwire/1 format; the sha256
++                                                  is of the exact file bytes (B-112b records it in
++                                                  the audit trail and streams those bytes)
++  parse_output(text) -> [residue items]           "tripwire:<class>:<count>", [] for "tripwire:ok"
++  build_baseline(collect_json, hw_class, version, ignore) -> doc
++
++Every refusal is a TripwireError with a fixed code and nothing else: never the raw text, a path
++or a chained exception, so a log or audit row can't carry what the checker or a file held.
++The validation rules are the checker's own (it is stdlib-only, so they are written twice; the
++tests check that both refuse the same baselines).
++"""
++import hashlib
++import json
++import re
++
++from .catalog import KEBAB
++
++FORMAT = "daolab-tripwire/1"
++CLASSES = ("identity", "sudo", "ssh", "sched", "boot", "bin", "kmod", "mount", "proc", "tmp",
++           "daolab")
++CHECKER_ERRORS = ("bad_input", "bad_baseline", "internal")
++MAX_BYTES = 16 * 1024 * 1024          # the checker's input limit
++MAX_GLOBS = 256
++MAX_GLOB_LEN = 256
++MAX_HW_CLASS = 128
++MAX_INT_DIGITS = 18
++HEX = re.compile(r"[0-9a-f]{64}")
++COUNT = re.compile(r"[1-9][0-9]{0,8}")
++BASELINE_KEYS = ("format", "version", "hw_class", "classes")
++ENTRY_KEYS = ("fingerprints", "ignore")
++
++
++class TripwireError(Exception):
++    """A refused baseline or checker output. `code` is one of:
++    loader/builder: unreadable, bad_format, unknown_key, missing_key, bad_class, bad_version,
++                    bad_hw_class, hw_class_mismatch, bad_hex, duplicate, bad_glob;
++    parser:         bad_output, or the checker's own bad_input, bad_baseline, internal."""
++
++    def __init__(self, code: str):
++        super().__init__(code)
++        self.code = code
++
++
++_BAD = object()
++
++
++def _no_duplicates(pairs):
++    keys = [k for k, _ in pairs]
++    if len(set(keys)) != len(keys):
++        raise ValueError("duplicate key")
++    return dict(pairs)
++
++
++def _no_constant(name):
++    raise ValueError("not JSON")
++
++
++def _small_int(text):
++    if len(text.lstrip("-")) > MAX_INT_DIGITS:
++        raise ValueError("too many digits")
++    return int(text)
++
++
++def _loads(data) -> object:
++    """Strict JSON (UTF-8, no duplicate keys, no NaN/Infinity, no huge ints) or _BAD. Callers
++    raise outside the except block, so no TripwireError ever chains the parser's error (which
++    holds the document)."""
++    if isinstance(data, str):
++        text = data
++    elif isinstance(data, bytes):
++        try:
++            text = data.decode("utf-8")
++        except UnicodeDecodeError:
++            return _BAD
++    else:
++        return _BAD
++    try:
++        return json.loads(text, object_pairs_hook=_no_duplicates, parse_constant=_no_constant,
++                          parse_int=_small_int)
++    except (ValueError, RecursionError):
++        return _BAD
++
++
++def _hw_class_ok(value) -> bool:
++    # fullmatch, not match: KEBAB ends in `$`, which also matches before a trailing newline
++    return isinstance(value, str) and 0 < len(value) <= MAX_HW_CLASS and \
++        KEBAB.fullmatch(value) is not None
++
++
++def _version_ok(value) -> bool:
++    return isinstance(value, int) and not isinstance(value, bool) and value >= 1
++
++
++def _check_keys(obj: dict, keys: tuple) -> str | None:
++    if not set(obj) <= set(keys):
++        return "unknown_key"
++    if set(obj) != set(keys):
++        return "missing_key"
++    return None
++
++
++def _fingerprints_code(values) -> str | None:
++    if not isinstance(values, list) or \
++            not all(isinstance(v, str) and HEX.fullmatch(v) for v in values):
++        return "bad_hex"
++    return "duplicate" if len(set(values)) != len(values) else None
++
++
++def _globs_code(values) -> str | None:
++    if not isinstance(values, list) or len(values) > MAX_GLOBS or \
++            not all(isinstance(g, str) and 0 < len(g) <= MAX_GLOB_LEN and not g.startswith("/")
++                    and not any(c in g for c in "\x00\n\r") for g in values):
++        return "bad_glob"
++    return "duplicate" if len(set(values)) != len(values) else None
++
++
++def _classes_code(classes, entry_keys: tuple) -> str | None:
++    """The `classes` object: exactly the 11 names, each entry exactly `entry_keys`."""
++    if not isinstance(classes, dict) or not set(classes) <= set(CLASSES):
++        return "bad_class"
++    if set(classes) != set(CLASSES):
++        return "missing_key"
++    for cls in CLASSES:
++        entry = classes[cls]
++        if not isinstance(entry, dict):
++            return "bad_class"
++        code = _check_keys(entry, entry_keys) or _fingerprints_code(entry["fingerprints"])
++        if code is None and "ignore" in entry_keys:
++            code = _globs_code(entry["ignore"])
++        if code:
++            return code
++    return None
++
++
++def _baseline_code(doc, hw_class: str) -> str | None:
++    if not isinstance(doc, dict) or doc.get("format") != FORMAT:
++        return "bad_format"
++    code = _check_keys(doc, BASELINE_KEYS)
++    if code:
++        return code
++    if not _version_ok(doc["version"]):
++        return "bad_version"
++    if not _hw_class_ok(doc["hw_class"]):
++        return "bad_hw_class"
++    if doc["hw_class"] != hw_class:
++        return "hw_class_mismatch"
++    return _classes_code(doc["classes"], ENTRY_KEYS)
++
++
++def load_baseline(path: str, hw_class: str) -> tuple[dict, str]:
++    """The baseline at `path` for `hw_class`, and the sha256 hex of the file's exact bytes."""
++    if not _hw_class_ok(hw_class):
++        raise TripwireError("bad_hw_class")
++    data = None
++    try:
++        with open(path, "rb") as fh:
++            data = fh.read(MAX_BYTES + 1)
++    except OSError:
++        pass
++    if data is None:
++        raise TripwireError("unreadable")
++    doc = _loads(data) if len(data) <= MAX_BYTES else _BAD
++    if doc is _BAD:
++        raise TripwireError("bad_format")
++    code = _baseline_code(doc, hw_class)
++    if code:
++        raise TripwireError(code)
++    return doc, hashlib.sha256(data).hexdigest()
++
++
++def parse_output(text: str) -> list[str]:
++    """The checker's stdout -> residue items "tripwire:<class>:<count>" ([] when clean).
++    Anything but exactly that contract is refused; an error line raises its own code."""
++    if not isinstance(text, str):
++        raise TripwireError("bad_output")
++    body = text[:-1] if text.endswith("\n") else text
++    lines = body.split("\n")
++    if lines == ["tripwire:ok"]:
++        return []
++    if len(lines) == 1 and body.startswith("tripwire:error:"):
++        code = body[len("tripwire:error:"):]
++        raise TripwireError(code if code in CHECKER_ERRORS else "bad_output")
++    items, last = [], -1
++    for line in lines:
++        parts = line.split(":")
++        ok = len(parts) == 3 and parts[0] == "tripwire" and parts[1] in CLASSES and \
++            COUNT.fullmatch(parts[2]) is not None
++        if not ok or CLASSES.index(parts[1]) <= last:
++            raise TripwireError("bad_output")
++        last = CLASSES.index(parts[1])
++        items.append(line)
++    return items
++
++
++def build_baseline(collect_json: str | bytes, hw_class: str, version: int,
++                   ignore: dict | None) -> dict:
++    """A baseline from the checker's collect-mode line. The collect run must have used the same
++    `ignore` globs: an entry the checker skips must not be in the baseline either, or it counts
++    as removed on every check."""
++    doc = _loads(collect_json)
++    if not isinstance(doc, dict):
++        raise TripwireError("bad_format")
++    code = _check_keys(doc, ("classes",)) or _classes_code(doc["classes"], ("fingerprints",))
++    if code:
++        raise TripwireError(code)
++    if not _hw_class_ok(hw_class):
++        raise TripwireError("bad_hw_class")
++    if not _version_ok(version):
++        raise TripwireError("bad_version")
++    ignore = {} if ignore is None else ignore
++    if not isinstance(ignore, dict) or not set(ignore) <= set(CLASSES):
++        raise TripwireError("bad_class")
++    for globs in ignore.values():
++        code = _globs_code(globs)
++        if code:
++            raise TripwireError(code)
++    out = {"format": FORMAT, "version": version, "hw_class": hw_class,
++           "classes": {cls: {"fingerprints": sorted(doc["classes"][cls]["fingerprints"]),
++                             "ignore": list(ignore.get(cls, []))} for cls in CLASSES}}
++    code = _baseline_code(out, hw_class)            # the same rules load_baseline applies
++    if code:
++        raise TripwireError(code)
++    return out
+diff --git a/tests/dpu/test_tripwire.py b/tests/dpu/test_tripwire.py
+new file mode 100644
+index 0000000..57b1d57
+--- /dev/null
++++ b/tests/dpu/test_tripwire.py
+@@ -0,0 +1,1108 @@
++"""B-112a: playbooks/files/daolab-tripwire.py, the DPU-side tripwire checker (design v1.1 §3).
++
++The checker runs on the DPU's Python 3.10, so this file is stdlib + pytest only: no conftest,
++no `service` import. It runs on the controller venv (3.12) and on a 3.10 venv with
++``--confcutdir=tests/dpu``. Every run works on a fake board under tmp_path (``--root`` /
++``--proc``); nothing here reads this machine's real / or /proc.
++
++The checker is used two ways: as a subprocess (the end-to-end contract: what it prints and its
++exit code), and imported by path, to test each collector on its own.
++"""
++import hashlib
++import importlib.util
++import io
++import json
++import os
++import re
++import shutil
++import stat
++import subprocess
++import sys
++import threading
++import time
++
++import pytest
++
++REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++SCRIPT = os.path.join(REPO, "playbooks", "files", "daolab-tripwire.py")
++CLASSES = ("identity", "sudo", "ssh", "sched", "boot", "bin", "kmod", "mount", "proc", "tmp",
++           "daolab")
++FORMAT = "daolab-tripwire/1"
++COLLECT_FORMAT = "daolab-tripwire-collect/1"
++TOKEN = "zq7plant"                  # every planted name contains it; no output ever may
++PLANT_UID = 54321                   # the planted user's and process's uid; no output ever may
++LINE_RE = re.compile(r"tripwire:(ok|(%s):[1-9][0-9]*)" % "|".join(CLASSES))
++HEX_RE = re.compile(r"[0-9a-f]{64}")
++TIMEOUT = 60                        # a hang (symlink loop, FIFO) fails instead of blocking
++AS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
++
++
++# ---- the fake board ------------------------------------------------------------------------
++def write(base, rel, text="", mode=None):
++    """Create or rewrite base/rel; an existing read-only file (e.g. 0440) keeps its mode."""
++    path = os.path.join(base, rel)
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    if os.path.isfile(path) and not os.path.islink(path):
++        old = stat.S_IMODE(os.stat(path).st_mode)
++        os.chmod(path, old | stat.S_IWUSR)
++        mode = old if mode is None else mode
++    with open(path, "w", encoding="utf-8") as fh:
++        fh.write(text)
++    if mode is not None:
++        os.chmod(path, mode)
++    return path
++
++
++def link(base, rel, target):
++    path = os.path.join(base, rel)
++    os.makedirs(os.path.dirname(path), exist_ok=True)
++    os.symlink(target, path)
++    return path
++
++
++def mkdir(base, rel):
++    path = os.path.join(base, rel)
++    os.makedirs(path, exist_ok=True)
++    return path
++
++
++def append(base, rel, text):
++    with open(os.path.join(base, rel), "a", encoding="utf-8") as fh:
++        fh.write(text)
++
++
++def drop_lines(base, rel, needle):
++    path = os.path.join(base, rel)
++    with open(path, encoding="utf-8") as fh:
++        lines = fh.readlines()
++    kept = [line for line in lines if needle not in line]
++    assert len(kept) == len(lines) - 1, f"expected exactly one line with {needle!r}"
++    with open(path, "w", encoding="utf-8") as fh:
++        fh.writelines(kept)
++
++
++def replace_in(base, rel, old, new):
++    path = os.path.join(base, rel)
++    with open(path, encoding="utf-8") as fh:
++        text = fh.read()
++    assert text.count(old) == 1, f"expected {old!r} once in {rel}"
++    with open(path, "w", encoding="utf-8") as fh:
++        fh.write(text.replace(old, new))
++
++
++def pid(proc, n, exe, uid, name="x"):
++    """A fake <proc>/<n>: `exe` a symlink (None = a kernel thread: no exe), `status` with Uid."""
++    d = mkdir(proc, str(n))
++    if exe is not None:
++        os.symlink(exe, os.path.join(d, "exe"))
++    with open(os.path.join(d, "status"), "w", encoding="utf-8") as fh:
++        fh.write(f"Name:\t{name}\nState:\tS (sleeping)\nPid:\t{n}\nPPid:\t1\n"
++                 f"Uid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
++    return d
++
++
++PASSWD = ("root:x:0:0:root:/root:/bin/bash\n"
++          "daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n"
++          "dao-test:x:1000:1000:dao-test:/home/dao-test:/bin/bash\n"
++          "lab:x:1001:1001::/home/lab:/bin/bash\n")
++GROUP = "root:x:0:\nsudo:x:27:dao-test\ndao-test:x:1000:\nlab:x:1001:\n"
++SHADOW = ("root:*:19000:0:99999:7:::\n"
++          "daemon:*:19000:0:99999:7:::\n"
++          "dao-test:$6$saltsalt$operatorhash:19000:0:99999:7:::\n"
++          "lab:!$6$labsalt$labhash:19900:0:99999:7::0:\n")
++GSHADOW = "root:*::\nsudo:*::dao-test\ndao-test:!::\nlab:!::\n"
++MODULES = ("vfio_pci 16384 0 - Live 0x0000000000000000\n"
++           "rvu_nicpf 65536 0 - Live 0x0000000000000000\n"
++           "rvu_cptpf 16384 0 - Live 0x0000000000000000\n")
++MOUNTINFO = ("22 1 259:2 / / rw,relatime shared:1 - ext4 /dev/root rw\n"
++             "23 22 0:21 / /proc rw,nosuid,nodev,noexec shared:12 - proc proc rw\n"
++             "24 22 0:5 / /dev rw,nosuid shared:2 - devtmpfs udev rw\n"
++             "25 24 0:23 / /dev/shm rw,nosuid,nodev shared:4 - tmpfs tmpfs rw\n"
++             "26 22 0:40 / /mnt/huge rw,relatime shared:30 - hugetlbfs nodev rw,pagesize=512M\n"
++             "27 22 0:41 / /mnt/with\\040space rw shared:31 - tmpfs tmpfs rw\n")
++
++
++def make_tree(base):
++    """A clean fake board under `base`: (root, proc). Every class has entries, and the four
++    playbook noise sources of FINDINGS §7 are present. Deterministic: the same tree every time."""
++    root, proc = os.path.join(base, "root"), os.path.join(base, "proc")
++    # identity (+ etc/skel, etc/profile.d; etc/profile, bash.bashrc, environment stay absent so
++    # a plant is a pure addition)
++    write(root, "etc/passwd", PASSWD, 0o644)
++    write(root, "etc/group", GROUP, 0o644)
++    write(root, "etc/shadow", SHADOW, 0o640)
++    write(root, "etc/gshadow", GSHADOW, 0o640)
++    write(root, "etc/skel/.bashrc", "# skel bashrc\n")
++    write(root, "etc/skel/.profile", "# skel profile\n")
++    write(root, "etc/profile.d/01-locale-fix.sh", "# locale\n")
++    # sudo
++    write(root, "etc/sudoers", "root ALL=(ALL:ALL) ALL\n@includedir /etc/sudoers.d\n", 0o440)
++    write(root, "etc/sudoers.d/README", "# drop-ins\n", 0o440)
++    write(root, "etc/sudoers.d/90-daolab-lab", "lab ALL=(ALL) NOPASSWD:ALL\n", 0o440)
++    # ssh
++    write(root, "etc/ssh/sshd_config", "Include /etc/ssh/sshd_config.d/*.conf\n")
++    write(root, "etc/ssh/sshd_config.d/10-daolab-lab.conf", "Match User lab\n")
++    write(root, "etc/ssh/ssh_host_ed25519_key", "fake host key\n", 0o600)
++    write(root, "etc/ssh/ssh_host_ed25519_key.pub", "ssh-ed25519 AAAAhost\n")
++    write(root, "root/.ssh/authorized_keys", "ssh-ed25519 AAAAroot break-glass\n", 0o600)
++    write(root, "home/dao-test/.ssh/authorized_keys", "ssh-ed25519 AAAAops operator\n", 0o600)
++    write(root, "home/lab/.ssh/authorized_keys", "ssh-ed25519 AAAAlab booking-1\n", 0o600)
++    # sched
++    write(root, "etc/crontab", "17 * * * * root cd / && run-parts --report /etc/cron.hourly\n")
++    write(root, "etc/cron.d/e2scrub_all", "30 3 * * 0 root true\n")
++    write(root, "etc/cron.daily/apt-compat", "#!/bin/sh\n", 0o755)
++    for d in ("hourly", "weekly", "monthly"):
++        write(root, f"etc/cron.{d}/.placeholder", "")
++    mkdir(root, "var/spool/cron/crontabs")
++    write(root, "var/spool/cron/atjobs/.SEQ", "0\n")
++    link(root, "etc/systemd/system/timers.target.wants/apt-daily.timer",
++         "/lib/systemd/system/apt-daily.timer")
++    # boot
++    link(root, "etc/systemd/system/multi-user.target.wants/ssh.service",
++         "/lib/systemd/system/ssh.service")
++    link(root, "etc/systemd/system/sshd.service", "/lib/systemd/system/ssh.service")
++    write(root, "etc/systemd/system/nginx-tls.service", "[Service]\nExecStart=/opt/nginx\n")
++    write(root, "etc/systemd/system/daolab-otel.service", "[Service]\nExecStart=/bin/true\n")
++    write(root, "etc/systemd/system/daolab-app-exporter.service",        # noise source 2
++          "[Service]\nExecStart=/usr/local/bin/daolab-app-exporter --app nginx\n")
++    # bin
++    write(root, "usr/bin/sudo", "#!/bin/sh\n", 0o4755)
++    write(root, "usr/bin/passwd", "#!/bin/sh\n", 0o4755)
++    write(root, "usr/bin/crontab", "#!/bin/sh\n", 0o2755)
++    write(root, "usr/bin/ls", "#!/bin/sh\n", 0o755)
++    write(root, "usr/sbin/sshd", "#!/bin/sh\n", 0o755)
++    write(root, "usr/local/bin/daolab-app-exporter", "#!/usr/bin/env python3\n", 0o755)
++    write(root, "usr/local/bin/daolab-keys", "#!/bin/sh\n", 0o755)
++    write(root, "usr/local/bin/daolab-ml-smoke", "#!/bin/sh\n", 0o755)
++    mkdir(root, "usr/local/sbin")
++    write(root, "usr/local/lib/daolab/otelcol.tar", "tar\n")
++    write(root, "opt/async_nginx.conf", "proxy_pass http://10.0.0.1;\n")
++    link(root, "bin", "usr/bin")
++    link(root, "sbin", "usr/sbin")
++    write(root, "etc/ld.so.conf.d/libc.conf", "/usr/local/lib\n")
++    # kmod (etc/modules stays absent; etc/modules-load.d exists, empty)
++    write(root, "etc/modprobe.d/blacklist.conf", "blacklist evbug\n")
++    mkdir(root, "etc/modules-load.d")
++    write(proc, "modules", MODULES)
++    # mount
++    write(proc, "self/mountinfo", MOUNTINFO)
++    # proc: two sshd (root, operator), the operator's bash, nginx twice (collapses), a kernel
++    # thread (no exe: skipped), systemd
++    pid(proc, 9000001, "/usr/lib/systemd/systemd", 0, "systemd")
++    pid(proc, 9000002, "/usr/sbin/sshd", 0, "sshd")
++    pid(proc, 9000003, "/usr/sbin/sshd", 1000, "sshd")
++    pid(proc, 9000004, "/usr/bin/bash", 1000, "bash")
++    pid(proc, 9000005, None, 0, "kworker/0:1")
++    pid(proc, 9000006, "/usr/sbin/nginx", 0, "nginx")
++    pid(proc, 9000007, "/usr/sbin/nginx", 0, "nginx")
++    # tmp
++    write(root, "tmp/pci-after.txt", "0002:03:00.0 rvu_nicpf\n")           # noise source 3
++    mkdir(root, "tmp/.X11-unix")
++    write(root, "var/tmp/keep.dat", "keep\n")
++    mkdir(root, "var/tmp/cloud-init")
++    mkdir(root, "dev/shm")
++    # daolab
++    write(root, "etc/daolab/hw_class", "test\n")
++    write(root, "etc/daolab/keys.conf", "DAOLAB_API=http://127.0.0.1\n", 0o600)
++    write(root, "etc/daolab/authorized_keys/lab", "")
++    write(root, "etc/daolab/otelcol.yaml", "daolab.reservation: 1\n")       # noise source 1
++    return root, proc
++
++
++# ---- running it ------------------------------------------------------------------------------
++def _script():
++    assert os.path.isfile(SCRIPT), "the checker playbooks/files/daolab-tripwire.py does not exist"
++    return SCRIPT
++
++
++def _bytes(data):
++    if isinstance(data, (dict, list)):
++        return json.dumps(data).encode("utf-8")
++    if isinstance(data, str):
++        return data.encode("utf-8")
++    return data
++
++
++def run_raw(args, data=b"", **kwargs):
++    """The checker as the DPU runs it (python3 -I -B), with exactly `args`."""
++    return subprocess.run([sys.executable, "-I", "-B", _script(), *args], input=_bytes(data),
++                          capture_output=True, timeout=TIMEOUT, **kwargs)
++
++
++def run(root, proc, mode, data, extra=()):
++    return run_raw(["--mode", mode, "--root", root, "--proc", proc, *extra], data)
++
++
++def collect_doc(ignore=None):
++    return {"format": COLLECT_FORMAT, "ignore": dict(ignore or {})}
++
++
++def collect(root, proc, ignore=None):
++    r = run(root, proc, "collect", collect_doc(ignore))
++    assert (r.returncode, r.stderr) == (0, b""), r
++    out = r.stdout.decode("ascii")
++    assert out.endswith("\n") and out.count("\n") == 1, "collect prints exactly one line"
++    doc = json.loads(out)
++    assert list(doc) == ["classes"] and list(doc["classes"]) == list(CLASSES)
++    result = {}
++    for c in CLASSES:
++        entry = doc["classes"][c]
++        assert list(entry) == ["fingerprints"]
++        fps = entry["fingerprints"]
++        assert fps == sorted(set(fps)) and all(HEX_RE.fullmatch(f) for f in fps)
++        result[c] = fps
++    return result
++
++
++def mini_baseline(collected, ignore=None, hw_class="test", version=1):
++    """The controller's build_baseline in ten lines (tests/dpu may not import `service`)."""
++    ignore = ignore or {}
++    return {"format": FORMAT, "version": version, "hw_class": hw_class,
++            "classes": {c: {"fingerprints": list(collected[c]), "ignore": list(ignore.get(c, []))}
++                        for c in CLASSES}}
++
++
++def fresh(tmp_path, ignore=None):
++    root, proc = make_tree(str(tmp_path))
++    return root, proc, mini_baseline(collect(root, proc, ignore), ignore)
++
++
++def check(root, proc, baseline):
++    return run(root, proc, "check", baseline)
++
++
++def assert_counts(r, expected):
++    """Exit 0, nothing on stderr, and exactly the expected lines in the fixed class order."""
++    assert r.stderr == b"", r.stderr
++    assert r.returncode == 0, r
++    want = [f"tripwire:{c}:{expected[c]}" for c in CLASSES if expected.get(c)] or ["tripwire:ok"]
++    assert r.stdout.decode("ascii").splitlines() == want
++    assert r.stdout.endswith(b"\n")
++
++
++def assert_error(r, code):
++    assert (r.stdout, r.stderr, r.returncode) == (f"tripwire:error:{code}\n".encode(), b"", 2)
++
++
++# ---- the checker imported by path (to test each collector on its own) ------------------------
++_MOD = None
++
++
++def mod():
++    global _MOD
++    if _MOD is None:
++        spec = importlib.util.spec_from_file_location("daolab_tripwire", _script())
++        module = importlib.util.module_from_spec(spec)
++        old = sys.dont_write_bytecode
++        sys.dont_write_bytecode = True          # no __pycache__ next to the shipped script
++        try:
++            spec.loader.exec_module(module)
++        finally:
++            sys.dont_write_bytecode = old
++        _MOD = module
++    return _MOD
++
++
++def records(cls, root, proc, ignore=()):
++    m = mod()
++    return m.COLLECTORS[cls](m.Ctx(root, proc, ignore))
++
++
++# ============================================================================================
++# The script itself
++# ============================================================================================
++def test_script_is_an_executable_python3_stdlib_only_file():
++    path = _script()
++    assert os.stat(path).st_mode & stat.S_IXUSR
++    with open(path, encoding="utf-8") as fh:
++        src = fh.read()
++    assert src.startswith("#!/usr/bin/env python3\n")
++    import ast
++    names = set()
++    for node in ast.walk(ast.parse(src)):
++        if isinstance(node, ast.Import):
++            names.update(a.name.split(".")[0] for a in node.names)
++        elif isinstance(node, ast.ImportFrom):
++            assert node.level == 0
++            names.add(node.module.split(".")[0])
++    assert names and names <= set(sys.stdlib_module_names), names - set(sys.stdlib_module_names)
++
++
++def test_the_class_order_is_the_contract():
++    assert tuple(mod().CLASSES) == CLASSES
++
++
++# ============================================================================================
++# Clean tree, collect, round trip
++# ============================================================================================
++def test_clean_tree_is_ok(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    assert_counts(check(root, proc, base), {})
++
++
++def test_collect_is_deterministic_and_every_class_has_entries(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    first = collect(root, proc)
++    assert first == collect(root, proc)
++    assert all(first[c] for c in CLASSES), [c for c in CLASSES if not first[c]]
++
++
++def test_round_trip_collect_build_check_is_ok_with_the_same_ignore(tmp_path):
++    ignore = {"tmp": ["tmp/pci-after.txt"], "daolab": ["etc/daolab/otelcol.yaml"]}
++    root, proc, base = fresh(tmp_path, ignore)
++    assert_counts(check(root, proc, base), {})
++    replace_in(root, "etc/daolab/otelcol.yaml", "1", "2")               # ignored noise
++    write(root, "tmp/pci-after.txt", "something else, longer than before\n")
++    assert_counts(check(root, proc, base), {})
++
++
++def test_ignore_must_be_the_same_in_collect_and_baseline(tmp_path):
++    """The contract build_baseline documents: a baseline whose ignore list was not used by its
++    collect run holds fingerprints the checker now skips, so they count as removed."""
++    root, proc = make_tree(str(tmp_path))
++    base = mini_baseline(collect(root, proc), {"tmp": ["tmp/pci-after.txt"]})
++    assert_counts(check(root, proc, base), {"tmp": 1})
++
++
++# ============================================================================================
++# Each class: one addition, one removal -> exact counts
++# ============================================================================================
++ADD = {
++    "identity": lambda r, p: append(r, "etc/passwd", f"{TOKEN}usr:x:{PLANT_UID}:{PLANT_UID}::"
++                                                     f"/home/{TOKEN}usr:/bin/sh\n"),
++    "sudo": lambda r, p: write(r, f"etc/sudoers.d/{TOKEN}", f"{TOKEN} ALL=(ALL) ALL\n", 0o440),
++    "ssh": lambda r, p: write(r, f"etc/ssh/sshd_config.d/{TOKEN}.conf", "PermitRootLogin yes\n"),
++    "sched": lambda r, p: write(r, f"etc/cron.d/{TOKEN}", f"* * * * * root /opt/{TOKEN}\n"),
++    "boot": lambda r, p: link(r, f"etc/systemd/system/multi-user.target.wants/{TOKEN}.service",
++                              f"/etc/systemd/system/{TOKEN}.service"),
++    "bin": lambda r, p: write(r, f"usr/bin/{TOKEN}", "#!/bin/sh\n", 0o4755),
++    "kmod": lambda r, p: append(p, "modules", f"{TOKEN}mod 16384 0 - Live 0x0\n"),
++    "mount": lambda r, p: append(p, "self/mountinfo",
++                                 f"40 22 0:50 / /mnt/{TOKEN}\\040dir rw - tmpfs tmpfs rw\n"),
++    "proc": lambda r, p: pid(p, 9000099, f"/opt/{TOKEN}exe", PLANT_UID, TOKEN),
++    "tmp": lambda r, p: write(r, f"tmp/{TOKEN}", "x" * 10),
++    "daolab": lambda r, p: write(r, f"etc/daolab/{TOKEN}", "x\n"),
++}
++REMOVE = {
++    "identity": lambda r, p: drop_lines(r, "etc/group", "lab:x:1001:"),
++    "sudo": lambda r, p: os.remove(os.path.join(r, "etc/sudoers.d/90-daolab-lab")),
++    "ssh": lambda r, p: os.remove(os.path.join(r, "etc/ssh/ssh_host_ed25519_key.pub")),
++    "sched": lambda r, p: os.remove(os.path.join(r, "etc/cron.daily/apt-compat")),
++    "boot": lambda r, p: os.remove(os.path.join(r, "etc/systemd/system/nginx-tls.service")),
++    "bin": lambda r, p: os.remove(os.path.join(r, "usr/local/bin/daolab-keys")),
++    "kmod": lambda r, p: drop_lines(p, "modules", "rvu_cptpf"),
++    "mount": lambda r, p: drop_lines(p, "self/mountinfo", " /mnt/huge "),
++    "proc": lambda r, p: shutil.rmtree(os.path.join(p, "9000004")),
++    "tmp": lambda r, p: os.remove(os.path.join(r, "var/tmp/keep.dat")),
++    "daolab": lambda r, p: os.remove(os.path.join(r, "etc/daolab/keys.conf")),
++}
++
++
++@pytest.mark.parametrize("cls", CLASSES)
++def test_one_addition_counts_one(tmp_path, cls):
++    root, proc, base = fresh(tmp_path)
++    ADD[cls](root, proc)
++    assert_counts(check(root, proc, base), {cls: 1})
++
++
++@pytest.mark.parametrize("cls", CLASSES)
++def test_one_removal_counts_one(tmp_path, cls):
++    root, proc, base = fresh(tmp_path)
++    REMOVE[cls](root, proc)
++    assert_counts(check(root, proc, base), {cls: 1})
++
++
++@pytest.mark.parametrize("cls", CLASSES)
++def test_an_addition_and_a_removal_count_two(tmp_path, cls):
++    root, proc, base = fresh(tmp_path)
++    ADD[cls](root, proc)
++    REMOVE[cls](root, proc)
++    assert_counts(check(root, proc, base), {cls: 2})
++
++
++def test_every_class_at_once_prints_in_the_fixed_order(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    for cls in reversed(CLASSES):
++        ADD[cls](root, proc)
++    assert_counts(check(root, proc, base), {c: 1 for c in CLASSES})
++
++
++def test_a_changed_file_counts_two_one_removal_and_one_addition(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    write(root, "etc/sudoers.d/90-daolab-lab", "lab ALL=(ALL) NOPASSWD: ALL\n", 0o440)
++    assert_counts(check(root, proc, base), {"sudo": 2})
++
++
++# ============================================================================================
++# Per-class details
++# ============================================================================================
++# Collector additions beyond the brief's table, plus the brief's own sub-sources: each planted
++# path is a pure addition to the clean tree -> exactly one record in exactly one class.
++ADDITIONS = [
++    ("identity", f"etc/skel/.{TOKEN}rc"),
++    ("identity", "etc/profile"),
++    ("identity", f"etc/profile.d/{TOKEN}.sh"),
++    ("identity", "etc/bash.bashrc"),
++    ("identity", "etc/environment"),
++    ("bin", "etc/ld.so.preload"),
++    ("bin", "etc/ld.so.conf"),
++    ("bin", f"etc/ld.so.conf.d/{TOKEN}.conf"),
++    ("bin", f"usr/local/bin/{TOKEN}"),
++    ("bin", f"usr/local/sbin/{TOKEN}"),
++    ("kmod", f"etc/modprobe.d/{TOKEN}.conf"),
++    ("kmod", "etc/modules"),
++    ("kmod", f"etc/modules-load.d/{TOKEN}.conf"),
++    ("ssh", "root/.ssh/authorized_keys2"),
++    ("ssh", "home/dao-test/.ssh/authorized_keys2"),
++    ("sched", f"var/spool/cron/crontabs/{TOKEN}usr"),
++    ("sched", f"var/spool/cron/atjobs/a0001{TOKEN}"),
++    ("sched", f"etc/cron.hourly/{TOKEN}"),
++    ("sched", f"etc/systemd/system/{TOKEN}.timer"),             # sched, not boot
++    ("boot", "etc/rc.local"),
++    ("boot", f"etc/systemd/system/{TOKEN}.service"),
++    ("daolab", f"etc/daolab/authorized_keys/{TOKEN}"),
++    ("tmp", f"dev/shm/{TOKEN}"),
++    ("tmp", f"var/tmp/cloud-init/{TOKEN}"),
++]
++
++
++@pytest.mark.parametrize("cls,rel", ADDITIONS, ids=[f"{c}:{r}" for c, r in ADDITIONS])
++def test_planted_addition_counts_one_in_its_class(tmp_path, cls, rel):
++    root, proc, base = fresh(tmp_path)
++    write(root, rel, f"planted {TOKEN}\n")
++    assert_counts(check(root, proc, base), {cls: 1})
++
++
++def test_a_timer_link_in_timers_target_wants_is_sched_only(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    link(root, f"etc/systemd/system/timers.target.wants/{TOKEN}.timer", f"/x/{TOKEN}.timer")
++    assert_counts(check(root, proc, base), {"sched": 1})
++
++
++def test_a_new_override_dir_with_a_file_is_two_boot_records(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    write(root, f"etc/systemd/system/ssh.service.d/{TOKEN}.conf", "[Service]\nExecStartPre=/x\n")
++    assert_counts(check(root, proc, base), {"boot": 2})
++
++
++def test_identity_shadow_password_change_with_the_same_state_does_not_count(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    replace_in(root, "etc/shadow", "$6$saltsalt$operatorhash:19000", "$6$newsalt$newhash:19950")
++    replace_in(root, "etc/shadow", "!$6$labsalt$labhash", "!$6$rotated$every-booking")
++    assert_counts(check(root, proc, base), {})
++
++
++def test_identity_shadow_locked_to_set_counts(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    replace_in(root, "etc/shadow", "lab:!$6$labsalt$labhash", "lab:$6$labsalt$labhash")
++    assert_counts(check(root, proc, base), {"identity": 2})
++
++
++def test_identity_shadow_locked_to_empty_counts(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    replace_in(root, "etc/shadow", "root:*:", "root::")
++    assert_counts(check(root, proc, base), {"identity": 2})
++
++
++def test_identity_password_state_classes():
++    state = mod().password_state
++    assert [state(v) for v in ("!", "!$6$x", "*", "*LK*", "", "$6$x$y", "x")] == \
++        ["locked", "locked", "locked", "locked", "empty", "set", "set"]
++
++
++def test_identity_shadow_records_never_carry_the_password_field(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    flat = repr(sorted(records("identity", root, proc)))
++    assert "operatorhash" not in flat and "labhash" not in flat and "saltsalt" not in flat
++
++
++def test_identity_file_mode_counts(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    os.chmod(os.path.join(root, "etc/shadow"), 0o644)
++    assert_counts(check(root, proc, base), {"identity": 2})
++
++
++def test_ssh_lab_authorized_keys_change_does_not_count(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    write(root, "home/lab/.ssh/authorized_keys", "ssh-ed25519 AAAAother booking-2\n", 0o600)
++    write(root, "home/lab/.ssh/authorized_keys2", "ssh-ed25519 AAAAmore\n")
++    assert_counts(check(root, proc, base), {})
++
++
++def test_ssh_another_users_authorized_keys_change_counts(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    append(root, "home/dao-test/.ssh/authorized_keys", f"ssh-ed25519 AAAA{TOKEN} extra\n")
++    assert_counts(check(root, proc, base), {"ssh": 2})
++
++
++def test_ssh_lab_home_moved_is_caught_by_identity(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    replace_in(root, "etc/passwd", "lab:x:1001:1001::/home/lab:", "lab:x:1001:1001::/root:")
++    # the lab line changed (identity 2); /root is now lab's home, so root's keys are skipped (1)
++    assert_counts(check(root, proc, base), {"identity": 2, "ssh": 1})
++
++
++def test_ssh_home_with_dotdot_stays_under_root(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    append(root, "etc/passwd", f"{TOKEN}:x:5:5::/../../../root:/bin/sh\n")
++    homes = mod().homes(mod().Ctx(root, proc, ()))
++    assert "root" in homes and all(not h.startswith("..") and not h.startswith("/") for h in homes)
++    assert "home/lab" not in homes
++
++
++def test_sched_and_boot_records_carry_no_uid_or_mode(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    for cls in ("sched", "boot"):
++        for rec in records(cls, root, proc):
++            assert not any(isinstance(f, int) for f in rec), rec
++
++
++def test_bin_plain_files_outside_local_bin_do_not_count(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    write(root, f"usr/bin/{TOKEN}-plain", "#!/bin/sh\n", 0o755)
++    write(root, f"opt/{TOKEN}/tool", "#!/bin/sh\n", 0o755)
++    write(root, f"usr/local/lib/{TOKEN}.so", "elf\n", 0o755)
++    assert_counts(check(root, proc, base), {})
++
++
++def test_bin_setgid_under_opt_counts(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    write(root, f"opt/{TOKEN}/tool", "#!/bin/sh\n", 0o2755)
++    assert_counts(check(root, proc, base), {"bin": 1})
++
++
++def test_bin_setuid_in_usr_local_bin_is_one_record(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    write(root, f"usr/local/bin/{TOKEN}", "#!/bin/sh\n", 0o4755)
++    assert_counts(check(root, proc, base), {"bin": 1})
++
++
++def test_bin_setuid_bit_removed_counts(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    os.chmod(os.path.join(root, "usr/bin/sudo"), 0o755)
++    assert_counts(check(root, proc, base), {"bin": 1})
++
++
++def test_bin_local_binary_content_change_counts_two(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    write(root, "usr/local/bin/daolab-keys", "#!/bin/sh\necho evil\n", 0o755)
++    assert_counts(check(root, proc, base), {"bin": 2})
++
++
++def test_bin_merged_usr_links_are_recorded_not_walked(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    os.remove(os.path.join(root, "bin"))
++    mkdir(root, "bin")
++    write(root, f"bin/{TOKEN}", "#!/bin/sh\n", 0o4755)
++    assert_counts(check(root, proc, base), {"bin": 2})       # the link went, a setuid file came
++
++
++def test_kmod_only_the_module_name_counts(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    replace_in(proc, "modules", "vfio_pci 16384 0 -", "vfio_pci 16384 3 -")
++    assert_counts(check(root, proc, base), {})
++
++
++def test_mount_octal_escapes_are_decoded():
++    decode = mod().decode_mount_field
++    assert decode("/mnt/with\\040space") == "/mnt/with space"
++    assert decode("/a\\011b\\012c\\134d") == "/a\tb\nc\\d"
++    assert decode("/plain") == "/plain"
++
++
++def test_mount_records_point_and_fstype(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    recs = records("mount", root, proc)
++    assert ("mnt", "/mnt/with space", "tmpfs") in recs and ("mnt", "/", "ext4") in recs
++
++
++def test_mount_options_do_not_count_but_fstype_does(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    replace_in(proc, "self/mountinfo", "/mnt/huge rw,relatime", "/mnt/huge ro,relatime")
++    assert_counts(check(root, proc, base), {})
++    replace_in(proc, "self/mountinfo", "- hugetlbfs nodev", "- tmpfs nodev")
++    assert_counts(check(root, proc, base), {"mount": 2})
++
++
++def test_mount_malformed_line_counts_and_does_not_crash(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    append(proc, "self/mountinfo", f"garbage {TOKEN}\n")
++    assert_counts(check(root, proc, base), {"mount": 1})
++
++
++def test_proc_duplicates_collapse_and_kernel_threads_are_skipped(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    pid(proc, 9000010, "/usr/sbin/nginx", 0)             # same exe + uid as 9000006
++    pid(proc, 9000011, None, 0)                          # another kernel thread
++    d = pid(proc, 9000012, None, 0)                      # an exe that is not a link
++    write(d, "exe", "not a link")
++    assert_counts(check(root, proc, base), {})
++
++
++def test_proc_uid_change_counts_two(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    replace_in(proc, "9000004/status", "Uid:\t1000\t1000", "Uid:\t0\t1000")
++    assert_counts(check(root, proc, base), {"proc": 2})
++
++
++def test_proc_records_have_no_pid_and_skip_own_pid(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    pid(proc, os.getpid(), f"/opt/{TOKEN}self", PLANT_UID)
++    recs = records("proc", root, proc)
++    assert ("p", "/usr/sbin/nginx", 0) in recs and ("p", "/usr/sbin/sshd", 1000) in recs
++    assert all(TOKEN not in r[1] for r in recs)
++    assert all("9000" not in repr(r) for r in recs)
++
++
++def test_tmp_size_counts_content_does_not(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    write(root, "var/tmp/keep.dat", "KEEP\n")                     # same size
++    assert_counts(check(root, proc, base), {})
++    write(root, "var/tmp/keep.dat", "keep, longer\n")
++    assert_counts(check(root, proc, base), {"tmp": 2})
++
++
++def test_tmp_directories_alone_do_not_count_specials_do(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    mkdir(root, f"tmp/{TOKEN}-dir/deeper")
++    assert_counts(check(root, proc, base), {})
++    os.mkfifo(os.path.join(root, f"tmp/{TOKEN}-fifo"))
++    link(root, f"dev/shm/{TOKEN}-link", "/etc/shadow")
++    assert_counts(check(root, proc, base), {"tmp": 2})
++
++
++def test_daolab_mode_change_counts_two(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    os.chmod(os.path.join(root, "etc/daolab/hw_class"), 0o666)
++    assert_counts(check(root, proc, base), {"daolab": 2})
++
++
++# ============================================================================================
++# Noise rules (ignore globs)
++# ============================================================================================
++def test_ignore_glob_suppresses_a_planted_noise_file(tmp_path):
++    ignore = {"tmp": ["tmp/noise-*"]}
++    root, proc, base = fresh(tmp_path, ignore)
++    write(root, "tmp/noise-1", "x")
++    write(root, "tmp/noise-2/inside", "y")
++    assert_counts(check(root, proc, base), {})
++    write(root, f"tmp/{TOKEN}", "z")
++    assert_counts(check(root, proc, base), {"tmp": 1})
++
++
++def test_ignore_only_applies_to_its_own_class(tmp_path):
++    ignore = {"tmp": ["etc/daolab/*"]}
++    root, proc, base = fresh(tmp_path, ignore)
++    write(root, f"etc/daolab/{TOKEN}", "x")
++    assert_counts(check(root, proc, base), {"daolab": 1})
++
++
++def test_ignored_directory_skips_its_subtree(tmp_path):
++    ignore = {"tmp": ["var/tmp/systemd-private-*"]}
++    root, proc, base = fresh(tmp_path, ignore)
++    write(root, f"var/tmp/systemd-private-abc/tmp/{TOKEN}", "x")
++    assert_counts(check(root, proc, base), {})
++
++
++@pytest.mark.parametrize("cls,glob,plant", [
++    ("identity", f"etc/passwd:{TOKEN}*", ADD["identity"]),
++    ("kmod", f"{TOKEN}*", ADD["kmod"]),
++    ("mount", f"mnt/{TOKEN}*", ADD["mount"]),
++    ("proc", f"opt/{TOKEN}*", ADD["proc"]),
++    ("boot", f"etc/systemd/system/multi-user.target.wants/{TOKEN}*", ADD["boot"]),
++])
++def test_ignore_subjects_of_the_non_file_records(tmp_path, cls, glob, plant):
++    root, proc, base = fresh(tmp_path, {cls: [glob]})
++    plant(root, proc)
++    assert_counts(check(root, proc, base), {})
++
++
++def test_the_four_playbook_noise_sources_with_their_globs(tmp_path):
++    """FINDINGS §7 / the synthetic baseline's globs (synthetic only; production = Rama)."""
++    ignore = {"boot": ["etc/systemd/system/daolab-app-exporter.service"],
++              "tmp": ["tmp/dao-smart-nic-ansible.log", "tmp/pci-after.txt"],
++              "daolab": ["etc/daolab/otelcol.yaml"]}
++    root, proc, base = fresh(tmp_path, ignore)
++    write(root, "etc/systemd/system/daolab-app-exporter.service", "ExecStart=x --app vpp\n")
++    write(root, "tmp/dao-smart-nic-ansible.log", "launch log\n")
++    write(root, "tmp/pci-after.txt", "changed, longer\n")
++    write(root, "etc/daolab/otelcol.yaml", "daolab.reservation: 2\ndaolab.user: someone\n")
++    assert_counts(check(root, proc, base), {})
++
++
++# ============================================================================================
++# Robustness: symlinks, unreadable entries, odd names
++# ============================================================================================
++def test_symlink_loops_do_not_hang_and_are_link_records(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    link(root, f"etc/ssh/{TOKEN}a", f"{TOKEN}b")
++    link(root, f"etc/ssh/{TOKEN}b", f"{TOKEN}a")
++    link(root, f"etc/ssh/{TOKEN}up", "..")
++    link(root, f"etc/daolab/{TOKEN}self", ".")
++    link(root, f"tmp/{TOKEN}root", "/")
++    assert_counts(check(root, proc, base), {"ssh": 3, "tmp": 1, "daolab": 1})
++    base2 = mini_baseline(collect(root, proc))
++    assert_counts(check(root, proc, base2), {})
++
++
++def test_symlinks_are_never_followed(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    outside = write(str(tmp_path), "outside/secret", "one\n")
++    link(root, "etc/daolab/points-outside", outside)
++    base = mini_baseline(collect(root, proc))
++    write(str(tmp_path), "outside/secret", "two, and longer\n")
++    assert_counts(check(root, proc, base), {})
++
++
++@pytest.mark.skipif(AS_ROOT, reason="root reads mode-000 files")
++def test_unreadable_file_is_counted_not_hidden(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    target = os.path.join(root, "etc/sudoers.d/90-daolab-lab")
++    os.chmod(target, 0)
++    try:
++        assert_counts(check(root, proc, base), {"sudo": 2})     # file record -> unreadable
++    finally:
++        os.chmod(target, 0o440)
++
++
++@pytest.mark.skipif(AS_ROOT, reason="root reads mode-000 dirs")
++def test_unreadable_directory_is_counted_not_hidden(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    d = mkdir(root, f"etc/daolab/{TOKEN}dir")
++    write(d, "inside", "x")
++    os.chmod(d, 0)
++    try:
++        assert_counts(check(root, proc, base), {"daolab": 2})   # the dir + "unreadable"
++    finally:
++        os.chmod(d, 0o755)
++
++
++def test_a_fifo_where_a_file_was_is_never_opened(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    os.remove(os.path.join(root, "etc/daolab/keys.conf"))
++    os.mkfifo(os.path.join(root, "etc/daolab/keys.conf"))
++    assert_counts(check(root, proc, base), {"daolab": 2})       # no hang (TIMEOUT)
++
++
++def test_non_utf8_and_newline_names_do_not_crash(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    with open(os.path.join(os.fsencode(root), b"etc/daolab/bad-\xff-name"), "w") as fh:
++        fh.write("x")
++    write(root, "etc/daolab/new\nline", "x")
++    assert_counts(check(root, proc, base), {"daolab": 2})
++
++
++def test_fingerprint_is_newline_free_sha256_of_a_fixed_field_order():
++    fp = mod().fingerprint
++    a = fp("tmp", ("f", "tmp/a\nb", 0, 1))
++    assert HEX_RE.fullmatch(a)
++    assert a == hashlib.sha256(json.dumps(["tmp", "f", "tmp/a\nb", 0, 1], ensure_ascii=True,
++                                          separators=(",", ":")).encode("ascii")).hexdigest()
++    assert a != fp("tmp", ("f", "tmp/a", "b", 0, 1))            # no field-boundary ambiguity
++    assert a != fp("daolab", ("f", "tmp/a\nb", 0, 1))           # the class is in the record
++
++
++def test_missing_class_sources_are_simply_empty(tmp_path):
++    root, proc = os.path.join(str(tmp_path), "r"), os.path.join(str(tmp_path), "p")
++    os.makedirs(root)
++    os.makedirs(proc)
++    assert collect(root, proc) == {c: [] for c in CLASSES}
++
++
++def test_the_checker_writes_nothing(tmp_path):
++    root, proc, base = fresh(tmp_path)
++
++    def snapshot():
++        out = []
++        for top in (str(tmp_path), os.path.dirname(SCRIPT)):
++            for d, dirs, files in os.walk(top):
++                for n in dirs + files:
++                    p = os.path.join(d, n)
++                    st = os.lstat(p)
++                    out.append((p, st.st_mode, st.st_size, st.st_mtime_ns))
++        return sorted(out)
++
++    before = snapshot()
++    assert_counts(check(root, proc, base), {})
++    collect(root, proc)
++    assert snapshot() == before
++
++
++# ============================================================================================
++# Input errors: the exact error line, exit 2, nothing on stderr
++# ============================================================================================
++def _with(base, path, value):
++    doc = json.loads(json.dumps(base))
++    node = doc
++    for key in path[:-1]:
++        node = node[key]
++    if value is KeyError:
++        del node[path[-1]]
++    else:
++        node[path[-1]] = value
++    return doc
++
++
++BAD_BASELINES = [                                        # (id, mutate(base) -> doc, code)
++    ("not-an-object", lambda b: [b], "bad_input"),
++    ("no-format", lambda b: _with(b, ["format"], KeyError), "bad_input"),
++    ("wrong-format", lambda b: _with(b, ["format"], "daolab-tripwire/2"), "bad_input"),
++    ("collect-format", lambda b: _with(b, ["format"], COLLECT_FORMAT), "bad_input"),
++    ("unknown-top-key", lambda b: _with(b, [f"{TOKEN}key"], 1), "bad_baseline"),
++    ("missing-version", lambda b: _with(b, ["version"], KeyError), "bad_baseline"),
++    ("version-0", lambda b: _with(b, ["version"], 0), "bad_baseline"),
++    ("version-str", lambda b: _with(b, ["version"], "1"), "bad_baseline"),
++    ("version-bool", lambda b: _with(b, ["version"], True), "bad_baseline"),
++    ("version-float", lambda b: _with(b, ["version"], 1.0), "bad_baseline"),
++    ("hw-class-shape", lambda b: _with(b, ["hw_class"], f"Bad_{TOKEN}"), "bad_baseline"),
++    ("hw-class-long", lambda b: _with(b, ["hw_class"], "a" * 129), "bad_baseline"),
++    ("classes-not-object", lambda b: _with(b, ["classes"], []), "bad_baseline"),
++    ("unknown-class", lambda b: _with(b, ["classes", f"{TOKEN}cls"],
++                                      {"fingerprints": [], "ignore": []}), "bad_baseline"),
++    ("missing-class", lambda b: _with(b, ["classes", "kmod"], KeyError), "bad_baseline"),
++    ("class-not-object", lambda b: _with(b, ["classes", "kmod"], []), "bad_baseline"),
++    ("unknown-class-key", lambda b: _with(b, ["classes", "kmod", f"{TOKEN}k"], []),
++     "bad_baseline"),
++    ("missing-ignore", lambda b: _with(b, ["classes", "kmod", "ignore"], KeyError),
++     "bad_baseline"),
++    ("fingerprints-not-list", lambda b: _with(b, ["classes", "kmod", "fingerprints"], "x"),
++     "bad_baseline"),
++    ("hex-short", lambda b: _with(b, ["classes", "kmod", "fingerprints"], ["a" * 63]),
++     "bad_baseline"),
++    ("hex-upper", lambda b: _with(b, ["classes", "kmod", "fingerprints"], ["A" * 64]),
++     "bad_baseline"),
++    ("hex-not-hex", lambda b: _with(b, ["classes", "kmod", "fingerprints"], ["g" * 64]),
++     "bad_baseline"),
++    ("hex-not-str", lambda b: _with(b, ["classes", "kmod", "fingerprints"], [1]), "bad_baseline"),
++    ("hex-duplicate", lambda b: _with(b, ["classes", "kmod", "fingerprints"], ["a" * 64] * 2),
++     "bad_baseline"),
++    ("glob-absolute", lambda b: _with(b, ["classes", "tmp", "ignore"], [f"/tmp/{TOKEN}"]),
++     "bad_baseline"),
++    ("glob-empty", lambda b: _with(b, ["classes", "tmp", "ignore"], [""]), "bad_baseline"),
++    ("glob-newline", lambda b: _with(b, ["classes", "tmp", "ignore"], ["a\nb"]), "bad_baseline"),
++    ("glob-nul", lambda b: _with(b, ["classes", "tmp", "ignore"], ["a\x00b"]), "bad_baseline"),
++    ("glob-long", lambda b: _with(b, ["classes", "tmp", "ignore"], ["a" * 257]), "bad_baseline"),
++    ("glob-not-str", lambda b: _with(b, ["classes", "tmp", "ignore"], [3]), "bad_baseline"),
++    ("glob-duplicate", lambda b: _with(b, ["classes", "tmp", "ignore"], ["a", "a"]),
++     "bad_baseline"),
++    ("glob-too-many", lambda b: _with(b, ["classes", "tmp", "ignore"],
++                                      [f"g{i}" for i in range(257)]), "bad_baseline"),
++]
++
++
++@pytest.mark.parametrize("case", BAD_BASELINES, ids=[c[0] for c in BAD_BASELINES])
++def test_bad_baseline_is_refused_with_the_exact_error_line(tmp_path, case):
++    _, mutate, code = case
++    root, proc, base = fresh(tmp_path)
++    assert_error(check(root, proc, mutate(base)), code)
++
++
++BAD_BYTES = [
++    ("empty", b""),
++    ("not-json", b"{"),
++    ("json-garbage", f"{TOKEN} not json".encode()),
++    ("not-utf8", b'{"format": "\xff"}'),
++    ("utf8-bom", b'\xef\xbb\xbf{"format": "daolab-tripwire/1"}'),
++    ("utf16", '{"format": "daolab-tripwire/1"}'.encode("utf-16")),
++    ("duplicate-key", b'{"format": "daolab-tripwire/1", "format": "daolab-tripwire/1"}'),
++    ("nan", b'{"format": "daolab-tripwire/1", "version": NaN}'),
++    ("deep-nesting", b"[" * 100000 + b"]" * 100000),
++    ("huge-int", b'{"format": "daolab-tripwire/1", "version": ' + b"9" * 5000 + b"}"),
++]
++
++
++@pytest.mark.parametrize("case", BAD_BYTES, ids=[c[0] for c in BAD_BYTES])
++def test_unparseable_input_is_bad_input(tmp_path, case):
++    root, proc = make_tree(str(tmp_path))
++    for mode in ("check", "collect"):
++        assert_error(run(root, proc, mode, case[1]), "bad_input")
++
++
++def test_input_over_16_mib_is_bad_input(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    assert_error(run(root, proc, "check", b" " * (16 * 1024 * 1024 + 1)), "bad_input")
++
++
++BAD_COLLECT = [
++    ("wrong-format", {"format": FORMAT, "ignore": {}}),
++    ("no-ignore", {"format": COLLECT_FORMAT}),
++    ("unknown-key", {"format": COLLECT_FORMAT, "ignore": {}, TOKEN: 1}),
++    ("ignore-not-object", {"format": COLLECT_FORMAT, "ignore": []}),
++    ("unknown-class", {"format": COLLECT_FORMAT, "ignore": {TOKEN: []}}),
++    ("bad-glob", {"format": COLLECT_FORMAT, "ignore": {"tmp": ["/abs"]}}),
++    ("globs-not-list", {"format": COLLECT_FORMAT, "ignore": {"tmp": "tmp/*"}}),
++]
++
++
++@pytest.mark.parametrize("case", BAD_COLLECT, ids=[c[0] for c in BAD_COLLECT])
++def test_bad_collect_document_is_bad_input(tmp_path, case):
++    root, proc = make_tree(str(tmp_path))
++    assert_error(run(root, proc, "collect", case[1]), "bad_input")
++
++
++def test_bad_options_are_bad_input_without_usage_text(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    fake = ["--root", root, "--proc", proc]
++    doc = collect_doc()
++    for args in ([*fake],                                       # no --mode
++                 ["--mode", "nope", *fake],
++                 ["--mode", "check", "--mode", "collect", *fake],
++                 ["--mode", "collect", f"--{TOKEN}", *fake],
++                 ["--mode", "collect", *fake, "positional"],
++                 ["--mode", "collect", "--root=" + root, "--proc", proc],
++                 ["--mode", "collect", "--proc", proc, "--root"],
++                 ["--mode", "collect", "--root", os.path.join(root, TOKEN), "--proc", proc],
++                 ["--mode", "collect", "--root", root, "--proc", os.path.join(proc, TOKEN)],
++                 ["--mode", "collect", "--root", write(root, f"{TOKEN}file"), "--proc", proc],
++                 ["--mode", "collect", "--root", "", "--proc", proc],
++                 ["--mode", "collect", *fake, "--input-fd", "x"],
++                 ["--mode", "collect", *fake, "--input-fd", "-1"],
++                 ["--mode", "collect", *fake, "--input-fd", "987"],    # not open
++                 ["--help"]):
++        r = run_raw(args, doc)
++        assert_error(r, "bad_input")
++
++
++def test_internal_error_prints_only_the_code(tmp_path):
++    """An unexpected exception: tripwire:error:internal, exit 2, no traceback anywhere."""
++    root, proc = make_tree(str(tmp_path))
++    boot = ("import importlib.util, sys\n"
++            "spec = importlib.util.spec_from_file_location('t', sys.argv.pop(1))\n"
++            "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
++            "def boom(ctx): raise RuntimeError('%s at /etc/%s uid %d')\n"
++            "m.COLLECTORS['sudo'] = boom\n"
++            "sys.exit(m.main())\n") % (TOKEN, TOKEN, PLANT_UID)
++    r = subprocess.run([sys.executable, "-I", "-B", "-c", boot, _script(), "--mode", "collect",
++                        "--root", root, "--proc", proc], input=_bytes(collect_doc()),
++                       capture_output=True, timeout=TIMEOUT)
++    assert_error(r, "internal")
++
++
++def test_internal_error_in_process_returns_2(tmp_path, monkeypatch, capsys):
++    root, proc = make_tree(str(tmp_path))
++    m = mod()
++
++    def boom(ctx):
++        raise MemoryError(TOKEN)
++
++    monkeypatch.setitem(m.COLLECTORS, "proc", boom)
++    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(_bytes(collect_doc()))))
++    assert m.main(["--mode", "collect", "--root", root, "--proc", proc]) == 2
++    out = capsys.readouterr()
++    assert (out.out, out.err) == ("tripwire:error:internal\n", "")
++
++
++# ============================================================================================
++# The baseline from a file descriptor (for when the script itself comes on stdin)
++# ============================================================================================
++def _fd_with(data):
++    r, w = os.pipe()
++
++    def feed():
++        with os.fdopen(w, "wb") as fh:
++            fh.write(data)
++
++    t = threading.Thread(target=feed)
++    t.start()
++    return r, t
++
++
++def test_input_fd_reads_the_baseline_and_ignores_stdin(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    ADD["sudo"](root, proc)
++    fd, t = _fd_with(_bytes(base))
++    try:
++        r = run_raw(["--mode", "check", "--root", root, "--proc", proc, "--input-fd", str(fd)],
++                    b"this is not the baseline", pass_fds=(fd,))
++    finally:
++        os.close(fd)
++        t.join()
++    assert_counts(r, {"sudo": 1})
++
++
++def test_script_on_stdin_with_the_baseline_on_a_descriptor(tmp_path):
++    """The B-112b shape: `python3 -I -B -c <bootstrap>` reads a length-prefixed script from
++    stdin; the baseline comes on another descriptor. The checker never needs its own file."""
++    root, proc, base = fresh(tmp_path)
++    ADD["tmp"](root, proc)
++    with open(_script(), "rb") as fh:
++        src = fh.read()
++    boot = ("import sys\n"
++            "n = int(sys.stdin.buffer.readline())\n"
++            "code = compile(sys.stdin.buffer.read(n), 'daolab-tripwire', 'exec')\n"
++            "exec(code, {'__name__': '__main__'})\n")
++    fd, t = _fd_with(_bytes(base))
++    try:
++        r = subprocess.run([sys.executable, "-I", "-B", "-c", boot, "--mode", "check",
++                            "--root", root, "--proc", proc, "--input-fd", str(fd)],
++                           input=str(len(src)).encode() + b"\n" + src, capture_output=True,
++                           timeout=TIMEOUT, pass_fds=(fd,))
++    finally:
++        os.close(fd)
++        t.join()
++    assert_counts(r, {"tmp": 1})
++
++
++# ============================================================================================
++# Safe output: no planted name, path, uid or module name ever reaches stdout or stderr
++# ============================================================================================
++def _forbidden(tmp_path):
++    # ("lab" itself can't be listed: it is part of the class name "daolab")
++    return [TOKEN, str(PLANT_UID), str(tmp_path), "/", "vfio", "rvu_", "sshd", "nginx", "home",
++            "etc", "usr", "dao-test", "exporter", ".service", "authorized", "shadow", "1000"]
++
++
++def test_output_never_contains_a_planted_name_path_uid_or_module(tmp_path):
++    root, proc, base = fresh(tmp_path)
++    for cls in CLASSES:
++        ADD[cls](root, proc)
++    for _, rel in ADDITIONS:
++        write(root, rel, f"planted {TOKEN} {PLANT_UID}\n")
++    link(root, f"etc/ssh/{TOKEN}loop", f"{TOKEN}loop")
++    os.mkfifo(os.path.join(root, f"tmp/{TOKEN}fifo"))
++    runs = [check(root, proc, base), run(root, proc, "collect", collect_doc({"tmp": [TOKEN]}))]
++    runs += [check(root, proc, mutate(base)) for _, mutate, _ in BAD_BASELINES]
++    runs += [run(root, proc, "check", data) for _, data in BAD_BYTES]
++    runs += [run_raw(["--mode", "check", "--root", os.path.join(root, TOKEN), "--proc", proc],
++                     base)]
++    for r in runs:
++        # fingerprints are checked as hex below; a digit run inside one is not a leak
++        text = HEX_RE.sub("", (r.stdout + r.stderr).decode("utf-8", "replace"))
++        for bad in _forbidden(tmp_path):
++            assert bad not in text, (bad, text[:200])
++        assert r.stderr == b""
++    for line in runs[0].stdout.decode("ascii").splitlines():
++        assert LINE_RE.fullmatch(line), line
++    assert runs[0].stdout.decode().splitlines() == [f"tripwire:{c}:" + str(n) for c, n in
++                                                    zip(CLASSES, _count_planted())]
++    collected = json.loads(runs[1].stdout)
++    for c in CLASSES:
++        assert all(HEX_RE.fullmatch(f) for f in collected["classes"][c]["fingerprints"])
++
++
++def _count_planted():
++    """Per class: one ADD plant + its ADDITIONS (+ the ssh loop link, + the tmp FIFO)."""
++    extra = {"ssh": 1, "tmp": 1}
++    return [1 + sum(1 for c, _ in ADDITIONS if c == cls) + extra.get(cls, 0) for cls in CLASSES]
++
++
++# ============================================================================================
++# Timing (informational, not asserted)
++# ============================================================================================
++def test_timing_on_about_5000_files(tmp_path):
++    root, proc = make_tree(str(tmp_path))
++    for i in range(2000):
++        write(root, f"usr/bin/tool{i:04d}", "#!/bin/sh\n", 0o755)
++    for i in range(1000):
++        write(root, f"usr/local/bin/bin{i:04d}", "x" * 4096, 0o755)
++    for i in range(1000):
++        write(root, f"tmp/t{i // 100}/f{i:04d}", "x")
++    for i in range(1000):
++        write(root, f"etc/daolab/d{i // 100}/f{i:04d}", "y" * 1024)
++    t0 = time.monotonic()
++    base = mini_baseline(collect(root, proc))
++    t1 = time.monotonic()
++    assert_counts(check(root, proc, base), {})
++    t2 = time.monotonic()
++    print(f"\nTIMING tripwire ~5000 files: collect {t1 - t0:.2f}s, check {t2 - t1:.2f}s "
++          f"(python {sys.version.split()[0]})")
+diff --git a/tests/test_tripwire.py b/tests/test_tripwire.py
+new file mode 100644
+index 0000000..abe6b60
+--- /dev/null
++++ b/tests/test_tripwire.py
+@@ -0,0 +1,459 @@
++"""B-112a: service/tripwire.py, the controller side of the tripwire (design v1.1 §3, Q-BASELINE).
++
++The authoritative baseline lives on the controller; `load_baseline` refuses anything but the
++closed `daolab-tripwire/1` format and returns the sha256 of the exact file bytes (B-112b records
++it and streams those bytes to the checker). `parse_output` turns the checker's stdout into
++residue items `tripwire:<class>:<count>` and refuses everything else; `TripwireError` carries a
++fixed code, never the raw text. `build_baseline` makes a synthetic baseline from collect mode.
++
++The fake board and the checker runner come from tests/dpu/test_tripwire.py (loaded by path:
++that file is stdlib + pytest only, so it can't import `service` itself).
++"""
++import hashlib
++import importlib
++import importlib.util
++import json
++import os
++import sys
++
++import pytest
++
++REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++SYNTHETIC = os.path.join(REPO, "deploy", "tripwire", "synthetic-test.json")
++DPU_TESTS = os.path.join(REPO, "tests", "dpu", "test_tripwire.py")
++TOKEN = "zq7plant"
++MIB16 = 16 * 1024 * 1024
++# The synthetic baseline's noise rules: the four playbook noise sources of FINDINGS §7 that have
++# a glob (synthetic only; production baselines are Rama's) and the tests' own noise glob.
++SYNTHETIC_IGNORE = {
++    "boot": ["etc/systemd/system/daolab-app-exporter.service"],
++    "tmp": ["tmp/dao-smart-nic-ansible.log", "tmp/pci-after.txt", "tmp/daolab-test-noise-*"],
++    "daolab": ["etc/daolab/otelcol.yaml"],
++}
++# Classes whose records hold no uid or file mode: their fingerprints are the same on any
++# machine that builds the fake tree, so the committed synthetic file must match them exactly.
++PORTABLE = ("sched", "boot", "kmod", "mount", "proc")
++
++_DPU = None
++
++
++def dpu():
++    global _DPU
++    if _DPU is None:
++        spec = importlib.util.spec_from_file_location("b112a_dpu_tripwire_helpers", DPU_TESTS)
++        module = importlib.util.module_from_spec(spec)
++        old = sys.dont_write_bytecode
++        sys.dont_write_bytecode = True
++        try:
++            spec.loader.exec_module(module)
++        finally:
++            sys.dont_write_bytecode = old
++        _DPU = module
++    return _DPU
++
++
++@pytest.fixture
++def tw():
++    return importlib.import_module("service.tripwire")
++
++
++def collect_text(root, proc, ignore=None):
++    r = dpu().run(root, proc, "collect", dpu().collect_doc(ignore))
++    assert (r.returncode, r.stderr) == (0, b""), r
++    return r.stdout.decode("ascii")
++
++
++def synthetic_baseline(tw, base_dir):
++    """How deploy/tripwire/synthetic-test.json is made (deploy/tripwire/README.md)."""
++    root, proc = dpu().make_tree(str(base_dir))
++    return tw.build_baseline(collect_text(root, proc, SYNTHETIC_IGNORE), "test", 1,
++                             SYNTHETIC_IGNORE)
++
++
++def dump(doc):
++    return (json.dumps(doc, indent=2) + "\n").encode("utf-8")
++
++
++def good(tw, tmp_path):
++    root, proc = dpu().make_tree(str(tmp_path / "board"))
++    return root, proc, tw.build_baseline(collect_text(root, proc), "test", 1, None)
++
++
++def put(tmp_path, data, name="baseline.json"):
++    path = tmp_path / name
++    path.write_bytes(data if isinstance(data, bytes) else dump(data))
++    return str(path)
++
++
++def assert_clean_error(err, *needles):
++    """A TripwireError: a fixed code only; no raw text, no path, no chained exception."""
++    texts = [str(err), repr(err), repr(err.args), str(err.code)]
++    for needle in (TOKEN,) + needles:
++        assert all(needle not in t for t in texts), (needle, texts)
++    assert err.args == (err.code,)
++    assert err.__cause__ is None and err.__context__ is None
++
++
++# ============================================================================================
++# Shared constants
++# ============================================================================================
++def test_classes_and_format_match_the_checker(tw):
++    assert tw.CLASSES == dpu().CLASSES == tuple(dpu().mod().CLASSES)
++    assert tw.FORMAT == dpu().FORMAT == "daolab-tripwire/1"
++
++
++# ============================================================================================
++# load_baseline
++# ============================================================================================
++def test_load_baseline_returns_the_doc_and_the_sha256_of_the_file_bytes(tw, tmp_path):
++    _, _, doc = good(tw, tmp_path)
++    data = dump(doc)
++    loaded, sha = tw.load_baseline(put(tmp_path, data), "test")
++    assert loaded == doc
++    assert sha == hashlib.sha256(data).hexdigest()
++    compact = json.dumps(doc).encode()                       # same doc, other bytes
++    assert tw.load_baseline(put(tmp_path, compact, "b2.json"), "test")[1] == \
++        hashlib.sha256(compact).hexdigest() != sha
++
++
++def _with(doc, path, value):
++    doc = json.loads(json.dumps(doc))
++    node = doc
++    for key in path[:-1]:
++        node = node[key]
++    if value is KeyError:
++        del node[path[-1]]
++    else:
++        node[path[-1]] = value
++    return doc
++
++
++FP = ["classes", "kmod", "fingerprints"]
++IG = ["classes", "tmp", "ignore"]
++REFUSALS = [                                                   # (id, mutate, loader code)
++    ("not-an-object", lambda b: [b], "bad_format"),
++    ("no-format", lambda b: _with(b, ["format"], KeyError), "bad_format"),
++    ("wrong-format", lambda b: _with(b, ["format"], "daolab-tripwire/2"), "bad_format"),
++    ("collect-format", lambda b: _with(b, ["format"], "daolab-tripwire-collect/1"), "bad_format"),
++    ("unknown-top-key", lambda b: _with(b, [f"{TOKEN}key"], 1), "unknown_key"),
++    ("missing-version", lambda b: _with(b, ["version"], KeyError), "missing_key"),
++    ("missing-hw-class", lambda b: _with(b, ["hw_class"], KeyError), "missing_key"),
++    ("missing-classes", lambda b: _with(b, ["classes"], KeyError), "missing_key"),
++    ("version-0", lambda b: _with(b, ["version"], 0), "bad_version"),
++    ("version-negative", lambda b: _with(b, ["version"], -3), "bad_version"),
++    ("version-str", lambda b: _with(b, ["version"], "1"), "bad_version"),
++    ("version-bool", lambda b: _with(b, ["version"], True), "bad_version"),
++    ("version-float", lambda b: _with(b, ["version"], 1.0), "bad_version"),
++    ("hw-class-shape", lambda b: _with(b, ["hw_class"], f"Bad_{TOKEN}"), "bad_hw_class"),
++    ("hw-class-double-dash", lambda b: _with(b, ["hw_class"], "a--b"), "bad_hw_class"),
++    ("hw-class-long", lambda b: _with(b, ["hw_class"], "a" * 129), "bad_hw_class"),
++    ("hw-class-not-str", lambda b: _with(b, ["hw_class"], 7), "bad_hw_class"),
++    ("hw-class-other", lambda b: _with(b, ["hw_class"], "other"), "hw_class_mismatch"),
++    ("classes-not-object", lambda b: _with(b, ["classes"], []), "bad_class"),
++    ("unknown-class", lambda b: _with(b, ["classes", f"{TOKEN}cls"],
++                                      {"fingerprints": [], "ignore": []}), "bad_class"),
++    ("missing-class", lambda b: _with(b, ["classes", "kmod"], KeyError), "missing_key"),
++    ("class-not-object", lambda b: _with(b, ["classes", "kmod"], []), "bad_class"),
++    ("unknown-class-key", lambda b: _with(b, ["classes", "kmod", f"{TOKEN}k"], []),
++     "unknown_key"),
++    ("missing-fingerprints", lambda b: _with(b, FP, KeyError), "missing_key"),
++    ("missing-ignore", lambda b: _with(b, ["classes", "kmod", "ignore"], KeyError),
++     "missing_key"),
++    ("fingerprints-not-list", lambda b: _with(b, FP, "x"), "bad_hex"),
++    ("hex-short", lambda b: _with(b, FP, ["a" * 63]), "bad_hex"),
++    ("hex-long", lambda b: _with(b, FP, ["a" * 65]), "bad_hex"),
++    ("hex-upper", lambda b: _with(b, FP, ["A" * 64]), "bad_hex"),
++    ("hex-not-hex", lambda b: _with(b, FP, ["g" * 64]), "bad_hex"),
++    ("hex-trailing-newline", lambda b: _with(b, FP, ["a" * 64 + "\n"]), "bad_hex"),
++    ("hex-not-str", lambda b: _with(b, FP, [1]), "bad_hex"),
++    ("hex-duplicate", lambda b: _with(b, FP, ["a" * 64] * 2), "duplicate"),
++    ("ignore-not-list", lambda b: _with(b, IG, "tmp/*"), "bad_glob"),
++    ("glob-absolute", lambda b: _with(b, IG, [f"/tmp/{TOKEN}"]), "bad_glob"),
++    ("glob-empty", lambda b: _with(b, IG, [""]), "bad_glob"),
++    ("glob-newline", lambda b: _with(b, IG, ["a\nb"]), "bad_glob"),
++    ("glob-cr", lambda b: _with(b, IG, ["a\rb"]), "bad_glob"),
++    ("glob-nul", lambda b: _with(b, IG, ["a\x00b"]), "bad_glob"),
++    ("glob-long", lambda b: _with(b, IG, ["a" * 257]), "bad_glob"),
++    ("glob-not-str", lambda b: _with(b, IG, [3]), "bad_glob"),
++    ("glob-duplicate", lambda b: _with(b, IG, ["a", "a"]), "duplicate"),
++    ("glob-too-many", lambda b: _with(b, IG, [f"g{i}" for i in range(257)]), "bad_glob"),
++]
++BYTE_REFUSALS = [
++    ("empty", b""),
++    ("not-json", b"{"),
++    ("garbage", f"{TOKEN} not json".encode()),
++    ("not-utf8", b'{"format": "\xff"}'),
++    ("utf8-bom", b'\xef\xbb\xbf{"format": "daolab-tripwire/1"}'),
++    ("utf16", '{"format": "daolab-tripwire/1"}'.encode("utf-16")),
++    ("duplicate-key", b'{"format": "daolab-tripwire/1", "format": "daolab-tripwire/1"}'),
++    ("nan", b'{"format": "daolab-tripwire/1", "version": NaN}'),
++    ("infinity", b'{"format": "daolab-tripwire/1", "version": Infinity}'),
++    ("deep-nesting", b"[" * 100000 + b"]" * 100000),
++    ("huge-int", b'{"format": "daolab-tripwire/1", "version": ' + b"9" * 5000 + b"}"),
++    ("over-16-mib", b" " * (MIB16 + 1)),
++]
++
++
++@pytest.mark.parametrize("case", REFUSALS, ids=[c[0] for c in REFUSALS])
++def test_load_baseline_refuses_each_bad_baseline(tw, tmp_path, case):
++    _, mutate, code = case
++    _, _, doc = good(tw, tmp_path)
++    path = put(tmp_path, mutate(doc))
++    with pytest.raises(tw.TripwireError) as e:
++        tw.load_baseline(path, "test")
++    assert e.value.code == code
++    assert_clean_error(e.value, path, str(tmp_path))
++
++
++@pytest.mark.parametrize("case", BYTE_REFUSALS, ids=[c[0] for c in BYTE_REFUSALS])
++def test_load_baseline_refuses_unparseable_bytes(tw, tmp_path, case):
++    path = put(tmp_path, case[1])
++    with pytest.raises(tw.TripwireError) as e:
++        tw.load_baseline(path, "test")
++    assert e.value.code == "bad_format"
++    assert_clean_error(e.value, path)
++
++
++def test_load_baseline_refuses_a_missing_or_unreadable_path(tw, tmp_path):
++    for path in (str(tmp_path / f"{TOKEN}.json"), str(tmp_path)):
++        with pytest.raises(tw.TripwireError) as e:
++            tw.load_baseline(path, "test")
++        assert e.value.code == "unreadable"
++        assert_clean_error(e.value, path)
++
++
++def test_load_baseline_refuses_a_bad_hw_class_argument(tw, tmp_path):
++    _, _, doc = good(tw, tmp_path)
++    with pytest.raises(tw.TripwireError) as e:
++        tw.load_baseline(put(tmp_path, doc), f"Bad {TOKEN}")
++    assert e.value.code == "bad_hw_class"
++    assert_clean_error(e.value)
++
++
++def test_load_baseline_hw_class_shape_is_the_catalogs(tw, tmp_path):
++    from service import catalog
++    _, _, doc = good(tw, tmp_path)
++    for hw in ("a", "cn10k-ebf-2", "x1-y2-z3"):
++        assert catalog.KEBAB.match(hw)
++        loaded, _ = tw.load_baseline(put(tmp_path, _with(doc, ["hw_class"], hw)), hw)
++        assert loaded["hw_class"] == hw
++    for hw in ("-a", "a-", "A", "a_b", "a.b", ""):
++        assert not catalog.KEBAB.match(hw)
++        with pytest.raises(tw.TripwireError):
++            tw.load_baseline(put(tmp_path, _with(doc, ["hw_class"], hw)), "test")
++
++
++# ---- the checker agrees with the loader ----------------------------------------------------
++@pytest.mark.parametrize("case", [c for c in REFUSALS if c[2] != "hw_class_mismatch"],
++                         ids=[c[0] for c in REFUSALS if c[2] != "hw_class_mismatch"])
++def test_the_checker_refuses_what_the_loader_refuses(tw, tmp_path, case):
++    root, proc, doc = good(tw, tmp_path)
++    r = dpu().run(root, proc, "check", case[1](doc))
++    assert r.returncode == 2 and r.stderr == b""
++    assert r.stdout in (b"tripwire:error:bad_input\n", b"tripwire:error:bad_baseline\n")
++
++
++@pytest.mark.parametrize("case", BYTE_REFUSALS, ids=[c[0] for c in BYTE_REFUSALS])
++def test_the_checker_refuses_the_same_bytes(tw, tmp_path, case):
++    root, proc = dpu().make_tree(str(tmp_path))
++    dpu().assert_error(dpu().run(root, proc, "check", case[1]), "bad_input")
++
++
++def test_the_checker_accepts_the_exact_bytes_the_loader_accepted(tw, tmp_path):
++    root, proc, doc = good(tw, tmp_path)
++    path = put(tmp_path, doc)
++    _, sha = tw.load_baseline(path, "test")
++    with open(path, "rb") as fh:
++        data = fh.read()
++    assert hashlib.sha256(data).hexdigest() == sha
++    dpu().assert_counts(dpu().run(root, proc, "check", data), {})
++
++
++# ============================================================================================
++# parse_output
++# ============================================================================================
++ACCEPTED = [
++    ("tripwire:ok\n", []),
++    ("tripwire:ok", []),
++    ("tripwire:sudo:2\n", ["tripwire:sudo:2"]),
++    ("tripwire:identity:1\ntripwire:daolab:999999999\n",
++     ["tripwire:identity:1", "tripwire:daolab:999999999"]),
++]
++
++
++@pytest.mark.parametrize("text,items", ACCEPTED)
++def test_parse_output_accepts(tw, text, items):
++    assert tw.parse_output(text) == items
++
++
++def test_parse_output_accepts_every_class_in_order(tw):
++    text = "".join(f"tripwire:{c}:{i + 1}\n" for i, c in enumerate(tw.CLASSES))
++    assert tw.parse_output(text) == [f"tripwire:{c}:{i + 1}" for i, c in enumerate(tw.CLASSES)]
++
++
++REFUSED = [
++    "", "\n", "tripwire:ok\n\n", "tripwire:ok\r\n", "tripwire:OK", "TRIPWIRE:ok",
++    "tripwire:sudo:0", "tripwire:sudo:-1", "tripwire:sudo:01", "tripwire:sudo:+1",
++    "tripwire:sudo:1000000000", "tripwire:sudo:١", "tripwire:sudo:1.0", "tripwire:sudo: 1",
++    f"tripwire:{TOKEN}cls:1", "tripwire:sudo:1\ntripwire:sudo:1",
++    "tripwire:tmp:1\ntripwire:sudo:1", "tripwire:ok\ntripwire:sudo:1",
++    "tripwire:sudo:1\ntripwire:ok", "tripwire:sudo", "tripwire:sudo:1:x", "trip:sudo:1",
++    " tripwire:sudo:1", "tripwire:sudo:1 ", "tripwire:error:bad_input\ntripwire:sudo:1",
++    "tripwire:sudo:1\ntripwire:error:internal", f"tripwire:error:{TOKEN}", "tripwire:error:",
++    "tripwire:error:bad_input:x", f"tripwire:sudo:1\n/etc/sudoers.d/{TOKEN}",
++    f"Traceback (most recent call last):\n  File \"/opt/{TOKEN}\"",
++]
++
++
++@pytest.mark.parametrize("text", REFUSED, ids=[repr(t)[:40] for t in REFUSED])
++def test_parse_output_refuses_anything_else(tw, text):
++    with pytest.raises(tw.TripwireError) as e:
++        tw.parse_output(text)
++    assert e.value.code == "bad_output"
++    assert_clean_error(e.value, *(t for t in text.split("\n") if len(t) > 3))
++
++
++@pytest.mark.parametrize("value", [b"tripwire:ok\n", None, ["tripwire:ok"]])
++def test_parse_output_refuses_non_text(tw, value):
++    with pytest.raises(tw.TripwireError) as e:
++        tw.parse_output(value)
++    assert e.value.code == "bad_output"
++
++
++@pytest.mark.parametrize("code", ["bad_input", "bad_baseline", "internal"])
++def test_parse_output_raises_the_checkers_error_code(tw, code):
++    for text in (f"tripwire:error:{code}\n", f"tripwire:error:{code}"):
++        with pytest.raises(tw.TripwireError) as e:
++            tw.parse_output(text)
++        assert e.value.code == code
++        assert_clean_error(e.value)
++
++
++def test_parse_output_items_are_residue_items_of_kind_tripwire(tw):
++    """B-112b's contract (task list §5.7): parse_residue splits on the first ':'."""
++    for item in tw.parse_output("tripwire:sudo:2\ntripwire:tmp:11\n"):
++        kind, _, ident = item.partition(":")
++        assert kind == "tripwire" and ident.split(":")[0] in tw.CLASSES
++        assert ident.split(":")[1].isdigit()
++
++
++def test_parse_output_of_a_real_checker_run(tw, tmp_path):
++    root, proc, doc = good(tw, tmp_path)
++    dpu().ADD["sudo"](root, proc)
++    dpu().ADD["mount"](root, proc)
++    r = dpu().run(root, proc, "check", doc)
++    assert tw.parse_output(r.stdout.decode("ascii")) == ["tripwire:sudo:1", "tripwire:mount:1"]
++
++
++# ============================================================================================
++# build_baseline
++# ============================================================================================
++def test_build_baseline_round_trip_is_ok(tw, tmp_path):
++    root, proc = dpu().make_tree(str(tmp_path / "board"))
++    doc = tw.build_baseline(collect_text(root, proc, SYNTHETIC_IGNORE), "test", 3,
++                            SYNTHETIC_IGNORE)
++    assert list(doc) == ["format", "version", "hw_class", "classes"]
++    assert (doc["format"], doc["version"], doc["hw_class"]) == ("daolab-tripwire/1", 3, "test")
++    assert list(doc["classes"]) == list(tw.CLASSES)
++    for c in tw.CLASSES:
++        entry = doc["classes"][c]
++        assert list(entry) == ["fingerprints", "ignore"]
++        assert entry["fingerprints"] == sorted(entry["fingerprints"])
++        assert entry["ignore"] == SYNTHETIC_IGNORE.get(c, [])
++    path = put(tmp_path, doc)
++    loaded, _ = tw.load_baseline(path, "test")
++    assert loaded == doc
++    with open(path, "rb") as fh:
++        dpu().assert_counts(dpu().run(root, proc, "check", fh.read()), {})
++    dpu().ADD["daolab"](root, proc)
++    dpu().assert_counts(dpu().run(root, proc, "check", doc), {"daolab": 1})
++
++
++def test_build_baseline_accepts_bytes_and_no_ignore(tw, tmp_path):
++    root, proc = dpu().make_tree(str(tmp_path))
++    doc = tw.build_baseline(collect_text(root, proc).encode("ascii"), "test", 1, None)
++    assert all(doc["classes"][c]["ignore"] == [] for c in tw.CLASSES)
++
++
++def _collected(tw, tmp_path):
++    root, proc = dpu().make_tree(str(tmp_path))
++    return json.loads(collect_text(root, proc))
++
++
++BUILD_REFUSALS = [                          # (id, mutate collect doc, hw, version, ignore, code)
++    ("not-json", lambda c: "{", "test", 1, None, "bad_format"),
++    ("not-object", lambda c: [c], "test", 1, None, "bad_format"),
++    ("extra-top-key", lambda c: dict(c, format="x"), "test", 1, None, "unknown_key"),
++    ("no-classes", lambda c: {}, "test", 1, None, "missing_key"),
++    ("missing-class", lambda c: _with(c, ["classes", "kmod"], KeyError), "test", 1, None,
++     "missing_key"),
++    ("unknown-class", lambda c: _with(c, ["classes", TOKEN], {"fingerprints": []}), "test", 1,
++     None, "bad_class"),
++    ("extra-class-key", lambda c: _with(c, ["classes", "kmod", "ignore"], []), "test", 1, None,
++     "unknown_key"),
++    ("bad-hex", lambda c: _with(c, ["classes", "kmod", "fingerprints"], ["x"]), "test", 1, None,
++     "bad_hex"),
++    ("dup-hex", lambda c: _with(c, ["classes", "kmod", "fingerprints"], ["a" * 64] * 2), "test",
++     1, None, "duplicate"),
++    ("bad-hw", lambda c: c, f"Bad_{TOKEN}", 1, None, "bad_hw_class"),
++    ("version-0", lambda c: c, "test", 0, None, "bad_version"),
++    ("version-bool", lambda c: c, "test", True, None, "bad_version"),
++    ("ignore-not-dict", lambda c: c, "test", 1, ["tmp/*"], "bad_class"),
++    ("ignore-unknown-class", lambda c: c, "test", 1, {TOKEN: []}, "bad_class"),
++    ("ignore-bad-glob", lambda c: c, "test", 1, {"tmp": [f"/{TOKEN}"]}, "bad_glob"),
++    ("ignore-dup-glob", lambda c: c, "test", 1, {"tmp": ["a", "a"]}, "duplicate"),
++]
++
++
++@pytest.mark.parametrize("case", BUILD_REFUSALS, ids=[c[0] for c in BUILD_REFUSALS])
++def test_build_baseline_refuses(tw, tmp_path, case):
++    _, mutate, hw, version, ignore, code = case
++    raw = mutate(_collected(tw, tmp_path))
++    text = raw if isinstance(raw, str) else json.dumps(raw)
++    with pytest.raises(tw.TripwireError) as e:
++        tw.build_baseline(text, hw, version, ignore)
++    assert e.value.code == code
++    assert_clean_error(e.value)
++
++
++# ============================================================================================
++# deploy/tripwire/synthetic-test.json
++# ============================================================================================
++def test_synthetic_baseline_loads_and_matches_the_fake_tree(tw, tmp_path):
++    loaded, sha = tw.load_baseline(SYNTHETIC, "test")
++    with open(SYNTHETIC, "rb") as fh:
++        data = fh.read()
++    assert sha == hashlib.sha256(data).hexdigest()
++    assert data == dump(loaded), "keep the file in json.dumps(doc, indent=2) + newline form"
++    assert loaded["version"] == 1
++    built = synthetic_baseline(tw, tmp_path)
++    for c in tw.CLASSES:
++        mine, ref = loaded["classes"][c], built["classes"][c]
++        assert mine["ignore"] == SYNTHETIC_IGNORE.get(c, [])
++        assert len(mine["fingerprints"]) == len(ref["fingerprints"]), c
++        if c in PORTABLE:
++            assert mine["fingerprints"] == ref["fingerprints"], c
++
++
++def test_synthetic_baseline_on_a_fresh_fake_tree_differs_only_in_uid_or_mode_classes(tw,
++                                                                                    tmp_path):
++    root, proc = dpu().make_tree(str(tmp_path))
++    with open(SYNTHETIC, "rb") as fh:
++        r = dpu().run(root, proc, "check", fh.read())
++    items = tw.parse_output(r.stdout.decode("ascii"))
++    assert {item.split(":")[1] for item in items}.isdisjoint(PORTABLE), items
++
++
++def test_synthetic_noise_globs_suppress_the_playbook_noise_sources(tw, tmp_path):
++    loaded, _ = tw.load_baseline(SYNTHETIC, "test")
++    ignore = {c: loaded["classes"][c]["ignore"] for c in tw.CLASSES}
++    root, proc = dpu().make_tree(str(tmp_path))
++    doc = tw.build_baseline(collect_text(root, proc, ignore), "test", 1, ignore)
++    dpu().write(root, "etc/systemd/system/daolab-app-exporter.service", "--app vpp\n")
++    dpu().write(root, "tmp/dao-smart-nic-ansible.log", "launch\n")
++    dpu().write(root, "tmp/pci-after.txt", "after, longer than before\n")
++    dpu().write(root, "tmp/daolab-test-noise-7", "n")
++    dpu().write(root, "etc/daolab/otelcol.yaml", "daolab.user: someone-else\n")
++    dpu().assert_counts(dpu().run(root, proc, "check", doc), {})
++    dpu().write(root, "usr/local/bin/daolab-ml-smoke", "#!/bin/sh\nchanged\n", 0o755)
++    dpu().assert_counts(dpu().run(root, proc, "check", doc), {"bin": 2})   # not ignored

@@ -1,0 +1,25 @@
+date:         2026-11-27T18:36:45Z
+HEAD:         65e47fc (branch b112a)
+staged tree:  f89725e535995c9f0a1c2b5f5030ca5da8e3db70 (unstaged changes: 0)
+venv:         /home/akshay/.venvs/b109a-310
+python:       3.10.12
+ansible-core: none
+command:      python -I -B /tmp/claude-1000/-home-akshay-b112a/75bf48ec-0f19-49ab-bd73-f4092fac149e/scratchpad/safe_output_evidence.py /home/akshay/b112a /tmp/claude-1000/-home-akshay-b112a/75bf48ec-0f19-49ab-bd73-f4092fac149e/scratchpad/safe.rPd7Ol /home/akshay/notes/b112a/logs
+----
+python: 3.10.12
+runs: 45 | forbidden strings: 18 | hits: 0
+check stdout:
+tripwire:identity:6
+tripwire:sudo:1
+tripwire:ssh:3
+tripwire:sched:5
+tripwire:boot:3
+tripwire:bin:6
+tripwire:kmod:4
+tripwire:mount:1
+tripwire:proc:1
+tripwire:tmp:3
+tripwire:daolab:2
+error lines: ['tripwire:error:bad_baseline', 'tripwire:error:bad_input']
+collect: classes True | all hex True
+---- exit: 0

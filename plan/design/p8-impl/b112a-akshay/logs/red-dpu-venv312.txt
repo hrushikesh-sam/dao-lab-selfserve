@@ -1,0 +1,1204 @@
+date:         2026-11-27T18:28:53Z
+HEAD:         65e47fc (branch b112a)
+venv:         /home/akshay/b112a/.venv
+python:       3.12.13
+ansible-core: 2.21.6
+command:      python -m pytest tests/dpu/test_tripwire.py -q -p no:cacheprovider --tb=line
+----
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF [ 42%]
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF [ 84%]
+FFFFFFFFFFFFFFFFFFFFFFFFFF                                               [100%]
+=================================== FAILURES ===================================
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+E   AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+    assert False
+     +  where False = <function isfile at 0x7bccbba0c540>('/home/akshay/b112a/playbooks/files/daolab-tripwire.py')
+     +    where <function isfile at 0x7bccbba0c540> = <module 'posixpath' (frozen)>.isfile
+     +      where <module 'posixpath' (frozen)> = os.path
+/home/akshay/b112a/tests/dpu/test_tripwire.py:209: AssertionError: the checker playbooks/files/daolab-tripwire.py does not exist
+=========================== short test summary info ============================
+FAILED tests/dpu/test_tripwire.py::test_script_is_an_executable_python3_stdlib_only_file
+FAILED tests/dpu/test_tripwire.py::test_the_class_order_is_the_contract - Ass...
+FAILED tests/dpu/test_tripwire.py::test_clean_tree_is_ok - AssertionError: th...
+FAILED tests/dpu/test_tripwire.py::test_collect_is_deterministic_and_every_class_has_entries
+FAILED tests/dpu/test_tripwire.py::test_round_trip_collect_build_check_is_ok_with_the_same_ignore
+FAILED tests/dpu/test_tripwire.py::test_ignore_must_be_the_same_in_collect_and_baseline
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[identity] - A...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[sudo] - Asser...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[ssh] - Assert...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[sched] - Asse...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[boot] - Asser...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[bin] - Assert...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[kmod] - Asser...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[mount] - Asse...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[proc] - Asser...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[tmp] - Assert...
+FAILED tests/dpu/test_tripwire.py::test_one_addition_counts_one[daolab] - Ass...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[identity] - As...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[sudo] - Assert...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[ssh] - Asserti...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[sched] - Asser...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[boot] - Assert...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[bin] - Asserti...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[kmod] - Assert...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[mount] - Asser...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[proc] - Assert...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[tmp] - Asserti...
+FAILED tests/dpu/test_tripwire.py::test_one_removal_counts_one[daolab] - Asse...
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[identity]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[sudo]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[ssh]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[sched]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[boot]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[bin]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[kmod]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[mount]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[proc]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[tmp]
+FAILED tests/dpu/test_tripwire.py::test_an_addition_and_a_removal_count_two[daolab]
+FAILED tests/dpu/test_tripwire.py::test_every_class_at_once_prints_in_the_fixed_order
+FAILED tests/dpu/test_tripwire.py::test_a_changed_file_counts_two_one_removal_and_one_addition
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[identity:etc/skel/.zq7plantrc]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[identity:etc/profile]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[identity:etc/profile.d/zq7plant.sh]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[identity:etc/bash.bashrc]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[identity:etc/environment]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[bin:etc/ld.so.preload]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[bin:etc/ld.so.conf]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[bin:etc/ld.so.conf.d/zq7plant.conf]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[bin:usr/local/bin/zq7plant]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[bin:usr/local/sbin/zq7plant]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[kmod:etc/modprobe.d/zq7plant.conf]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[kmod:etc/modules]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[kmod:etc/modules-load.d/zq7plant.conf]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[ssh:root/.ssh/authorized_keys2]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[ssh:home/dao-test/.ssh/authorized_keys2]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[sched:var/spool/cron/crontabs/zq7plantusr]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[sched:var/spool/cron/atjobs/a0001zq7plant]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[sched:etc/cron.hourly/zq7plant]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[sched:etc/systemd/system/zq7plant.timer]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[boot:etc/rc.local]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[boot:etc/systemd/system/zq7plant.service]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[daolab:etc/daolab/authorized_keys/zq7plant]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[tmp:dev/shm/zq7plant]
+FAILED tests/dpu/test_tripwire.py::test_planted_addition_counts_one_in_its_class[tmp:var/tmp/cloud-init/zq7plant]
+FAILED tests/dpu/test_tripwire.py::test_a_timer_link_in_timers_target_wants_is_sched_only
+FAILED tests/dpu/test_tripwire.py::test_a_new_override_dir_with_a_file_is_two_boot_records
+FAILED tests/dpu/test_tripwire.py::test_identity_shadow_password_change_with_the_same_state_does_not_count
+FAILED tests/dpu/test_tripwire.py::test_identity_shadow_locked_to_set_counts
+FAILED tests/dpu/test_tripwire.py::test_identity_shadow_locked_to_empty_counts
+FAILED tests/dpu/test_tripwire.py::test_identity_password_state_classes - Ass...
+FAILED tests/dpu/test_tripwire.py::test_identity_shadow_records_never_carry_the_password_field
+FAILED tests/dpu/test_tripwire.py::test_identity_file_mode_counts - Assertion...
+FAILED tests/dpu/test_tripwire.py::test_ssh_lab_authorized_keys_change_does_not_count
+FAILED tests/dpu/test_tripwire.py::test_ssh_another_users_authorized_keys_change_counts
+FAILED tests/dpu/test_tripwire.py::test_ssh_lab_home_moved_is_caught_by_identity
+FAILED tests/dpu/test_tripwire.py::test_ssh_home_with_dotdot_stays_under_root
+FAILED tests/dpu/test_tripwire.py::test_sched_and_boot_records_carry_no_uid_or_mode
+FAILED tests/dpu/test_tripwire.py::test_bin_plain_files_outside_local_bin_do_not_count
+FAILED tests/dpu/test_tripwire.py::test_bin_setgid_under_opt_counts - Asserti...
+FAILED tests/dpu/test_tripwire.py::test_bin_setuid_in_usr_local_bin_is_one_record
+FAILED tests/dpu/test_tripwire.py::test_bin_setuid_bit_removed_counts - Asser...
+FAILED tests/dpu/test_tripwire.py::test_bin_local_binary_content_change_counts_two
+FAILED tests/dpu/test_tripwire.py::test_bin_merged_usr_links_are_recorded_not_walked
+FAILED tests/dpu/test_tripwire.py::test_kmod_only_the_module_name_counts - As...
+FAILED tests/dpu/test_tripwire.py::test_mount_octal_escapes_are_decoded - Ass...
+FAILED tests/dpu/test_tripwire.py::test_mount_records_point_and_fstype - Asse...
+FAILED tests/dpu/test_tripwire.py::test_mount_options_do_not_count_but_fstype_does
+FAILED tests/dpu/test_tripwire.py::test_mount_malformed_line_counts_and_does_not_crash
+FAILED tests/dpu/test_tripwire.py::test_proc_duplicates_collapse_and_kernel_threads_are_skipped
+FAILED tests/dpu/test_tripwire.py::test_proc_uid_change_counts_two - Assertio...
+FAILED tests/dpu/test_tripwire.py::test_proc_records_have_no_pid_and_skip_own_pid
+FAILED tests/dpu/test_tripwire.py::test_tmp_size_counts_content_does_not - As...
+FAILED tests/dpu/test_tripwire.py::test_tmp_directories_alone_do_not_count_specials_do
+FAILED tests/dpu/test_tripwire.py::test_daolab_mode_change_counts_two - Asser...
+FAILED tests/dpu/test_tripwire.py::test_ignore_glob_suppresses_a_planted_noise_file
+FAILED tests/dpu/test_tripwire.py::test_ignore_only_applies_to_its_own_class
+FAILED tests/dpu/test_tripwire.py::test_ignored_directory_skips_its_subtree
+FAILED tests/dpu/test_tripwire.py::test_ignore_subjects_of_the_non_file_records[identity-etc/passwd:zq7plant*-<lambda>]
+FAILED tests/dpu/test_tripwire.py::test_ignore_subjects_of_the_non_file_records[kmod-zq7plant*-<lambda>]
+FAILED tests/dpu/test_tripwire.py::test_ignore_subjects_of_the_non_file_records[mount-mnt/zq7plant*-<lambda>]
+FAILED tests/dpu/test_tripwire.py::test_ignore_subjects_of_the_non_file_records[proc-opt/zq7plant*-<lambda>]
+FAILED tests/dpu/test_tripwire.py::test_ignore_subjects_of_the_non_file_records[boot-etc/systemd/system/multi-user.target.wants/zq7plant*-<lambda>]
+FAILED tests/dpu/test_tripwire.py::test_the_four_playbook_noise_sources_with_their_globs
+FAILED tests/dpu/test_tripwire.py::test_symlink_loops_do_not_hang_and_are_link_records
+FAILED tests/dpu/test_tripwire.py::test_symlinks_are_never_followed - Asserti...
+FAILED tests/dpu/test_tripwire.py::test_unreadable_file_is_counted_not_hidden
+FAILED tests/dpu/test_tripwire.py::test_unreadable_directory_is_counted_not_hidden
+FAILED tests/dpu/test_tripwire.py::test_a_fifo_where_a_file_was_is_never_opened
+FAILED tests/dpu/test_tripwire.py::test_non_utf8_and_newline_names_do_not_crash
+FAILED tests/dpu/test_tripwire.py::test_fingerprint_is_newline_free_sha256_of_a_fixed_field_order
+FAILED tests/dpu/test_tripwire.py::test_missing_class_sources_are_simply_empty
+FAILED tests/dpu/test_tripwire.py::test_the_checker_writes_nothing - Assertio...
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[not-an-object]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[no-format]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[wrong-format]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[collect-format]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[unknown-top-key]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[missing-version]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[version-0]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[version-str]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[version-bool]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[version-float]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[hw-class-shape]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[hw-class-long]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[classes-not-object]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[unknown-class]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[missing-class]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[class-not-object]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[unknown-class-key]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[missing-ignore]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[fingerprints-not-list]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[hex-short]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[hex-upper]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[hex-not-hex]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[hex-not-str]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[hex-duplicate]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[glob-absolute]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[glob-empty]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[glob-newline]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[glob-nul]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[glob-long]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[glob-not-str]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[glob-duplicate]
+FAILED tests/dpu/test_tripwire.py::test_bad_baseline_is_refused_with_the_exact_error_line[glob-too-many]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[empty]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[not-json]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[json-garbage]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[not-utf8]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[utf8-bom]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[utf16]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[duplicate-key]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[nan]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[deep-nesting]
+FAILED tests/dpu/test_tripwire.py::test_unparseable_input_is_bad_input[huge-int]
+FAILED tests/dpu/test_tripwire.py::test_input_over_16_mib_is_bad_input - Asse...
+FAILED tests/dpu/test_tripwire.py::test_bad_collect_document_is_bad_input[wrong-format]
+FAILED tests/dpu/test_tripwire.py::test_bad_collect_document_is_bad_input[no-ignore]
+FAILED tests/dpu/test_tripwire.py::test_bad_collect_document_is_bad_input[unknown-key]
+FAILED tests/dpu/test_tripwire.py::test_bad_collect_document_is_bad_input[ignore-not-object]
+FAILED tests/dpu/test_tripwire.py::test_bad_collect_document_is_bad_input[unknown-class]
+FAILED tests/dpu/test_tripwire.py::test_bad_collect_document_is_bad_input[bad-glob]
+FAILED tests/dpu/test_tripwire.py::test_bad_collect_document_is_bad_input[globs-not-list]
+FAILED tests/dpu/test_tripwire.py::test_bad_options_are_bad_input_without_usage_text
+FAILED tests/dpu/test_tripwire.py::test_internal_error_prints_only_the_code
+FAILED tests/dpu/test_tripwire.py::test_internal_error_in_process_returns_2
+FAILED tests/dpu/test_tripwire.py::test_input_fd_reads_the_baseline_and_ignores_stdin
+FAILED tests/dpu/test_tripwire.py::test_script_on_stdin_with_the_baseline_on_a_descriptor
+FAILED tests/dpu/test_tripwire.py::test_output_never_contains_a_planted_name_path_uid_or_module
+FAILED tests/dpu/test_tripwire.py::test_timing_on_about_5000_files - Assertio...
+170 failed in 1.26s
+---- exit: 1

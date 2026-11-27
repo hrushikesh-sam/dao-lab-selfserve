@@ -1,0 +1,13 @@
+date:         2026-11-27T18:36:44Z
+HEAD:         65e47fc (branch b112a)
+staged tree:  f89725e535995c9f0a1c2b5f5030ca5da8e3db70 (unstaged changes: 0)
+venv:         /home/akshay/.venvs/b109a-310
+python:       3.10.12
+ansible-core: none
+command:      python -m pytest tests/dpu/test_tripwire.py -q -p no:cacheprovider -s -k timing --confcutdir=tests/dpu
+----
+
+TIMING tripwire ~5000 files: collect 0.11s, check 0.11s (python 3.10.12)
+.
+1 passed, 169 deselected in 1.03s
+---- exit: 0
