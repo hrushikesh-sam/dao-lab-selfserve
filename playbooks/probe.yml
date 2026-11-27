@@ -16,7 +16,11 @@
     - name: verify
       ansible.builtin.include_role:
         name: verify
-      when: daolab_deploy_vms | default(true) | bool
+      # Also without VMs when the use case verifies from its DPU role (DPU-only: ml-tvm).
+      when: >-
+        daolab_deploy_vms | default(true) | bool
+        or ((daolab_verify.from | default('')) | length > 0
+            and daolab_verify.from == (daolab_dpu_role | default('')))
 
 - name: probe the DPU app (no VMs)
   hosts: r_dpu
@@ -26,6 +30,7 @@
       dao-vpp: --app vpp --vpp-socket /run/vpp/cli.sock
       dao-smartnic: --app smartnic
       nginx-tls: --app nginx --nginx-addr 127.0.0.1:443
+      ml-tvm: --app ml --ml-pci {{ ml_pci | default(bdf.ml | default('')) }}
   tasks:
     - name: "step: probe_dpu_app"
       become: true

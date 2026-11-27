@@ -49,6 +49,7 @@ Doc base used: <https://marvellembeddedprocessors.github.io/dao/guides/>. The ca
 | `vpp` | `usecases/vpp.yml:4-11`: DPU VPP on `sdp-pf1-vf8`, tgen+sink on tg host with `e810-vf` | Doc demo is **host offload over PCIe**: SDP (<=50G) or virtio (100G), host `octeon_ep`/`octep_vdpa_pci`, DPU `octep_cp_plugin`. No E810 in the datapath. | Mismatch in framing; lab demo is VPP-on-RPM with an external E810 tgen, not the documented host-offload demo. `hw_class` is unused by the roles. |
 | `smartnic` | `usecases/smartnic.yml:5-9`: `hw_class: sdp-pf1-vf8`, host VM `connect: virtio` | Doc SmartNIC = DPU graph app with RPM + **SDP VFs**; host reaches it through the **SDP PF netdev** (`octeon_ep`), not virtio. | Partly wrong: host VM should get an **SDP VF** with `octeon_ep_vf`, not a virtio NIC. Verify command is a placeholder. |
 | `tls-proxy-nginx` | `usecases/tls-proxy-nginx.yml:11-16`: `crypto: cpt-vfs`; backend on `tg_host` over `connect: mgmt`; client on an E810 VF | Doc: NGINX on OCTEON with **CPT VFs = nproc** (24); backend is any IP via `proxy_pass`. No SDP. | Matches after Akshay's 2026-11-17 change (`e4b859b`, B-102); CPT VFs already bound (`dpu-01.yml:25-50`). Doc-conformant. |
+| `ml-tvm` | `usecases/ml-tvm.yml`: DPU-only, Marvell's shipped ResNet50 FP16 as the smoke model | Doc flow compiles a model on an x86 host (TVM + MMLC) and runs it with `dpdk-test-mldev`; pretrained `.bin`s ship under `/lib/firmware/ml_models/` | Runs on tb-01 (2026-11-18/20) with the shipped models; the compile-on-host flow is not yet tested. Board deviations in §3 E10. |
 | `ovs-offload` (planned) | Not implemented | Requires `octep_cp_agent` running, 1 SDP VF + 1 RPM VF + ESW VF per interface | No conflict between CP agent and OVS is documented; see §3. |
 | `crypto-agent` (planned) | Catalog summary says "on the Liquid Crypto Card" | Correct, but the lab has no Liquid Crypto Card | Keep planned. |
 | 11 remaining planned apps | service/catalog.py:33-127, verbatim doc intros | Intros match the doc text | Catalog text is faithful. |
@@ -130,6 +131,26 @@ misleading now that it deploys.
 - SmartNIC: port hotplugging is **Pending** in Marvell's own list; do not advertise it.
 - OVS: `--max-pkt-len` max is 9600; our planned MTU/verify values should stay <= 9600.
 - `crypto-agent` is a Liquid Crypto Card app; the DPU board cannot run it.
+
+### E10. Machine Learning guide (`applications/machine-learning.html`) vs. xeon3-oct-112
+
+Checked on the board 2026-11-18 and 2026-11-20 (outputs: `ml-tvm` in `COMPLETION_LOG.md`).
+
+- The guide binds with `dpdk-devbind.py -b vfio-pci 0000:00:10.0`; on this board that fails with
+  `ValueError: Unknown device`: `/usr/bin/dpdk-devbind.py` is Ubuntu's DPDK 21.11.9 package, which
+  predates DPDK's ML devices (23.03) and has no `a092` entry. The sysfs bind (`driver_override` +
+  `drivers/vfio-pci/bind`) works (IOMMU group 98); `ml-tvm` uses it.
+- The guide reserves 4096 x 2 MB hugepages on `/mnt/huge`; here `/mnt/huge` is a 512 MB
+  hugetlbfs mount and nginx-tls holds both resting 512 MB pages. Two more 512 MB pages are enough.
+- The guide's `--lcores=4-23` includes core 12, where nginx-tls's worker is pinned; `14-17` used.
+- Without `--huge-unlink=always`, `dpdk-test-mldev` leaves its hugepage file behind and one
+  512 MB page stays allocated after every run (not mentioned in the guide).
+- LUCID: the guide gives no input shape, dtype or expected output values (only `lucid_run.py` on a
+  pcap). The shipped `10t-10n-lucid_*` models take **128 bytes** of input per inference
+  (`expected size = 128` with `quantized_io` off) and return 4 bytes (one FP32 score).
+- MNIST (not yet run): preprocessing resizes to 32x32 while the text calls the model 28x28; the
+  MNIST section has no validation step; the CMake symlink step looks wrong; the page's opening
+  paragraph appears to be carried over from a packet-processing guide.
 
 ## 4. Commands to close the UNVERIFIED items (one root session on dpu-01)
 

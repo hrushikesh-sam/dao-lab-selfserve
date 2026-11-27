@@ -177,7 +177,8 @@ class MockExporter:
     # `_ratio`, counters get `_total`.
     GAUGES = (("tcpcheck_status_ratio", {"port": "22"}), ("httpcheck_status", {"http_status_class": "2xx"}),
               ("vpp_up", {"host": "dpu-01"}), ("nginx_up", {"host": "dpu-01"}),
-              ("smartnic_up", {"host": "dpu-01"}))
+              ("smartnic_up", {"host": "dpu-01"}), ("ml_up", {"host": "dpu-01"}),
+              ("ml_last_smoke_ok", {"host": "dpu-01"}))
     COUNTERS = (("vpp_interface_rx_packets_total", {"host": "dpu-01"}, 1000.0),
                 ("smartnic_offload_pps", {"host": "dpu-01"}, 500.0))
 

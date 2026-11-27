@@ -1,0 +1,74 @@
+#!/bin/bash
+# daolab-ml-smoke — one reference inference on the MLIP (ml-tvm use case: deploy, verify, probe).
+#
+# Runs Marvell's shipped ResNet50 FP16 model against its shipped reference output and prints
+# dpdk-test-mldev's own "Result: Success" / "Result: Failed" line, then one line the use case's
+# verify parses (B-95): "daolab-ml-smoke: success=1" (or 0). Its DPDK files are removed
+# afterwards (--huge-unlink=always plus the runtime dir), so a run leaves nothing on the board.
+#
+# If another process already holds the ML device (the reservation owner's own run), it does not
+# fight for it: it prints the last recorded result instead, so a probe during a user's run is not
+# a false failure. Values come from the environment the playbooks set (defaults: xeon3-oct-112).
+# Host paths too, like DAOLAB_SYSFS: DAOLAB_PROCFS, DAOLAB_VFIO_DIR, DAOLAB_DPDK_RUN_DIR and
+# DAOLAB_HUGETLBFS (space-separated mounts) default to the board's own.
+set -u
+PCI=${ML_PCI:-0000:00:10.0}
+FW=${ML_FW:-/lib/firmware/mlip-fw.bin}
+LCORES=${ML_LCORES:-14-17}
+PREFIX=${ML_PREFIX:-ml}-smoke
+MODEL_DIR=${ML_SMOKE_DIR:-/lib/firmware/ml_models/resnet50_fp16_t08_b01}
+MODEL=${ML_SMOKE_MODEL:-resnet50_fp16_t08_b01}
+STATE=${ML_STATE_DIR:-/var/lib/daolab/ml}
+RESULT=$STATE/last-smoke.log
+SYS=${DAOLAB_SYSFS:-/sys}
+PROCFS=${DAOLAB_PROCFS:-/proc}
+VFIO=${DAOLAB_VFIO_DIR:-/dev/vfio}
+RUN_DIR=${DAOLAB_DPDK_RUN_DIR:-/var/run/dpdk}
+HUGETLBFS=${DAOLAB_HUGETLBFS:-/dev/hugepages /mnt/huge}
+
+mkdir -p "$STATE"
+
+drv=$(readlink "$SYS/bus/pci/devices/$PCI/driver" 2>/dev/null); drv=${drv##*/}
+grp=$(readlink "$SYS/bus/pci/devices/$PCI/iommu_group" 2>/dev/null); grp=${grp##*/}
+if [ "$drv" != "vfio-pci" ] || [ -z "$grp" ]; then
+  echo "Result: Failed (ML device $PCI is on '${drv:-no driver}', not vfio-pci)"
+  echo "daolab-ml-smoke: success=0"
+  exit 1
+fi
+
+for fd in "$PROCFS"/[0-9]*/fd/*; do
+  if [ "$(readlink "$fd" 2>/dev/null)" = "$VFIO/$grp" ]; then
+    pid=${fd#"$PROCFS"/}; pid=${pid%%/*}
+    echo "ML device $PCI busy (pid $pid holds $VFIO/$grp); last smoke result:"
+    last=$(grep -m1 '^Result:' "$RESULT" 2>/dev/null || echo "Result: Unknown (no earlier smoke run)")
+    echo "$last"
+    case "$last" in
+      "Result: Success"*) echo "daolab-ml-smoke: success=1"; exit 0 ;;
+      *) echo "daolab-ml-smoke: success=0"; exit 1 ;;
+    esac
+  fi
+done
+
+M=$MODEL_DIR/$MODEL
+for f in "$M.bin" "$M-input.bin" "$M-output.bin" "$FW"; do
+  [ -r "$f" ] || { echo "Result: Failed (missing $f)"; echo "daolab-ml-smoke: success=0"; exit 1; }
+done
+
+timeout 120 dpdk-test-mldev -l "$LCORES" --file-prefix "$PREFIX" --huge-unlink=always \
+  -a "$PCI,fw_path=$FW" -- \
+  --test=inference_ordered \
+  --filelist "$M.bin,$M-input.bin,$STATE/smoke-out.bin,$M-output.bin" \
+  --tolerance 5 --repetitions 1 > "$RESULT.tmp" 2>&1
+rc=$?
+
+rm -rf "$RUN_DIR/$PREFIX"
+# shellcheck disable=SC2086  # HUGETLBFS is a list of mounts
+find $HUGETLBFS -maxdepth 1 -name "${PREFIX}map_*" -delete 2>/dev/null
+
+# dpdk-test-mldev colours its verdict ("Result: \e[32mSuccess\e[0m") even into a file; keep plain text
+sed 's/\x1b\[[0-9;]*m//g' "$RESULT.tmp" > "$RESULT" && rm -f "$RESULT.tmp"
+cat "$RESULT"
+if [ "$rc" -eq 0 ] && grep -q '^Result: Success' "$RESULT"; then
+  echo "daolab-ml-smoke: success=1"; exit 0
+fi
+echo "daolab-ml-smoke: success=0"; exit 1

@@ -48,3 +48,21 @@ bdf:
     - "0002:20:02.6"
     - "0002:20:02.7"
     - "0002:20:03.0"
+  ml: "0000:00:10.0"               # device a092, the MLIP (ML PF); vfio-pci while ml-tvm runs
+
+# ml-tvm (playbooks/apps/ml-tvm/): the MLIP, confirmed on this board on 2026-11-18.
+# ML PF 177d:a092. The PEM is 0001:00:10.0 - one digit away; never confuse them.
+# bdf.ml above is the one place the address is written (Q-ROLES); ml_pci keeps the playbooks' name.
+ml_pci: "{{ bdf.ml }}"
+ml_fw: /lib/firmware/mlip-fw.bin                  # mlip-fw-0.1.24.11-7f268f876
+# Cores for dpdk-test-mldev: nginx-tls's worker is pinned to core 12 (its DPDK helper threads
+# float on the rest but sleep); VPP uses 4-6 when it runs. 14-17 had no pinned work.
+ml_lcores: "14-17"
+ml_file_prefix: ml                                 # DPDK files; nginx-tls uses e_cpt_engine<pid>
+# Hugepages: the default size here is 512 MB and nginx-tls holds 2 of them; ml-tvm adds 2.
+ml_hugepage_kb: 524288
+ml_hugepages_extra: 2
+# The smoke model and its reference output ship with the SDK under /lib/firmware/ml_models.
+ml_smoke_dir: /lib/firmware/ml_models/resnet50_fp16_t08_b01
+ml_smoke_model: resnet50_fp16_t08_b01
+ml_state_dir: /var/lib/daolab/ml

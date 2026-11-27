@@ -44,6 +44,24 @@ def vm_uuid(name):
     return str(uuid.uuid5(uuid.NAMESPACE_URL, name))
 
 
+def _can_become() -> bool:
+    """Can a `become: true` task run here without a password prompt? True as root and with
+    passwordless sudo (CI); False on a laptop where sudo asks for a password."""
+    if os.geteuid() == 0:
+        return True
+    try:
+        return subprocess.run(["sudo", "-n", "true"], stdin=subprocess.DEVNULL,
+                              capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+# Where sudo needs a password, every play runs with become off (the extra var overrides the
+# tasks' `become: true`). Nothing here needs root: the hosts are local, the commands are the
+# fakelab script and every path is a temp dir. Root and CI keep become on, as before.
+CAN_BECOME = _can_become()
+
+
 def clean_state():
     return {"vms": {}, "templates": {"tpl-ubuntu2204-dao": TPL_UUID},
             "networks": {"Pool-wide network associated with eth0": NET_UUID,
@@ -100,6 +118,8 @@ class Lab:
               "daolab_xo": "daolab-xo", "daolab_dom0_ssh": "dom0-ssh",
               # never the test machine's own /sys or /dev/hugepages (release_hugepages writes)
               "daolab_sysfs": str(self.dir / "sys"), "daolab_hugetlbfs": str(self.dir / "hugepages")}
+        if not CAN_BECOME:
+            ev["ansible_become"] = False
         ev.update(extravars)
         evfile = self.dir / "extravars.json"
         evfile.write_text(json.dumps(ev))
