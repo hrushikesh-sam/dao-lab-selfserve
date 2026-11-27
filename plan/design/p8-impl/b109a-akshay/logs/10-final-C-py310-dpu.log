@@ -1,0 +1,20 @@
+date:        2026-11-27T18:25:33Z
+HEAD:        65e47fc
+write-tree:  baa80123121d485e496589701a8d5854b126d6af
+cwd:         /home/akshay/b109a
+venv:        /home/akshay/.venvs/b109a-310
+python:      3.10.12
+ansible-core: n/a
+ansible-playbook: /usr/bin/ansible-playbook (ansible-playbook 2.10.8)
+sqlite:      3.37.2
+tar:         tar (GNU tar) 1.34
+age:         v1.1.1
+env:         DAOLAB_REQUIRE_AGE=1
+command:     /home/akshay/.venvs/b109a-310/bin/python -m pytest --confcutdir=tests/dpu tests/dpu -q -rsf -p no:cacheprovider
+----
+........................................................................ [ 67%]
+..................................
+[B-109a timing] 64 MiB random tree: 2.18 s, 30.8 MB/s raw, python 3.10.12
+.                                      [100%]
+107 passed in 7.42s
+---- exit=0

@@ -1,0 +1,160 @@
+date:        2026-11-27T18:00:46Z
+HEAD:        65e47fc
+write-tree:  6a39a2e3e285fe4b05b1bfe1acfa7591503fefc9
+cwd:         /home/akshay/b109a
+venv:        /home/akshay/.venvs/b109a-310
+python:      3.10.12
+ansible-core: n/a
+sqlite:      3.37.2
+tar:         tar (GNU tar) 1.34
+age:         v1.1.1
+env:         DAOLAB_REQUIRE_AGE=1
+command:     /home/akshay/.venvs/b109a-310/bin/python -m pytest --confcutdir=tests/dpu tests/dpu --collect-only -q -p no:cacheprovider --trace-config
+----
+PLUGIN registered: <_pytest.config.PytestPluginManager object at 0x70448875eec0>
+PLUGIN registered: <_pytest.config.Config object at 0x70448772e710>
+PLUGIN registered: <module '_pytest.mark' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/mark/__init__.py'>
+PLUGIN registered: <module '_pytest.main' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/main.py'>
+PLUGIN registered: <module '_pytest.runner' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/runner.py'>
+PLUGIN registered: <module '_pytest.fixtures' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/fixtures.py'>
+PLUGIN registered: <module '_pytest.helpconfig' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/helpconfig.py'>
+PLUGIN registered: <module '_pytest.python' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/python.py'>
+PLUGIN registered: <module '_pytest.terminal' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/terminal.py'>
+PLUGIN registered: <module '_pytest.debugging' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/debugging.py'>
+PLUGIN registered: <module '_pytest.unittest' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/unittest.py'>
+PLUGIN registered: <module '_pytest.capture' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/capture.py'>
+PLUGIN registered: <module '_pytest.skipping' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/skipping.py'>
+PLUGIN registered: <module '_pytest.legacypath' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/legacypath.py'>
+PLUGIN registered: <module '_pytest.tmpdir' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/tmpdir.py'>
+PLUGIN registered: <module '_pytest.monkeypatch' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/monkeypatch.py'>
+PLUGIN registered: <module '_pytest.recwarn' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/recwarn.py'>
+PLUGIN registered: <module '_pytest.pastebin' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/pastebin.py'>
+PLUGIN registered: <module '_pytest.assertion' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/assertion/__init__.py'>
+PLUGIN registered: <module '_pytest.junitxml' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/junitxml.py'>
+PLUGIN registered: <module '_pytest.doctest' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/doctest.py'>
+PLUGIN registered: <module '_pytest.setuponly' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/setuponly.py'>
+PLUGIN registered: <module '_pytest.setupplan' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/setupplan.py'>
+PLUGIN registered: <module '_pytest.unraisableexception' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/unraisableexception.py'>
+PLUGIN registered: <module '_pytest.threadexception' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/threadexception.py'>
+PLUGIN registered: <module '_pytest.warnings' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/warnings.py'>
+PLUGIN registered: <module '_pytest.logging' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/logging.py'>
+PLUGIN registered: <module '_pytest.reports' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/reports.py'>
+PLUGIN registered: <module '_pytest.faulthandler' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/faulthandler.py'>
+PLUGIN registered: <module '_pytest.subtests' from '/home/akshay/.venvs/b109a-310/lib/python3.10/site-packages/_pytest/subtests.py'>
+PLUGIN registered: <CaptureManager _method='fd' _global_capturing=<MultiCapture out=<FDCapture 1 oldfd=5 _state='suspended' tmpfile=<_io.TextIOWrapper name="<_io.FileIO name=6 mode='rb+' closefd=True>" mode='r+' encoding='utf-8'>> err=<FDCapture 2 oldfd=7 _state='suspended' tmpfile=<_io.TextIOWrapper name="<_io.FileIO name=8 mode='rb+' closefd=True>" mode='r+' encoding='utf-8'>> in_=<FDCapture 0 oldfd=3 _state='started' tmpfile=<_io.TextIOWrapper name='/dev/null' mode='r' encoding='utf-8'>> _state='suspended' _in_suspended=False> _capture_fixture=None>
+PLUGIN registered: <module 'conftest' from '/home/akshay/b109a/tests/dpu/conftest.py'>
+PLUGIN registered: <Session  exitstatus=<ExitCode.OK: 0> testsfailed=0 testscollected=0>
+PLUGIN registered: <_pytest.legacypath.LegacyTmpdirPlugin object at 0x70448767add0>
+PLUGIN registered: <_pytest.terminal.TerminalReporter object at 0x70448767ac80>
+PLUGIN registered: <_pytest.logging.LoggingPlugin object at 0x7044876785b0>
+PLUGIN registered: <_pytest.fixtures.FixtureManager object at 0x70448767b4c0>
+tests/dpu/test_capture.py::test_script_parses_as_python_3_10
+tests/dpu/test_capture.py::test_script_imports_only_the_standard_library
+tests/dpu/test_capture.py::test_script_has_no_3_11_stdlib_names
+tests/dpu/test_capture.py::test_script_is_executable_and_runs_on_python3
+tests/dpu/test_capture.py::test_saved_round_trip_matches_a_direct_tar
+tests/dpu/test_capture.py::test_out_is_0600_even_with_a_permissive_umask
+tests/dpu/test_capture.py::test_default_mountinfo_is_the_running_kernels
+tests/dpu/test_capture.py::test_cap_exceeded_kills_the_pipeline_and_removes_out
+tests/dpu/test_capture.py::test_cap_counts_the_raw_tar_stream_exactly
+tests/dpu/test_capture.py::test_unreadable_file_is_tar_failed_and_out_removed
+tests/dpu/test_capture.py::test_tar_exit_1_is_a_failure_too
+tests/dpu/test_capture.py::test_age_nonzero_exit_is_age_failed
+tests/dpu/test_capture.py::test_age_missing_is_age_failed
+tests/dpu/test_capture.py::test_age_that_stops_reading_is_age_failed
+tests/dpu/test_capture.py::test_sigterm_mid_capture_cleans_up
+tests/dpu/test_capture.py::test_identical_copy_of_skel_is_empty
+tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[same_size_edit]
+tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[extra_in_subdir]
+tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[extra_top_level]
+tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[symlink_target]
+tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[type_change]
+tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[fifo_for_file]
+tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[missing_entry]
+tests/dpu/test_capture.py::test_missing_skel_means_capture
+tests/dpu/test_capture.py::test_home_missing
+tests/dpu/test_capture.py::test_home_not_a_dir
+tests/dpu/test_capture.py::test_home_that_is_a_symlink_is_not_a_dir
+tests/dpu/test_capture.py::test_home_owner_mismatch
+tests/dpu/test_capture.py::test_bind_mount_under_home_is_refused
+tests/dpu/test_capture.py::test_mount_on_home_itself_is_refused
+tests/dpu/test_capture.py::test_mountinfo_octal_escapes_are_decoded
+tests/dpu/test_capture.py::test_mount_beside_home_is_not_under_it
+tests/dpu/test_capture.py::test_mount_under_the_real_path_of_home_is_refused
+tests/dpu/test_capture.py::test_unreadable_or_malformed_mountinfo_is_refused[None]
+tests/dpu/test_capture.py::test_unreadable_or_malformed_mountinfo_is_refused[garbage\n]
+tests/dpu/test_capture.py::test_unreadable_or_malformed_mountinfo_is_refused[22 1 8:2 / / rw shared:1\n]
+tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_hardlinks-0\n]
+tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_symlinks-0\n]
+tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_hardlinks-2\n]
+tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_symlinks-11\n]
+tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_hardlinks-None]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-relative/home]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/root]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/etc]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/home]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/usr]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/var]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/tmp]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{home}/]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{home}/../home]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{home}/.]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-//x/y]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{home}\nx]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{skel}]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[skel-skel]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[skel-{home}/skel]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-x.age]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-/var]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-{home}/in-home.age]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-{capdir}/../capture/x.age]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-{capdir}/]
+tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-{skel}/x.age]
+tests/dpu/test_capture.py::test_out_parent_must_be_mode_0700[493]
+tests/dpu/test_capture.py::test_out_parent_must_be_mode_0700[488]
+tests/dpu/test_capture.py::test_out_parent_must_be_mode_0700[457]
+tests/dpu/test_capture.py::test_out_parent_must_be_mode_0700[960]
+tests/dpu/test_capture.py::test_out_parent_must_be_owned_by_the_euid
+tests/dpu/test_capture.py::test_out_parent_missing_or_symlink_or_file
+tests/dpu/test_capture.py::test_out_exists_is_refused_and_left_alone
+tests/dpu/test_capture.py::test_out_dangling_symlink_is_out_exists
+tests/dpu/test_capture.py::test_bad_args[over0]
+tests/dpu/test_capture.py::test_bad_args[over1]
+tests/dpu/test_capture.py::test_bad_args[over2]
+tests/dpu/test_capture.py::test_bad_args[over3]
+tests/dpu/test_capture.py::test_bad_args[over4]
+tests/dpu/test_capture.py::test_bad_args[over5]
+tests/dpu/test_capture.py::test_bad_args[over6]
+tests/dpu/test_capture.py::test_bad_args[over7]
+tests/dpu/test_capture.py::test_bad_args[over8]
+tests/dpu/test_capture.py::test_bad_args[over9]
+tests/dpu/test_capture.py::test_bad_args[over10]
+tests/dpu/test_capture.py::test_bad_args[over11]
+tests/dpu/test_capture.py::test_bad_args[over12]
+tests/dpu/test_capture.py::test_bad_args[over13]
+tests/dpu/test_capture.py::test_bad_args[over14]
+tests/dpu/test_capture.py::test_bad_args[over15]
+tests/dpu/test_capture.py::test_bad_args[over16]
+tests/dpu/test_capture.py::test_bad_args[over17]
+tests/dpu/test_capture.py::test_bad_args[over18]
+tests/dpu/test_capture.py::test_bad_args[over19]
+tests/dpu/test_capture.py::test_bad_args[over20]
+tests/dpu/test_capture.py::test_bad_args[over21]
+tests/dpu/test_capture.py::test_bad_args[over22]
+tests/dpu/test_capture.py::test_bad_args[over23]
+tests/dpu/test_capture.py::test_bad_args[over24]
+tests/dpu/test_capture.py::test_bad_args[over25]
+tests/dpu/test_capture.py::test_bad_args[over26]
+tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra0]
+tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra1]
+tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra2]
+tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra3]
+tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra4]
+tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra5]
+tests/dpu/test_capture.py::test_no_args_at_all
+tests/dpu/test_capture.py::test_s_shaped_recipient_is_refused_and_never_echoed
+tests/dpu/test_capture.py::test_timing_64_mib
+
+107 tests collected in 0.08s
+---- exit=0

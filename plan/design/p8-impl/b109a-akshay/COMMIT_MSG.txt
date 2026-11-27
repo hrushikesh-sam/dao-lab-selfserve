@@ -1,0 +1,85 @@
+Add the DPU capture script and a Python 3.10 CI job (B-109a)
+
+What
+- playbooks/files/daolab-capture.py: the root script that seals
+  /home/lab on the DPU as one streaming tar -> raw-byte cap -> gzip -1
+  -> age file. Python 3.10 stdlib only. It prints exactly one JSON line
+  (status, reason, raw_bytes, age_bytes, age_sha256) with a fixed reason
+  code, nothing on stderr, and never a file name or path. Exit 0 for
+  saved/empty, 1 for refused. Guards, in order: arguments, path sanity,
+  --out parent (owned by the euid, 0700) and --out absent (O_EXCL,
+  0600), fs.protected_hardlinks and fs.protected_symlinks = 1, no mount
+  at or under the home (given and resolved path), home is a real dir
+  owned by --owner-uid, and the empty-home guard (the whole tree equals
+  skel -> "empty", no capture). Every exit status is checked (tar rc 1
+  included); any failure, the cap or a signal kills tar and age and
+  removes --out.
+- tests/dpu/: 107 tests with real tar and the real age v1.1.1 (round
+  trip decrypted and compared with a direct tar listing; symlinks, a
+  hard link, a FIFO without a hang; numeric owners; the cap boundary;
+  tar, age, broken-pipe and SIGTERM failures; mount, sysctl, path,
+  owner, empty and argument guards; no planted name in any output; 64
+  MiB timing). Its conftest carries its own stdlib-only requires_age
+  gate.
+- .github/workflows/ci.yml: a dpu-scripts job runs tests/dpu on Python
+  3.10 with pytest alone and the pinned age (the same install step as
+  test).
+
+Why
+- Design v1.1 section 6 "End of slot - save" step 3: capture as a
+  streaming tar | age with the 512 MiB cap on the raw stream and no
+  plaintext on disk; abort on tar rc != 0, a mount under the home or the
+  empty-home guard.
+- Errata v1.2: E-3 (DPU scripts are 3.10 stdlib with a 3.10 test), E-6
+  (runs as root; root-owned files are user data), E-7 (keep -xdev,
+  require the two sysctls), E-8 and its 24 Nov decision (gzip -1 in the
+  script, cap on the raw tar). F-5-2: --one-file-system can't see a
+  same-filesystem bind mount, hence the mountinfo guard. Q-E15:
+  transient root-only ciphertext in /var/lib/daolab/capture. Q-EMPTY
+  (decided 24 Nov): empty = only skel; missing / not a dir / wrong owner
+  = refuse.
+- tests/conftest.py imports the controller (Python >= 3.12) and
+  python-dotenv, so the 3.10 job runs with --confcutdir=tests/dpu.
+
+Interface changes (for B-109b / Rama)
+- New required argument --owner-uid N (the lab user's uid); only the
+  home directory itself is checked, files inside with any owner are
+  captured.
+- New reason code home_owner (the home is not owned by --owner-uid).
+- New reason code bad_args (any argument error, including a recipient
+  that is not age1 + 58 bech32 characters); argparse prints no usage.
+- Run it as `python3 -I` from a root-owned directory.
+
+Files
+- playbooks/files/daolab-capture.py (new, 0755)
+- tests/dpu/conftest.py (new)
+- tests/dpu/test_capture.py (new)
+- .github/workflows/ci.yml (new dpu-scripts job; test job unchanged)
+
+Verified
+- Baseline at 65e47fc (Python 3.12.13, ansible-core 2.21.6): 1711
+  passed, 4 skipped.
+- Red, tests/dpu without the script: 107 failed on 3.12.13 and on
+  3.10.12, every one for the missing script.
+- Green, tests/dpu: 107 passed on 3.12.13, and on 3.10.12 with pytest
+  alone and --confcutdir=tests/dpu (tests/conftest.py not loaded).
+- Full suite, ansible-core 2.21.6: 1818 passed, 4 skipped (1711 + 107).
+- ansible-core 2.20.11: the 19 test files that mention ansible plus
+  tests/dpu: 930 passed, 1 skipped.
+- Mutation check: 20 of 22 deliberate bugs are caught; the 2 survivors
+  don't change behaviour (a second broken-pipe check; a forbidden-path
+  list the depth rule already covers).
+- 64 MiB random tree, informational: about 36 MB/s on 3.12, 31 MB/s on
+  3.10 (laptop; the board is to be measured in Phase 9).
+
+Series result
+- No playbook, engine or service change; nothing calls the script yet
+  (B-109b wires it in). Flag-off behaviour is unchanged by construction.
+
+Patch
+- B109A-capture.patch, sha256
+  c33e903ba3ae562b6df636c29594d9eea57ca23808a849a140c0ba6e86e4a8c9
+- 4 files, +1325/-0; tree baa80123121d485e496589701a8d5854b126d6af (TREE
+  MATCH on a fresh apply to 65e47fc; diff --check clean).
+
+Evidence: branch akshay-p8-gate, plan/design/p8-impl/b109a-akshay/

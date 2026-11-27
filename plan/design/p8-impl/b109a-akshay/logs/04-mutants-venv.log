@@ -1,0 +1,23 @@
+M01 tar rc 1 accepted            KILLED    1 failed, 106 passed in 7.29s
+M02 empty: size only             KILLED    1 failed, 106 passed in 7.18s
+M03 empty: top level only        KILLED    1 failed, 106 passed in 7.00s
+M04 mount guard off              KILLED    4 failed, 103 passed in 7.10s
+M05 realpath dropped             KILLED    1 failed, 106 passed in 7.05s
+M06 cap off                      KILLED    2 failed, 105 passed in 7.32s
+M07 cap off by one (>=)          KILLED    1 failed, 106 passed in 7.52s
+M08 no explicit 0600             KILLED    13 failed, 94 passed in 7.41s
+M09 out kept on failure          KILLED    8 failed, 99 passed in 7.33s
+M10 no octal unescape            KILLED    1 failed, 106 passed in 7.41s
+M11 sysctl off                   KILLED    4 failed, 103 passed in 7.34s
+M12 broken pipe ignored          SURVIVED  107 passed in 7.24s
+M13 out_exists check off         KILLED    2 failed, 105 passed in 7.18s
+M14 owner check off              KILLED    1 failed, 106 passed in 7.10s
+M15 parent mode unchecked        KILLED    4 failed, 103 passed in 7.18s
+M16 argparse prints usage        KILLED    13 failed, 94 passed in 7.34s
+M17 recipient unchecked          KILLED    9 failed, 98 passed in 7.17s
+M18 gzip level 6                 KILLED    1 failed, 106 passed in 7.27s
+M19 no --numeric-owner           KILLED    1 failed, 106 passed in 7.15s
+M20 SIGTERM not handled          KILLED    1 failed, 106 passed in 7.16s
+M21 forbidden list off           SURVIVED  107 passed in 7.22s
+M22 argv (paths) on stderr       KILLED    87 failed, 20 passed in 8.23s
+mutants: 22, survived or bad: 2

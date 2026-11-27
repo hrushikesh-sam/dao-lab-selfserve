@@ -1,0 +1,3395 @@
+date:        2026-11-27T18:01:18Z
+HEAD:        65e47fc
+write-tree:  103362c1073b6a8e2528f40aaa457ccb883fca14
+cwd:         /home/akshay/b109a
+venv:        /home/akshay/.venvs/b109a-310
+python:      3.10.12
+ansible-core: n/a
+sqlite:      3.37.2
+tar:         tar (GNU tar) 1.34
+age:         v1.1.1
+env:         DAOLAB_REQUIRE_AGE=1
+command:     /home/akshay/.venvs/b109a-310/bin/python -m pytest --confcutdir=tests/dpu tests/dpu -q -rf -p no:cacheprovider
+----
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF [ 67%]
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF                                      [100%]
+=================================== FAILURES ===================================
+______________________ test_script_parses_as_python_3_10 _______________________
+
+    def test_script_parses_as_python_3_10():
+        # E-3: no 3.11+ syntax (except*, PEP 695 ...). The 3.10 CI job also runs it for real.
+>       ast.parse(_source(), filename=SCRIPT, feature_version=(3, 10))
+
+tests/dpu/test_capture.py:262: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _source():
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:255: AssertionError
+________________ test_script_imports_only_the_standard_library _________________
+
+    def test_script_imports_only_the_standard_library():
+        stdlib = set(sys.stdlib_module_names)
+>       for node in ast.walk(ast.parse(_source())):
+
+tests/dpu/test_capture.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _source():
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:255: AssertionError
+_____________________ test_script_has_no_3_11_stdlib_names _____________________
+
+    def test_script_has_no_3_11_stdlib_names():
+>       src = _source()
+
+tests/dpu/test_capture.py:280: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _source():
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:255: AssertionError
+________________ test_script_is_executable_and_runs_on_python3 _________________
+
+    def test_script_is_executable_and_runs_on_python3():
+>       assert os.access(SCRIPT, os.X_OK)
+E       AssertionError: assert False
+E        +  where False = <built-in function access>('/home/akshay/b109a/playbooks/files/daolab-capture.py', 1)
+E        +    where <built-in function access> = os.access
+E        +    and   1 = os.X_OK
+
+tests/dpu/test_capture.py:286: AssertionError
+__________________ test_saved_round_trip_matches_a_direct_tar __________________
+
+agelab = <test_capture.Lab object at 0x744496286cb0>
+
+    @pytest.mark.requires_age
+    def test_saved_round_trip_matches_a_direct_tar(agelab):
+        lab = agelab
+        plant_tree(lab.home)
+        if os.geteuid() == 0:                     # E-6: other owners' files are user data
+            os.chown(lab.home / f"notes-{PLANT}.txt", 0, 0)
+            os.chown(lab.home / f"with space {PLANT}", 4242, 4242)
+>       res = lab.run(timeout=60)                 # a FIFO read would hang: the timeout proves not
+
+tests/dpu/test_capture.py:299: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496286cb0>, argv = None, timeout = 60
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_out_is_0600_even_with_a_permissive_umask _________________
+
+agelab = <test_capture.Lab object at 0x744496279ea0>
+
+    @pytest.mark.requires_age
+    def test_out_is_0600_even_with_a_permissive_umask(agelab):
+        (agelab.home / f"f-{PLANT}").write_text("x")
+>       res = agelab.run(umask=0o002)             # the board's umask gave 0664 on 24 Nov
+
+tests/dpu/test_capture.py:337: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496279ea0>, argv = None, timeout = 120
+umask = 2, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_default_mountinfo_is_the_running_kernels _________________
+
+agelab = <test_capture.Lab object at 0x7444961019c0>
+
+    @pytest.mark.requires_age
+    def test_default_mountinfo_is_the_running_kernels(agelab):
+        # The defaults (--mountinfo /proc/self/mountinfo) work on a host with no mount under home.
+        (agelab.home / f"f-{PLANT}").write_text("x")
+>       res = agelab.run(mountinfo=None)
+
+tests/dpu/test_capture.py:346: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961019c0>, argv = None, timeout = 120
+umask = None, over = {'mountinfo': None}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________ test_cap_exceeded_kills_the_pipeline_and_removes_out _____________
+
+agelab = <test_capture.Lab object at 0x74449627c820>
+
+    @pytest.mark.requires_age
+    def test_cap_exceeded_kills_the_pipeline_and_removes_out(agelab):
+        (agelab.home / f"big-{PLANT}").write_bytes(os.urandom(256 * 1024))
+>       res = agelab.run(cap_bytes="1024")
+
+tests/dpu/test_capture.py:355: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627c820>, argv = None, timeout = 120
+umask = None, over = {'cap_bytes': '1024'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+__________________ test_cap_counts_the_raw_tar_stream_exactly __________________
+
+agelab = <test_capture.Lab object at 0x744496297eb0>
+
+    @pytest.mark.requires_age
+    def test_cap_counts_the_raw_tar_stream_exactly(agelab):
+        # Highly compressible data: the gzip stream is far below the cap, the raw stream is not.
+        (agelab.home / f"zeros-{PLANT}").write_bytes(b"\0" * (1024 * 1024))
+>       first = agelab.run()
+
+tests/dpu/test_capture.py:364: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496297eb0>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+______________ test_unreadable_file_is_tar_failed_and_out_removed ______________
+
+agelab = <test_capture.Lab object at 0x7444962b9780>
+
+    @NON_ROOT
+    @pytest.mark.requires_age
+    def test_unreadable_file_is_tar_failed_and_out_removed(agelab):
+        (agelab.home / f"ok-{PLANT}").write_text("x")
+        secret = agelab.home / f"unreadable-{PLANT}"
+        secret.write_text("y")
+        os.chmod(secret, 0)
+        try:
+>           res = agelab.run()
+
+tests/dpu/test_capture.py:386: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962b9780>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_______________________ test_tar_exit_1_is_a_failure_too _______________________
+
+lab = <test_capture.Lab object at 0x7444962c1870>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_tar_exit_1_is_a_failure_t0')
+capsys = <_pytest.capture.CaptureFixture object at 0x7444962c1f00>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7444962c2890>
+
+    def test_tar_exit_1_is_a_failure_too(lab, tmp_path, capsys, monkeypatch):
+        # GNU tar exits 1 for "file changed as we read it": still a failed capture.
+>       mod = load_module()
+
+tests/dpu/test_capture.py:395: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_module():
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:230: AssertionError
+_____________________ test_age_nonzero_exit_is_age_failed ______________________
+
+lab = <test_capture.Lab object at 0x7444962858a0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_age_nonzero_exit_is_age_f0')
+
+    def test_age_nonzero_exit_is_age_failed(lab, tmp_path):
+        (lab.home / f"f-{PLANT}").write_text("x")
+>       res = lab.run(age=fake_tool(tmp_path, "age-bad", "cat >/dev/null; exit 1"))
+
+tests/dpu/test_capture.py:406: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962858a0>, argv = None, timeout = 120
+umask = None
+over = {'age': '/tmp/pytest-of-akshay/pytest-3/test_age_nonzero_exit_is_age_f0/age-bad'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________________ test_age_missing_is_age_failed ________________________
+
+lab = <test_capture.Lab object at 0x7444961011b0>
+
+    def test_age_missing_is_age_failed(lab):
+        (lab.home / f"f-{PLANT}").write_text("x")
+>       refused(lab.run(age=str(lab.root / "no-such-age")), "age_failed")
+
+tests/dpu/test_capture.py:413: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961011b0>, argv = None, timeout = 120
+umask = None
+over = {'age': '/tmp/pytest-of-akshay/pytest-3/test_age_missing_is_age_failed0/no-such-age'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+__________________ test_age_that_stops_reading_is_age_failed ___________________
+
+lab = <test_capture.Lab object at 0x7444962c3ca0>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_age_that_stops_reading_is0')
+
+    def test_age_that_stops_reading_is_age_failed(lab, tmp_path):
+        # Exits 0 without reading its stdin: the broken pipe is a failure, whatever its exit code.
+        (lab.home / f"rand-{PLANT}").write_bytes(os.urandom(2 * 1024 * 1024))
+>       res = lab.run(age=fake_tool(tmp_path, "age-quits", "exit 0"))
+
+tests/dpu/test_capture.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c3ca0>, argv = None, timeout = 120
+umask = None
+over = {'age': '/tmp/pytest-of-akshay/pytest-3/test_age_that_stops_reading_is0/age-quits'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+______________________ test_sigterm_mid_capture_cleans_up ______________________
+
+lab = <test_capture.Lab object at 0x74449627cf40>
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_sigterm_mid_capture_clean0')
+
+    def test_sigterm_mid_capture_cleans_up(lab, tmp_path):
+        # An Ansible timeout sends SIGTERM: children are killed and the partial file removed.
+        (lab.home / f"rand-{PLANT}").write_bytes(os.urandom(4 * 1024 * 1024))
+        age = fake_tool(tmp_path, "age-stuck", "exec sleep 60")   # never reads: the writer blocks
+        p = subprocess.Popen([sys.executable, SCRIPT] + lab.args(age=age), stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
+        deadline = time.monotonic() + 20
+        while not lab.out.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+>       assert lab.out.exists()
+E       AssertionError: assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_sigterm_mid_capture_clean0/capture/snap-0001.age').exists
+E        +      where PosixPath('/tmp/pytest-of-akshay/pytest-3/test_sigterm_mid_capture_clean0/capture/snap-0001.age') = <test_capture.Lab object at 0x74449627cf40>.out
+
+tests/dpu/test_capture.py:434: AssertionError
+_____________________ test_identical_copy_of_skel_is_empty _____________________
+
+lab = <test_capture.Lab object at 0x744496294d30>
+
+    def test_identical_copy_of_skel_is_empty(lab):
+        _skel_tree(lab)
+        _copy_tree(lab.skel, lab.home)
+>       res = lab.run()
+
+tests/dpu/test_capture.py:468: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496294d30>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_anything_beyond_skel_is_captured[same_size_edit] _____________
+
+agelab = <test_capture.Lab object at 0x7444962b8070>, change = 'same_size_edit'
+
+    @pytest.mark.requires_age
+    @pytest.mark.parametrize("change", [
+        "same_size_edit", "extra_in_subdir", "extra_top_level", "symlink_target", "type_change",
+        "fifo_for_file", "missing_entry"])
+    def test_anything_beyond_skel_is_captured(agelab, change):
+        lab = agelab
+        _skel_tree(lab)
+        _copy_tree(lab.skel, lab.home)
+        if change == "same_size_edit":            # same type and size, different bytes
+            old = (lab.home / ".bashrc").read_bytes()
+            (lab.home / ".bashrc").write_bytes(old[:-2] + b"X\n")
+            assert len((lab.home / ".bashrc").read_bytes()) == len(old)
+        elif change == "extra_in_subdir":
+            (lab.home / ".config" / f"extra-{PLANT}").write_text("mine\n")
+        elif change == "extra_top_level":
+            (lab.home / f"work-{PLANT}").write_text("mine\n")
+        elif change == "symlink_target":
+            os.unlink(lab.home / ".prof-link")
+            os.symlink(".bashrc", lab.home / ".prof-link")
+        elif change == "type_change":
+            os.unlink(lab.home / ".profile")
+            (lab.home / ".profile").mkdir()
+        elif change == "fifo_for_file":           # compared without opening the FIFO
+            os.unlink(lab.home / ".profile")
+            os.mkfifo(lab.home / ".profile")
+        elif change == "missing_entry":           # the user deleted a skel file: still their state
+            os.unlink(lab.home / ".profile")
+>       res = lab.run(timeout=60)
+
+tests/dpu/test_capture.py:501: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962b8070>, argv = None, timeout = 60
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_anything_beyond_skel_is_captured[extra_in_subdir] ____________
+
+agelab = <test_capture.Lab object at 0x7444962864d0>, change = 'extra_in_subdir'
+
+    @pytest.mark.requires_age
+    @pytest.mark.parametrize("change", [
+        "same_size_edit", "extra_in_subdir", "extra_top_level", "symlink_target", "type_change",
+        "fifo_for_file", "missing_entry"])
+    def test_anything_beyond_skel_is_captured(agelab, change):
+        lab = agelab
+        _skel_tree(lab)
+        _copy_tree(lab.skel, lab.home)
+        if change == "same_size_edit":            # same type and size, different bytes
+            old = (lab.home / ".bashrc").read_bytes()
+            (lab.home / ".bashrc").write_bytes(old[:-2] + b"X\n")
+            assert len((lab.home / ".bashrc").read_bytes()) == len(old)
+        elif change == "extra_in_subdir":
+            (lab.home / ".config" / f"extra-{PLANT}").write_text("mine\n")
+        elif change == "extra_top_level":
+            (lab.home / f"work-{PLANT}").write_text("mine\n")
+        elif change == "symlink_target":
+            os.unlink(lab.home / ".prof-link")
+            os.symlink(".bashrc", lab.home / ".prof-link")
+        elif change == "type_change":
+            os.unlink(lab.home / ".profile")
+            (lab.home / ".profile").mkdir()
+        elif change == "fifo_for_file":           # compared without opening the FIFO
+            os.unlink(lab.home / ".profile")
+            os.mkfifo(lab.home / ".profile")
+        elif change == "missing_entry":           # the user deleted a skel file: still their state
+            os.unlink(lab.home / ".profile")
+>       res = lab.run(timeout=60)
+
+tests/dpu/test_capture.py:501: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962864d0>, argv = None, timeout = 60
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_anything_beyond_skel_is_captured[extra_top_level] ____________
+
+agelab = <test_capture.Lab object at 0x74449627e710>, change = 'extra_top_level'
+
+    @pytest.mark.requires_age
+    @pytest.mark.parametrize("change", [
+        "same_size_edit", "extra_in_subdir", "extra_top_level", "symlink_target", "type_change",
+        "fifo_for_file", "missing_entry"])
+    def test_anything_beyond_skel_is_captured(agelab, change):
+        lab = agelab
+        _skel_tree(lab)
+        _copy_tree(lab.skel, lab.home)
+        if change == "same_size_edit":            # same type and size, different bytes
+            old = (lab.home / ".bashrc").read_bytes()
+            (lab.home / ".bashrc").write_bytes(old[:-2] + b"X\n")
+            assert len((lab.home / ".bashrc").read_bytes()) == len(old)
+        elif change == "extra_in_subdir":
+            (lab.home / ".config" / f"extra-{PLANT}").write_text("mine\n")
+        elif change == "extra_top_level":
+            (lab.home / f"work-{PLANT}").write_text("mine\n")
+        elif change == "symlink_target":
+            os.unlink(lab.home / ".prof-link")
+            os.symlink(".bashrc", lab.home / ".prof-link")
+        elif change == "type_change":
+            os.unlink(lab.home / ".profile")
+            (lab.home / ".profile").mkdir()
+        elif change == "fifo_for_file":           # compared without opening the FIFO
+            os.unlink(lab.home / ".profile")
+            os.mkfifo(lab.home / ".profile")
+        elif change == "missing_entry":           # the user deleted a skel file: still their state
+            os.unlink(lab.home / ".profile")
+>       res = lab.run(timeout=60)
+
+tests/dpu/test_capture.py:501: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627e710>, argv = None, timeout = 60
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_anything_beyond_skel_is_captured[symlink_target] _____________
+
+agelab = <test_capture.Lab object at 0x7444962c3070>, change = 'symlink_target'
+
+    @pytest.mark.requires_age
+    @pytest.mark.parametrize("change", [
+        "same_size_edit", "extra_in_subdir", "extra_top_level", "symlink_target", "type_change",
+        "fifo_for_file", "missing_entry"])
+    def test_anything_beyond_skel_is_captured(agelab, change):
+        lab = agelab
+        _skel_tree(lab)
+        _copy_tree(lab.skel, lab.home)
+        if change == "same_size_edit":            # same type and size, different bytes
+            old = (lab.home / ".bashrc").read_bytes()
+            (lab.home / ".bashrc").write_bytes(old[:-2] + b"X\n")
+            assert len((lab.home / ".bashrc").read_bytes()) == len(old)
+        elif change == "extra_in_subdir":
+            (lab.home / ".config" / f"extra-{PLANT}").write_text("mine\n")
+        elif change == "extra_top_level":
+            (lab.home / f"work-{PLANT}").write_text("mine\n")
+        elif change == "symlink_target":
+            os.unlink(lab.home / ".prof-link")
+            os.symlink(".bashrc", lab.home / ".prof-link")
+        elif change == "type_change":
+            os.unlink(lab.home / ".profile")
+            (lab.home / ".profile").mkdir()
+        elif change == "fifo_for_file":           # compared without opening the FIFO
+            os.unlink(lab.home / ".profile")
+            os.mkfifo(lab.home / ".profile")
+        elif change == "missing_entry":           # the user deleted a skel file: still their state
+            os.unlink(lab.home / ".profile")
+>       res = lab.run(timeout=60)
+
+tests/dpu/test_capture.py:501: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c3070>, argv = None, timeout = 60
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+______________ test_anything_beyond_skel_is_captured[type_change] ______________
+
+agelab = <test_capture.Lab object at 0x744496287880>, change = 'type_change'
+
+    @pytest.mark.requires_age
+    @pytest.mark.parametrize("change", [
+        "same_size_edit", "extra_in_subdir", "extra_top_level", "symlink_target", "type_change",
+        "fifo_for_file", "missing_entry"])
+    def test_anything_beyond_skel_is_captured(agelab, change):
+        lab = agelab
+        _skel_tree(lab)
+        _copy_tree(lab.skel, lab.home)
+        if change == "same_size_edit":            # same type and size, different bytes
+            old = (lab.home / ".bashrc").read_bytes()
+            (lab.home / ".bashrc").write_bytes(old[:-2] + b"X\n")
+            assert len((lab.home / ".bashrc").read_bytes()) == len(old)
+        elif change == "extra_in_subdir":
+            (lab.home / ".config" / f"extra-{PLANT}").write_text("mine\n")
+        elif change == "extra_top_level":
+            (lab.home / f"work-{PLANT}").write_text("mine\n")
+        elif change == "symlink_target":
+            os.unlink(lab.home / ".prof-link")
+            os.symlink(".bashrc", lab.home / ".prof-link")
+        elif change == "type_change":
+            os.unlink(lab.home / ".profile")
+            (lab.home / ".profile").mkdir()
+        elif change == "fifo_for_file":           # compared without opening the FIFO
+            os.unlink(lab.home / ".profile")
+            os.mkfifo(lab.home / ".profile")
+        elif change == "missing_entry":           # the user deleted a skel file: still their state
+            os.unlink(lab.home / ".profile")
+>       res = lab.run(timeout=60)
+
+tests/dpu/test_capture.py:501: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496287880>, argv = None, timeout = 60
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________ test_anything_beyond_skel_is_captured[fifo_for_file] _____________
+
+agelab = <test_capture.Lab object at 0x74449627da20>, change = 'fifo_for_file'
+
+    @pytest.mark.requires_age
+    @pytest.mark.parametrize("change", [
+        "same_size_edit", "extra_in_subdir", "extra_top_level", "symlink_target", "type_change",
+        "fifo_for_file", "missing_entry"])
+    def test_anything_beyond_skel_is_captured(agelab, change):
+        lab = agelab
+        _skel_tree(lab)
+        _copy_tree(lab.skel, lab.home)
+        if change == "same_size_edit":            # same type and size, different bytes
+            old = (lab.home / ".bashrc").read_bytes()
+            (lab.home / ".bashrc").write_bytes(old[:-2] + b"X\n")
+            assert len((lab.home / ".bashrc").read_bytes()) == len(old)
+        elif change == "extra_in_subdir":
+            (lab.home / ".config" / f"extra-{PLANT}").write_text("mine\n")
+        elif change == "extra_top_level":
+            (lab.home / f"work-{PLANT}").write_text("mine\n")
+        elif change == "symlink_target":
+            os.unlink(lab.home / ".prof-link")
+            os.symlink(".bashrc", lab.home / ".prof-link")
+        elif change == "type_change":
+            os.unlink(lab.home / ".profile")
+            (lab.home / ".profile").mkdir()
+        elif change == "fifo_for_file":           # compared without opening the FIFO
+            os.unlink(lab.home / ".profile")
+            os.mkfifo(lab.home / ".profile")
+        elif change == "missing_entry":           # the user deleted a skel file: still their state
+            os.unlink(lab.home / ".profile")
+>       res = lab.run(timeout=60)
+
+tests/dpu/test_capture.py:501: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627da20>, argv = None, timeout = 60
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________ test_anything_beyond_skel_is_captured[missing_entry] _____________
+
+agelab = <test_capture.Lab object at 0x74449627a680>, change = 'missing_entry'
+
+    @pytest.mark.requires_age
+    @pytest.mark.parametrize("change", [
+        "same_size_edit", "extra_in_subdir", "extra_top_level", "symlink_target", "type_change",
+        "fifo_for_file", "missing_entry"])
+    def test_anything_beyond_skel_is_captured(agelab, change):
+        lab = agelab
+        _skel_tree(lab)
+        _copy_tree(lab.skel, lab.home)
+        if change == "same_size_edit":            # same type and size, different bytes
+            old = (lab.home / ".bashrc").read_bytes()
+            (lab.home / ".bashrc").write_bytes(old[:-2] + b"X\n")
+            assert len((lab.home / ".bashrc").read_bytes()) == len(old)
+        elif change == "extra_in_subdir":
+            (lab.home / ".config" / f"extra-{PLANT}").write_text("mine\n")
+        elif change == "extra_top_level":
+            (lab.home / f"work-{PLANT}").write_text("mine\n")
+        elif change == "symlink_target":
+            os.unlink(lab.home / ".prof-link")
+            os.symlink(".bashrc", lab.home / ".prof-link")
+        elif change == "type_change":
+            os.unlink(lab.home / ".profile")
+            (lab.home / ".profile").mkdir()
+        elif change == "fifo_for_file":           # compared without opening the FIFO
+            os.unlink(lab.home / ".profile")
+            os.mkfifo(lab.home / ".profile")
+        elif change == "missing_entry":           # the user deleted a skel file: still their state
+            os.unlink(lab.home / ".profile")
+>       res = lab.run(timeout=60)
+
+tests/dpu/test_capture.py:501: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627a680>, argv = None, timeout = 60
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_______________________ test_missing_skel_means_capture ________________________
+
+agelab = <test_capture.Lab object at 0x7444962b91e0>
+
+    @pytest.mark.requires_age
+    def test_missing_skel_means_capture(agelab):
+        # Emptiness can't be proven without skel, so the home is captured, never skipped.
+        agelab.copy_skel()
+>       res = agelab.run(skel=str(agelab.root / "no-skel"))
+
+tests/dpu/test_capture.py:509: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962b91e0>, argv = None, timeout = 120
+umask = None
+over = {'skel': '/tmp/pytest-of-akshay/pytest-3/test_missing_skel_means_captur0/no-skel'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+______________________________ test_home_missing _______________________________
+
+lab = <test_capture.Lab object at 0x744496102110>
+
+    def test_home_missing(lab):
+        os.rmdir(lab.home)
+>       refused(lab.run(), "home_missing")
+
+tests/dpu/test_capture.py:517: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496102110>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_home_not_a_dir ______________________________
+
+lab = <test_capture.Lab object at 0x744496297010>
+
+    def test_home_not_a_dir(lab):
+        os.rmdir(lab.home)
+        lab.home.write_text("x")
+>       refused(lab.run(), "home_not_dir")
+
+tests/dpu/test_capture.py:523: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496297010>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_home_that_is_a_symlink_is_not_a_dir ___________________
+
+lab = <test_capture.Lab object at 0x744496279330>
+
+    def test_home_that_is_a_symlink_is_not_a_dir(lab):
+        os.rmdir(lab.home)
+        real = lab.root / "real-home"
+        real.mkdir()
+        os.symlink(real, lab.home)
+>       refused(lab.run(), "home_not_dir")
+
+tests/dpu/test_capture.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496279330>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________________ test_home_owner_mismatch ___________________________
+
+lab = <test_capture.Lab object at 0x7444962847f0>
+
+    def test_home_owner_mismatch(lab):
+        lab.copy_skel()
+>       refused(lab.run(owner_uid=str(os.geteuid() + 1)), "home_owner")
+
+tests/dpu/test_capture.py:536: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962847f0>, argv = None, timeout = 120
+umask = None, over = {'owner_uid': '1001'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________ test_bind_mount_under_home_is_refused _____________________
+
+lab = <test_capture.Lab object at 0x7444962ba200>
+
+    def test_bind_mount_under_home_is_refused(lab):
+        lab.copy_skel()
+        lab.add_mount(lab.home / "sub")
+>       refused(lab.run(), "mount_under_home")
+
+tests/dpu/test_capture.py:545: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962ba200>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________ test_mount_on_home_itself_is_refused _____________________
+
+lab = <test_capture.Lab object at 0x744496296890>
+
+    def test_mount_on_home_itself_is_refused(lab):
+        lab.copy_skel()
+        lab.add_mount(lab.home)
+>       refused(lab.run(), "mount_under_home")
+
+tests/dpu/test_capture.py:551: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496296890>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_mountinfo_octal_escapes_are_decoded ___________________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_mountinfo_octal_escapes_a0')
+
+    def test_mountinfo_octal_escapes_are_decoded(tmp_path):
+        lab = Lab(tmp_path, home_name="my home")
+        lab.copy_skel()
+        lab.add_mount(f"{lab.home}/sub\\dir")
+        text = lab.mountinfo.read_text()
+        assert "my\\040home/sub\\134dir" in text
+>       refused(lab.run(), "mount_under_home")
+
+tests/dpu/test_capture.py:560: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961032b0>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________ test_mount_beside_home_is_not_under_it ____________________
+
+lab = <test_capture.Lab object at 0x74449627fdc0>
+
+    def test_mount_beside_home_is_not_under_it(lab):
+        lab.copy_skel()
+        lab.add_mount(f"{lab.home}2")
+        lab.add_mount(f"{lab.home}-x/sub")
+>       res = lab.run()
+
+tests/dpu/test_capture.py:567: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627fdc0>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+______________ test_mount_under_the_real_path_of_home_is_refused _______________
+
+tmp_path = PosixPath('/tmp/pytest-of-akshay/pytest-3/test_mount_under_the_real_path0')
+
+    def test_mount_under_the_real_path_of_home_is_refused(tmp_path):
+        # home reached through a symlinked parent: the guard also checks the resolved path.
+        lab = Lab(tmp_path)
+        real = tmp_path / "real"
+        real.mkdir()
+        (real / "home").mkdir()
+        os.symlink(real, tmp_path / "via")
+        for p in lab.skel.iterdir():
+            (real / "home" / p.name).write_bytes(p.read_bytes())
+        lab.add_mount(real / "home" / "sub")
+>       refused(lab.run(home=str(tmp_path / "via" / "home")), "mount_under_home")
+
+tests/dpu/test_capture.py:581: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962b8160>, argv = None, timeout = 120
+umask = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-3/test_mount_under_the_real_path0/via/home'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________ test_unreadable_or_malformed_mountinfo_is_refused[None] ____________
+
+lab = <test_capture.Lab object at 0x744496286740>, content = None
+
+    @pytest.mark.parametrize("content", [None, "garbage\n", "22 1 8:2 / / rw shared:1\n"])
+    def test_unreadable_or_malformed_mountinfo_is_refused(lab, content):
+        lab.copy_skel()
+        if content is None:
+            os.unlink(lab.mountinfo)
+        else:
+            lab.mountinfo.write_text(BASE_MOUNTS + content)
+>       refused(lab.run(), "mount_under_home")
+
+tests/dpu/test_capture.py:591: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496286740>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_________ test_unreadable_or_malformed_mountinfo_is_refused[garbage\n] _________
+
+lab = <test_capture.Lab object at 0x7444962c19c0>, content = 'garbage\n'
+
+    @pytest.mark.parametrize("content", [None, "garbage\n", "22 1 8:2 / / rw shared:1\n"])
+    def test_unreadable_or_malformed_mountinfo_is_refused(lab, content):
+        lab.copy_skel()
+        if content is None:
+            os.unlink(lab.mountinfo)
+        else:
+            lab.mountinfo.write_text(BASE_MOUNTS + content)
+>       refused(lab.run(), "mount_under_home")
+
+tests/dpu/test_capture.py:591: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c19c0>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_ test_unreadable_or_malformed_mountinfo_is_refused[22 1 8:2 / / rw shared:1\n] _
+
+lab = <test_capture.Lab object at 0x744496295870>
+content = '22 1 8:2 / / rw shared:1\n'
+
+    @pytest.mark.parametrize("content", [None, "garbage\n", "22 1 8:2 / / rw shared:1\n"])
+    def test_unreadable_or_malformed_mountinfo_is_refused(lab, content):
+        lab.copy_skel()
+        if content is None:
+            os.unlink(lab.mountinfo)
+        else:
+            lab.mountinfo.write_text(BASE_MOUNTS + content)
+>       refused(lab.run(), "mount_under_home")
+
+tests/dpu/test_capture.py:591: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496295870>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_unsafe_sysctl_is_refused[protected_hardlinks-0\n] ____________
+
+lab = <test_capture.Lab object at 0x7444962b8490>, name = 'protected_hardlinks'
+value = '0\n'
+
+    @pytest.mark.parametrize("name,value", [
+        ("protected_hardlinks", "0\n"), ("protected_symlinks", "0\n"),
+        ("protected_hardlinks", "2\n"), ("protected_symlinks", "11\n"),
+        ("protected_hardlinks", None)])
+    def test_unsafe_sysctl_is_refused(lab, name, value):
+        lab.copy_skel()
+        if value is None:
+            os.unlink(lab.sysroot / "fs" / name)
+        else:
+            lab.set_sysctl(name, value)
+>       refused(lab.run(), "sysctl_unsafe")
+
+tests/dpu/test_capture.py:606: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962b8490>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_unsafe_sysctl_is_refused[protected_symlinks-0\n] _____________
+
+lab = <test_capture.Lab object at 0x74449627da50>, name = 'protected_symlinks'
+value = '0\n'
+
+    @pytest.mark.parametrize("name,value", [
+        ("protected_hardlinks", "0\n"), ("protected_symlinks", "0\n"),
+        ("protected_hardlinks", "2\n"), ("protected_symlinks", "11\n"),
+        ("protected_hardlinks", None)])
+    def test_unsafe_sysctl_is_refused(lab, name, value):
+        lab.copy_skel()
+        if value is None:
+            os.unlink(lab.sysroot / "fs" / name)
+        else:
+            lab.set_sysctl(name, value)
+>       refused(lab.run(), "sysctl_unsafe")
+
+tests/dpu/test_capture.py:606: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627da50>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_unsafe_sysctl_is_refused[protected_hardlinks-2\n] ____________
+
+lab = <test_capture.Lab object at 0x744496223fd0>, name = 'protected_hardlinks'
+value = '2\n'
+
+    @pytest.mark.parametrize("name,value", [
+        ("protected_hardlinks", "0\n"), ("protected_symlinks", "0\n"),
+        ("protected_hardlinks", "2\n"), ("protected_symlinks", "11\n"),
+        ("protected_hardlinks", None)])
+    def test_unsafe_sysctl_is_refused(lab, name, value):
+        lab.copy_skel()
+        if value is None:
+            os.unlink(lab.sysroot / "fs" / name)
+        else:
+            lab.set_sysctl(name, value)
+>       refused(lab.run(), "sysctl_unsafe")
+
+tests/dpu/test_capture.py:606: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496223fd0>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_unsafe_sysctl_is_refused[protected_symlinks-11\n] ____________
+
+lab = <test_capture.Lab object at 0x7444962c1240>, name = 'protected_symlinks'
+value = '11\n'
+
+    @pytest.mark.parametrize("name,value", [
+        ("protected_hardlinks", "0\n"), ("protected_symlinks", "0\n"),
+        ("protected_hardlinks", "2\n"), ("protected_symlinks", "11\n"),
+        ("protected_hardlinks", None)])
+    def test_unsafe_sysctl_is_refused(lab, name, value):
+        lab.copy_skel()
+        if value is None:
+            os.unlink(lab.sysroot / "fs" / name)
+        else:
+            lab.set_sysctl(name, value)
+>       refused(lab.run(), "sysctl_unsafe")
+
+tests/dpu/test_capture.py:606: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c1240>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________ test_unsafe_sysctl_is_refused[protected_hardlinks-None] ____________
+
+lab = <test_capture.Lab object at 0x74449627a200>, name = 'protected_hardlinks'
+value = None
+
+    @pytest.mark.parametrize("name,value", [
+        ("protected_hardlinks", "0\n"), ("protected_symlinks", "0\n"),
+        ("protected_hardlinks", "2\n"), ("protected_symlinks", "11\n"),
+        ("protected_hardlinks", None)])
+    def test_unsafe_sysctl_is_refused(lab, name, value):
+        lab.copy_skel()
+        if value is None:
+            os.unlink(lab.sysroot / "fs" / name)
+        else:
+            lab.set_sysctl(name, value)
+>       refused(lab.run(), "sysctl_unsafe")
+
+tests/dpu/test_capture.py:606: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627a200>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+______________ test_unsafe_paths_are_refused[home-relative/home] _______________
+
+lab = <test_capture.Lab object at 0x74449627f8b0>, which = 'home'
+value = 'relative/home'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627f8b0>, argv = None, timeout = 120
+umask = None, over = {'home': 'relative/home'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________ test_unsafe_paths_are_refused[home-/] _____________________
+
+lab = <test_capture.Lab object at 0x7444962c35e0>, which = 'home', value = '/'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c35e0>, argv = None, timeout = 120
+umask = None, over = {'home': '/'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+__________________ test_unsafe_paths_are_refused[home-/root] ___________________
+
+lab = <test_capture.Lab object at 0x7444961026e0>, which = 'home'
+value = '/root'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961026e0>, argv = None, timeout = 120
+umask = None, over = {'home': '/root'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_unsafe_paths_are_refused[home-/etc] ___________________
+
+lab = <test_capture.Lab object at 0x744496222d40>, which = 'home'
+value = '/etc'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496222d40>, argv = None, timeout = 120
+umask = None, over = {'home': '/etc'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+__________________ test_unsafe_paths_are_refused[home-/home] ___________________
+
+lab = <test_capture.Lab object at 0x7444962ba890>, which = 'home'
+value = '/home'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962ba890>, argv = None, timeout = 120
+umask = None, over = {'home': '/home'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_unsafe_paths_are_refused[home-/usr] ___________________
+
+lab = <test_capture.Lab object at 0x744496101d80>, which = 'home'
+value = '/usr'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496101d80>, argv = None, timeout = 120
+umask = None, over = {'home': '/usr'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_unsafe_paths_are_refused[home-/var] ___________________
+
+lab = <test_capture.Lab object at 0x74449627d570>, which = 'home'
+value = '/var'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627d570>, argv = None, timeout = 120
+umask = None, over = {'home': '/var'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_unsafe_paths_are_refused[home-/tmp] ___________________
+
+lab = <test_capture.Lab object at 0x744496279d20>, which = 'home'
+value = '/tmp'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496279d20>, argv = None, timeout = 120
+umask = None, over = {'home': '/tmp'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_________________ test_unsafe_paths_are_refused[home-{home}/] __________________
+
+lab = <test_capture.Lab object at 0x744496100f40>, which = 'home'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_8/home/'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496100f40>, argv = None, timeout = 120
+umask = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_8/home/'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+______________ test_unsafe_paths_are_refused[home-{home}/../home] ______________
+
+lab = <test_capture.Lab object at 0x7444962c14e0>, which = 'home'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_9/home/../home'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c14e0>, argv = None, timeout = 120
+umask = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_9/home/../home'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_________________ test_unsafe_paths_are_refused[home-{home}/.] _________________
+
+lab = <test_capture.Lab object at 0x7444962b9cf0>, which = 'home'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_10/home/.'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962b9cf0>, argv = None, timeout = 120
+umask = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_10/home/.'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+__________________ test_unsafe_paths_are_refused[home-//x/y] ___________________
+
+lab = <test_capture.Lab object at 0x74449627f9a0>, which = 'home'
+value = '//x/y'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627f9a0>, argv = None, timeout = 120
+umask = None, over = {'home': '//x/y'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_unsafe_paths_are_refused[home-{home}\nx] _________________
+
+lab = <test_capture.Lab object at 0x744496101000>, which = 'home'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_12/home\nx'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496101000>, argv = None, timeout = 120
+umask = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_12/home\nx'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+__________________ test_unsafe_paths_are_refused[home-{skel}] __________________
+
+lab = <test_capture.Lab object at 0x744496284310>, which = 'home'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_13/skel'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496284310>, argv = None, timeout = 120
+umask = None
+over = {'home': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_13/skel'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_unsafe_paths_are_refused[skel-skel] ___________________
+
+lab = <test_capture.Lab object at 0x744496223dc0>, which = 'skel'
+value = 'skel'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496223dc0>, argv = None, timeout = 120
+umask = None, over = {'skel': 'skel'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_______________ test_unsafe_paths_are_refused[skel-{home}/skel] ________________
+
+lab = <test_capture.Lab object at 0x74449627bf10>, which = 'skel'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_15/home/skel'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627bf10>, argv = None, timeout = 120
+umask = None
+over = {'skel': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_15/home/skel'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_unsafe_paths_are_refused[out-x.age] ___________________
+
+lab = <test_capture.Lab object at 0x7444962c3550>, which = 'out'
+value = 'x.age'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c3550>, argv = None, timeout = 120
+umask = None, over = {'out': 'x.age'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_unsafe_paths_are_refused[out-/var] ____________________
+
+lab = <test_capture.Lab object at 0x7444962bafb0>, which = 'out', value = '/var'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962bafb0>, argv = None, timeout = 120
+umask = None, over = {'out': '/var'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________ test_unsafe_paths_are_refused[out-{home}/in-home.age] _____________
+
+lab = <test_capture.Lab object at 0x7444962c17b0>, which = 'out'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_18/home/in-home.age'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c17b0>, argv = None, timeout = 120
+umask = None
+over = {'out': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_18/home/in-home.age'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_________ test_unsafe_paths_are_refused[out-{capdir}/../capture/x.age] _________
+
+lab = <test_capture.Lab object at 0x74449627f190>, which = 'out'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_19/capture/../capture/x.age'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627f190>, argv = None, timeout = 120
+umask = None
+over = {'out': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_19/capture/../capture/x.age'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_________________ test_unsafe_paths_are_refused[out-{capdir}/] _________________
+
+lab = <test_capture.Lab object at 0x7444961016f0>, which = 'out'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_20/capture/'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961016f0>, argv = None, timeout = 120
+umask = None
+over = {'out': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_20/capture/'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_______________ test_unsafe_paths_are_refused[out-{skel}/x.age] ________________
+
+lab = <test_capture.Lab object at 0x744496297100>, which = 'out'
+value = '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_21/skel/x.age'
+
+    @pytest.mark.parametrize("which,value", [
+        ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
+        ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
+        ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
+        ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
+        ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
+        ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
+    def test_unsafe_paths_are_refused(lab, which, value):
+        lab.copy_skel()
+        value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
+>       refused(lab.run(**{which: value}), "path_unsafe")
+
+tests/dpu/test_capture.py:621: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496297100>, argv = None, timeout = 120
+umask = None
+over = {'out': '/tmp/pytest-of-akshay/pytest-3/test_unsafe_paths_are_refused_21/skel/x.age'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________ test_out_parent_must_be_mode_0700[493] ____________________
+
+lab = <test_capture.Lab object at 0x74449627fc70>, mode = 493
+
+    @pytest.mark.parametrize("mode", [0o755, 0o750, 0o711, 0o1700])
+    def test_out_parent_must_be_mode_0700(lab, mode):
+        lab.copy_skel()
+        os.chmod(lab.capdir, mode)
+>       refused(lab.run(), "path_unsafe")
+
+tests/dpu/test_capture.py:629: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627fc70>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________ test_out_parent_must_be_mode_0700[488] ____________________
+
+lab = <test_capture.Lab object at 0x74449627cfd0>, mode = 488
+
+    @pytest.mark.parametrize("mode", [0o755, 0o750, 0o711, 0o1700])
+    def test_out_parent_must_be_mode_0700(lab, mode):
+        lab.copy_skel()
+        os.chmod(lab.capdir, mode)
+>       refused(lab.run(), "path_unsafe")
+
+tests/dpu/test_capture.py:629: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627cfd0>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________ test_out_parent_must_be_mode_0700[457] ____________________
+
+lab = <test_capture.Lab object at 0x74449627d930>, mode = 457
+
+    @pytest.mark.parametrize("mode", [0o755, 0o750, 0o711, 0o1700])
+    def test_out_parent_must_be_mode_0700(lab, mode):
+        lab.copy_skel()
+        os.chmod(lab.capdir, mode)
+>       refused(lab.run(), "path_unsafe")
+
+tests/dpu/test_capture.py:629: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627d930>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________ test_out_parent_must_be_mode_0700[960] ____________________
+
+lab = <test_capture.Lab object at 0x7444962c08e0>, mode = 960
+
+    @pytest.mark.parametrize("mode", [0o755, 0o750, 0o711, 0o1700])
+    def test_out_parent_must_be_mode_0700(lab, mode):
+        lab.copy_skel()
+        os.chmod(lab.capdir, mode)
+>       refused(lab.run(), "path_unsafe")
+
+tests/dpu/test_capture.py:629: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c08e0>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+__________________ test_out_parent_must_be_owned_by_the_euid ___________________
+
+lab = <test_capture.Lab object at 0x7444962bbc70>
+capsys = <_pytest.capture.CaptureFixture object at 0x7444962b9f60>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7444962bae90>
+
+    def test_out_parent_must_be_owned_by_the_euid(lab, capsys, monkeypatch):
+        lab.copy_skel()
+>       mod = load_module()
+
+tests/dpu/test_capture.py:634: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def load_module():
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:230: AssertionError
+__________________ test_out_parent_missing_or_symlink_or_file __________________
+
+lab = <test_capture.Lab object at 0x744496294760>
+
+    def test_out_parent_missing_or_symlink_or_file(lab):
+        lab.copy_skel()
+>       refused(lab.run(out=str(lab.root / "nope" / "x.age")), "path_unsafe")
+
+tests/dpu/test_capture.py:643: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496294760>, argv = None, timeout = 120
+umask = None
+over = {'out': '/tmp/pytest-of-akshay/pytest-3/test_out_parent_missing_or_sym0/nope/x.age'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+__________________ test_out_exists_is_refused_and_left_alone ___________________
+
+lab = <test_capture.Lab object at 0x7444962c0910>
+
+    def test_out_exists_is_refused_and_left_alone(lab):
+        lab.copy_skel()
+        lab.out.write_bytes(b"someone else's file")
+        os.chmod(lab.out, 0o640)
+>       refused(lab.run(), "out_exists")
+
+tests/dpu/test_capture.py:654: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c0910>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+___________________ test_out_dangling_symlink_is_out_exists ____________________
+
+lab = <test_capture.Lab object at 0x744496278c10>
+
+    def test_out_dangling_symlink_is_out_exists(lab):
+        lab.copy_skel()
+        os.symlink(lab.root / "elsewhere", lab.out)
+>       refused(lab.run(), "out_exists")
+
+tests/dpu/test_capture.py:662: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496278c10>, argv = None, timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over0] _____________________________
+
+lab = <test_capture.Lab object at 0x744496103790>
+over = {'recipient': 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496103790>, argv = None, timeout = 120
+umask = None
+over = {'recipient': 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over1] _____________________________
+
+lab = <test_capture.Lab object at 0x7444962bae60>
+over = {'recipient': 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962bae60>, argv = None, timeout = 120
+umask = None
+over = {'recipient': 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over2] _____________________________
+
+lab = <test_capture.Lab object at 0x744496103ac0>
+over = {'recipient': 'AGE1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496103ac0>, argv = None, timeout = 120
+umask = None
+over = {'recipient': 'AGE1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over3] _____________________________
+
+lab = <test_capture.Lab object at 0x74449627c430>
+over = {'recipient': 'age1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627c430>, argv = None, timeout = 120
+umask = None
+over = {'recipient': 'age1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over4] _____________________________
+
+lab = <test_capture.Lab object at 0x7444962bad70>
+over = {'recipient': 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq1'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962bad70>, argv = None, timeout = 120
+umask = None
+over = {'recipient': 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq1'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over5] _____________________________
+
+lab = <test_capture.Lab object at 0x744496287d90>
+over = {'recipient': ' age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496287d90>, argv = None, timeout = 120
+umask = None
+over = {'recipient': ' age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over6] _____________________________
+
+lab = <test_capture.Lab object at 0x74449627be50>
+over = {'recipient': 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\n'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627be50>, argv = None, timeout = 120
+umask = None
+over = {'recipient': 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq\n'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over7] _____________________________
+
+lab = <test_capture.Lab object at 0x74449627f010>, over = {'recipient': ''}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627f010>, argv = None, timeout = 120
+umask = None, over = {'recipient': ''}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over8] _____________________________
+
+lab = <test_capture.Lab object at 0x744496101030>, over = {'cap_bytes': 'abc'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496101030>, argv = None, timeout = 120
+umask = None, over = {'cap_bytes': 'abc'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_bad_args[over9] _____________________________
+
+lab = <test_capture.Lab object at 0x744496286740>, over = {'cap_bytes': '0'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496286740>, argv = None, timeout = 120
+umask = None, over = {'cap_bytes': '0'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over10] _____________________________
+
+lab = <test_capture.Lab object at 0x744496296b30>, over = {'cap_bytes': '-5'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496296b30>, argv = None, timeout = 120
+umask = None, over = {'cap_bytes': '-5'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over11] _____________________________
+
+lab = <test_capture.Lab object at 0x7444962c2920>, over = {'cap_bytes': '1e3'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c2920>, argv = None, timeout = 120
+umask = None, over = {'cap_bytes': '1e3'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over12] _____________________________
+
+lab = <test_capture.Lab object at 0x744496297490>, over = {'cap_bytes': ' 10'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496297490>, argv = None, timeout = 120
+umask = None, over = {'cap_bytes': ' 10'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over13] _____________________________
+
+lab = <test_capture.Lab object at 0x74449627b130>, over = {'owner_uid': '-1'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627b130>, argv = None, timeout = 120
+umask = None, over = {'owner_uid': '-1'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over14] _____________________________
+
+lab = <test_capture.Lab object at 0x744496296da0>, over = {'owner_uid': 'x'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496296da0>, argv = None, timeout = 120
+umask = None, over = {'owner_uid': 'x'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over15] _____________________________
+
+lab = <test_capture.Lab object at 0x74449627e020>
+over = {'owner_uid': '4294967296'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627e020>, argv = None, timeout = 120
+umask = None, over = {'owner_uid': '4294967296'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over16] _____________________________
+
+lab = <test_capture.Lab object at 0x7444962bb5b0>, over = {'age': 'age'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962bb5b0>, argv = None, timeout = 120
+umask = None, over = {'age': 'age'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over17] _____________________________
+
+lab = <test_capture.Lab object at 0x7444962c2860>, over = {'age': './age'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962c2860>, argv = None, timeout = 120
+umask = None, over = {'age': './age'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over18] _____________________________
+
+lab = <test_capture.Lab object at 0x74449627a020>
+over = {'mountinfo': 'proc/self/mountinfo'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627a020>, argv = None, timeout = 120
+umask = None, over = {'mountinfo': 'proc/self/mountinfo'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over19] _____________________________
+
+lab = <test_capture.Lab object at 0x7444962ba5f0>
+over = {'sysctl_root': 'proc/sys'}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962ba5f0>, argv = None, timeout = 120
+umask = None, over = {'sysctl_root': 'proc/sys'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over20] _____________________________
+
+lab = <test_capture.Lab object at 0x744496287a60>, over = {'home': None}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496287a60>, argv = None, timeout = 120
+umask = None, over = {'home': None}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over21] _____________________________
+
+lab = <test_capture.Lab object at 0x7444961f8a60>, over = {'skel': None}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961f8a60>, argv = None, timeout = 120
+umask = None, over = {'skel': None}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over22] _____________________________
+
+lab = <test_capture.Lab object at 0x7444961fae60>, over = {'recipient': None}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961fae60>, argv = None, timeout = 120
+umask = None, over = {'recipient': None}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over23] _____________________________
+
+lab = <test_capture.Lab object at 0x7444961f98d0>, over = {'out': None}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961f98d0>, argv = None, timeout = 120
+umask = None, over = {'out': None}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over24] _____________________________
+
+lab = <test_capture.Lab object at 0x7444962b8940>, over = {'cap_bytes': None}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444962b8940>, argv = None, timeout = 120
+umask = None, over = {'cap_bytes': None}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over25] _____________________________
+
+lab = <test_capture.Lab object at 0x74449627abf0>, over = {'age': None}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627abf0>, argv = None, timeout = 120
+umask = None, over = {'age': None}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+____________________________ test_bad_args[over26] _____________________________
+
+lab = <test_capture.Lab object at 0x744496103070>, over = {'owner_uid': None}
+
+    @pytest.mark.parametrize("over", [
+        {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
+        {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
+        {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
+        {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
+        {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
+        {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
+        {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
+        {"sysctl_root": "proc/sys"},
+        {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
+        {"age": None}, {"owner_uid": None}])
+    def test_bad_args(lab, over):
+        lab.copy_skel()
+>       res = lab.run(**over)
+
+tests/dpu/test_capture.py:681: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496103070>, argv = None, timeout = 120
+umask = None, over = {'owner_uid': None}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_bad_args_unknown_repeated_or_help[extra0] ________________
+
+lab = <test_capture.Lab object at 0x744496278400>, extra = ['-h']
+
+    @pytest.mark.parametrize("extra", [["-h"], ["--help"], ["--bogus", "1"], ["stray"],
+                                       ["--hom", "/x/y"], ["--home", "/x/y"]])
+    def test_bad_args_unknown_repeated_or_help(lab, extra):
+        lab.copy_skel()
+>       res = lab.run(argv=lab.args() + extra)
+
+tests/dpu/test_capture.py:691: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496278400>
+argv = ['--home', '/tmp/pytest-of-akshay/pytest-3/test_bad_args_unknown_repeated0/home', '--skel', '/tmp/pytest-of-akshay/pyt...bad_args_unknown_repeated0/skel', '--recipient', 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', ...]
+timeout = 120, umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_bad_args_unknown_repeated_or_help[extra1] ________________
+
+lab = <test_capture.Lab object at 0x74449627fee0>, extra = ['--help']
+
+    @pytest.mark.parametrize("extra", [["-h"], ["--help"], ["--bogus", "1"], ["stray"],
+                                       ["--hom", "/x/y"], ["--home", "/x/y"]])
+    def test_bad_args_unknown_repeated_or_help(lab, extra):
+        lab.copy_skel()
+>       res = lab.run(argv=lab.args() + extra)
+
+tests/dpu/test_capture.py:691: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x74449627fee0>
+argv = ['--home', '/tmp/pytest-of-akshay/pytest-3/test_bad_args_unknown_repeated1/home', '--skel', '/tmp/pytest-of-akshay/pyt...bad_args_unknown_repeated1/skel', '--recipient', 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', ...]
+timeout = 120, umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_bad_args_unknown_repeated_or_help[extra2] ________________
+
+lab = <test_capture.Lab object at 0x744496294430>, extra = ['--bogus', '1']
+
+    @pytest.mark.parametrize("extra", [["-h"], ["--help"], ["--bogus", "1"], ["stray"],
+                                       ["--hom", "/x/y"], ["--home", "/x/y"]])
+    def test_bad_args_unknown_repeated_or_help(lab, extra):
+        lab.copy_skel()
+>       res = lab.run(argv=lab.args() + extra)
+
+tests/dpu/test_capture.py:691: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496294430>
+argv = ['--home', '/tmp/pytest-of-akshay/pytest-3/test_bad_args_unknown_repeated2/home', '--skel', '/tmp/pytest-of-akshay/pyt...bad_args_unknown_repeated2/skel', '--recipient', 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', ...]
+timeout = 120, umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_bad_args_unknown_repeated_or_help[extra3] ________________
+
+lab = <test_capture.Lab object at 0x7444961fae30>, extra = ['stray']
+
+    @pytest.mark.parametrize("extra", [["-h"], ["--help"], ["--bogus", "1"], ["stray"],
+                                       ["--hom", "/x/y"], ["--home", "/x/y"]])
+    def test_bad_args_unknown_repeated_or_help(lab, extra):
+        lab.copy_skel()
+>       res = lab.run(argv=lab.args() + extra)
+
+tests/dpu/test_capture.py:691: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961fae30>
+argv = ['--home', '/tmp/pytest-of-akshay/pytest-3/test_bad_args_unknown_repeated3/home', '--skel', '/tmp/pytest-of-akshay/pyt...bad_args_unknown_repeated3/skel', '--recipient', 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', ...]
+timeout = 120, umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_bad_args_unknown_repeated_or_help[extra4] ________________
+
+lab = <test_capture.Lab object at 0x7444961f9600>, extra = ['--hom', '/x/y']
+
+    @pytest.mark.parametrize("extra", [["-h"], ["--help"], ["--bogus", "1"], ["stray"],
+                                       ["--hom", "/x/y"], ["--home", "/x/y"]])
+    def test_bad_args_unknown_repeated_or_help(lab, extra):
+        lab.copy_skel()
+>       res = lab.run(argv=lab.args() + extra)
+
+tests/dpu/test_capture.py:691: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961f9600>
+argv = ['--home', '/tmp/pytest-of-akshay/pytest-3/test_bad_args_unknown_repeated4/home', '--skel', '/tmp/pytest-of-akshay/pyt...bad_args_unknown_repeated4/skel', '--recipient', 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', ...]
+timeout = 120, umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+________________ test_bad_args_unknown_repeated_or_help[extra5] ________________
+
+lab = <test_capture.Lab object at 0x7444961f8e50>, extra = ['--home', '/x/y']
+
+    @pytest.mark.parametrize("extra", [["-h"], ["--help"], ["--bogus", "1"], ["stray"],
+                                       ["--hom", "/x/y"], ["--home", "/x/y"]])
+    def test_bad_args_unknown_repeated_or_help(lab, extra):
+        lab.copy_skel()
+>       res = lab.run(argv=lab.args() + extra)
+
+tests/dpu/test_capture.py:691: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961f8e50>
+argv = ['--home', '/tmp/pytest-of-akshay/pytest-3/test_bad_args_unknown_repeated5/home', '--skel', '/tmp/pytest-of-akshay/pyt...bad_args_unknown_repeated5/skel', '--recipient', 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq', ...]
+timeout = 120, umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________________________ test_no_args_at_all ______________________________
+
+lab = <test_capture.Lab object at 0x7444961a1f00>
+
+    def test_no_args_at_all(lab):
+>       refused(lab.run(argv=[]), "bad_args")
+
+tests/dpu/test_capture.py:697: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961a1f00>, argv = [], timeout = 120
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+_____________ test_s_shaped_recipient_is_refused_and_never_echoed ______________
+
+lab = <test_capture.Lab object at 0x7444961a0550>
+
+    def test_s_shaped_recipient_is_refused_and_never_echoed(lab):
+        # Rule 8 canary: an identity passed by mistake is refused and printed nowhere
+        # (check_safe asserts the canary is absent from stdout and stderr).
+        lab.copy_skel()
+>       refused(lab.run(recipient=S_CANARY), "bad_args")
+
+tests/dpu/test_capture.py:704: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x7444961a0550>, argv = None, timeout = 120
+umask = None
+over = {'recipient': 'AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ'}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+______________________________ test_timing_64_mib ______________________________
+
+agelab = <test_capture.Lab object at 0x744496278d90>
+capsys = <_pytest.capture.CaptureFixture object at 0x74449627a110>
+
+    @pytest.mark.requires_age
+    def test_timing_64_mib(agelab, capsys):
+        for i in range(64):
+            (agelab.home / f"blob-{i:02d}-{PLANT}").write_bytes(os.urandom(1024 * 1024))
+        t0 = time.monotonic()
+>       res = agelab.run(timeout=300)
+
+tests/dpu/test_capture.py:715: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <test_capture.Lab object at 0x744496278d90>, argv = None, timeout = 300
+umask = None, over = {}
+
+    def run(self, argv=None, timeout=120, umask=None, **over):
+>       assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
+E       AssertionError: playbooks/files/daolab-capture.py is not written yet
+E       assert False
+E        +  where False = <function isfile at 0x744497471fc0>('/home/akshay/b109a/playbooks/files/daolab-capture.py')
+E        +    where <function isfile at 0x744497471fc0> = <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'>.isfile
+E        +      where <module 'posixpath' from '/usr/lib/python3.10/posixpath.py'> = os.path
+
+tests/dpu/test_capture.py:114: AssertionError
+=========================== short test summary info ============================
+FAILED tests/dpu/test_capture.py::test_script_parses_as_python_3_10 - Asserti...
+FAILED tests/dpu/test_capture.py::test_script_imports_only_the_standard_library
+FAILED tests/dpu/test_capture.py::test_script_has_no_3_11_stdlib_names - Asse...
+FAILED tests/dpu/test_capture.py::test_script_is_executable_and_runs_on_python3
+FAILED tests/dpu/test_capture.py::test_saved_round_trip_matches_a_direct_tar
+FAILED tests/dpu/test_capture.py::test_out_is_0600_even_with_a_permissive_umask
+FAILED tests/dpu/test_capture.py::test_default_mountinfo_is_the_running_kernels
+FAILED tests/dpu/test_capture.py::test_cap_exceeded_kills_the_pipeline_and_removes_out
+FAILED tests/dpu/test_capture.py::test_cap_counts_the_raw_tar_stream_exactly
+FAILED tests/dpu/test_capture.py::test_unreadable_file_is_tar_failed_and_out_removed
+FAILED tests/dpu/test_capture.py::test_tar_exit_1_is_a_failure_too - Assertio...
+FAILED tests/dpu/test_capture.py::test_age_nonzero_exit_is_age_failed - Asser...
+FAILED tests/dpu/test_capture.py::test_age_missing_is_age_failed - AssertionE...
+FAILED tests/dpu/test_capture.py::test_age_that_stops_reading_is_age_failed
+FAILED tests/dpu/test_capture.py::test_sigterm_mid_capture_cleans_up - Assert...
+FAILED tests/dpu/test_capture.py::test_identical_copy_of_skel_is_empty - Asse...
+FAILED tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[same_size_edit]
+FAILED tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[extra_in_subdir]
+FAILED tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[extra_top_level]
+FAILED tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[symlink_target]
+FAILED tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[type_change]
+FAILED tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[fifo_for_file]
+FAILED tests/dpu/test_capture.py::test_anything_beyond_skel_is_captured[missing_entry]
+FAILED tests/dpu/test_capture.py::test_missing_skel_means_capture - Assertion...
+FAILED tests/dpu/test_capture.py::test_home_missing - AssertionError: playboo...
+FAILED tests/dpu/test_capture.py::test_home_not_a_dir - AssertionError: playb...
+FAILED tests/dpu/test_capture.py::test_home_that_is_a_symlink_is_not_a_dir - ...
+FAILED tests/dpu/test_capture.py::test_home_owner_mismatch - AssertionError: ...
+FAILED tests/dpu/test_capture.py::test_bind_mount_under_home_is_refused - Ass...
+FAILED tests/dpu/test_capture.py::test_mount_on_home_itself_is_refused - Asse...
+FAILED tests/dpu/test_capture.py::test_mountinfo_octal_escapes_are_decoded - ...
+FAILED tests/dpu/test_capture.py::test_mount_beside_home_is_not_under_it - As...
+FAILED tests/dpu/test_capture.py::test_mount_under_the_real_path_of_home_is_refused
+FAILED tests/dpu/test_capture.py::test_unreadable_or_malformed_mountinfo_is_refused[None]
+FAILED tests/dpu/test_capture.py::test_unreadable_or_malformed_mountinfo_is_refused[garbage\n]
+FAILED tests/dpu/test_capture.py::test_unreadable_or_malformed_mountinfo_is_refused[22 1 8:2 / / rw shared:1\n]
+FAILED tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_hardlinks-0\n]
+FAILED tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_symlinks-0\n]
+FAILED tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_hardlinks-2\n]
+FAILED tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_symlinks-11\n]
+FAILED tests/dpu/test_capture.py::test_unsafe_sysctl_is_refused[protected_hardlinks-None]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-relative/home]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/] - Ass...
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/root]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/etc] - ...
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/home]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/usr] - ...
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/var] - ...
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-/tmp] - ...
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{home}/]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{home}/../home]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{home}/.]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-//x/y]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{home}\nx]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[home-{skel}]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[skel-skel] - ...
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[skel-{home}/skel]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-x.age] - ...
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-/var] - A...
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-{home}/in-home.age]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-{capdir}/../capture/x.age]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-{capdir}/]
+FAILED tests/dpu/test_capture.py::test_unsafe_paths_are_refused[out-{skel}/x.age]
+FAILED tests/dpu/test_capture.py::test_out_parent_must_be_mode_0700[493] - As...
+FAILED tests/dpu/test_capture.py::test_out_parent_must_be_mode_0700[488] - As...
+FAILED tests/dpu/test_capture.py::test_out_parent_must_be_mode_0700[457] - As...
+FAILED tests/dpu/test_capture.py::test_out_parent_must_be_mode_0700[960] - As...
+FAILED tests/dpu/test_capture.py::test_out_parent_must_be_owned_by_the_euid
+FAILED tests/dpu/test_capture.py::test_out_parent_missing_or_symlink_or_file
+FAILED tests/dpu/test_capture.py::test_out_exists_is_refused_and_left_alone
+FAILED tests/dpu/test_capture.py::test_out_dangling_symlink_is_out_exists - A...
+FAILED tests/dpu/test_capture.py::test_bad_args[over0] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over1] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over2] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over3] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over4] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over5] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over6] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over7] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over8] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over9] - AssertionError: play...
+FAILED tests/dpu/test_capture.py::test_bad_args[over10] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over11] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over12] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over13] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over14] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over15] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over16] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over17] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over18] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over19] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over20] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over21] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over22] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over23] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over24] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over25] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args[over26] - AssertionError: pla...
+FAILED tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra0]
+FAILED tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra1]
+FAILED tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra2]
+FAILED tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra3]
+FAILED tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra4]
+FAILED tests/dpu/test_capture.py::test_bad_args_unknown_repeated_or_help[extra5]
+FAILED tests/dpu/test_capture.py::test_no_args_at_all - AssertionError: playb...
+FAILED tests/dpu/test_capture.py::test_s_shaped_recipient_is_refused_and_never_echoed
+FAILED tests/dpu/test_capture.py::test_timing_64_mib - AssertionError: playbo...
+107 failed in 22.41s
+---- exit=1

@@ -1,0 +1,1351 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 919ba58..31606ff 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -49,3 +49,34 @@ jobs:
+         env:
+           DAOLAB_REQUIRE_AGE: "1"
+         run: python -m pytest tests/ -q -rf
++
++  # B-109a, errata E-3: DPU-side scripts (playbooks/files/daolab-capture.py) are Python 3.10
++  # stdlib only, because the board runs 3.10.12. Their tests (tests/dpu) also run in `test`
++  # above; here they run on 3.10 with pytest alone. --confcutdir=tests/dpu keeps pytest from
++  # loading tests/conftest.py, which imports the controller (Python >= 3.12) and python-dotenv.
++  dpu-scripts:
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.10"
++      - name: Install
++        run: |
++          python -m pip install --upgrade pip
++          pip install pytest
++      # The same pinned age v1.1.1 install as the `test` job (X-AGE).
++      - name: Install age v1.1.1
++        run: |
++          d=$(mktemp -d "$RUNNER_TEMP/age.XXXXXX")
++          curl --fail --location --silent --show-error \
++            -o "$d/age-v1.1.1-linux-amd64.tar.gz" \
++            https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-amd64.tar.gz
++          sh deploy/age/install-age.sh "$d/age-v1.1.1-linux-amd64.tar.gz" "$HOME/.local"
++          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
++      - name: Test
++        # requires_age tests fail (not skip) here if age is missing or not v1.1.1
++        env:
++          DAOLAB_REQUIRE_AGE: "1"
++        run: python -m pytest --confcutdir=tests/dpu tests/dpu -q -rf
+diff --git a/playbooks/files/daolab-capture.py b/playbooks/files/daolab-capture.py
+new file mode 100755
+index 0000000..766f172
+--- /dev/null
++++ b/playbooks/files/daolab-capture.py
+@@ -0,0 +1,490 @@
++#!/usr/bin/python3
++"""daolab-capture.py - seal /home/lab into one age file on the DPU (B-109a).
++
++Runs as root on the DPU at the end of a slot (design v1.1 section 6 "End of slot - save",
++step 3; errata E-6), with Python 3.10 standard library only (E-3):
++
++    python3 -I daolab-capture.py --home /home/lab --skel /etc/skel --owner-uid <lab uid>
++        --recipient <age1...> --out /var/lib/daolab/capture/<public_id>.age
++        --cap-bytes 536870912 --age /usr/local/bin/age
++        [--mountinfo /proc/self/mountinfo] [--sysctl-root /proc/sys]
++
++It prints exactly one JSON line on stdout and nothing on stderr:
++
++    {"status": "saved"|"empty"|"refused", "reason": <code>, "raw_bytes": n,
++     "age_bytes": n, "age_sha256": "<hex>"}
++
++and exits 0 for saved/empty, 1 for refused. The reason codes are a closed list (REASONS).
++Nothing it prints names a file or a path (safe diagnostics only). A refused capture leaves
++the home untouched and removes any partial --out; the caller keeps the home, raises
++home:lab and quarantines.
++
++Order of checks:
++  1. arguments (bad_args): every option exactly once; --recipient is the strict age1 shape
++     (public, but text from the controller); numbers are plain digits.
++  2. paths (path_unsafe): --home, --skel and --out absolute, normalized, no control chars,
++     not /, /root, /etc, /home, /usr, /var or any other top-level dir; home != skel and
++     neither inside the other; --out not inside home or skel. --out's parent is a real
++     directory owned by the effective uid (root on the board) with mode 0700.
++     --out must not exist yet (out_exists).
++  3. sysctls (sysctl_unsafe): fs.protected_hardlinks and fs.protected_symlinks read "1" (E-7).
++  4. mounts (mount_under_home): no mount point at or under home, nor under its resolved
++     path. tar --one-file-system can't see a same-filesystem bind mount (F-5-2).
++     Unreadable or malformed mountinfo also refuses.
++  5. home (home_missing, home_not_dir, home_owner): home is a real directory (not a symlink)
++     owned by --owner-uid. Files inside it with other owners are user data (E-6).
++  6. empty (status empty, reason empty_home): the whole tree equals --skel (the same names
++     at every depth, same types, regular files byte-identical, symlink targets identical).
++     Anything else, or a skel that can't be read, is captured.
++  7. capture: tar --one-file-system --numeric-owner --acls --xattrs -C home -cf - .
++     -> raw bytes counted against --cap-bytes (cap_exceeded) -> gzip level 1 in-process
++     -> age -r <recipient> -o <out>. Every exit status is checked: tar != 0 (rc 1 "file
++     changed as we read it" included) is tar_failed, age != 0 or a broken pipe age_failed.
++     --out is created first with O_EXCL and mode 0600. No plaintext touches the disk.
++     SIGTERM/SIGINT/SIGHUP kill tar and age, remove --out and report tar_failed.
++  8. --out is fsynced, then its size and sha256 are reported.
++
++Children run with a fixed environment (no TAR_OPTIONS from the caller). Run it with
++`python3 -I` from a root-owned directory, so nothing beside the script can shadow a module.
++"""
++import argparse
++import errno
++import hashlib
++import json
++import os
++import re
++import signal
++import stat
++import subprocess
++import sys
++import zlib
++
++TAR = "/usr/bin/tar"
++CHILD_ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"}
++CHUNK = 1 << 16
++MOUNTINFO_MAX = 16 << 20
++
++REASONS = ("ok", "empty_home", "path_unsafe", "home_missing", "home_not_dir", "home_owner",
++           "mount_under_home", "sysctl_unsafe", "tar_failed", "cap_exceeded", "age_failed",
++           "out_exists", "bad_args")
++RECIPIENT_RE = re.compile(r"age1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{58}")
++DIGITS_RE = re.compile(r"[0-9]{1,20}")
++FORBIDDEN = frozenset(("/", "/root", "/etc", "/home", "/usr", "/var"))
++_ESCAPE_RE = re.compile(rb"\\([0-7]{3})")
++_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
++
++
++class Refused(Exception):
++    def __init__(self, reason):
++        super().__init__(reason)
++        self.reason = reason
++
++
++class _Interrupted(Exception):
++    pass
++
++
++# ---- 1. arguments -----------------------------------------------------------------------------
++
++class _Parser(argparse.ArgumentParser):
++    """argparse that never prints: every parse problem is bad_args."""
++
++    def error(self, message):
++        raise Refused("bad_args")
++
++    def exit(self, status=0, message=None):
++        raise Refused("bad_args")
++
++    def print_usage(self, file=None):
++        pass
++
++    def print_help(self, file=None):
++        pass
++
++
++class _Once(argparse.Action):
++    """Store a value; a repeated option is bad_args, not 'last one wins'."""
++
++    def __init__(self, *args, **kwargs):
++        super().__init__(*args, **kwargs)
++        self.seen = False
++
++    def __call__(self, parser, namespace, values, option_string=None):
++        if self.seen:
++            raise Refused("bad_args")
++        self.seen = True
++        setattr(namespace, self.dest, values)
++
++
++def _parse(argv):
++    p = _Parser(prog="daolab-capture", add_help=False, allow_abbrev=False)
++    for name in ("--home", "--skel", "--recipient", "--out", "--cap-bytes", "--age",
++                 "--owner-uid"):
++        p.add_argument(name, required=True, action=_Once)
++    p.add_argument("--mountinfo", default="/proc/self/mountinfo", action=_Once)
++    p.add_argument("--sysctl-root", default="/proc/sys", action=_Once)
++    a = p.parse_args(argv)
++    if not RECIPIENT_RE.fullmatch(a.recipient):
++        raise Refused("bad_args")
++    for name in ("cap_bytes", "owner_uid"):
++        if not DIGITS_RE.fullmatch(getattr(a, name)):
++            raise Refused("bad_args")
++    a.cap_bytes = int(a.cap_bytes)
++    a.owner_uid = int(a.owner_uid)
++    if a.cap_bytes < 1 or a.owner_uid > 0xFFFFFFFE:
++        raise Refused("bad_args")
++    for path in (a.age, a.mountinfo, a.sysctl_root):
++        if not _clean_abs(path):
++            raise Refused("bad_args")
++    return a
++
++
++# ---- 2. paths ---------------------------------------------------------------------------------
++
++def _clean_abs(path):
++    """Absolute, normalized, no control characters, no '.' or '..' components."""
++    if not path.startswith("/") or path.startswith("//"):
++        return False
++    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in path):
++        return False
++    if os.path.normpath(path) != path:
++        return False
++    return not any(part in (".", "..") for part in path.split("/"))
++
++
++def _sane(path):
++    """_clean_abs, and not a system root: not in FORBIDDEN and at least two levels deep."""
++    if not _clean_abs(path) or path in FORBIDDEN:
++        return False
++    return len([part for part in path.split("/") if part]) >= 2
++
++
++def _within(path, top):
++    return path == top or path.startswith(top + "/")
++
++
++def _check_paths(a):
++    if not (_sane(a.home) and _sane(a.skel) and _sane(a.out)):
++        raise Refused("path_unsafe")
++    if _within(a.home, a.skel) or _within(a.skel, a.home):
++        raise Refused("path_unsafe")
++    if _within(a.out, a.home) or _within(a.out, a.skel):
++        raise Refused("path_unsafe")
++    parent = os.path.dirname(a.out)
++    try:
++        st = os.lstat(parent)
++    except OSError:
++        raise Refused("path_unsafe")
++    if (not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid()
++            or stat.S_IMODE(st.st_mode) != 0o700):
++        raise Refused("path_unsafe")
++    real_parent = os.path.realpath(parent)
++    for top in (a.home, os.path.realpath(a.home), a.skel, os.path.realpath(a.skel)):
++        if _within(real_parent, top):
++            raise Refused("path_unsafe")
++    try:
++        os.lstat(a.out)
++    except FileNotFoundError:
++        return
++    except OSError:
++        raise Refused("path_unsafe")
++    raise Refused("out_exists")
++
++
++# ---- 3. sysctls -------------------------------------------------------------------------------
++
++def _check_sysctls(root):
++    for name in ("protected_hardlinks", "protected_symlinks"):
++        try:
++            with open(os.path.join(root, "fs", name), "rb") as fh:
++                value = fh.read(16)
++        except OSError:
++            raise Refused("sysctl_unsafe")
++        if value.rstrip(b"\n") != b"1":
++            raise Refused("sysctl_unsafe")
++
++
++# ---- 4. mounts --------------------------------------------------------------------------------
++
++def _unescape(field):
++    def one(m):
++        n = int(m.group(1), 8)
++        if n > 0xFF:
++            raise ValueError("bad escape")
++        return bytes((n,))
++    return _ESCAPE_RE.sub(one, field)
++
++
++def _mount_points(path):
++    """The mount point (field 5) of every /proc/<pid>/mountinfo line, decoded."""
++    with open(path, "rb") as fh:
++        data = fh.read(MOUNTINFO_MAX + 1)
++    if len(data) > MOUNTINFO_MAX or not data.strip():
++        raise ValueError("mountinfo size")
++    points = []
++    for line in data.split(b"\n"):
++        if not line:
++            continue
++        fields = line.split(b" ")
++        # id parent major:minor root mount-point options [optional...] - fstype source super
++        if len(fields) < 10 or b"-" not in fields[6:-2]:
++            raise ValueError("mountinfo line")
++        points.append(os.fsdecode(_unescape(fields[4])))
++    return points
++
++
++def _check_mounts(a):
++    try:
++        points = _mount_points(a.mountinfo)
++    except (OSError, ValueError):
++        raise Refused("mount_under_home")
++    tops = {a.home, os.path.realpath(a.home)}
++    for point in points:
++        if any(_within(point, top) for top in tops):
++            raise Refused("mount_under_home")
++
++
++# ---- 5. home ----------------------------------------------------------------------------------
++
++def _check_home(a):
++    try:
++        st = os.lstat(a.home)
++    except (FileNotFoundError, NotADirectoryError):
++        raise Refused("home_missing")
++    except OSError:
++        raise Refused("home_not_dir")
++    if not stat.S_ISDIR(st.st_mode):
++        raise Refused("home_not_dir")
++    if st.st_uid != a.owner_uid:
++        raise Refused("home_owner")
++
++
++# ---- 6. empty ---------------------------------------------------------------------------------
++
++def _open_regular(path):
++    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
++    if not stat.S_ISREG(os.fstat(fd).st_mode):
++        os.close(fd)
++        raise OSError(errno.EINVAL, "not a regular file")
++    return fd
++
++
++def _same_bytes(a, b):
++    fa = fb = None
++    try:
++        fa, fb = _open_regular(a), _open_regular(b)
++        while True:
++            ca, cb = os.read(fa, CHUNK), os.read(fb, CHUNK)
++            if ca != cb:
++                return False
++            if not ca:
++                return True
++    except OSError:
++        return False
++    finally:
++        for fd in (fa, fb):
++            if fd is not None:
++                os.close(fd)
++
++
++def _same_tree(home, skel):
++    """True only if home's tree equals skel's. Bounded by skel: names must match per level."""
++    try:
++        names = sorted(os.listdir(home))
++        if names != sorted(os.listdir(skel)):
++            return False
++        for name in names:
++            h, s = os.path.join(home, name), os.path.join(skel, name)
++            sh, ss = os.lstat(h), os.lstat(s)
++            if stat.S_IFMT(sh.st_mode) != stat.S_IFMT(ss.st_mode):
++                return False
++            if stat.S_ISDIR(sh.st_mode):
++                if not _same_tree(h, s):
++                    return False
++            elif stat.S_ISLNK(sh.st_mode):
++                if os.readlink(h) != os.readlink(s):
++                    return False
++            elif stat.S_ISREG(sh.st_mode):
++                if sh.st_size != ss.st_size or not _same_bytes(h, s):
++                    return False
++            else:
++                return False              # FIFOs, sockets, devices: never "empty"
++    except (OSError, RecursionError):
++        return False
++    return True
++
++
++# ---- 7-8. capture -----------------------------------------------------------------------------
++
++def _feed(age, data):
++    if data:
++        try:
++            age.stdin.write(data)
++        except OSError:
++            raise Refused("age_failed")
++
++
++def _stop(proc):
++    if proc is None:
++        return
++    for pipe in (proc.stdin, proc.stdout):
++        if pipe is not None:
++            try:
++                pipe.close()
++            except OSError:
++                pass
++    if proc.poll() is None:
++        try:
++            proc.kill()
++        except OSError:
++            pass
++    try:
++        proc.wait()
++    except Exception:
++        pass
++
++
++def _digest(fd):
++    h = hashlib.sha256()
++    size = 0
++    while True:
++        chunk = os.pread(fd, CHUNK, size)
++        if not chunk:
++            return size, h.hexdigest()
++        h.update(chunk)
++        size += len(chunk)
++
++
++def _capture(a):
++    fd = None
++    tar = age = None
++    done = False
++    try:
++        try:
++            fd = os.open(a.out, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
++                         0o600)
++        except FileExistsError:
++            raise Refused("out_exists")
++        except OSError:
++            raise Refused("path_unsafe")
++        try:
++            os.fchmod(fd, 0o600)                  # whatever the umask
++            created = os.fstat(fd)
++            try:
++                age = subprocess.Popen([a.age, "-r", a.recipient, "-o", a.out],
++                                       stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
++                                       stderr=subprocess.DEVNULL, env=CHILD_ENV, close_fds=True)
++            except (OSError, ValueError):
++                raise Refused("age_failed")
++            try:
++                tar = subprocess.Popen([TAR, "--one-file-system", "--numeric-owner", "--acls",
++                                        "--xattrs", "-C", a.home, "-cf", "-", "."],
++                                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
++                                       stderr=subprocess.DEVNULL, env=CHILD_ENV, close_fds=True)
++            except (OSError, ValueError):
++                raise Refused("tar_failed")
++            gz = zlib.compressobj(1, zlib.DEFLATED, 31)   # gzip container: mtime 0, no name
++            raw = 0
++            src = tar.stdout.fileno()
++            while True:
++                try:
++                    chunk = os.read(src, CHUNK)
++                except OSError:
++                    raise Refused("tar_failed")
++                if not chunk:
++                    break
++                raw += len(chunk)
++                if raw > a.cap_bytes:
++                    raise Refused("cap_exceeded")
++                _feed(age, gz.compress(chunk))
++            _feed(age, gz.flush())
++            try:
++                age.stdin.close()
++            except OSError:
++                raise Refused("age_failed")
++            tar_rc, age_rc = tar.wait(), age.wait()
++            if tar_rc != 0:
++                raise Refused("tar_failed")
++            if age_rc != 0:
++                raise Refused("age_failed")
++            try:
++                now = os.lstat(a.out)
++            except OSError:
++                raise Refused("age_failed")
++            if ((now.st_dev, now.st_ino) != (created.st_dev, created.st_ino)
++                    or not stat.S_ISREG(now.st_mode)):
++                raise Refused("age_failed")       # --out was replaced under us
++            os.fsync(fd)
++            size, sha = _digest(fd)
++            if size == 0 or stat.S_IMODE(os.fstat(fd).st_mode) != 0o600:
++                raise Refused("age_failed")
++        except OSError:
++            raise Refused("age_failed")
++        done = True
++        return raw, size, sha
++    finally:
++        _stop(tar)
++        _stop(age)
++        if fd is not None:
++            if not done:
++                try:
++                    os.unlink(a.out)              # only ever the file this run created
++                except OSError:
++                    pass
++            os.close(fd)
++
++
++# ---- main -------------------------------------------------------------------------------------
++
++def _doc(status, reason, raw=0, size=0, sha=""):
++    return {"status": status, "reason": reason, "raw_bytes": raw, "age_bytes": size,
++            "age_sha256": sha}
++
++
++def _run(argv, ctx):
++    ctx["stage"] = "bad_args"
++    a = _parse(argv)
++    ctx["stage"] = "path_unsafe"
++    _check_paths(a)
++    ctx["stage"] = "sysctl_unsafe"
++    _check_sysctls(a.sysctl_root)
++    ctx["stage"] = "mount_under_home"
++    _check_mounts(a)
++    ctx["stage"] = "home_not_dir"
++    _check_home(a)
++    if _same_tree(a.home, a.skel):
++        return _doc("empty", "empty_home")
++    ctx["stage"] = "tar_failed"
++    raw, size, sha = _capture(a)
++    return _doc("saved", "ok", raw, size, sha)
++
++
++def _on_signal(signum, frame):
++    for s in _SIGNALS:
++        signal.signal(s, signal.SIG_IGN)          # one interrupt; cleanup runs undisturbed
++    raise _Interrupted()
++
++
++def main(argv=None):
++    argv = sys.argv[1:] if argv is None else argv
++    ctx = {"stage": "bad_args"}
++    old = {s: signal.signal(s, _on_signal) for s in _SIGNALS}
++    try:
++        try:
++            doc = _run(argv, ctx)
++        except Refused as r:
++            doc = _doc("refused", r.reason)
++        except _Interrupted:
++            doc = _doc("refused", "tar_failed")
++        except Exception:
++            doc = _doc("refused", ctx["stage"])   # an unexpected error fails the running step
++    finally:
++        for s, handler in old.items():
++            signal.signal(s, handler)
++    sys.stdout.write(json.dumps(doc) + "\n")
++    sys.stdout.flush()
++    return 0 if doc["status"] in ("saved", "empty") else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/dpu/conftest.py b/tests/dpu/conftest.py
+new file mode 100644
+index 0000000..69c97a6
+--- /dev/null
++++ b/tests/dpu/conftest.py
+@@ -0,0 +1,75 @@
++"""tests/dpu: the tests for the DPU-side scripts (B-109a; errata E-3).
++
++The DPU runs Python 3.10.12, so these tests run twice:
++
++  * in the main suite (`pytest tests/`, Python 3.12/3.13), where tests/conftest.py is loaded too;
++  * on Python 3.10 with pytest alone, in the CI job `dpu-scripts`:
++        python -m pytest --confcutdir=tests/dpu tests/dpu -q
++    `--confcutdir` stops pytest from loading tests/conftest.py, which imports the controller
++    (`service`, Python >= 3.12) and python-dotenv. Nothing here may import either.
++
++So this file is standard library + pytest only, and it carries its own copy of the
++`requires_age` marker (the same rule as tests/conftest.py, X-AGE): a marked test runs only when
++age and age-keygen (DAOLAB_AGE_BIN / DAOLAB_AGE_KEYGEN_BIN, else the names on PATH) are the pinned
++v1.1.1. Otherwise it is skipped, or fails when DAOLAB_REQUIRE_AGE=1. In the main suite both
++copies run; they agree, so a test is skipped or failed once either way.
++"""
++import os
++import shutil
++import subprocess
++
++import pytest
++
++AGE_MISSING = "age v1.1.1 not installed (see deploy/age/README.md)"
++_AGE_TOOLS = (("DAOLAB_AGE_BIN", "age"), ("DAOLAB_AGE_KEYGEN_BIN", "age-keygen"))
++_age_ok = None
++
++
++def pytest_configure(config):
++    config.addinivalue_line(
++        "markers", "requires_age: needs the pinned age v1.1.1 CLI, age and age-keygen "
++                   "(skipped without it; fails instead when DAOLAB_REQUIRE_AGE=1)")
++
++
++def age_tool(var, default):
++    """The path of one age tool (the env override, else PATH), or None."""
++    return shutil.which(os.environ.get(var) or default)
++
++
++def _is_age_v111(path):
++    if path is None:
++        return False
++    try:
++        p = subprocess.run([path, "--version"], capture_output=True, timeout=30,
++                           stdin=subprocess.DEVNULL)
++    except (OSError, subprocess.SubprocessError):
++        return False
++    return p.returncode == 0 and p.stdout == b"v1.1.1\n"
++
++
++def age_installed():
++    """True when the pinned age v1.1.1 is usable (checked once per test session)."""
++    global _age_ok
++    if _age_ok is None:
++        _age_ok = all(_is_age_v111(age_tool(var, default)) for var, default in _AGE_TOOLS)
++    return _age_ok
++
++
++def pytest_runtest_setup(item):
++    if item.get_closest_marker("requires_age") is None or age_installed():
++        return
++    if os.environ.get("DAOLAB_REQUIRE_AGE") != "1":
++        pytest.skip(AGE_MISSING)
++
++
++@pytest.hookimpl(tryfirst=True)
++def pytest_runtest_call(item):
++    # Fails in the call phase, so it is reported as a failed test, not a setup error.
++    if item.get_closest_marker("requires_age") is not None and not age_installed():
++        pytest.fail(f"{AGE_MISSING}, and DAOLAB_REQUIRE_AGE=1", pytrace=False)
++
++
++@pytest.fixture(scope="session")
++def age_bins():
++    """(age, age-keygen) absolute paths; only meaningful in requires_age tests."""
++    return age_tool("DAOLAB_AGE_BIN", "age"), age_tool("DAOLAB_AGE_KEYGEN_BIN", "age-keygen")
+diff --git a/tests/dpu/test_capture.py b/tests/dpu/test_capture.py
+new file mode 100644
+index 0000000..4d6bda6
+--- /dev/null
++++ b/tests/dpu/test_capture.py
+@@ -0,0 +1,729 @@
++"""B-109a: playbooks/files/daolab-capture.py, the DPU-side capture of /home/lab.
++
++The script runs as root on the DPU (Python 3.10, errata E-3/E-6). It streams
++`tar --one-file-system --numeric-owner --acls --xattrs` through a raw-byte cap (E-8), gzip
++level 1 and `age -r <S_pub>` into one 0600 file, and prints exactly one JSON line with a fixed
++reason code; file names and paths are never printed (safe diagnostics only).
++
++These tests run the script as a subprocess with the running interpreter (3.12/3.13 in the main
++suite, 3.10 in the `dpu-scripts` CI job), with real tar and, where marked requires_age, the real
++age v1.1.1. The few in-process tests load the file with importlib to swap in a fake tar or a
++fake euid. The test age identity lives only in a tmp file: it is never printed, compared or
++passed on argv (only its path is).
++"""
++import ast
++import gzip
++import hashlib
++import importlib.util
++import io
++import json
++import os
++import signal
++import stat
++import subprocess
++import sys
++import tarfile
++import time
++
++import pytest
++
++REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++SCRIPT = os.path.join(REPO, "playbooks", "files", "daolab-capture.py")
++TAR = "/usr/bin/tar"
++
++PLANT = "PLANTED-b109a-zq7"           # in every planted name; must never reach stdout/stderr
++KEYS = ["status", "reason", "raw_bytes", "age_bytes", "age_sha256"]
++STATUSES = {"saved", "empty", "refused"}
++REASONS = {"ok", "empty_home", "path_unsafe", "home_missing", "home_not_dir", "home_owner",
++           "mount_under_home", "sysctl_unsafe", "tar_failed", "cap_exceeded", "age_failed",
++           "out_exists", "bad_args"}
++FAKE_RECIPIENT = "age1" + "q" * 58     # the right shape; only for runs refused before age
++# An S-shaped canary (rule 8), built at run time so the full key shape is not in the source.
++S_CANARY = "AGE-SECRET-KEY-1" + "Q" * 58
++
++NON_ROOT = pytest.mark.skipif(os.geteuid() == 0, reason="root reads every file")
++
++
++def _esc(path):
++    """A path as /proc/self/mountinfo writes it (octal escapes for space, tab, newline, \\)."""
++    return (path.replace("\\", "\\134").replace(" ", "\\040")
++                .replace("\t", "\\011").replace("\n", "\\012"))
++
++
++def _mount_line(mid, mount_point, fstype="ext4", source="/dev/sda2"):
++    return f"{mid} 1 8:2 / {_esc(mount_point)} rw,relatime shared:1 - {fstype} {source} rw\n"
++
++
++BASE_MOUNTS = (_mount_line(22, "/") + _mount_line(23, "/proc", "proc", "proc")
++               + _mount_line(24, "/dev", "devtmpfs", "udev")
++               + "25 22 0:6 / /run rw,nosuid master:3 propagate_from:1 - tmpfs tmpfs rw\n")
++
++
++class Result:
++    def __init__(self, rc, stdout, stderr):
++        self.rc, self.stdout, self.stderr = rc, stdout, stderr
++        self.doc = None
++
++
++class Lab:
++    """A temp board: home, skel, a 0700 capture dir, fake /proc/sys and mountinfo."""
++
++    def __init__(self, root, age="/nonexistent/age", recipient=FAKE_RECIPIENT, home_name="home"):
++        self.root = root
++        self.home = root / home_name
++        self.skel = root / "skel"
++        self.capdir = root / "capture"
++        self.out = self.capdir / "snap-0001.age"
++        self.sysroot = root / "proc-sys"
++        self.mountinfo = root / "mountinfo"
++        self.age = age
++        self.recipient = recipient
++        self.home.mkdir()
++        self.skel.mkdir()
++        (self.skel / ".bashrc").write_text("# skel bashrc\n")
++        (self.skel / ".profile").write_text("# skel profile\n")
++        self.capdir.mkdir()
++        os.chmod(self.capdir, 0o700)
++        (self.sysroot / "fs").mkdir(parents=True)
++        self.set_sysctl("protected_hardlinks", "1\n")
++        self.set_sysctl("protected_symlinks", "1\n")
++        self.mountinfo.write_text(BASE_MOUNTS)
++
++    def set_sysctl(self, name, value):
++        (self.sysroot / "fs" / name).write_text(value)
++
++    def add_mount(self, mount_point):
++        with open(self.mountinfo, "a") as fh:
++            fh.write(_mount_line(90, str(mount_point), "ext4", "/dev/sda2"))
++
++    def copy_skel(self):
++        for p in self.skel.iterdir():
++            (self.home / p.name).write_bytes(p.read_bytes())
++
++    def args(self, **over):
++        vals = {"home": str(self.home), "skel": str(self.skel), "recipient": self.recipient,
++                "out": str(self.out), "cap-bytes": "536870912", "age": str(self.age),
++                "owner-uid": str(os.geteuid()), "mountinfo": str(self.mountinfo),
++                "sysctl-root": str(self.sysroot)}
++        vals.update({k.replace("_", "-"): v for k, v in over.items()})
++        argv = []
++        for k, v in vals.items():
++            if v is not None:
++                argv += [f"--{k}", v]
++        return argv
++
++    def run(self, argv=None, timeout=120, umask=None, **over):
++        assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
++        argv = self.args(**over) if argv is None else argv
++        pre = (lambda: os.umask(umask)) if umask is not None else None
++        p = subprocess.run([sys.executable, SCRIPT] + argv, capture_output=True,
++                           timeout=timeout, stdin=subprocess.DEVNULL, preexec_fn=pre)
++        res = Result(p.returncode, p.stdout, p.stderr)
++        res.doc = check_safe(res, self)
++        return res
++
++    def leftovers(self):
++        return sorted(os.listdir(self.capdir))
++
++
++def check_safe(res, lab):
++    """The output contract, for every outcome: one JSON line, fixed keys and codes, exit 0 only
++    for saved/empty, nothing on stderr, and no planted name or temp path anywhere."""
++    for stream in (res.stdout, res.stderr):
++        assert PLANT.encode() not in stream
++        assert str(lab.root).encode() not in stream
++        assert S_CANARY.encode() not in stream
++    assert res.stderr == b""
++    assert res.stdout.endswith(b"\n") and res.stdout.count(b"\n") == 1, res.stdout
++    doc = json.loads(res.stdout)
++    assert list(doc) == KEYS, doc
++    assert doc["status"] in STATUSES and doc["reason"] in REASONS, doc
++    assert res.rc == (0 if doc["status"] in ("saved", "empty") else 1), (res.rc, doc)
++    assert isinstance(doc["raw_bytes"], int) and isinstance(doc["age_bytes"], int)
++    if doc["status"] == "saved":
++        assert doc["reason"] == "ok"
++        assert len(doc["age_sha256"]) == 64 and set(doc["age_sha256"]) <= set("0123456789abcdef")
++    else:
++        assert doc["reason"] != "ok"
++        assert (doc["raw_bytes"], doc["age_bytes"], doc["age_sha256"]) == (0, 0, ""), doc
++    if doc["status"] == "empty":
++        assert doc["reason"] == "empty_home"
++    return doc
++
++
++def refused(res, reason):
++    assert (res.doc["status"], res.doc["reason"]) == ("refused", reason), res.doc
++    assert res.rc == 1
++
++
++# ---- fixtures ---------------------------------------------------------------------------------
++
++@pytest.fixture
++def lab(tmp_path):
++    return Lab(tmp_path)
++
++
++@pytest.fixture
++def identity(tmp_path_factory, age_bins):
++    """A throwaway age identity: (identity file path, its public recipient)."""
++    keygen = age_bins[1]
++    d = tmp_path_factory.mktemp("ident")
++    os.chmod(d, 0o700)
++    idfile = d / "id.txt"
++    subprocess.run([keygen, "-o", str(idfile)], check=True, capture_output=True,
++                   stdin=subprocess.DEVNULL)
++    pub = subprocess.run([keygen, "-y", str(idfile)], check=True, capture_output=True,
++                         stdin=subprocess.DEVNULL).stdout.decode().strip()
++    return idfile, pub
++
++
++@pytest.fixture
++def agelab(tmp_path, age_bins, identity):
++    lab = Lab(tmp_path, age=age_bins[0], recipient=identity[1])
++    lab.identity = identity[0]
++    return lab
++
++
++def decrypt(lab):
++    """age -d -> the gzip stream, in memory (what B-110 feeds to gunzip)."""
++    p = subprocess.run([lab.age, "-d", "-i", str(lab.identity), str(lab.out)],
++                       capture_output=True, stdin=subprocess.DEVNULL)
++    assert p.returncode == 0, "age -d failed"
++    return p.stdout
++
++
++def gunzip(data):
++    p = subprocess.run(["gzip", "-dc"], input=data, capture_output=True)
++    assert p.returncode == 0, p.stderr
++    return p.stdout
++
++
++def listing(tar_bytes):
++    p = subprocess.run([TAR, "--numeric-owner", "-tvf", "-"], input=tar_bytes,
++                       capture_output=True)
++    assert p.returncode == 0, p.stderr
++    return p.stdout.decode("utf-8", "surrogateescape").splitlines()
++
++
++def reference_tar(home):
++    p = subprocess.run([TAR, "--one-file-system", "--numeric-owner", "--acls", "--xattrs",
++                        "-C", str(home), "-cf", "-", "."], capture_output=True)
++    assert p.returncode == 0, p.stderr
++    return p.stdout
++
++
++def plant_tree(home):
++    """Regular files (one with a space), a nested dir, a symlink in and one out of the home,
++    a hard link and a FIFO. All names carry PLANT."""
++    (home / f"notes-{PLANT}.txt").write_text(f"CONTENT-{PLANT}\n" * 200)
++    (home / f"with space {PLANT}").write_bytes(os.urandom(5000))
++    sub = home / f"proj-{PLANT}" / "src"
++    sub.mkdir(parents=True)
++    (sub / f"main-{PLANT}.c").write_text("int main(void) { return 0; }\n")
++    os.chmod(sub / f"main-{PLANT}.c", 0o600)
++    (home / f"empty-dir-{PLANT}").mkdir()
++    os.symlink(f"notes-{PLANT}.txt", home / f"rel-link-{PLANT}")
++    os.symlink(f"/nonexistent/target-{PLANT}", home / f"abs-link-{PLANT}")
++    os.link(home / f"notes-{PLANT}.txt", home / f"hard-{PLANT}")
++    os.mkfifo(home / f"fifo-{PLANT}")
++
++
++def load_module():
++    assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
++    spec = importlib.util.spec_from_file_location("daolab_capture_under_test", SCRIPT)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++def run_inproc(mod, lab, capsys, **over):
++    rc = mod.main(lab.args(**over))
++    out, err = capsys.readouterr()
++    res = Result(rc, out.encode(), err.encode())
++    res.doc = check_safe(res, lab)
++    return res
++
++
++def fake_tool(tmp_path, name, body):
++    p = tmp_path / name
++    p.write_text("#!/bin/sh\n" + body + "\n")
++    os.chmod(p, 0o755)
++    return str(p)
++
++
++# ---- the script itself ------------------------------------------------------------------------
++
++def _source():
++    assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
++    with open(SCRIPT, encoding="utf-8") as fh:
++        return fh.read()
++
++
++def test_script_parses_as_python_3_10():
++    # E-3: no 3.11+ syntax (except*, PEP 695 ...). The 3.10 CI job also runs it for real.
++    ast.parse(_source(), filename=SCRIPT, feature_version=(3, 10))
++
++
++def test_script_imports_only_the_standard_library():
++    stdlib = set(sys.stdlib_module_names)
++    for node in ast.walk(ast.parse(_source())):
++        if isinstance(node, ast.Import):
++            names = [a.name for a in node.names]
++        elif isinstance(node, ast.ImportFrom):
++            assert node.level == 0, "relative import"
++            names = [node.module]
++        else:
++            continue
++        for name in names:
++            assert name.split(".")[0] in stdlib, name
++
++
++def test_script_has_no_3_11_stdlib_names():
++    src = _source()
++    for name in ("tomllib", "typing.Self", "ExceptionGroup", "except*", "datetime.UTC"):
++        assert name not in src, name
++
++
++def test_script_is_executable_and_runs_on_python3():
++    assert os.access(SCRIPT, os.X_OK)
++    assert _source().splitlines()[0] == "#!/usr/bin/python3"
++
++
++# ---- save: the round trip ---------------------------------------------------------------------
++
++@pytest.mark.requires_age
++def test_saved_round_trip_matches_a_direct_tar(agelab):
++    lab = agelab
++    plant_tree(lab.home)
++    if os.geteuid() == 0:                     # E-6: other owners' files are user data
++        os.chown(lab.home / f"notes-{PLANT}.txt", 0, 0)
++        os.chown(lab.home / f"with space {PLANT}", 4242, 4242)
++    res = lab.run(timeout=60)                 # a FIFO read would hang: the timeout proves not
++    assert (res.doc["status"], res.doc["reason"]) == ("saved", "ok"), res.doc
++    assert lab.leftovers() == [lab.out.name]                    # no temp files
++    st = os.stat(lab.out)
++    assert stat.S_IMODE(st.st_mode) == 0o600
++    data = lab.out.read_bytes()
++    assert res.doc["age_bytes"] == len(data) == st.st_size
++    assert res.doc["age_sha256"] == hashlib.sha256(data).hexdigest()
++    assert data.startswith(b"age-encryption.org/v1\n")
++    assert f"CONTENT-{PLANT}".encode() not in data and PLANT.encode() not in data
++
++    gz = decrypt(lab)
++    assert gz[:3] == b"\x1f\x8b\x08"                            # gzip, deflate
++    assert gz[3] & 0x08 == 0                                    # no file name in the header
++    assert gz[4:8] == b"\0\0\0\0"                               # mtime 0
++    assert gz[8] == 4                                           # XFL 4: fastest (level 1)
++    raw = gunzip(gz)
++    assert raw == gzip.decompress(gz)
++    assert res.doc["raw_bytes"] == len(raw)
++    with tarfile.open(fileobj=io.BytesIO(raw)) as tf:
++        members = tf.getmembers()
++    # --numeric-owner: ids only, no user/group names stored (restore maps nothing by name)
++    assert members and all(m.uname == "" and m.gname == "" for m in members)
++
++    got = listing(raw)
++    assert got == listing(reference_tar(lab.home))
++    assert any(line.startswith("p") and f"fifo-{PLANT}" in line for line in got)
++    assert any(line.startswith("h") and f"hard-{PLANT}" in line for line in got)
++    assert any(line.startswith("l") and f"-> /nonexistent/target-{PLANT}" in line for line in got)
++    assert any(line.startswith("l") and f"rel-link-{PLANT} -> notes-{PLANT}.txt" in line
++               for line in got)
++    owners = {line.split()[1] for line in got}
++    assert all(o.replace("/", "").isdigit() for o in owners), owners   # --numeric-owner
++    if os.geteuid() == 0:
++        assert "0/0" in owners and "4242/4242" in owners
++    else:
++        assert owners == {f"{os.geteuid()}/{os.getegid()}"}
++
++
++@pytest.mark.requires_age
++def test_out_is_0600_even_with_a_permissive_umask(agelab):
++    (agelab.home / f"f-{PLANT}").write_text("x")
++    res = agelab.run(umask=0o002)             # the board's umask gave 0664 on 24 Nov
++    assert res.doc["status"] == "saved"
++    assert stat.S_IMODE(os.stat(agelab.out).st_mode) == 0o600
++
++
++@pytest.mark.requires_age
++def test_default_mountinfo_is_the_running_kernels(agelab):
++    # The defaults (--mountinfo /proc/self/mountinfo) work on a host with no mount under home.
++    (agelab.home / f"f-{PLANT}").write_text("x")
++    res = agelab.run(mountinfo=None)
++    assert res.doc["status"] == "saved", res.doc
++
++
++# ---- the raw-stream cap (E-8) -----------------------------------------------------------------
++
++@pytest.mark.requires_age
++def test_cap_exceeded_kills_the_pipeline_and_removes_out(agelab):
++    (agelab.home / f"big-{PLANT}").write_bytes(os.urandom(256 * 1024))
++    res = agelab.run(cap_bytes="1024")
++    refused(res, "cap_exceeded")
++    assert agelab.leftovers() == []
++
++
++@pytest.mark.requires_age
++def test_cap_counts_the_raw_tar_stream_exactly(agelab):
++    # Highly compressible data: the gzip stream is far below the cap, the raw stream is not.
++    (agelab.home / f"zeros-{PLANT}").write_bytes(b"\0" * (1024 * 1024))
++    first = agelab.run()
++    assert first.doc["status"] == "saved"
++    n = first.doc["raw_bytes"]
++    assert n > 1024 * 1024 and first.doc["age_bytes"] < n // 50
++    os.unlink(agelab.out)
++    at_cap = agelab.run(cap_bytes=str(n))
++    assert (at_cap.doc["status"], at_cap.doc["raw_bytes"]) == ("saved", n)
++    os.unlink(agelab.out)
++    refused(agelab.run(cap_bytes=str(n - 1)), "cap_exceeded")
++    assert agelab.leftovers() == []
++
++
++# ---- tar and age failures ---------------------------------------------------------------------
++
++@NON_ROOT
++@pytest.mark.requires_age
++def test_unreadable_file_is_tar_failed_and_out_removed(agelab):
++    (agelab.home / f"ok-{PLANT}").write_text("x")
++    secret = agelab.home / f"unreadable-{PLANT}"
++    secret.write_text("y")
++    os.chmod(secret, 0)
++    try:
++        res = agelab.run()
++    finally:
++        os.chmod(secret, 0o600)
++    refused(res, "tar_failed")
++    assert agelab.leftovers() == []
++
++
++def test_tar_exit_1_is_a_failure_too(lab, tmp_path, capsys, monkeypatch):
++    # GNU tar exits 1 for "file changed as we read it": still a failed capture.
++    mod = load_module()
++    monkeypatch.setattr(mod, "TAR", fake_tool(tmp_path, "tar1", "head -c 20480 /dev/zero; exit 1"))
++    age = fake_tool(tmp_path, "age-ok", "cat >/dev/null; exit 0")
++    (lab.home / f"f-{PLANT}").write_text("x")
++    res = run_inproc(mod, lab, capsys, age=age)
++    refused(res, "tar_failed")
++    assert lab.leftovers() == []
++
++
++def test_age_nonzero_exit_is_age_failed(lab, tmp_path):
++    (lab.home / f"f-{PLANT}").write_text("x")
++    res = lab.run(age=fake_tool(tmp_path, "age-bad", "cat >/dev/null; exit 1"))
++    refused(res, "age_failed")
++    assert lab.leftovers() == []
++
++
++def test_age_missing_is_age_failed(lab):
++    (lab.home / f"f-{PLANT}").write_text("x")
++    refused(lab.run(age=str(lab.root / "no-such-age")), "age_failed")
++    assert lab.leftovers() == []
++
++
++def test_age_that_stops_reading_is_age_failed(lab, tmp_path):
++    # Exits 0 without reading its stdin: the broken pipe is a failure, whatever its exit code.
++    (lab.home / f"rand-{PLANT}").write_bytes(os.urandom(2 * 1024 * 1024))
++    res = lab.run(age=fake_tool(tmp_path, "age-quits", "exit 0"))
++    refused(res, "age_failed")
++    assert lab.leftovers() == []
++
++
++def test_sigterm_mid_capture_cleans_up(lab, tmp_path):
++    # An Ansible timeout sends SIGTERM: children are killed and the partial file removed.
++    assert os.path.isfile(SCRIPT), "playbooks/files/daolab-capture.py is not written yet"
++    (lab.home / f"rand-{PLANT}").write_bytes(os.urandom(4 * 1024 * 1024))
++    age = fake_tool(tmp_path, "age-stuck", "exec sleep 60")   # never reads: the writer blocks
++    p = subprocess.Popen([sys.executable, SCRIPT] + lab.args(age=age), stdout=subprocess.PIPE,
++                         stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
++    deadline = time.monotonic() + 20
++    while not lab.out.exists() and time.monotonic() < deadline:
++        time.sleep(0.05)
++    assert lab.out.exists()
++    time.sleep(0.5)
++    p.send_signal(signal.SIGTERM)
++    out, err = p.communicate(timeout=30)
++    res = Result(p.returncode, out, err)
++    res.doc = check_safe(res, lab)
++    refused(res, "tar_failed")
++    assert lab.leftovers() == []
++
++
++# ---- the empty-home guard (Q-EMPTY, decided 24 Nov: nothing beyond /etc/skel) ------------------
++
++def _skel_tree(lab):
++    (lab.skel / ".config").mkdir()
++    (lab.skel / ".config" / "app.conf").write_text("k=v\n")
++    os.symlink(".profile", lab.skel / ".prof-link")
++
++
++def _copy_tree(src, dst):
++    for name in os.listdir(src):
++        s, d = os.path.join(src, name), os.path.join(dst, name)
++        if os.path.islink(s):
++            os.symlink(os.readlink(s), d)
++        elif os.path.isdir(s):
++            os.mkdir(d)
++            _copy_tree(s, d)
++        else:
++            with open(s, "rb") as a, open(d, "wb") as b:
++                b.write(a.read())
++
++
++def test_identical_copy_of_skel_is_empty(lab):
++    _skel_tree(lab)
++    _copy_tree(lab.skel, lab.home)
++    res = lab.run()
++    assert (res.doc["status"], res.doc["reason"]) == ("empty", "empty_home")
++    assert res.rc == 0
++    assert lab.leftovers() == []                                # no capture, no out
++
++
++@pytest.mark.requires_age
++@pytest.mark.parametrize("change", [
++    "same_size_edit", "extra_in_subdir", "extra_top_level", "symlink_target", "type_change",
++    "fifo_for_file", "missing_entry"])
++def test_anything_beyond_skel_is_captured(agelab, change):
++    lab = agelab
++    _skel_tree(lab)
++    _copy_tree(lab.skel, lab.home)
++    if change == "same_size_edit":            # same type and size, different bytes
++        old = (lab.home / ".bashrc").read_bytes()
++        (lab.home / ".bashrc").write_bytes(old[:-2] + b"X\n")
++        assert len((lab.home / ".bashrc").read_bytes()) == len(old)
++    elif change == "extra_in_subdir":
++        (lab.home / ".config" / f"extra-{PLANT}").write_text("mine\n")
++    elif change == "extra_top_level":
++        (lab.home / f"work-{PLANT}").write_text("mine\n")
++    elif change == "symlink_target":
++        os.unlink(lab.home / ".prof-link")
++        os.symlink(".bashrc", lab.home / ".prof-link")
++    elif change == "type_change":
++        os.unlink(lab.home / ".profile")
++        (lab.home / ".profile").mkdir()
++    elif change == "fifo_for_file":           # compared without opening the FIFO
++        os.unlink(lab.home / ".profile")
++        os.mkfifo(lab.home / ".profile")
++    elif change == "missing_entry":           # the user deleted a skel file: still their state
++        os.unlink(lab.home / ".profile")
++    res = lab.run(timeout=60)
++    assert (res.doc["status"], res.doc["reason"]) == ("saved", "ok"), res.doc
++
++
++@pytest.mark.requires_age
++def test_missing_skel_means_capture(agelab):
++    # Emptiness can't be proven without skel, so the home is captured, never skipped.
++    agelab.copy_skel()
++    res = agelab.run(skel=str(agelab.root / "no-skel"))
++    assert res.doc["status"] == "saved", res.doc
++
++
++# ---- home checks ------------------------------------------------------------------------------
++
++def test_home_missing(lab):
++    os.rmdir(lab.home)
++    refused(lab.run(), "home_missing")
++
++
++def test_home_not_a_dir(lab):
++    os.rmdir(lab.home)
++    lab.home.write_text("x")
++    refused(lab.run(), "home_not_dir")
++
++
++def test_home_that_is_a_symlink_is_not_a_dir(lab):
++    os.rmdir(lab.home)
++    real = lab.root / "real-home"
++    real.mkdir()
++    os.symlink(real, lab.home)
++    refused(lab.run(), "home_not_dir")
++
++
++def test_home_owner_mismatch(lab):
++    lab.copy_skel()
++    refused(lab.run(owner_uid=str(os.geteuid() + 1)), "home_owner")
++    assert lab.leftovers() == []
++
++
++# ---- mount guard (F-5-2) ----------------------------------------------------------------------
++
++def test_bind_mount_under_home_is_refused(lab):
++    lab.copy_skel()
++    lab.add_mount(lab.home / "sub")
++    refused(lab.run(), "mount_under_home")
++
++
++def test_mount_on_home_itself_is_refused(lab):
++    lab.copy_skel()
++    lab.add_mount(lab.home)
++    refused(lab.run(), "mount_under_home")
++
++
++def test_mountinfo_octal_escapes_are_decoded(tmp_path):
++    lab = Lab(tmp_path, home_name="my home")
++    lab.copy_skel()
++    lab.add_mount(f"{lab.home}/sub\\dir")
++    text = lab.mountinfo.read_text()
++    assert "my\\040home/sub\\134dir" in text
++    refused(lab.run(), "mount_under_home")
++
++
++def test_mount_beside_home_is_not_under_it(lab):
++    lab.copy_skel()
++    lab.add_mount(f"{lab.home}2")
++    lab.add_mount(f"{lab.home}-x/sub")
++    res = lab.run()
++    assert res.doc["status"] == "empty", res.doc
++
++
++def test_mount_under_the_real_path_of_home_is_refused(tmp_path):
++    # home reached through a symlinked parent: the guard also checks the resolved path.
++    lab = Lab(tmp_path)
++    real = tmp_path / "real"
++    real.mkdir()
++    (real / "home").mkdir()
++    os.symlink(real, tmp_path / "via")
++    for p in lab.skel.iterdir():
++        (real / "home" / p.name).write_bytes(p.read_bytes())
++    lab.add_mount(real / "home" / "sub")
++    refused(lab.run(home=str(tmp_path / "via" / "home")), "mount_under_home")
++
++
++@pytest.mark.parametrize("content", [None, "garbage\n", "22 1 8:2 / / rw shared:1\n"])
++def test_unreadable_or_malformed_mountinfo_is_refused(lab, content):
++    lab.copy_skel()
++    if content is None:
++        os.unlink(lab.mountinfo)
++    else:
++        lab.mountinfo.write_text(BASE_MOUNTS + content)
++    refused(lab.run(), "mount_under_home")
++
++
++# ---- sysctls (E-7) ----------------------------------------------------------------------------
++
++@pytest.mark.parametrize("name,value", [
++    ("protected_hardlinks", "0\n"), ("protected_symlinks", "0\n"),
++    ("protected_hardlinks", "2\n"), ("protected_symlinks", "11\n"),
++    ("protected_hardlinks", None)])
++def test_unsafe_sysctl_is_refused(lab, name, value):
++    lab.copy_skel()
++    if value is None:
++        os.unlink(lab.sysroot / "fs" / name)
++    else:
++        lab.set_sysctl(name, value)
++    refused(lab.run(), "sysctl_unsafe")
++
++
++# ---- path sanity and --out --------------------------------------------------------------------
++
++@pytest.mark.parametrize("which,value", [
++    ("home", "relative/home"), ("home", "/"), ("home", "/root"), ("home", "/etc"),
++    ("home", "/home"), ("home", "/usr"), ("home", "/var"), ("home", "/tmp"),
++    ("home", "{home}/"), ("home", "{home}/../home"), ("home", "{home}/."), ("home", "//x/y"),
++    ("home", "{home}\nx"), ("home", "{skel}"), ("skel", "skel"), ("skel", "{home}/skel"),
++    ("out", "x.age"), ("out", "/var"), ("out", "{home}/in-home.age"),
++    ("out", "{capdir}/../capture/x.age"), ("out", "{capdir}/"), ("out", "{skel}/x.age")])
++def test_unsafe_paths_are_refused(lab, which, value):
++    lab.copy_skel()
++    value = value.format(home=lab.home, skel=lab.skel, capdir=lab.capdir)
++    refused(lab.run(**{which: value}), "path_unsafe")
++    assert lab.leftovers() == []
++
++
++@pytest.mark.parametrize("mode", [0o755, 0o750, 0o711, 0o1700])
++def test_out_parent_must_be_mode_0700(lab, mode):
++    lab.copy_skel()
++    os.chmod(lab.capdir, mode)
++    refused(lab.run(), "path_unsafe")
++
++
++def test_out_parent_must_be_owned_by_the_euid(lab, capsys, monkeypatch):
++    lab.copy_skel()
++    mod = load_module()
++    real = os.geteuid()
++    monkeypatch.setattr(mod.os, "geteuid", lambda: real + 1)
++    res = run_inproc(mod, lab, capsys, owner_uid=str(real))
++    refused(res, "path_unsafe")
++
++
++def test_out_parent_missing_or_symlink_or_file(lab):
++    lab.copy_skel()
++    refused(lab.run(out=str(lab.root / "nope" / "x.age")), "path_unsafe")
++    os.symlink(lab.capdir, lab.root / "cap-link")
++    refused(lab.run(out=str(lab.root / "cap-link" / "x.age")), "path_unsafe")
++    (lab.root / "afile").write_text("x")
++    refused(lab.run(out=str(lab.root / "afile" / "x.age")), "path_unsafe")
++
++
++def test_out_exists_is_refused_and_left_alone(lab):
++    lab.copy_skel()
++    lab.out.write_bytes(b"someone else's file")
++    os.chmod(lab.out, 0o640)
++    refused(lab.run(), "out_exists")
++    assert lab.out.read_bytes() == b"someone else's file"
++    assert stat.S_IMODE(os.stat(lab.out).st_mode) == 0o640
++
++
++def test_out_dangling_symlink_is_out_exists(lab):
++    lab.copy_skel()
++    os.symlink(lab.root / "elsewhere", lab.out)
++    refused(lab.run(), "out_exists")
++    assert os.path.islink(lab.out) and not (lab.root / "elsewhere").exists()
++
++
++# ---- arguments --------------------------------------------------------------------------------
++
++@pytest.mark.parametrize("over", [
++    {"recipient": "age1" + "q" * 57}, {"recipient": "age1" + "q" * 59},
++    {"recipient": "AGE1" + "Q" * 58}, {"recipient": "age1" + "b" * 58},
++    {"recipient": "age1" + "q" * 57 + "1"}, {"recipient": " age1" + "q" * 58},
++    {"recipient": "age1" + "q" * 58 + "\n"}, {"recipient": ""},
++    {"cap_bytes": "abc"}, {"cap_bytes": "0"}, {"cap_bytes": "-5"}, {"cap_bytes": "1e3"},
++    {"cap_bytes": " 10"}, {"owner_uid": "-1"}, {"owner_uid": "x"}, {"owner_uid": "4294967296"},
++    {"age": "age"}, {"age": "./age"}, {"mountinfo": "proc/self/mountinfo"},
++    {"sysctl_root": "proc/sys"},
++    {"home": None}, {"skel": None}, {"recipient": None}, {"out": None}, {"cap_bytes": None},
++    {"age": None}, {"owner_uid": None}])
++def test_bad_args(lab, over):
++    lab.copy_skel()
++    res = lab.run(**over)
++    refused(res, "bad_args")
++    assert b"usage" not in res.stdout.lower()
++    assert lab.leftovers() == []
++
++
++@pytest.mark.parametrize("extra", [["-h"], ["--help"], ["--bogus", "1"], ["stray"],
++                                   ["--hom", "/x/y"], ["--home", "/x/y"]])
++def test_bad_args_unknown_repeated_or_help(lab, extra):
++    lab.copy_skel()
++    res = lab.run(argv=lab.args() + extra)
++    refused(res, "bad_args")
++    assert b"usage" not in res.stdout.lower()
++
++
++def test_no_args_at_all(lab):
++    refused(lab.run(argv=[]), "bad_args")
++
++
++def test_s_shaped_recipient_is_refused_and_never_echoed(lab):
++    # Rule 8 canary: an identity passed by mistake is refused and printed nowhere
++    # (check_safe asserts the canary is absent from stdout and stderr).
++    lab.copy_skel()
++    refused(lab.run(recipient=S_CANARY), "bad_args")
++    refused(lab.run(recipient=S_CANARY.lower()), "bad_args")
++
++
++# ---- timing (informational) -------------------------------------------------------------------
++
++@pytest.mark.requires_age
++def test_timing_64_mib(agelab, capsys):
++    for i in range(64):
++        (agelab.home / f"blob-{i:02d}-{PLANT}").write_bytes(os.urandom(1024 * 1024))
++    t0 = time.monotonic()
++    res = agelab.run(timeout=300)
++    dt = time.monotonic() - t0
++    assert res.doc["status"] == "saved"
++    assert res.doc["raw_bytes"] >= 64 * 1024 * 1024
++    with capsys.disabled():
++        print(f"\n[B-109a timing] 64 MiB random tree: {dt:.2f} s, "
++              f"{res.doc['raw_bytes'] / dt / 1e6:.1f} MB/s raw, "
++              f"python {sys.version.split()[0]}")
