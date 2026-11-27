@@ -1,6 +1,8 @@
 """FastAPI service: catalog / pools / setups / users / reservations + internal
 VM-IP callback; serves dashboard/. Views over the DB only — YAML is read by
 `daolab sync` (catalog.py), never by request handlers."""
+import base64
+import binascii
 import hashlib
 import hmac
 import ipaddress
@@ -21,8 +23,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
-from . import (access, approvals, config, hostcheck, ipam, keys, migrations, models, otel,
-               scheduler)
+from . import (access, approvals, challenges, config, hostcheck, ipam, keys, migrations,
+               models, otel, scheduler)
 from . import health as health_eval     # `health` is the liveness route below
 
 logging.basicConfig(level=getattr(logging, config.settings.log_level.upper(), logging.INFO))
@@ -59,7 +61,10 @@ async def daolab_error_handler(request: Request, exc: DaolabError):
 async def validation_error_handler(request: Request, exc: RequestValidationError):
     first = exc.errors()[0] if exc.errors() else {}
     loc = ".".join(str(p) for p in first.get("loc", []) if p != "body")
-    msg = f"{loc}: {first.get('msg', 'invalid request')}" if loc else first.get("msg", "invalid request")
+    msg = str(first.get("msg", "invalid request"))
+    if "nonce" in msg.lower() and "nonce" not in loc.lower():
+        msg = "nonce_b64: invalid"
+    msg = f"{loc}: {msg}" if loc else msg
     return JSONResponse(status_code=422, content={
         "error": {"code": "validation_error", "message": msg, "detail": {}}})
 
@@ -186,6 +191,18 @@ class ApprovalCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["lost_key_reset", "home_discard", "tripwire_accept", "tripwire_rebaseline"]
     target_ref: str
+
+
+class ChallengeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    purpose: Literal["rotate", "delete", "cancel_delete", "discard_home"]
+    target_ref: str
+
+
+class ChallengeAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    challenge_id: int
+    nonce_b64: str
 
 
 # ---- access: SSH key or generated password ----------------------------------
@@ -711,6 +728,16 @@ def _approval_object(row) -> dict:
         "execute_after", "executed_at", "created_at")}
 
 
+def _decode_nonce(value: str) -> bytes:
+    try:
+        nonce = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        raise DaolabError("validation_error", 422, "nonce_b64: invalid")
+    if len(nonce) != 32:
+        raise DaolabError("validation_error", 422, "nonce_b64: invalid")
+    return nonce
+
+
 @app.post("/keys", status_code=201)
 def enroll_key(body: KeyEnroll, user: sqlite3.Row = Depends(current_user),
                conn: sqlite3.Connection = Depends(db_conn)):
@@ -819,6 +846,31 @@ def my_approvals(user: sqlite3.Row = Depends(current_user),
     marks = ",".join("?" for _ in visible)
     return [_approval_object(row) for row in conn.execute(
         f"SELECT * FROM admin_approvals WHERE id IN ({marks}) ORDER BY id", visible).fetchall()]
+
+
+@app.post("/challenges")
+def create_challenge(body: ChallengeCreate, user: sqlite3.Row = Depends(current_user),
+                     conn: sqlite3.Connection = Depends(db_conn)):
+    try:
+        result = challenges.issue(conn, user, body.purpose, body.target_ref, models.utcnow())
+    except challenges.ChallengeError as exc:
+        _raise_service(exc)
+    return {"challenge_id": result["challenge_id"], "expires_at": result["expires_at"],
+            "ciphertext": result["ciphertext"].decode("ascii")}
+
+
+@app.post("/approvals/{approval_id}/cancel")
+def cancel_approval(approval_id: int, body: ChallengeAnswer,
+                    user: sqlite3.Row = Depends(current_user),
+                    conn: sqlite3.Connection = Depends(db_conn)):
+    nonce = _decode_nonce(body.nonce_b64)
+    try:
+        approvals.cancel_by_owner(conn, approval_id, user, models.utcnow(), nonce,
+                                  body.challenge_id)
+    except (approvals.ApprovalServiceError, challenges.ChallengeError) as exc:
+        _raise_service(exc)
+    row = conn.execute("SELECT * FROM admin_approvals WHERE id = ?", (approval_id,)).fetchone()
+    return _approval_object(row)
 
 
 def _parse_start(value: str | None, now: datetime) -> datetime:
@@ -1336,8 +1388,13 @@ def authz_keys(host: str = "", login: str = "",
 
 # ---- static dashboards (registered after all API routes) -------------------
 
+PAGE_CSP = ("default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; "
+            "object-src 'none'; base-uri 'none'")
+
+
 def _page(name: str) -> FileResponse:
-    return FileResponse(os.path.join(config.settings.dashboard_dir, name), media_type="text/html")
+    return FileResponse(os.path.join(config.settings.dashboard_dir, name), media_type="text/html",
+                        headers={"Content-Security-Policy-Report-Only": PAGE_CSP})
 
 
 @app.get("/")

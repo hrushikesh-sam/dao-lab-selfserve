@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%230969da'/%3E%3C/svg%3E">
 <title>daolab admin</title>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<!-- SRI = sha384 of the decoded file at this exact URL: curl -sSL URL | openssl dgst -sha384 -binary | openssl base64 -A -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js" integrity="sha384-WmdflGW9aGfoBdHc4rRyWzYuAjEmDwMdGdiPNacbwfGKxBW/SO6guzuQ76qjnSlr" crossorigin="anonymous"></script>
 <style>
   :root { --bg:#f6f8fa; --card:#fff; --line:#d0d7de; --text:#1f2328; --muted:#656d76;
           --accent:#0969da; --green:#1a7f37; --amber:#9a6700; --red:#cf222e; }
@@ -95,18 +96,18 @@
   <h1>daolab admin</h1>
   <span class="spacer"></span>
   <span id="identity" style="color:#c8d1da"></span>
-  <button onclick="changeToken()">change token</button>
-  <button onclick="refresh()">refresh</button>
+  <button data-action="change-token">change token</button>
+  <button data-action="refresh">refresh</button>
 </header>
 
 <div id="nogate">
   <h2>admin token required</h2>
   <p class="muted" id="nogate-msg"></p>
-  <p><a href="/user.html">go to the user dashboard</a> or <a href="#" onclick="changeToken();return false">paste another token</a></p>
+  <p><a href="/user.html">go to the user dashboard</a> or <a href="#" data-action="change-token">paste another token</a></p>
 </div>
 
 <main id="content" style="display:none">
-  <div id="banner"><span class="close" onclick="hideBanner()">&times;</span><span id="banner-msg"></span><details id="banner-detail" hidden><summary>detail</summary><pre id="banner-pre"></pre></details></div>
+  <div id="banner"><span class="close" data-action="hide-banner">&times;</span><span id="banner-msg"></span><details id="banner-detail" hidden><summary>detail</summary><pre id="banner-pre"></pre></details></div>
   <div id="apidown">API unreachable — retrying</div>
 
   <div class="cols">
@@ -151,16 +152,15 @@
     <h3>daolab token</h3>
     <p class="muted">Paste an <b>admin</b> bearer token from <code>daolab add-user --role admin</code>.</p>
     <input type="password" id="gate-token" placeholder="token">
-    <div class="actions"><button class="act" onclick="saveToken()">Save</button></div>
+    <div class="actions"><button class="act" data-action="save-token">Save</button></div>
   </div>
 </div>
 
 <script>
-// Own key per page: the two pages share the origin (see user.html).
 const TOKEN_KEY = "daolab_token_admin";
 const getToken  = () => localStorage.getItem(TOKEN_KEY);
 let ME = null, SETUPS = [], SELECTED = null, POLL_MS = 15000, FAST_MS = 4000;
-let SEL_RES = null, BUSY = false;               // the reservation whose detail is open; any job running
+let SEL_RES = null, BUSY = false;
 
 class ApiError extends Error {
   constructor(status, err) {
@@ -168,6 +168,25 @@ class ApiError extends Error {
     this.status = status; this.code = err.code; this.detail = err.detail;
   }
 }
+
+const ESCAPES = {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;","\u0060":"&#96;"};
+const esc = s => String(s ?? "").replace(/[&<>"'\x60]/g, c => ESCAPES[c]);
+
+function text(tag, value, cls) {
+  const node = document.createElement(tag);
+  node.textContent = value == null ? "" : String(value);
+  if (cls) node.className = cls;
+  return node;
+}
+function button(label, cls, action, data) {
+  const node = text("button", label, cls);
+  node.type = "button";
+  node.dataset.action = action;
+  for (const [key, value] of Object.entries(data || {})) node.dataset[key] = String(value);
+  return node;
+}
+function badge(label, cls) { return text("span", label, "badge " + (cls || "b-grey")); }
+function cell(node) { const td = document.createElement("td"); td.append(node); return td; }
 
 async function api(path, {method = "GET", body = null} = {}) {
   let res;
@@ -191,9 +210,6 @@ async function api(path, {method = "GET", body = null} = {}) {
   return data;
 }
 
-const esc = s => String(s ?? "").replace(/[&<>"]/g,
-  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-
 function showBanner(msg, detail, ok=false) {
   const b = document.getElementById("banner");
   b.style.display = "block"; b.className = ok ? "ok" : "";
@@ -207,7 +223,7 @@ function hideBanner() { document.getElementById("banner").style.display = "none"
 function reportError(e) { if (e instanceof ApiError) showBanner(`${e.code} — ${e.message}`, e.detail); }
 
 function showTokenGate() { document.getElementById("gate").style.display = "block"; }
-function changeToken()  { localStorage.removeItem(TOKEN_KEY); showTokenGate(); }
+function changeToken()  { localStorage.removeItem(TOKEN_KEY); ME = null; showTokenGate(); }
 async function saveToken() {
   localStorage.setItem(TOKEN_KEY, document.getElementById("gate-token").value.trim());
   document.getElementById("gate").style.display = "none";
@@ -217,89 +233,156 @@ async function saveToken() {
 
 const STATE_BADGE = {queued:"b-grey", provisioning:"b-amber", ready:"b-green", active:"b-green",
                      cleaning:"b-amber", quarantined:"b-red", released:"b-muted", failed:"b-red"};
-const CANCELABLE = ["queued"];                     // not started: cancel (DELETE)
-const ENDABLE = ["ready", "active"];                // running: end now (POST .../cleanup)
+const CANCELABLE = ["queued"];
+const ENDABLE = ["ready", "active"];
 const AVAIL_BADGE = {available:"b-green", quarantined:"b-red", maintenance:"b-amber"};
 
-if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", theme: "neutral"});
+if (window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: "strict", flowchart: {htmlLabels: false}, theme: "neutral"});
 
-async function renderDiagram(setup) {                  // setup = one GET /setups element
+function diagramFallback(el, source) { el.innerHTML = `<pre>${esc(source)}</pre>`; }
+function appendDiagram(el, svg, name) {
+  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
+  if (doc.querySelector("parsererror")) { diagramFallback(el, svg); return; }
+  doc.querySelectorAll("script, foreignObject").forEach(node => node.remove());
+  doc.querySelectorAll("*").forEach(node => {
+    [...node.attributes].forEach(attr => {
+      if (attr.name.toLowerCase().startsWith("on")) node.removeAttributeNode(attr);
+    });
+  });
+  el.replaceChildren(doc.documentElement);
+}
+async function renderDiagram(setup) {
   const el = document.getElementById("topology");
   if (!el) return;
-  if (!window.mermaid) { el.innerHTML = `<pre>${esc(setup.diagram)}</pre>`; return; }
+  if (!window.mermaid) { diagramFallback(el, setup.diagram); return; }
   try {
     const {svg} = await mermaid.render("diagram-" + setup.id + "-" + Date.now(), setup.diagram);
-    el.innerHTML = svg;
-  } catch (e) {
-    el.innerHTML = `<pre>${esc(setup.diagram)}</pre>`;
-  }
+    appendDiagram(el, svg);
+  } catch (e) { diagramFallback(el, setup.diagram); }
 }
 
-// a start moved by a minute or more (taken slot, maintenance); not the rounding of "now" to a slot
 const movedSlot = r => r.shifted && new Date(r.start_at) - new Date(r.requested_start_at) >= 60000;
 
 function resSummaryLine(r) {
-  if (!r) return `<span class="badge b-green">free</span>`;
-  return `#${r.id} <b>${esc(r.user)}</b> <code>${esc(r.usecase)}</code>
-          <span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span>
-          ${esc(r.start_at)} → ${esc(r.end_at)}`;
+  const frag = document.createDocumentFragment();
+  if (!r) { frag.append(badge("free", "b-green")); return frag; }
+  frag.append(document.createTextNode("#" + r.id + " "), text("b", r.user), document.createTextNode(" "),
+              text("code", r.usecase), document.createTextNode(" "),
+              badge(r.state, STATE_BADGE[r.state] || "b-grey"), document.createTextNode(" "),
+              document.createTextNode(r.start_at + " → " + r.end_at));
+  return frag;
 }
 
 function renderPools(pools) {
   const held = new Set(SETUPS.filter(s => s.held_by).map(s => s.name));
   const div = document.getElementById("pools");
+  div.replaceChildren();
   document.getElementById("pools-empty").hidden = pools.length > 0;
-  div.innerHTML = pools.map(p => `
-    <div class="pool-name">${esc(p.name)}</div>
-    ${p.setups.map(name => `
-      <div class="setup-item ${SELECTED === name ? "sel" : ""}" onclick="selectSetup('${esc(name)}')">
-        ${esc(name)} ${held.has(name) ? '<span class="held-star">*</span>' : ""}
-      </div>`).join("")}`).join("");
+  pools.forEach(p => {
+    div.append(text("div", p.name, "pool-name"));
+    p.setups.forEach(name => {
+      const item = text("div", name, "setup-item" + (SELECTED === name ? " sel" : ""));
+      item.dataset.action = "select-setup";
+      item.dataset.name = name;
+      item.append(document.createTextNode(" "));
+      if (held.has(name)) item.append(text("span", "*", "held-star"));
+      div.append(item);
+    });
+  });
 }
 
 function renderDetail() {
   const s = SETUPS.find(x => x.name === SELECTED);
   const body = document.getElementById("detail-body");
+  body.replaceChildren();
   if (!s) {
     document.getElementById("detail-title").textContent = "Setup";
-    body.innerHTML = `<span class="muted">select a setup on the left</span>`;
+    body.append(text("span", "select a setup on the left", "muted"));
     return;
   }
   document.getElementById("detail-title").textContent = `Setup ${s.name} — pool ${s.pool}`;
   const dirty = s.dirty || [];
-  const banner = (s.availability === "quarantined" || dirty.length) ? `
-    <div class="quarantine"><b>quarantined</b> — cleanup could not prove the testbed clean; new deploys
-      wait until it is.${dirty.map(d => `
-      <div class="residue">#${d.id} ${esc(d.user)} <code>${esc(d.usecase)}</code> (${esc(d.state)}):
-        ${esc(d.residue || "no residue recorded")}</div>`).join("")}
-      <div><button onclick="forceClean('${esc(s.name)}', false)">Force clean (reconcile, then verify)</button>
-           <button onclick="forceClean('${esc(s.name)}', true)">Mark clean without verifying</button></div>
-    </div>` : "";
-  body.innerHTML = `
-    <div class="kv"><b>availability:</b> <span class="badge ${AVAIL_BADGE[s.availability] || "b-grey"}">${esc(s.availability || "available")}</span></div>
-    ${banner}
-    <div class="kv"><b>capabilities:</b> ${s.capabilities.map(c => `<span class="cap">${esc(c)}</span>`).join("")}</div>
-    <table style="margin:8px 0">
-      <thead><tr><th>member</th><th>kind</th><th>host</th><th>hw_class</th><th>capabilities</th></tr></thead>
-      <tbody>${s.members.map(m => `
-        <tr><td><code>${esc(m.name)}</code></td><td>${esc(m.kind)}</td><td>${esc(m.host)}</td>
-            <td>${m.hw_class ? `<code>${esc(m.hw_class)}</code>` : '<span class="muted">—</span>'}</td>
-            <td>${m.capabilities.map(c => `<span class="cap">${esc(c)}</span>`).join("")}</td></tr>`).join("")}
-      </tbody>
-    </table>
-    <div class="kv">${s.links.map(l => `<code>${esc(l.a)}</code> ←­ ${esc(l.capability)} → <code>${esc(l.b)}</code>`).join("<br>")}</div>
-    <div id="topology"></div>
-    <div class="kv" style="margin-top:10px"><b>held_by:</b> ${resSummaryLine(s.held_by)}</div>
-    <div class="kv"><b>queue:</b> ${s.queue.length
-      ? s.queue.map(q => `<div style="margin-left:12px">${resSummaryLine(q)}</div>`).join("")
-      : '<span class="muted">queue empty</span>'}</div>`;
+  const kv = (label, valueNode) => {
+    const line = document.createElement("div");
+    line.className = "kv";
+    line.append(text("b", label + ":"), document.createTextNode(" "), valueNode);
+    return line;
+  };
+  body.append(kv("availability", badge(s.availability || "available",
+                                        AVAIL_BADGE[s.availability] || "b-grey")));
+  if (s.availability === "quarantined" || dirty.length) {
+    const box = document.createElement("div");
+    box.className = "quarantine";
+    box.append(text("b", "quarantined"), document.createTextNode(" — cleanup could not prove the testbed clean; new deploys wait until it is."));
+    dirty.forEach(d => {
+      box.append(text("div", "#" + d.id + " " + d.user + " " + d.usecase + " (" + d.state + "): "
+                            + (d.residue || "no residue recorded"), "residue"));
+    });
+    const actions = document.createElement("div");
+    actions.append(button("Force clean (reconcile, then verify)", null, "force-clean",
+                          {name: s.name, skip: "false"}));
+    actions.append(button("Mark clean without verifying", null, "force-clean",
+                          {name: s.name, skip: "true"}));
+    box.append(actions);
+    body.append(box);
+  }
+  const caps = document.createElement("span");
+  s.capabilities.forEach(c => caps.append(text("span", c, "cap")));
+  body.append(kv("capabilities", caps));
+  const table = document.createElement("table");
+  table.style.margin = "8px 0";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  ["member", "kind", "host", "hw_class", "capabilities"].forEach(label => headRow.append(text("th", label)));
+  thead.append(headRow);
+  const vbody = document.createElement("tbody");
+  s.members.forEach(m => {
+    const row = document.createElement("tr");
+    row.append(text("td", "", null));
+    row.cells[0].append(text("code", m.name));
+    row.append(text("td", m.kind), text("td", m.host));
+    const hw = document.createElement("td");
+    if (m.hw_class) hw.append(text("code", m.hw_class));
+    else hw.append(text("span", "—", "muted"));
+    row.append(hw);
+    const memberCaps = document.createElement("td");
+    m.capabilities.forEach(c => memberCaps.append(text("span", c, "cap")));
+    row.append(memberCaps);
+    vbody.append(row);
+  });
+  table.append(thead, vbody);
+  body.append(table);
+  const links = document.createElement("div");
+  links.className = "kv";
+  s.links.forEach((l, i) => {
+    if (i) links.append(text("br"));
+    links.append(text("code", l.a), document.createTextNode(" ←­ " + l.capability + " → "),
+                 text("code", l.b));
+  });
+  body.append(links);
+  const topo = document.createElement("div");
+  topo.id = "topology";
+  body.append(topo);
+  const held = document.createElement("span");
+  held.append(resSummaryLine(s.held_by));
+  body.append(kv("held_by", held));
+  const queue = document.createElement("span");
+  if (s.queue.length) {
+    s.queue.forEach(q => {
+      const line = document.createElement("div");
+      line.style.marginLeft = "12px";
+      line.append(resSummaryLine(q));
+      queue.append(line);
+    });
+  } else queue.append(text("span", "queue empty", "muted"));
+  body.append(kv("queue", queue));
   renderDiagram(s);
 }
 
 function selectSetup(name) {
   SELECTED = name;
   renderDetail();
-  loadPoolsAndSetups();          // re-render selection highlight
+  loadPoolsAndSetups();
 }
 
 async function loadPoolsAndSetups() {
@@ -313,40 +396,54 @@ async function loadPoolsAndSetups() {
 async function loadAllReservations() {
   const rows = await api("/reservations?all=1");
   const tbody = document.querySelector("#all-res tbody");
+  tbody.replaceChildren();
   document.getElementById("all-res-empty").hidden = rows.length > 0;
   BUSY = rows.some(r => r.job && ["pending", "running"].includes(r.job.state));
-  tbody.innerHTML = rows.map(r => `
-    <tr class="${SEL_RES === r.id ? "sel" : ""}">
-      <td>${r.id}</td><td>${esc(r.user)}</td>
-      <td><code>${esc(r.usecase)}</code>${r.diy ? ' <span class="badge b-grey">diy</span>' : ""}</td>
-      <td>${esc(r.setup)}</td>
-      <td><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span></td>
-      <td>${esc(r.start_at)} → ${esc(r.end_at)}${movedSlot(r) ? ' <span class="badge b-amber">shifted</span>' : ""}
-          ${progressLine(r)}</td>
-      <td style="white-space:nowrap"><button class="details" onclick="openResDetail(${r.id})">details</button>${CANCELABLE.includes(r.state)
-        ? `<button class="cancel" onclick="cancelReservation(${r.id})">Cancel</button>`
-        : ENDABLE.includes(r.state)
-          ? `<button class="endnow" onclick="endReservation(${r.id})">End now</button>` : ""}</td>
-    </tr>`).join("");
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    if (SEL_RES === r.id) tr.className = "sel";
+    const usecase = document.createElement("td");
+    usecase.append(text("code", r.usecase));
+    if (r.diy) usecase.append(document.createTextNode(" "), badge("diy", "b-grey"));
+    const slot = document.createElement("td");
+    slot.append(document.createTextNode(r.start_at + " → " + r.end_at));
+    if (movedSlot(r)) slot.append(document.createTextNode(" "), badge("shifted", "b-amber"));
+    slot.append(progressLine(r));
+    const actions = document.createElement("td");
+    actions.style.whiteSpace = "nowrap";
+    actions.append(button("details", "details", "open-res-detail", {id: r.id}));
+    if (CANCELABLE.includes(r.state)) actions.append(button("Cancel", "cancel", "cancel-reservation", {id: r.id}));
+    else if (ENDABLE.includes(r.state)) actions.append(button("End now", "endnow", "end-reservation", {id: r.id}));
+    tr.append(text("td", r.id), text("td", r.user), usecase, text("td", r.setup),
+              cell(badge(r.state, STATE_BADGE[r.state] || "b-grey")), slot, actions);
+    tbody.append(tr);
+  });
 }
 
 function progressLine(r) {
   const j = r.job;
-  if (!j || !["pending", "running", "failed"].includes(j.state) || ["released"].includes(r.state)) return "";
-  if (j.state === "failed") return `<div class="progress">${esc(j.kind)} failed: ${esc(j.error || "")}</div>`;
-  const last = j.last_step ? esc(j.last_step.name) : "starting";
-  return `<div class="progress">${esc(j.kind)} ${esc(j.state)} · step ${j.steps}: ${last}</div>`;
+  if (!j || !["pending", "running", "failed"].includes(j.state) || ["released"].includes(r.state))
+    return document.createDocumentFragment();
+  const div = document.createElement("div");
+  div.className = "progress";
+  if (j.state === "failed") {
+    div.append(document.createTextNode(j.kind + " failed: " + (j.error || "")));
+  } else {
+    const last = j.last_step ? j.last_step.name : "starting";
+    div.append(document.createTextNode(j.kind + " " + j.state + " · step " + j.steps + ": " + last));
+  }
+  return div;
 }
 
 function openResDetail(id) {
-  SEL_RES = SEL_RES === id ? null : id;            // the button toggles
+  SEL_RES = SEL_RES === id ? null : id;
   loadAllReservations().catch(reportError);
   loadResDetail().then(() => {
     if (SEL_RES) document.getElementById("res-detail").scrollIntoView({behavior: "smooth"});
   });
 }
 
-const fmtTime = ts => ts ? esc(String(ts).replace("T", " ").replace(/\.\d+/, "").replace("Z", " UTC")) : "—";
+const fmtTime = ts => ts ? String(ts).replace("T", " ").replace(/\.\d+/, "").replace("Z", " UTC") : "—";
 function duration(a, b) {
   if (!a) return "";
   const s = Math.max(0, Math.round(((b ? new Date(b) : new Date()) - new Date(a)) / 1000));
@@ -357,24 +454,56 @@ const STEP_BADGE = {ok:"b-green", skipped:"b-muted", failed:"b-red"};
 
 function jobBlock(j, open) {
   const steps = j.steps || [];
-  return `
-    <details class="job" data-id="${j.id}" ${open ? "open" : ""}>
-      <summary><b>${esc(j.kind)}</b> #${j.id}
-        <span class="badge ${JOB_BADGE[j.state] || "b-grey"}">${esc(j.state)}</span>
-        <span class="muted">attempt ${j.attempt} · ${fmtTime(j.started_at || j.created_at)}
-        ${j.started_at ? `· ${duration(j.started_at, j.finished_at)}${j.finished_at ? "" : " so far"}` : ""}</span></summary>
-      <div class="jobbody">
-        ${j.error ? `<div class="err">${esc(j.error)}</div>` : ""}
-        ${steps.length ? `<table><thead><tr><th>step</th><th>result</th><th>at</th><th>detail</th></tr></thead>
-          <tbody>${steps.map(st => `<tr><td><code>${esc(st.name)}</code></td>
-            <td><span class="badge ${STEP_BADGE[st.state] || "b-grey"}">${esc(st.state)}</span></td>
-            <td class="muted">${fmtTime(st.at)}</td><td class="muted">${esc(st.detail || "")}</td></tr>`).join("")}
-          </tbody></table>` : '<span class="muted">no steps yet</span>'}
-        ${j.trace_id ? `<div class="muted" style="font-size:12px;margin-top:6px">trace <code>${esc(j.trace_id)}</code></div>` : ""}
-        ${j.log_tail ? `<pre class="log">${esc(j.log_tail)}</pre>`
-                     : '<div class="muted" style="font-size:12px;margin-top:6px">no playbook log (mock runner, or not started)</div>'}
-      </div>
-    </details>`;
+  const details = document.createElement("details");
+  details.className = "job";
+  details.dataset.id = j.id;
+  if (open) details.open = true;
+  const summary = document.createElement("summary");
+  summary.append(text("b", j.kind), document.createTextNode(" #" + j.id + " "),
+                 badge(j.state, JOB_BADGE[j.state] || "b-grey"), document.createTextNode(" "),
+                 text("span", "attempt " + j.attempt + " · " + fmtTime(j.started_at || j.created_at)
+                      + (j.started_at ? " · " + duration(j.started_at, j.finished_at)
+                         + (j.finished_at ? "" : " so far") : ""), "muted"));
+  details.append(summary);
+  const body = document.createElement("div");
+  body.className = "jobbody";
+  if (j.error) body.append(text("div", j.error, "err"));
+  if (steps.length) {
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["step", "result", "at", "detail"].forEach(label => headRow.append(text("th", label)));
+    thead.append(headRow);
+    const vbody = document.createElement("tbody");
+    steps.forEach(st => {
+      const row = document.createElement("tr");
+      row.append(text("td", "", null));
+      row.cells[0].append(text("code", st.name));
+      const state = document.createElement("td");
+      state.append(badge(st.state, STEP_BADGE[st.state] || "b-grey"));
+      row.append(state, text("td", fmtTime(st.at), "muted"), text("td", st.detail || "", "muted"));
+      vbody.append(row);
+    });
+    table.append(thead, vbody);
+    body.append(table);
+  } else body.append(text("span", "no steps yet", "muted"));
+  if (j.trace_id) {
+    const trace = document.createElement("div");
+    trace.className = "muted";
+    trace.style.fontSize = "12px";
+    trace.style.marginTop = "6px";
+    trace.append(document.createTextNode("trace "), text("code", j.trace_id));
+    body.append(trace);
+  }
+  if (j.log_tail) body.append(text("pre", j.log_tail, "log"));
+  else {
+    const none = text("div", "no playbook log (mock runner, or not started)", "muted");
+    none.style.fontSize = "12px";
+    none.style.marginTop = "6px";
+    body.append(none);
+  }
+  details.append(body);
+  return details;
 }
 
 async function loadResDetail() {
@@ -384,43 +513,98 @@ async function loadResDetail() {
   try {
     [r, jobs] = await Promise.all([api(`/reservations/${SEL_RES}`), api(`/reservations/${SEL_RES}/jobs`)]);
   } catch (e) { reportError(e); return; }
-  // keep open/closed job panels and log scroll positions across refreshes
   const openIds = new Set([...sec.querySelectorAll("details.job")].filter(d => d.open)
                           .map(d => d.dataset.id));
   const firstRender = sec.hidden || sec.dataset.res !== String(r.id);
   sec.hidden = false; sec.dataset.res = r.id;
   document.getElementById("res-detail-title").textContent = `Reservation #${r.id} — ${r.usecase} on ${r.setup}`;
+  const body = document.getElementById("res-detail-body");
+  body.replaceChildren();
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  const pair = (label, valueNode) => { grid.append(text("b", label)); valueNode.className = "cell"; grid.append(valueNode); };
+  const span = () => document.createElement("span");
+  const owner = span();
+  owner.append(text("span", r.user));
+  pair("owner", owner);
+  const state = span();
+  state.append(badge(r.state, STATE_BADGE[r.state] || "b-grey"));
+  if (r.failure_reason) state.append(text("span", r.failure_reason, "err"));
+  pair("state", state);
+  pair("slot", text("span", fmtTime(r.start_at) + " → " + fmtTime(r.end_at)));
   const a = r.access;
-  const access = !a ? '<span class="muted">none (diy)</span>'
-    : `username <b><code>${esc(a.login)}</code></b> on <code>${esc(a.host)}</code> · <code>${esc(a.ssh)}</code> · ${a.auth === "password"
-        ? "generated password <span class='muted'>(shown to the owner on their dashboard)</span>"
-        : `SSH key ${a.key ? `<code>${esc(a.key)}</code>` : ""}`}
-       · <span class="badge ${a.live ? "b-green" : "b-grey"}">${a.live ? "login open" : "login closed"}</span>`;
-  const dpu = r.vms.filter(v => !v.name);
-  const vms = r.vms.filter(v => v.name);
+  const access = span();
+  if (!a) access.append(text("span", "none (diy)", "muted"));
+  else {
+    access.append(document.createTextNode("username "));
+    const who = document.createElement("b");
+    who.append(text("code", a.login));
+    access.append(who, document.createTextNode(" on "), text("code", a.host),
+                  document.createTextNode(" · "), text("code", a.ssh), document.createTextNode(" · "));
+    if (a.auth === "password") access.append(text("span", "generated password (shown to the owner on their dashboard)", "muted"));
+    else {
+      access.append(document.createTextNode("SSH key "));
+      if (a.key) access.append(text("code", a.key));
+    }
+    access.append(document.createTextNode(" · "),
+                  badge(a.live ? "login open" : "login closed", a.live ? "b-green" : "b-grey"));
+  }
+  pair("DPU access", access);
+  const dpu = span();
+  const dpuRows = r.vms.filter(v => !v.name);
+  if (dpuRows.length) {
+    dpuRows.forEach((v, i) => {
+      if (i) dpu.append(document.createTextNode(", "));
+      dpu.append(text("code", v.role), document.createTextNode(" on the OCTEON at "),
+                 text("code", v.ip || "—"));
+    });
+  } else dpu.append(text("span", "—", "muted"));
+  pair("DPU app", dpu);
+  const vms = span();
+  const named = r.vms.filter(v => v.name);
+  if (!named.length) vms.append(text("span", "none", "muted"));
+  else if (r.vms_provisioned === false) {
+    named.forEach(v => vms.append(text("code", v.role), document.createTextNode(" ")));
+    vms.append(badge("not provisioned", "b-grey"), document.createTextNode(" "),
+               text("span", "— DPU-only lab until the Xen Orchestra pools are connected", "muted"));
+  } else {
+    named.forEach((v, i) => {
+      if (i) vms.append(text("br"));
+      vms.append(text("code", v.role), document.createTextNode(" " + v.name + " "));
+      if (v.ip) vms.append(text("code", v.ip));
+      else vms.append(text("span", "no IP yet", "muted"));
+    });
+  }
+  pair("VMs", vms);
+  const health = span();
   const h = r.health;
-  const ordered = [...jobs].reverse();               // newest first
-  document.getElementById("res-detail-body").innerHTML = `
-    <div class="grid">
-      <b>owner</b><span>${esc(r.user)}</span>
-      <b>state</b><span><span class="badge ${STATE_BADGE[r.state] || "b-grey"}">${esc(r.state)}</span>
-        ${r.failure_reason ? `<span class="err">${esc(r.failure_reason)}</span>` : ""}</span>
-      <b>slot</b><span>${fmtTime(r.start_at)} → ${fmtTime(r.end_at)}</span>
-      <b>DPU access</b><span>${access}</span>
-      <b>DPU app</b><span>${dpu.length ? dpu.map(v => `<code>${esc(v.role)}</code> on the OCTEON at <code>${esc(v.ip || "—")}</code>`).join(", ") : '<span class="muted">—</span>'}</span>
-      <b>VMs</b><span>${!vms.length ? '<span class="muted">none</span>'
-        : r.vms_provisioned === false
-          ? `${vms.map(v => `<code>${esc(v.role)}</code>`).join(" ")} <span class="badge b-grey">not provisioned</span>
-             <span class="muted">— DPU-only lab until the Xen Orchestra pools are connected</span>`
-          : vms.map(v => `<code>${esc(v.role)}</code> ${esc(v.name)} ${v.ip ? `<code>${esc(v.ip)}</code>` : '<span class="muted">no IP yet</span>'}`).join("<br>")}</span>
-      <b>health</b><span>${h ? `<span class="badge ${h.verdict === "healthy" ? "b-green" : h.verdict === "degraded" ? "b-amber" : "b-red"}">${esc(h.verdict)}</span>
-        <span class="muted">${esc(h.reason || "")} · ${fmtTime(h.evaluated_at)}</span>` : '<span class="muted">no verdict yet</span>'}</span>
-      <b>requested</b><span>${fmtTime(r.created_at)}${movedSlot(r) ? ` <span class="badge b-amber">slot shifted from ${fmtTime(r.requested_start_at)}</span>` : ""}</span>
-    </div>
-    <div style="margin:4px 0 6px"><b>Jobs</b> <span class="muted">(newest first${BUSY ? " · refreshing every 4 s" : ""})</span>
-      ${ENDABLE.includes(r.state) ? `<button class="endnow" style="float:right" onclick="endReservation(${r.id})">End now</button>` : ""}</div>
-    ${ordered.length ? ordered.map((j, i) => jobBlock(j, firstRender ? i === 0 : openIds.has(String(j.id)))).join("")
-                     : '<span class="muted">no jobs yet — the engine starts the deploy shortly before the slot</span>'}`;
+  if (h) {
+    health.append(badge(h.verdict, h.verdict === "healthy" ? "b-green"
+                        : h.verdict === "degraded" ? "b-amber" : "b-red"));
+    health.append(document.createTextNode(" "), text("span",
+                  (h.reason || "") + " · " + fmtTime(h.evaluated_at), "muted"));
+  } else health.append(text("span", "no verdict yet", "muted"));
+  pair("health", health);
+  const requested = span();
+  requested.append(document.createTextNode(fmtTime(r.created_at)));
+  if (movedSlot(r)) requested.append(document.createTextNode(" "),
+                                     badge("slot shifted from " + fmtTime(r.requested_start_at), "b-amber"));
+  pair("requested", requested);
+  body.append(grid);
+  const jobsHead = document.createElement("div");
+  jobsHead.style.margin = "4px 0 6px";
+  jobsHead.append(text("b", "Jobs"), document.createTextNode(" "),
+                  text("span", "(newest first" + (BUSY ? " · refreshing every 4 s" : "") + ")", "muted"));
+  if (ENDABLE.includes(r.state)) {
+    const end = button("End now", "endnow", "end-reservation", {id: r.id});
+    end.style.float = "right";
+    jobsHead.append(end);
+  }
+  body.append(jobsHead);
+  const ordered = [...jobs].reverse();
+  if (ordered.length) ordered.forEach((j, i) =>
+    body.append(jobBlock(j, firstRender ? i === 0 : openIds.has(String(j.id)))));
+  else body.append(text("span", "no jobs yet — the engine starts the deploy shortly before the slot", "muted"));
   sec.querySelectorAll("pre.log").forEach(pre => { pre.scrollTop = pre.scrollHeight; });
 }
 
@@ -459,21 +643,28 @@ async function cancelReservation(id) {
 async function loadUsers() {
   const rows = await api("/users");
   const tbody = document.querySelector("#users tbody");
-  tbody.innerHTML = rows.map(u => {
+  tbody.replaceChildren();
+  rows.forEach(u => {
     const self = ME && u.id === ME.id;
-    const btn = u.enabled
-      ? `<button class="toggle disable" ${self ? 'disabled title="you cannot disable your own account"' : ""}
-           onclick="setEnabled(${u.id}, '${esc(u.username)}', false)">Disable</button>`
-      : `<button class="toggle enable" onclick="setEnabled(${u.id}, '${esc(u.username)}', true)">Enable</button>`;
-    return `
-      <tr>
-        <td>${u.id}</td><td><b>${esc(u.username)}</b>${self ? ' <span class="muted">(you)</span>' : ""}</td>
-        <td><span class="badge ${u.role === "admin" ? "b-amber" : "b-grey"}">${esc(u.role)}</span></td>
-        <td><span class="badge ${u.enabled ? "b-green" : "b-red"}">${u.enabled ? "enabled" : "disabled"}</span></td>
-        <td>${u.active_reservations}</td>
-        <td>${btn}</td>
-      </tr>`;
-  }).join("");
+    const toggle = button(u.enabled ? "Disable" : "Enable", "toggle " + (u.enabled ? "disable" : "enable"),
+                          "set-enabled", {id: u.id, username: u.username, enabled: u.enabled ? "false" : "true"});
+    if (u.enabled && self) {
+      toggle.disabled = true;
+      toggle.title = "you cannot disable your own account";
+    }
+    const username = document.createElement("td");
+    username.append(text("b", u.username));
+    if (self) username.append(document.createTextNode(" "), text("span", "(you)", "muted"));
+    const tr = document.createElement("tr");
+    tr.append(text("td", u.id), username,
+              cell(badge(u.role, u.role === "admin" ? "b-amber" : "b-grey")),
+              cell(badge(u.enabled ? "enabled" : "disabled", u.enabled ? "b-green" : "b-red")),
+              text("td", u.active_reservations));
+    const action = document.createElement("td");
+    action.append(toggle);
+    tr.append(action);
+    tbody.append(tr);
+  });
 }
 
 async function setEnabled(id, username, enabled) {
@@ -485,7 +676,6 @@ async function setEnabled(id, username, enabled) {
   } catch (e) { reportError(e); }
 }
 
-// ---- boot + polling --------------------------------------------------------
 async function refresh() {
   try { await Promise.all([loadPoolsAndSetups(), loadAllReservations(), loadUsers()]); await loadResDetail(); }
   catch (e) { reportError(e); }
@@ -498,7 +688,7 @@ async function boot() {
   try { ME = await api("/whoami"); }
   catch (e) { reportError(e); return; }
   document.getElementById("identity").textContent = `${ME.username} (${ME.role})`;
-  if (ME.role !== "admin") {                     // refuse to render; no further API calls
+  if (ME.role !== "admin") {
     document.getElementById("nogate").style.display = "block";
     document.getElementById("nogate-msg").textContent =
       `admin token required (this token has role “${ME.role}”)`;
@@ -506,6 +696,25 @@ async function boot() {
   }
   document.getElementById("content").style.display = "block";
   await refresh();
+}
+
+function wireActions() {
+  document.addEventListener("click", ev => {
+    const target = ev.target.closest?.("[data-action]");
+    if (!target) return;
+    const action = target.dataset.action;
+    if (action === "change-token") { ev.preventDefault(); changeToken(); }
+    else if (action === "refresh") refresh();
+    else if (action === "hide-banner") hideBanner();
+    else if (action === "save-token") saveToken();
+    else if (action === "select-setup") selectSetup(target.dataset.name);
+    else if (action === "force-clean") forceClean(target.dataset.name, target.dataset.skip === "true");
+    else if (action === "open-res-detail") openResDetail(Number(target.dataset.id));
+    else if (action === "end-reservation") endReservation(target.dataset.id);
+    else if (action === "cancel-reservation") cancelReservation(target.dataset.id);
+    else if (action === "set-enabled") setEnabled(target.dataset.id, target.dataset.username,
+                                                  target.dataset.enabled === "true");
+  });
 }
 
 function poll(fn, ms) {
@@ -517,9 +726,10 @@ function poll(fn, ms) {
   });
 }
 
+wireActions();
 boot();
 poll(refresh, POLL_MS);
-setInterval(() => {                                 // a deploy / cleanup in flight: follow it closely
+setInterval(() => {
   if (BUSY && !document.hidden && getToken() && ME && ME.role === "admin") refresh();
 }, FAST_MS);
 </script>
